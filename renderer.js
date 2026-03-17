@@ -24,6 +24,7 @@ const CONFIG = {
         { key: 'ams', id: 'ams-path', name: 'Automobilista' },
         { key: 'ams2', id: 'ams2-path', name: 'Automobilista 2' },
         { key: 'beamng', id: 'beamng-path', name: 'BeamNG' },
+        { key: 'dcsw', id: 'dcsw-path', name: 'DCS World' },
         { key: 'dirtrally', id: 'dirtrally-path', name: 'Dirt Rally' },
         { key: 'dirtrally2', id: 'dirtrally2-path', name: 'Dirt Rally 2.0' },
         { key: 'eawrc', id: 'eawrc-path', name: 'EA WRC' },
