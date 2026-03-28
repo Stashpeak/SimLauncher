@@ -1,5 +1,3 @@
-const { ipcRenderer } = require('electron');
-
 /* ==========================================================================
    CONFIGURATION
    ========================================================================== */
@@ -100,6 +98,20 @@ const ui = {
 };
 
 /* ==========================================================================
+   HELPERS
+   ========================================================================== */
+function sanitizePaths(obj) {
+    if (typeof obj !== 'object' || obj === null) return {};
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'string' && v.trim().length > 0 && v.length < 512) {
+            result[k] = v;
+        }
+    }
+    return result;
+}
+
+/* ==========================================================================
    SETTINGS LOGIC (Global Paths)
    ========================================================================== */
 const settings = {
@@ -164,8 +176,8 @@ generateForm: () => {
 
 
     load: () => {
-        state.appPaths = JSON.parse(localStorage.getItem('simLauncherAppPaths')) || {};
-        state.gamePaths = JSON.parse(localStorage.getItem('simLauncherGamePaths')) || {};
+        state.appPaths = sanitizePaths(JSON.parse(localStorage.getItem('simLauncherAppPaths')) || {});
+        state.gamePaths = sanitizePaths(JSON.parse(localStorage.getItem('simLauncherGamePaths')) || {});
 
         [...CONFIG.UTILITIES, ...CONFIG.GAMES].forEach(item => {
             const el = document.getElementById(item.id);
@@ -297,12 +309,10 @@ function launchGame(gameKey) {
 
     // 3. Send to Main Process
     if (appsToLaunch.length > 0) {
-        ipcRenderer.send('launch-profile', appsToLaunch);
-        
-        ipcRenderer.once('launch-result', (event, result) => {
+        window.electronAPI.launchProfile(appsToLaunch).then(result => {
             if (result.success) {
-                const msg = shouldAutoLaunchGame 
-                    ? `✅ Starting ${gameName} + apps.` 
+                const msg = shouldAutoLaunchGame
+                    ? `✅ Starting ${gameName} + apps.`
                     : `✅ Apps started. Launch ${gameName} manually.`;
                 notify(msg, "success", 4000);
                 setTimeout(() => statusDiv.textContent = '', shouldAutoLaunchGame ? 5000 : 15000);
@@ -319,15 +329,14 @@ function launchGame(gameKey) {
    IPC & HELPERS
    ========================================================================== */
 function browsePath(inputId) {
-    if (document.getElementById(inputId)) ipcRenderer.send('browse-path', inputId);
+    if (!document.getElementById(inputId)) return;
+    window.electronAPI.browsePath(inputId).then(result => {
+        if (result.filePath) {
+            document.getElementById(result.inputId).value = result.filePath;
+            settings.save();
+        }
+    });
 }
-
-ipcRenderer.on('browse-path-result', (event, result) => {
-    if (result.filePath) {
-        document.getElementById(result.inputId).value = result.filePath;
-        settings.save();
-    }
-});
 
 /* ==========================================================================
    INITIALIZATION & EXPOSE TO WINDOW
@@ -338,6 +347,10 @@ window.onload = () => {
     settings.initAccentPresets();
     ui.generateGameButtons();
     ui.showTab('launcher');
+    window.electronAPI.onAppLaunchError(data => {
+        const appName = data.app.split('\\').pop().split('/').pop();
+        notify(`Failed to launch ${appName}: ${data.error}`, 'error', 6000);
+    });
 };
 
 // CRITICAL: Make functions globally available for HTML onclick attributes

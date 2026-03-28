@@ -5,14 +5,16 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --windows"
+    "dist": "electron-builder --windows",
+    "lint": "eslint main.js renderer.js preload.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "electron": "^38.2.2",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.0.0"
   },
   "build": {
     "appId": "com.simlauncher.app",
@@ -22,6 +24,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "renderer.js",
       "index.html",
       "style.css",
