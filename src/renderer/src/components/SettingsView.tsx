@@ -4,11 +4,11 @@ import { useNotify } from './Notify'
 
 const ACCENT_PRESETS = [
   { name: 'Electric Aqua', hex: '#00eaff' },
-  { name: 'SimHub Blue', hex: '#3498db' },
-  { name: 'Racing Green', hex: '#00ff88' },
-  { name: 'CrewChief Yellow', hex: '#f1c40f' },
-  { name: 'Cyber Purple', hex: '#6e5bfb' },
-  { name: 'Milano Red', hex: '#ff2233' },
+  { name: 'Sky Blue', hex: '#4d9fff' },
+  { name: 'Racing Green', hex: '#00c853' },
+  { name: 'Sunset Orange', hex: '#ff6b35' },
+  { name: 'Cyber Purple', hex: '#c850c0' },
+  { name: 'Caution Yellow', hex: '#ffd600' },
 ]
 
 export function SettingsView({ onClose }: { onClose: () => void }) {
