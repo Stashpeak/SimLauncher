@@ -1,25 +1,66 @@
 import { useState } from 'react'
 
-export function WindowControls() {
+interface WindowControlsProps {
+  view: 'games' | 'settings'
+  onNavigate: (view: 'games' | 'settings') => void
+}
+
+export function WindowControls({ view, onNavigate }: WindowControlsProps) {
   const [isMaximized, setIsMaximized] = useState(false)
 
-  const handleMinimize = () => {
-    window.electronAPI.minimize()
-  }
-
+  const handleMinimize = () => window.electronAPI.minimize()
   const handleMaximize = () => {
     window.electronAPI.maximize()
     setIsMaximized((current) => !current)
   }
-
-  const handleClose = () => {
-    window.electronAPI.close()
-  }
+  const handleClose = () => window.electronAPI.close()
 
   return (
-    <div className="drag-region flex h-12 w-full items-center">
+    <div className="drag-region flex h-12 w-full items-center px-4 gap-3 shrink-0">
+      {/* Pill: branding + settings gear */}
+      <div className="no-drag glass-surface rounded-full flex items-center shrink-0">
+        {/* Launcher branding */}
+        <button
+          type="button"
+          onClick={() => onNavigate('games')}
+          className="group cursor-pointer flex items-center py-1.5 pl-3 pr-2"
+        >
+          <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
+            <span className="text-[var(--text-primary)]">Sim</span>
+            <span className={`transition-colors ${
+              view === 'games'
+                ? 'text-[var(--accent)]'
+                : 'text-[var(--text-subtle)] group-hover:text-[var(--accent)]'
+            }`}>Launcher</span>
+          </span>
+        </button>
+
+        {/* Divider */}
+        <div className="w-px h-3 bg-[rgba(255,255,255,0.1)]" />
+
+        {/* Settings gear */}
+        <button
+          type="button"
+          onClick={() => onNavigate('settings')}
+          className={`cursor-pointer flex items-center py-1.5 pl-2 pr-2.5 transition-colors ${
+            view === 'settings'
+              ? 'text-[var(--accent)]'
+              : 'text-[var(--text-subtle)] hover:text-[var(--text-primary)]'
+          }`}
+          title="Settings"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Spacer */}
       <div className="flex-1" />
-      <div className="no-drag flex items-center gap-2 px-4">
+
+      {/* Window controls */}
+      <div className="no-drag flex items-center gap-1">
         <button
           type="button"
           onClick={handleMinimize}

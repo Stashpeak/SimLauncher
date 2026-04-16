@@ -35,24 +35,12 @@ export default function App() {
   return (
     <NotifyProvider>
       <div className="flex flex-col h-screen overflow-hidden">
-        <WindowControls />
+        <WindowControls view={view} onNavigate={setView} />
         <UpdateBanner />
 
         <main className="flex-1 flex flex-col min-h-0 relative">
           {/* Games View */}
-          <div className={`p-[2rem] h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}>
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h1 className="text-3xl font-black italic tracking-tighter uppercase text-[var(--text-primary)]">
-                Sim<span className="text-[var(--accent)]">Launcher</span>
-              </h1>
-              <button
-                onClick={() => setView('settings')}
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-xl transition-colors hover:bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] no-drag"
-                title="Settings"
-              >
-                ⚙
-              </button>
-            </div>
+          <div className={`px-4 py-[1.5rem] h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}>
             <div className="flex-1 overflow-y-auto pr-1 -mr-1 custom-scrollbar">
               <GameList key={view} />
             </div>
@@ -60,7 +48,7 @@ export default function App() {
 
           {/* Settings View */}
           {view === 'settings' && (
-            <div className="absolute inset-0 p-[2rem] h-full z-10">
+            <div className="absolute inset-0 px-4 py-[1.5rem] h-full z-10">
               <SettingsView onClose={() => setView('games')} />
             </div>
           )}
