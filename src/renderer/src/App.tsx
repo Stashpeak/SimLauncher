@@ -2,6 +2,7 @@ import './App.css'
 import { NotifyProvider } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { UpdateBanner } from './components/UpdateBanner'
+import { GameList } from './components/GameList'
 
 export default function App() {
   return (
@@ -9,9 +10,9 @@ export default function App() {
       <div className="flex flex-col min-h-screen">
         <WindowControls />
         <UpdateBanner />
-        <div style={{ padding: '2rem' }}>
-          <h1 style={{ color: 'var(--text-primary)' }}>SimLauncher</h1>
-        </div>
+        <main className="flex-1 overflow-y-auto px-[2rem] pb-[2rem]">
+          <GameList />
+        </main>
       </div>
     </NotifyProvider>
   )
