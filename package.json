@@ -5,7 +5,9 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build && electron-builder",
+    "build": "electron-vite build",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
     "preview": "electron-vite preview"
   },
   "keywords": [],

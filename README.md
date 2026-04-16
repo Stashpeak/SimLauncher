@@ -50,8 +50,11 @@ npm install
 # Run in development
 npm run dev
 
-# Build Windows installer
+# Build app output
 npm run build
+
+# Build Windows installer
+npm run dist:win
 ```
 
 The built installer will appear in `dist/`.
