@@ -1,0 +1,20 @@
+appId: com.simlauncher.app
+productName: SimLauncher
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: assets/
+    to: assets/
+win:
+  target: nsis
+  icon: SimLauncher.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+publish:
+  provider: github
+  owner: Stashpeak
+  repo: SimLauncher
