@@ -1,5 +1,9 @@
 export interface Game { key: string; name: string; icon: string }
 export interface Utility { key: string; name: string; isCustom?: boolean }
+export type GameProfile = Record<string, boolean | undefined> & {
+  launchAutomatically?: boolean
+}
+export type Profiles = Record<string, GameProfile>
 
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },

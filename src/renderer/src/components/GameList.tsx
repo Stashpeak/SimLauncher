@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
-import { GAMES, UTILITIES, type Game } from '../lib/config'
+import { useEffect, useState } from 'react'
+import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
@@ -31,7 +31,7 @@ function GameRow({
 
   const handleLaunch = async () => {
     try {
-      const profiles = (await window.electronAPI.storeGet('profiles')) as Record<string, any> || {}
+      const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
       const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
       const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
 
@@ -158,7 +158,7 @@ export function GameList() {
 
         const [runningApps, profiles, appPaths, gamePaths] = await Promise.all([
           window.electronAPI.getRunningApps(),
-          window.electronAPI.storeGet('profiles') as Promise<Record<string, any>>,
+          window.electronAPI.storeGet('profiles') as Promise<Profiles>,
           window.electronAPI.storeGet('appPaths') as Promise<Record<string, string>>,
           window.electronAPI.storeGet('gamePaths') as Promise<Record<string, string>>
         ])

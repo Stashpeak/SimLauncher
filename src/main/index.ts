@@ -54,7 +54,11 @@ function createWindow() {
   })
 
   mainWindow.webContents.once('did-finish-load', () => {
-    autoUpdater.checkForUpdatesAndNotify()
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        console.error('Update check failed:', err)
+      })
+    }
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -97,6 +101,7 @@ ipcMain.handle('launch-profile', (event, profileApps) => {
       const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
       runningProcesses.set(appPath, { process: child, name: path.basename(appPath) })
       child.on('error', (err) => {
+        runningProcesses.delete(appPath)
         console.error(`Error launching ${appPath}: ${err.message}`)
         event.sender.send('app-launch-error', { app: appPath, error: err.message })
       })

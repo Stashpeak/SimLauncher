@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { UTILITIES } from '../lib/config'
+import { UTILITIES, type Profiles } from '../lib/config'
 import { useNotify } from './Notify'
 
 interface ProfileEditorProps {
@@ -19,7 +19,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     async function loadData() {
       // Load configuration from electron-store via IPC
       const paths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-      const allProfiles = (await window.electronAPI.storeGet('profiles')) as Record<string, any> || {}
+      const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
       const profile = allProfiles[gameKey] || {}
 
       setAppPaths(paths)
@@ -45,7 +45,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
 
   const handleSave = async () => {
     // Read-modify-write pattern for the 'profiles' object store
-    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Record<string, any> || {}
+    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
     
     allProfiles[gameKey] = {
       ...selection,
