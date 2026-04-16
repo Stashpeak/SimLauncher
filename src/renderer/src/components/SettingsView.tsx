@@ -24,6 +24,8 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [killOnClose, setKillOnClose] = useState<boolean>(false)
 
   const [isCustomColor, setIsCustomColor] = useState(false)
+  const [appsOpen, setAppsOpen] = useState(true)
+  const [gamesOpen, setGamesOpen] = useState(true)
 
   useEffect(() => {
     async function loadSettings() {
@@ -119,7 +121,19 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
         {/* Apps Section */}
         <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--accent)] px-1">Utility Apps</h3>
+          <button
+            type="button"
+            onClick={() => setAppsOpen(v => !v)}
+            className="flex w-full cursor-pointer items-center gap-2 px-1"
+          >
+            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-[var(--accent)]">Utility Apps</h3>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-[var(--text-subtle)] transition-transform duration-300 ${appsOpen ? 'rotate-0' : '-rotate-90'}`}>
+              <path d="M3 6l5 5 5-5" />
+            </svg>
+          </button>
+          <div className={`grid transition-all duration-300 ${appsOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+          <div className="overflow-hidden">
           <div className="grid grid-cols-1 gap-3">
             {UTILITIES.map(u => (
               <div key={u.key} className="glass-surface p-4 rounded-2xl flex flex-col gap-3">
@@ -154,11 +168,25 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
               </div>
             ))}
           </div>
+          </div>
+          </div>
         </section>
 
         {/* Games Section */}
         <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--accent)] px-1">Games</h3>
+          <button
+            type="button"
+            onClick={() => setGamesOpen(v => !v)}
+            className="flex w-full cursor-pointer items-center gap-2 px-1"
+          >
+            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-[var(--accent)]">Games</h3>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-[var(--text-subtle)] transition-transform duration-300 ${gamesOpen ? 'rotate-0' : '-rotate-90'}`}>
+              <path d="M3 6l5 5 5-5" />
+            </svg>
+          </button>
+          <div className={`grid transition-all duration-300 ${gamesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+          <div className="overflow-hidden">
           <div className="grid grid-cols-1 gap-3">
             {GAMES.map(g => (
               <div key={g.key} className="glass-surface p-4 rounded-2xl space-y-3">
@@ -180,6 +208,8 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             ))}
+          </div>
+          </div>
           </div>
         </section>
 

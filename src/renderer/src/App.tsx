@@ -9,6 +9,47 @@ export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
 
   useEffect(() => {
+    // One-time migration from localStorage (vanilla app) to electron-store
+    async function migrateFromLocalStorage() {
+      try {
+        const migrated = await window.electronAPI.storeGet('migrated') as boolean
+        if (migrated) return
+
+        const appPathsRaw = localStorage.getItem('simLauncherAppPaths')
+        const gamePathsRaw = localStorage.getItem('simLauncherGamePaths')
+        if (appPathsRaw) await window.electronAPI.storeSet('appPaths', JSON.parse(appPathsRaw))
+        if (gamePathsRaw) await window.electronAPI.storeSet('gamePaths', JSON.parse(gamePathsRaw))
+
+        const accentPreset = localStorage.getItem('simLauncherAccentPreset')
+        const accentCustom = localStorage.getItem('simLauncherAccentCustom')
+        if (accentPreset) await window.electronAPI.storeSet('accentPreset', accentPreset)
+        if (accentCustom) await window.electronAPI.storeSet('accentCustom', accentCustom)
+
+        const utilityKeys = ['simhub', 'crewchief', 'tradingpaints', 'garage61', 'secondmonitor', 'customapp1', 'customapp2', 'customapp3', 'customapp4', 'customapp5']
+        const appNames: Record<string, string> = {}
+        for (const key of utilityKeys) {
+          const name = localStorage.getItem(`simLauncherAppName_${key}`)
+          if (name) appNames[key] = name
+        }
+        if (Object.keys(appNames).length > 0) await window.electronAPI.storeSet('appNames', appNames)
+
+        const gameKeys = ['ac', 'acc', 'acevo', 'acrally', 'ams', 'ams2', 'beamng', 'dcsw', 'dirtrally', 'dirtrally2', 'eawrc', 'f124', 'f125', 'iracing', 'lmu', 'pmr', 'raceroom', 'rbr', 'rennsport', 'rf1', 'rf2']
+        const profiles: Record<string, unknown> = {}
+        for (const key of gameKeys) {
+          const raw = localStorage.getItem(`profile_${key}`)
+          if (raw) profiles[key] = JSON.parse(raw)
+        }
+        if (Object.keys(profiles).length > 0) await window.electronAPI.storeSet('profiles', profiles)
+
+        await window.electronAPI.storeSet('migrated', true)
+      } catch (err) {
+        console.error('Failed to migrate from localStorage', err)
+      }
+    }
+    migrateFromLocalStorage()
+  }, [])
+
+  useEffect(() => {
     // Restore saved theme on startup
     async function initTheme() {
       try {
