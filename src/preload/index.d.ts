@@ -11,8 +11,8 @@ declare global {
       close: () => Promise<unknown>
       getRunningApps: () => Promise<{ path: string; name: string }[]>
       killLaunchedApps: () => Promise<unknown>
-      onUpdateAvailable: (cb: (info: unknown) => void) => unknown
-      onUpdateDownloaded: (cb: (info: unknown) => void) => unknown
+      onUpdateAvailable: (cb: (info: any) => void) => () => void
+      onUpdateDownloaded: (cb: (info: any) => void) => () => void
       installUpdate: () => Promise<unknown>
       storeGet: (key: string) => Promise<unknown>
       storeSet: (key: string, value: unknown) => Promise<unknown>

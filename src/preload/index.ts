@@ -20,8 +20,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   killLaunchedApps: () => ipcRenderer.invoke('kill-launched-apps'),
 
   // updater
-  onUpdateAvailable:  (cb: (info: unknown) => void) => ipcRenderer.on('update-available',  (_, info) => cb(info)),
-  onUpdateDownloaded: (cb: (info: unknown) => void) => ipcRenderer.on('update-downloaded', (_, info) => cb(info)),
+  onUpdateAvailable: (cb: (info: any) => void) => {
+    const handler = (_: unknown, info: any) => cb(info)
+    ipcRenderer.on('update-available', handler)
+    return () => ipcRenderer.removeListener('update-available', handler)
+  },
+  onUpdateDownloaded: (cb: (info: any) => void) => {
+    const handler = (_: unknown, info: any) => cb(info)
+    ipcRenderer.on('update-downloaded', handler)
+    return () => ipcRenderer.removeListener('update-downloaded', handler)
+  },
   installUpdate: () => ipcRenderer.invoke('install-update'),
 
   // electron-store
