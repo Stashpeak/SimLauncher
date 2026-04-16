@@ -1,3 +1,9 @@
+import './App.css'
+
 export default function App() {
-  return <h1>SimLauncher</h1>
+  return (
+    <div style={{ padding: '2rem' }}>
+      <h1 style={{ color: 'var(--text-primary)' }}>SimLauncher</h1>
+    </div>
+  )
 }
