@@ -6,14 +6,15 @@ import { useNotify } from './Notify'
 function GameRow({ 
   game, 
   isActive, 
+  isRunning,
   onToggleEditor 
 }: { 
   game: Game
   isActive: boolean
+  isRunning: boolean
   onToggleEditor: () => void 
 }) {
   const { notify } = useNotify()
-  const [isRunning, setIsRunning] = useState(false)
   const [iconUrl, setIconUrl] = useState<string | null>(null)
 
   // Resolve icon URL via IPC
@@ -26,56 +27,7 @@ function GameRow({
     resolveIcon()
   }, [game.icon])
 
-  // Polling for running apps
-  useEffect(() => {
-    let mounted = true
-    let intervalId: number
 
-    const checkRunningApps = async () => {
-      try {
-        const runningApps = await window.electronAPI.getRunningApps()
-        if (!mounted) return
-
-        const profiles = (await window.electronAPI.storeGet('profiles')) as Record<string, any> || {}
-        const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-        const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-        
-        const profile = profiles[game.key] || {}
-        const gamePath = gamePaths[game.key]
-
-        const configuredPaths: string[] = []
-        
-        // Add game path if auto launch is not disabled explicitly
-        if (profile.launchAutomatically !== false && gamePath) {
-          configuredPaths.push(gamePath.toLowerCase())
-        }
-
-        // Add utility paths
-        UTILITIES.forEach((u) => {
-          if (profile[u.key] && appPaths[u.key]) {
-            configuredPaths.push(appPaths[u.key].toLowerCase())
-          }
-        })
-
-        // Check if any of configured paths are running
-        const isAppRunning = runningApps.some(app => 
-          configuredPaths.includes(app.path.toLowerCase())
-        )
-
-        setIsRunning(isAppRunning)
-      } catch (err) {
-        console.error('Failed to get running apps', err)
-      }
-    }
-
-    checkRunningApps()
-    intervalId = window.setInterval(checkRunningApps, 2000)
-
-    return () => {
-      mounted = false
-      window.clearInterval(intervalId)
-    }
-  }, [game.key])
 
   const handleLaunch = async () => {
     try {
@@ -179,6 +131,7 @@ function GameRow({
 export function GameList() {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
+  const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     async function loadGames() {
@@ -193,6 +146,59 @@ export function GameList() {
 
     loadGames()
   }, [])
+
+  // Consolidated Polling for all games
+  useEffect(() => {
+    let mounted = true
+    let intervalId: number
+
+    const checkRunningState = async () => {
+      try {
+        if (configuredGames.length === 0) return
+
+        const [runningApps, profiles, appPaths, gamePaths] = await Promise.all([
+          window.electronAPI.getRunningApps(),
+          window.electronAPI.storeGet('profiles') as Promise<Record<string, any>>,
+          window.electronAPI.storeGet('appPaths') as Promise<Record<string, string>>,
+          window.electronAPI.storeGet('gamePaths') as Promise<Record<string, string>>
+        ])
+
+        if (!mounted) return
+
+        const newStatus: Record<string, boolean> = {}
+        const normalizedRunningPaths = (runningApps || []).map(a => a.path.toLowerCase())
+
+        configuredGames.forEach(game => {
+          const profile = (profiles || {})[game.key] || {}
+          const gamePath = (gamePaths || {})[game.key]
+          
+          const pathsToCheck: string[] = []
+          if (profile.launchAutomatically !== false && gamePath) {
+            pathsToCheck.push(gamePath.toLowerCase())
+          }
+          UTILITIES.forEach(u => {
+            if (profile[u.key] && appPaths?.[u.key]) {
+              pathsToCheck.push(appPaths[u.key].toLowerCase())
+            }
+          })
+
+          newStatus[game.key] = pathsToCheck.some(p => normalizedRunningPaths.includes(p))
+        })
+
+        setRunningStatus(newStatus)
+      } catch (err) {
+        console.error('Consolidated polling error:', err)
+      }
+    }
+
+    checkRunningState()
+    intervalId = window.setInterval(checkRunningState, 2000)
+
+    return () => {
+      mounted = false
+      window.clearInterval(intervalId)
+    }
+  }, [configuredGames])
 
   if (configuredGames.length === 0) {
     return (
@@ -210,6 +216,7 @@ export function GameList() {
           key={game.key} 
           game={game} 
           isActive={activeEditorKey === game.key}
+          isRunning={!!runningStatus[game.key]}
           onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
         />
       ))}
