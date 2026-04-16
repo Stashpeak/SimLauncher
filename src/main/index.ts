@@ -136,18 +136,16 @@ ipcMain.handle('browse-path', async (event, inputId) => {
   }
 })
 
-ipcMain.on('window-minimize', () => {
+ipcMain.handle('window-minimize', () => {
   mainWindow?.minimize()
 })
 
-ipcMain.on('window-maximize', () => {
-  if (!mainWindow) {
-    return
-  }
+ipcMain.handle('window-maximize', () => {
+  if (!mainWindow) return
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
 })
 
-ipcMain.on('window-close', () => {
+ipcMain.handle('window-close', () => {
   mainWindow?.close()
 })
 
