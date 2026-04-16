@@ -16,6 +16,7 @@ declare global {
       installUpdate: () => Promise<unknown>
       storeGet: (key: string) => Promise<unknown>
       storeSet: (key: string, value: unknown) => Promise<unknown>
+      getAssetData: (filename: string) => Promise<string | null>
     }
   }
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
 import { spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -162,6 +162,21 @@ ipcMain.handle('kill-launched-apps', () => {
 
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall()
+})
+
+ipcMain.handle('get-asset-data', async (_event, filename: string) => {
+  const assetsPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(app.getAppPath(), 'assets')
+  const fullPath = path.join(assetsPath, filename)
+  try {
+    const img = nativeImage.createFromPath(fullPath)
+    if (img.isEmpty()) return null
+    return img.toDataURL()
+  } catch (err) {
+    console.error(`Error loading asset ${filename}:`, err)
+    return null
+  }
 })
 
 ipcMain.handle('store-get', (_event, key) => {

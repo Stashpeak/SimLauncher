@@ -14,6 +14,17 @@ function GameRow({
 }) {
   const { notify } = useNotify()
   const [isRunning, setIsRunning] = useState(false)
+  const [iconUrl, setIconUrl] = useState<string | null>(null)
+
+  // Resolve icon URL via IPC
+  useEffect(() => {
+    async function resolveIcon() {
+      const filename = game.icon.split('/').pop() || ''
+      const data = await window.electronAPI.getAssetData(filename)
+      setIconUrl(data)
+    }
+    resolveIcon()
+  }, [game.icon])
 
   // Polling for running apps
   useEffect(() => {
@@ -104,22 +115,21 @@ function GameRow({
     }
   }
 
-  // Use the image path exactly as specified relative to this file
-  // components -> src -> renderer -> src -> SimLauncher
-  // SimLauncher -> assets -> {key}.png
-  const iconPath = `../../../../../${game.icon}`
+
 
   return (
     <div className="flex flex-col gap-2">
       <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all hover:bg-[var(--glass-bg-elevated)]">
         <div className="flex items-center gap-5">
           <div className="relative">
-            <img 
-              src={iconPath} 
-              alt={game.name} 
-              className="h-12 w-12 object-contain"
-              onError={(e) => { e.currentTarget.style.display = 'none' }}
-            />
+            {iconUrl && (
+              <img 
+                src={iconUrl} 
+                alt={game.name} 
+                className="h-12 w-12 object-contain animate-fade-slide"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+            )}
             {isRunning && (
               <div 
                 className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] outline outline-2 outline-[#1b1921]" 
