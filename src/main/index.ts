@@ -27,15 +27,20 @@ interface StoredProfile {
   trackedProcessPaths?: string[]
 }
 
-function killLaunchedApps() {
+function killLaunchedApps(gameKey?: string) {
   runningProcesses.forEach(({ process: child }, appPath) => {
+    const appProcess = runningProcesses.get(appPath)
+    if (gameKey && appProcess?.gameKey !== gameKey) {
+      return
+    }
+
     try {
       child.kill()
     } catch (err) {
       console.error(`Error killing ${appPath}:`, err)
     }
+    runningProcesses.delete(appPath)
   })
-  runningProcesses.clear()
 }
 
 function createWindow() {
@@ -257,8 +262,8 @@ ipcMain.handle('get-running-apps', async () => {
   return [...launchedApps, ...trackedApps]
 })
 
-ipcMain.handle('kill-launched-apps', () => {
-  killLaunchedApps()
+ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
+  killLaunchedApps(gameKey)
 })
 
 ipcMain.handle('install-update', () => {

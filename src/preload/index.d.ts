@@ -30,7 +30,7 @@ declare global {
       maximize: () => Promise<void>
       close: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
-      killLaunchedApps: () => Promise<void>
+      killLaunchedApps: (gameKey?: string) => Promise<void>
       onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
       onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
       onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe

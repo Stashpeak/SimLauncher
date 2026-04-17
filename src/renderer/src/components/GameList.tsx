@@ -8,12 +8,14 @@ function GameRow({
   isActive,
   isRunning,
   runningAppIcons,
+  runningApps,
   onToggleEditor
 }: {
   game: Game
   isActive: boolean
   isRunning: boolean
   runningAppIcons: string[]
+  runningApps: { path: string; name: string; gameKey: string }[]
   onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
@@ -28,40 +30,76 @@ function GameRow({
     resolveIcon()
   }, [game.icon])
 
-  const handleLaunch = async () => {
-    try {
-      const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-      const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
+  const getProfileLaunchPaths = async () => {
+    const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+    const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
+    const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
 
-      const profile = profiles[game.key] || {}
-      const gamePath = gamePaths[game.key]
+    const profile = profiles[game.key] || {}
+    const configuredGamePath = gamePaths[game.key]
 
-      const pathsToLaunch: string[] = []
-      let appCount = 0
+    const pathsToLaunch: string[] = []
+    let appCount = 0
 
-      // Queue utilities first
-      UTILITIES.forEach((u) => {
-        if (profile[u.key] === true && appPaths[u.key]) {
-          pathsToLaunch.push(appPaths[u.key])
-          appCount++
-        }
-      })
-
-      // Queue game last
-      if (profile.launchAutomatically !== false && gamePath) {
-        pathsToLaunch.push(gamePath)
+    // Queue utilities first
+    UTILITIES.forEach((u) => {
+      if (profile[u.key] === true && appPaths[u.key]) {
+        pathsToLaunch.push(appPaths[u.key])
         appCount++
       }
+    })
 
-      if (pathsToLaunch.length > 0) {
-        await window.electronAPI.launchProfile(game.key, pathsToLaunch)
-        notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
-      } else {
+    // Queue game last
+    if (profile.launchAutomatically !== false && configuredGamePath) {
+      pathsToLaunch.push(configuredGamePath)
+      appCount++
+    }
+
+    return { profile, pathsToLaunch, appCount }
+  }
+
+  const handleLaunch = async () => {
+    try {
+      const { pathsToLaunch, appCount } = await getProfileLaunchPaths()
+
+      if (pathsToLaunch.length === 0) {
         notify('No executable paths configured for launch', 'error')
+        return
       }
+
+      await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
+      console.error(err)
+    }
+  }
+
+  const handleKill = async () => {
+    try {
+      await window.electronAPI.killLaunchedApps(game.key)
+      notify(`Stopping launched apps for ${game.name}`, 'warn')
+    } catch (err) {
+      notify('Failed to kill launched apps', 'error')
+      console.error(err)
+    }
+  }
+
+  const handleRelaunchMissing = async () => {
+    try {
+      const { pathsToLaunch } = await getProfileLaunchPaths()
+      const runningPathSet = new Set(runningApps.map((appProcess) => appProcess.path.toLowerCase()))
+      const missingPaths = pathsToLaunch.filter((launchPath) => !runningPathSet.has(launchPath.toLowerCase()))
+
+      if (missingPaths.length === 0) {
+        notify('All profile apps are already running', 'success')
+        return
+      }
+
+      await window.electronAPI.launchProfile(game.key, missingPaths)
+      notify(`Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
+    } catch (err) {
+      notify('Failed to relaunch missing apps', 'error')
       console.error(err)
     }
   }
@@ -76,6 +114,45 @@ function GameRow({
       }, 50)
     }
   }
+
+  const [profileState, setProfileState] = useState({
+    killControlsEnabled: false,
+    relaunchControlsEnabled: false
+  })
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadProfileState() {
+      const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+      const profile = profiles[game.key] || {}
+
+      if (!mounted) {
+        return
+      }
+
+      setProfileState({
+        killControlsEnabled: profile.killControlsEnabled === true,
+        relaunchControlsEnabled: profile.relaunchControlsEnabled === true
+      })
+    }
+
+    loadProfileState()
+    window.addEventListener('focus', loadProfileState)
+
+    return () => {
+      mounted = false
+      window.removeEventListener('focus', loadProfileState)
+    }
+  }, [game.key, isActive])
+
+  const canKill = isRunning && profileState.killControlsEnabled
+  const canRelaunch = isRunning && profileState.relaunchControlsEnabled
+  const primaryAction = canKill ? handleKill : handleLaunch
+  const primaryLabel = canKill ? 'Kill' : 'Launch'
+  const primaryButtonClass = canKill
+    ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
+    : 'bg-(--accent) text-white neon-glow hover:opacity-90'
 
   return (
     <div className="flex flex-col gap-2" ref={rowRef}>
@@ -118,11 +195,20 @@ function GameRow({
         <div className="flex items-center gap-3 no-drag">
           <button
             type="button"
-            onClick={handleLaunch}
-            className="cursor-pointer rounded-full bg-(--accent) px-6 py-2 text-sm font-semibold text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-95"
+            onClick={primaryAction}
+            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-95 ${primaryButtonClass}`}
           >
-            Launch
+            {primaryLabel}
           </button>
+          {canRelaunch && (
+            <button
+              type="button"
+              onClick={handleRelaunchMissing}
+              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-95"
+            >
+              Relaunch
+            </button>
+          )}
           <button
             type="button"
             onClick={handleToggle}
@@ -259,6 +345,7 @@ export function GameList() {
             isActive={activeEditorKey === game.key}
             isRunning={!!runningStatus[game.key]}
             runningAppIcons={runningAppIcons}
+            runningApps={runningApps.filter(a => a.gameKey === game.key)}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
           />
         )
