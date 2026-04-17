@@ -198,6 +198,10 @@ ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
   }
 })
 
+ipcMain.handle('get-version', () => {
+  return app.getVersion()
+})
+
 ipcMain.handle('store-get', (_event, key) => {
   return store.get(key)
 })

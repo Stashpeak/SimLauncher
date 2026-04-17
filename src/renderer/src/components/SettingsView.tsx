@@ -121,6 +121,16 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const [appVersion, setAppVersion] = useState<string>('')
+
+  useEffect(() => {
+    async function load() {
+      const v = await window.electronAPI.getVersion()
+      setAppVersion(v)
+    }
+    load()
+  }, [])
+
   const handleSave = async () => {
     try {
       await window.electronAPI.storeSet('appPaths', appPaths)
@@ -341,6 +351,14 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             Back to Games
           </button>
         </div>
+
+        {appVersion && (
+          <div className="pt-4 text-center">
+            <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-(--text-muted) opacity-50">
+              SimLauncher v{appVersion}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

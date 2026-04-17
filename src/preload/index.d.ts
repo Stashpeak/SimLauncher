@@ -36,6 +36,7 @@ declare global {
       storeSet: (key: string, value: unknown) => Promise<void>
       getAssetData: (filename: string) => Promise<string | null>
       getFileIcon: (filePath: string) => Promise<string | null>
+      getVersion: () => Promise<string>
     }
   }
 }
