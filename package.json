@@ -1,6 +1,6 @@
 {
   "name": "simlauncher",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "SimLauncher - Multi app launcher for simracing",
   "main": "out/main/index.js",
   "scripts": {

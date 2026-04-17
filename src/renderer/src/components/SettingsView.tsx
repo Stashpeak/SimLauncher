@@ -13,6 +13,14 @@ const ACCENT_PRESETS = [
   { name: 'Caution Yellow', hex: '#ffd600' },
 ]
 
+function normalizeLaunchDelayMs(value: number) {
+  if (!Number.isFinite(value)) {
+    return 1000
+  }
+
+  return Math.min(Math.max(Math.round(value), 0), 5000)
+}
+
 export function SettingsView({ onClose, updateInfo }: { onClose: () => void, updateInfo: { version: string } | null }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
@@ -25,6 +33,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
   const [killOnClose, setKillOnClose] = useState<boolean>(false)
+  const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
+  const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
@@ -46,6 +56,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
       const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
       const savedKillOnClose = (await window.electronAPI.storeGet('killOnClose')) as boolean || false
+      const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
+      const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
 
       setAppPaths(savedAppPaths)
       setAppNames(savedAppNames)
@@ -54,6 +66,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setAccentCustom(savedAccentCustom)
       setAccentBgTint(savedBgTint)
       setKillOnClose(savedKillOnClose)
+      setFocusActiveTitle(savedFocusActiveTitle !== false)
+      setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       
       setIsCustomColor(savedAccentPreset === 'custom')
 
@@ -156,6 +170,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
   const handleSave = async () => {
     try {
+      const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
+
       await window.electronAPI.storeSet('appPaths', appPaths)
       await window.electronAPI.storeSet('appNames', appNames)
       await window.electronAPI.storeSet('gamePaths', gamePaths)
@@ -163,6 +179,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('accentCustom', accentCustom)
       await window.electronAPI.storeSet('accentBgTint', accentBgTint)
       await window.electronAPI.storeSet('killOnClose', killOnClose)
+      await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
+      await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
+      setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
     } catch (err) {
@@ -258,8 +277,40 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
           <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Behavior</h3>
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-              <span className="text-sm font-medium text-(--text-primary)">Kill launched apps when SimLauncher closes</span>
-              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Kill apps on close" />
+              <span className="text-sm font-medium text-(--text-primary)">Close launched apps when SimLauncher closes</span>
+              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Close apps on exit" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <span className="text-sm font-medium text-(--text-primary)">Focus active title</span>
+              <Toggle checked={focusActiveTitle} onChange={setFocusActiveTitle} aria-label="Focus active title" />
+            </div>
+            <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm font-medium text-(--text-primary)">Launch delay between apps</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="5000"
+                    step="100"
+                    value={launchDelayMs}
+                    onChange={(e) => setLaunchDelayMs(normalizeLaunchDelayMs(Number(e.target.value)))}
+                    className="glass-recessed w-20 rounded-lg px-2 py-1 text-right text-xs text-(--text-primary) outline-none"
+                    aria-label="Launch delay in milliseconds"
+                  />
+                  <span className="text-xs text-(--text-muted)">ms</span>
+                </div>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="5000"
+                step="100"
+                value={Number.isFinite(launchDelayMs) ? launchDelayMs : 1000}
+                onChange={(e) => setLaunchDelayMs(normalizeLaunchDelayMs(Number(e.target.value)))}
+                className="w-full accent-(--accent)"
+                aria-label="Launch delay slider"
+              />
             </div>
             <div className="flex items-center justify-between px-4 py-4">
               <span className="text-sm font-medium text-(--text-primary)">Accent Glow Background</span>
