@@ -24,8 +24,8 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [killOnClose, setKillOnClose] = useState<boolean>(false)
 
   const [isCustomColor, setIsCustomColor] = useState(false)
-  const [appsOpen, setAppsOpen] = useState(true)
-  const [gamesOpen, setGamesOpen] = useState(true)
+  const [appsOpen, setAppsOpen] = useState(false)
+  const [gamesOpen, setGamesOpen] = useState(false)
 
   useEffect(() => {
     async function loadSettings() {
