@@ -163,13 +163,13 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 {UTILITIES.map((u, index) => (
                   <div key={u.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== UTILITIES.length - 1 ? 'border-b border-white/5' : ''}`}>
                     {/* Utility Title Above */}
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] opacity-60">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] opacity-80">
                       {u.isCustom ? (
                         <input
                           type="text"
                           value={appNames[u.key] || u.name}
                           onChange={(e) => setAppNames(prev => ({ ...prev, [u.key]: e.target.value }))}
-                          className="bg-transparent border-b border-transparent focus:border-[var(--accent)] outline-none text-[var(--text-primary)] w-full py-0"
+                          className="bg-transparent border-none outline-none text-inherit w-full py-0 font-bold uppercase tracking-widest"
                           placeholder="App Name"
                         />
                       ) : u.name}
@@ -228,7 +228,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 {GAMES.map((g, index) => (
                   <div key={g.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}>
                     {/* Game Title Above */}
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] opacity-60">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] opacity-80">
                       {g.name}
                     </div>
 
