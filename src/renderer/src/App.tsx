@@ -65,11 +65,12 @@ export default function App() {
         if (hex) {
           document.documentElement.style.setProperty('--accent', hex)
 
-          // Re-calculate glow from hex
+          // Re-calculate glows from hex
           const r = parseInt(hex.slice(1, 3), 16)
           const g = parseInt(hex.slice(3, 5), 16)
           const b = parseInt(hex.slice(5, 7), 16)
-          document.documentElement.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.24)`)
+          document.documentElement.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.15)`)
+          document.documentElement.style.setProperty('--accent-glow-strong', `rgba(${r}, ${g}, ${b}, 0.4)`)
         }
       } catch (err) {
         console.error('Failed to initialize theme', err)

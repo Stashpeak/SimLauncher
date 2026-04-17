@@ -116,7 +116,7 @@ function GameRow({
             onClick={handleToggle}
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-lg leading-none transition-all duration-300
               ${isActive 
-                ? 'bg-[var(--accent-glow)] text-[var(--accent)] rotate-90 scale-110 neon-glow' 
+                ? 'bg-[var(--accent)] text-white rotate-90 scale-110 neon-glow' 
                 : 'text-[var(--text-subtle)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)] rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
