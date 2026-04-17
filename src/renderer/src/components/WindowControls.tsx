@@ -26,11 +26,11 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
           className="group cursor-pointer flex items-center py-1.5 pl-3 pr-2"
         >
           <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
-            <span className="text-[var(--text-primary)]">Sim</span>
+            <span className="text-(--text-primary)">Sim</span>
             <span className={`transition-colors ${
               view === 'games'
-                ? 'text-[var(--accent)]'
-                : 'text-[var(--text-subtle)] group-hover:text-[var(--accent)]'
+                ? 'text-(--accent)'
+                : 'text-(--text-subtle) group-hover:text-(--accent)'
             }`}>Launcher</span>
           </span>
         </button>
@@ -44,8 +44,8 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
           onClick={() => onNavigate('settings')}
           className={`cursor-pointer flex items-center py-1.5 pl-2 pr-2.5 transition-colors ${
             view === 'settings'
-              ? 'text-[var(--accent)]'
-              : 'text-[var(--text-subtle)] hover:text-[var(--text-primary)]'
+              ? 'text-(--accent)'
+              : 'text-(--text-subtle) hover:text-(--text-primary)'
           }`}
           title="Settings"
         >
@@ -64,7 +64,7 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
         <button
           type="button"
           onClick={handleMinimize}
-          className="cursor-pointer rounded-full p-2 text-[var(--text-subtle)] transition-colors hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]"
+          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
           title="Minimize"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -74,7 +74,7 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
         <button
           type="button"
           onClick={handleMaximize}
-          className="cursor-pointer rounded-full p-2 text-[var(--text-subtle)] transition-colors hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]"
+          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
           title={isMaximized ? 'Restore' : 'Maximize'}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round">
@@ -84,7 +84,7 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
         <button
           type="button"
           onClick={handleClose}
-          className="cursor-pointer rounded-full p-2 text-[var(--text-subtle)] transition-colors hover:bg-[rgba(255,0,0,0.1)] hover:text-red-500"
+          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-[rgba(255,0,0,0.1)] hover:text-red-500"
           title="Close"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

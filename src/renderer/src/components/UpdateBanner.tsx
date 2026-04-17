@@ -33,12 +33,12 @@ export function UpdateBanner() {
 
   return (
     <div 
-      className="glass-surface flex h-9 w-full items-center justify-between border-l-4 border-l-[var(--accent)] px-4 text-[13px] shadow-sm animate-in fade-in slide-in-from-top-2 duration-300"
+      className="glass-surface flex h-9 w-full items-center justify-between border-l-4 border-l-(--accent) px-4 text-[13px] shadow-sm animate-in fade-in slide-in-from-top-2 duration-300"
       style={{ isolation: 'isolate' }}
     >
       <div className="flex items-center gap-2 overflow-hidden">
-        <span className="truncate text-[var(--text-secondary)]">
-          Update <span className="font-medium text-[var(--text-primary)]">{updateInfo.version}</span> available — restart to install
+        <span className="truncate text-(--text-secondary)">
+          Update <span className="font-medium text-(--text-primary)">{updateInfo.version}</span> available — restart to install
         </span>
       </div>
       
@@ -46,14 +46,14 @@ export function UpdateBanner() {
         <button
           type="button"
           onClick={handleRestart}
-          className="cursor-pointer font-medium text-[var(--accent)] transition-opacity hover:opacity-80"
+          className="cursor-pointer font-medium text-(--accent) transition-opacity hover:opacity-80"
         >
           Restart
         </button>
         <button
           type="button"
           onClick={handleDismiss}
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-lg leading-none text-[var(--text-subtle)] transition-colors hover:bg-[var(--glass-bg-elevated)] hover:text-[var(--text-primary)]"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-lg leading-none text-(--text-subtle) transition-colors hover:bg-(--glass-bg-elevated) hover:text-(--text-primary)"
           title="Dismiss"
         >
           ×

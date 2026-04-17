@@ -152,9 +152,9 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             onClick={() => setAppsOpen(v => !v)}
             className="flex w-full cursor-pointer items-center gap-2 px-1"
           >
-            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-[var(--accent)]">Utility Apps</h3>
+            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">Utility Apps</h3>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-[var(--text-subtle)] transition-transform duration-300 ${appsOpen ? 'rotate-0' : '-rotate-90'}`}>
+              className={`text-(--text-subtle) transition-transform duration-300 ${appsOpen ? 'rotate-0' : '-rotate-90'}`}>
               <path d="M3 6l5 5 5-5" />
             </svg>
           </button>
@@ -164,7 +164,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 {UTILITIES.map((u, index) => (
                   <div key={u.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== UTILITIES.length - 1 ? 'border-b border-white/5' : ''}`}>
                     {/* Utility Title Above */}
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] opacity-80">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
                       {u.isCustom ? (
                         <input
                           type="text"
@@ -193,12 +193,12 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                         value={appPaths[u.key] || ''}
                         readOnly
                         placeholder="No executable path set"
-                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-[var(--text-secondary)] outline-none font-mono truncate"
+                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
                       />
                       
                       <button
                         onClick={() => handleBrowse(u.key, false)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-[var(--glass-bg-elevated)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--glass-border)] transition-colors hover:text-white"
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
                       >
                         Browse
                       </button>
@@ -217,9 +217,9 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             onClick={() => setGamesOpen(v => !v)}
             className="flex w-full cursor-pointer items-center gap-2 px-1"
           >
-            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-[var(--accent)]">Games</h3>
+            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">Games</h3>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-[var(--text-subtle)] transition-transform duration-300 ${gamesOpen ? 'rotate-0' : '-rotate-90'}`}>
+              className={`text-(--text-subtle) transition-transform duration-300 ${gamesOpen ? 'rotate-0' : '-rotate-90'}`}>
               <path d="M3 6l5 5 5-5" />
             </svg>
           </button>
@@ -229,7 +229,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 {GAMES.map((g, index) => (
                   <div key={g.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}>
                     {/* Game Title Above */}
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] opacity-80">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
                       {g.name}
                     </div>
 
@@ -250,12 +250,12 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                         value={gamePaths[g.key] || ''}
                         readOnly
                         placeholder="No game path set"
-                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-[var(--text-secondary)] outline-none font-mono truncate"
+                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
                       />
                       
                       <button
                         onClick={() => handleBrowse(g.key, true)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-[var(--glass-bg-elevated)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--glass-border)] transition-colors hover:text-white"
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
                       >
                         Browse
                       </button>
@@ -269,10 +269,10 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
         {/* Appearance Section */}
         <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--accent)] px-1">Appearance</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Appearance</h3>
           <div className="glass-surface p-5 rounded-2xl space-y-6">
             <div className="space-y-3">
-              <label className="text-sm text-[var(--text-secondary)]">Accent Color</label>
+              <label className="text-sm text-(--text-secondary)">Accent Color</label>
               <div className="flex flex-wrap gap-2">
                 {ACCENT_PRESETS.map(preset => (
                   <button
@@ -285,7 +285,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                 ))}
                 <button
                   onClick={() => handleAccentChange('custom')}
-                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all ${isCustomColor ? 'border-white bg-white text-black' : 'border-[var(--glass-border)] text-[var(--text-secondary)]'}`}
+                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
                 >
                   Custom
                 </button>
@@ -298,7 +298,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                     onChange={(e) => handleCustomColorChange(e.target.value)}
                     className="h-10 w-20 cursor-pointer rounded bg-transparent p-0"
                   />
-                  <span className="text-xs font-mono text-[var(--text-muted)] uppercase">{accentCustom}</span>
+                  <span className="text-xs font-mono text-(--text-muted) uppercase">{accentCustom}</span>
                 </div>
               )}
             </div>
@@ -307,14 +307,14 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
         {/* Behavior Section */}
         <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--accent)] px-1">Behavior</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Behavior</h3>
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-              <span className="text-sm font-medium text-[var(--text-primary)]">Kill launched apps when SimLauncher closes</span>
-              <Toggle checked={killOnClose} onChange={setKillOnClose} />
+              <span className="text-sm font-medium text-(--text-primary)">Kill launched apps when SimLauncher closes</span>
+              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Kill apps on close" />
             </div>
             <div className="flex items-center justify-between px-4 py-4">
-              <span className="text-sm font-medium text-[var(--text-primary)]">Accent Glow Background</span>
+              <span className="text-sm font-medium text-(--text-primary)">Accent Glow Background</span>
               <Toggle 
                 checked={accentBgTint} 
                 onChange={(checked) => {
@@ -330,13 +330,13 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
         <div className="flex gap-4 pt-4 px-1">
           <button
             onClick={handleSave}
-            className="flex-1 cursor-pointer rounded-xl bg-[var(--accent)] py-3 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98]"
+            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-3 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98]"
           >
             Save Changes
           </button>
           <button
             onClick={onClose}
-            className="flex-1 cursor-pointer rounded-xl bg-[var(--glass-bg-elevated)] py-3 text-sm font-bold text-[var(--text-primary)] transition-colors hover:bg-[var(--glass-border)] active:scale-[0.98]"
+            className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-3 text-sm font-bold text-(--text-primary) transition-colors hover:bg-(--glass-border) active:scale-[0.98]"
           >
             Back to Games
           </button>

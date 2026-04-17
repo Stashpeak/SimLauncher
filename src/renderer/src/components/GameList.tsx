@@ -82,7 +82,7 @@ function GameRow({
 
   return (
     <div className="flex flex-col gap-2" ref={rowRef}>
-      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-[var(--glass-bg-elevated)] hover:scale-[1.01] hover:border-[rgba(255,255,255,0.1)]">
+      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:scale-[1.01] hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && (
@@ -95,19 +95,19 @@ function GameRow({
             )}
             {isRunning && (
               <div 
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80] outline outline-2 outline-[#1b1921]" 
+                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80] outline-2 outline outline-[#1b1921]" 
                 title="Running"
               />
             )}
           </div>
-          <h3 className="font-semibold text-[var(--text-primary)] text-shadow-sm">{game.name}</h3>
+          <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
         </div>
 
         <div className="flex items-center gap-3 no-drag">
           <button
             type="button"
             onClick={handleLaunch}
-            className="cursor-pointer rounded-full bg-[var(--accent)] px-6 py-2 text-sm font-semibold text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-95"
+            className="cursor-pointer rounded-full bg-(--accent) px-6 py-2 text-sm font-semibold text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-95"
           >
             Launch
           </button>
@@ -116,8 +116,8 @@ function GameRow({
             onClick={handleToggle}
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-lg leading-none transition-all duration-300
               ${isActive 
-                ? 'bg-[var(--accent)] text-white rotate-90 scale-110 neon-glow' 
-                : 'text-[var(--text-subtle)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)] rotate-0 hover:rotate-45'
+                ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow' 
+                : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
           >
@@ -217,9 +217,9 @@ export function GameList() {
 
   if (configuredGames.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center text-[var(--text-secondary)]">
+      <div className="flex flex-col items-center justify-center p-12 text-center text-(--text-secondary)">
         <p>No games configured.</p>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">Configure game paths in settings to see them here.</p>
+        <p className="mt-1 text-sm text-(--text-muted)">Configure game paths in settings to see them here.</p>
       </div>
     )
   }
