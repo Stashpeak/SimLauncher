@@ -84,7 +84,7 @@ export default function App() {
           {/* Games View */}
           <div className={`px-4 py-[1.5rem] h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}>
             <ScrollFade className="flex-1 overflow-y-auto pr-1 -mr-1 custom-scrollbar">
-              <GameList key={view} />
+              <GameList />
             </ScrollFade>
           </div>
 

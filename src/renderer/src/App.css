@@ -141,7 +141,7 @@ textarea {
 }
 
 .scroll-fade-mask {
-  --scroll-fade-size: 1rem;
+  --scroll-fade-size: 2.5rem;
   --scroll-fade-top: black 0rem, black 0rem;
   --scroll-fade-bottom: black 100%, black 100%;
   -webkit-mask-image: linear-gradient(
