@@ -1,0 +1,210 @@
+@import "tailwindcss" source("./");
+
+:root {
+  --purple-primary: #ad46ff;
+  --purple-solid-hover: #c06cff;
+  --purple-accent: rgba(173, 70, 255, 0.2);
+  --purple-accent-strong: rgba(173, 70, 255, 0.34);
+  --purple-button-text: #e9d4ff;
+  --glass-bg: rgba(255, 255, 255, 0.02);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --bg-gradient: linear-gradient(
+    135deg,
+    rgb(25, 25, 25) 5.61%,
+    rgb(42, 36, 50) 94.39%
+  );
+  --text-primary: rgba(255, 255, 255, 1);
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.5);
+  --text-subtle: rgba(255, 255, 255, 0.3);
+  --accent: var(--purple-primary);
+  --accent-glow: rgba(173, 70, 255, 0.25);
+  --focus-ring: rgba(173, 70, 255, 0.25);
+  --danger-surface: rgba(244, 63, 94, 0.14);
+  --danger-border: rgba(251, 113, 133, 0.28);
+  --danger-text: rgba(254, 205, 211, 0.95);
+  --warning-surface: rgba(245, 158, 11, 0.18);
+  --warning-border: rgba(251, 191, 36, 0.3);
+  --warning-text: rgba(253, 230, 138, 0.95);
+  --success-text: rgba(187, 247, 208, 0.95);
+  --status-danger: var(--danger-text);
+  --status-warning: var(--warning-text);
+  --status-success: var(--success-text);
+  --glass-stroke-gradient: linear-gradient(
+    166deg,
+    rgba(255, 255, 255, 0.4) 0%,
+    rgba(255, 255, 255, 0) 41%,
+    rgba(255, 255, 255, 0) 57%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-gradient);
+  color: var(--text-primary);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.glass-surface,
+.glass-surface-elevated,
+.glass-input-surface {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+
+.header-glass {
+  background: rgba(18, 18, 18, 0.7);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+
+.glass-surface,
+.glass-input-surface {
+  --glass-surface-fill: var(--glass-bg);
+  background: var(--glass-surface-fill);
+}
+
+.glass-surface-elevated {
+  --glass-surface-fill: var(--glass-bg-elevated);
+  background: var(--glass-surface-fill);
+}
+
+.glass-surface::before,
+.glass-surface-elevated::before,
+.glass-input-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--glass-stroke-gradient);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+/* 2026 Design Overhaul Utils */
+.bg-tinted {
+  background: radial-gradient(
+    circle at center,
+    var(--accent-glow) 0%,
+    transparent 100%
+  ), var(--bg-gradient);
+}
+
+.neon-glow {
+  box-shadow: 0 0 15px -3px var(--accent-glow), 0 0 45px -10px var(--accent-glow);
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.4);
+}
+
+.glass-recessed {
+  background: rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+
+.profile-editor-wrapper {
+  display: grid;
+  transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.profile-editor-closed { grid-template-rows: 0fr; }
+.profile-editor-open   { grid-template-rows: 1fr; }
+
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-slide {
+  animation: fadeSlide 0.25s ease-out forwards;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--glass-bg-elevated);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--glass-border);
+}
+
+.scroll-fade-mask {
+  --scroll-fade-size: 2.5rem;
+  --scroll-fade-top: black 0rem, black 0rem;
+  --scroll-fade-bottom: black 100%, black 100%;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    var(--scroll-fade-top),
+    var(--scroll-fade-bottom)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    var(--scroll-fade-top),
+    var(--scroll-fade-bottom)
+  );
+}
+
+.scroll-fade-mask-top {
+  --scroll-fade-top: transparent 0%, black var(--scroll-fade-size);
+}
+
+.scroll-fade-mask-bottom {
+  --scroll-fade-bottom: black calc(100% - var(--scroll-fade-size)), transparent 100%;
+}
+
+@keyframes notifSlideIn {
+  0%   { opacity: 0; transform: translateX(30px) scale(0.92); }
+  60%  { opacity: 1; transform: translateX(0px) scale(1.03); }
+  100% { opacity: 1; transform: translateX(0px) scale(1.00); }
+}
+
+@keyframes notifProgress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}

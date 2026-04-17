@@ -1,40 +1,34 @@
 {
   "name": "simlauncher",
-  "version": "0.0.8",
+  "version": "0.1.2",
   "description": "SimLauncher - Multi app launcher for simracing",
-  "main": "main.js",
+  "main": "out/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "dist": "electron-builder --windows"
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "preview": "electron-vite preview",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "devDependencies": {
-    "electron": "^38.2.2",
-    "electron-builder": "^26.0.12"
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.0"
   },
-  "build": {
-    "appId": "com.simlauncher.app",
-    "productName": "SimLauncher",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "main.js",
-      "renderer.js",
-      "index.html",
-      "style.css",
-      "package.json",
-      "assets/**/*"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "SimLauncher.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^38.2.2",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.9.0"
   }
 }
