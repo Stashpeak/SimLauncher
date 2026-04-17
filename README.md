@@ -2,11 +2,11 @@
 
 A Windows desktop app for simracing enthusiasts that launches sim games together with companion utilities such as SimHub, Crew Chief, and Trading Paints in a single click.
 
-<img width="786" height="593" alt="Launcher tab" src="https://github.com/user-attachments/assets/7b1641ab-de53-4b8c-ab8a-cbcf763ad283" />
+<img width="800" height="527" alt="Launcher Tab" src="https://github.com/user-attachments/assets/e317cec1-59da-4e13-8942-6ea740f87117" />
 
-<img width="786" height="706" alt="Settings tab" src="https://github.com/user-attachments/assets/421edd48-3080-403c-b046-033df0df8f66" />
+<img width="800" height="600" alt="Profile Editor" src="https://github.com/user-attachments/assets/51c6b7f4-5e3d-4b35-8c8c-94bbdf6244ae" />
 
-<img width="786" height="706" alt="Profile editor" src="https://github.com/user-attachments/assets/cfccf9f9-216c-49eb-a4c4-4fb3e3d7a0f3" />
+<img width="800" height="600" alt="Settings Tab" src="https://github.com/user-attachments/assets/a88c1043-f464-44c1-9fc4-296e54141b6d" />
 
 ---
 
