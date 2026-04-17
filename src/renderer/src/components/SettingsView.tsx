@@ -31,6 +31,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
   // Cache for file icons
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
+  const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function loadSettings() {
@@ -52,7 +53,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
       
       setIsCustomColor(savedAccentPreset === 'custom')
 
-      // Load icons for configured app paths
+      // Load icons for configured app paths (extracted from EXE)
       const icons: Record<string, string> = {}
       for (const [key, path] of Object.entries(savedAppPaths)) {
         if (path) {
@@ -61,6 +62,15 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
         }
       }
       setAppIcons(icons)
+
+      // Load icons for games (bundled assets)
+      const gIcons: Record<string, string> = {}
+      for (const game of GAMES) {
+        const filename = game.icon.split('/').pop() || ''
+        const data = await window.electronAPI.getAssetData(filename)
+        if (data) gIcons[game.key] = data
+      }
+      setGameIcons(gIcons)
 
       setLoading(false)
     }
@@ -151,44 +161,47 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             <div className="overflow-hidden">
               <div className="glass-surface rounded-2xl flex flex-col pt-1">
                 {UTILITIES.map((u, index) => (
-                  <div key={u.key} className={`flex items-center gap-4 px-4 py-3 ${index !== UTILITIES.length - 1 ? 'border-b border-white/5' : ''}`}>
-                    {appIcons[u.key] ? (
-                      <img src={appIcons[u.key]} alt="Icon" className="w-8 h-8 object-contain drop-shadow-md" />
-                    ) : (
-                      <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                        </svg>
-                      </div>
-                    )}
-                    
-                    <div className="flex-1 min-w-0 flex flex-col gap-1">
-                      <div className="text-sm font-semibold text-[var(--text-primary)]">
-                        {u.isCustom ? (
-                          <input
-                            type="text"
-                            value={appNames[u.key] || u.name}
-                            onChange={(e) => setAppNames(prev => ({ ...prev, [u.key]: e.target.value }))}
-                            className="bg-transparent border-b border-transparent focus:border-[var(--accent)] outline-none text-[var(--text-primary)] w-full py-0.5"
-                            placeholder="App Name"
-                          />
-                        ) : u.name}
-                      </div>
+                  <div key={u.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== UTILITIES.length - 1 ? 'border-b border-white/5' : ''}`}>
+                    {/* Utility Title Above */}
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] opacity-60">
+                      {u.isCustom ? (
+                        <input
+                          type="text"
+                          value={appNames[u.key] || u.name}
+                          onChange={(e) => setAppNames(prev => ({ ...prev, [u.key]: e.target.value }))}
+                          className="bg-transparent border-b border-transparent focus:border-[var(--accent)] outline-none text-[var(--text-primary)] w-full py-0"
+                          placeholder="App Name"
+                        />
+                      ) : u.name}
+                    </div>
+
+                    {/* Functional Row */}
+                    <div className="flex items-center gap-4">
+                      {appIcons[u.key] ? (
+                        <img src={appIcons[u.key]} alt="Icon" className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                          </svg>
+                        </div>
+                      )}
+                      
                       <input
                         type="text"
                         value={appPaths[u.key] || ''}
                         readOnly
                         placeholder="No executable path set"
-                        className="glass-recessed rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] outline-none w-full font-mono truncate"
+                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-[var(--text-secondary)] outline-none font-mono truncate"
                       />
+                      
+                      <button
+                        onClick={() => handleBrowse(u.key, false)}
+                        className="cursor-pointer shrink-0 rounded-xl bg-[var(--glass-bg-elevated)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--glass-border)] transition-colors hover:text-white"
+                      >
+                        Browse
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={() => handleBrowse(u.key, false)}
-                      className="cursor-pointer shrink-0 rounded-xl bg-[var(--glass-bg-elevated)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--glass-border)] transition-colors hover:text-white"
-                    >
-                      Browse
-                    </button>
                   </div>
                 ))}
               </div>
@@ -213,24 +226,39 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             <div className="overflow-hidden">
               <div className="glass-surface rounded-2xl flex flex-col pt-1">
                 {GAMES.map((g, index) => (
-                  <div key={g.key} className={`flex items-center gap-4 px-4 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}>
-                    <div className="flex-1 min-w-0 flex flex-col gap-1">
-                      <span className="text-sm font-semibold text-[var(--text-primary)]">{g.name}</span>
+                  <div key={g.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}>
+                    {/* Game Title Above */}
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--accent)] opacity-60">
+                      {g.name}
+                    </div>
+
+                    {/* Functional Row */}
+                    <div className="flex items-center gap-4">
+                      {gameIcons[g.key] ? (
+                        <img src={gameIcons[g.key]} alt={g.name} className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                          </svg>
+                        </div>
+                      )}
+
                       <input
                         type="text"
                         value={gamePaths[g.key] || ''}
                         readOnly
-                        placeholder="No executable path set"
-                        className="glass-recessed rounded-lg px-3 py-1.5 text-xs text-[var(--text-secondary)] outline-none w-full font-mono truncate"
+                        placeholder="No game path set"
+                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-[var(--text-secondary)] outline-none font-mono truncate"
                       />
+                      
+                      <button
+                        onClick={() => handleBrowse(g.key, true)}
+                        className="cursor-pointer shrink-0 rounded-xl bg-[var(--glass-bg-elevated)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--glass-border)] transition-colors hover:text-white"
+                      >
+                        Browse
+                      </button>
                     </div>
-                    
-                    <button
-                      onClick={() => handleBrowse(g.key, true)}
-                      className="cursor-pointer shrink-0 rounded-xl bg-[var(--glass-bg-elevated)] px-4 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--glass-border)] transition-colors hover:text-white"
-                    >
-                      Browse
-                    </button>
                   </div>
                 ))}
               </div>
