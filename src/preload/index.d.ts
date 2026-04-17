@@ -5,6 +5,7 @@ type Unsubscribe = () => void
 interface RunningApp {
   path: string
   name: string
+  gameKey: string
 }
 
 interface BrowsePathResult {
@@ -21,7 +22,7 @@ interface LaunchResult {
 declare global {
   interface Window {
     electronAPI: {
-      launchProfile: (apps: string[]) => Promise<LaunchResult>
+      launchProfile: (gameKey: string, apps: string[]) => Promise<LaunchResult>
       browsePath: (inputId: string) => Promise<BrowsePathResult>
       onAppLaunchError: (cb: (data: unknown) => void) => Unsubscribe
       minimize: () => Promise<void>

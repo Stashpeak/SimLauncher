@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // launch
-  launchProfile: (apps: string[]) => ipcRenderer.invoke('launch-profile', apps),
+  launchProfile: (gameKey: string, apps: string[]) => ipcRenderer.invoke('launch-profile', gameKey, apps),
   browsePath: (inputId: string) => ipcRenderer.invoke('browse-path', inputId),
   onAppLaunchError: (cb: (data: unknown) => void) => {
     const handler = (_: unknown, data: unknown) => cb(data)

@@ -19,7 +19,7 @@ const store = new Store({
 })
 
 let mainWindow: BrowserWindow | null = null
-const runningProcesses = new Map<string, { process: ChildProcess; name: string }>()
+const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string }>()
 
 function killLaunchedApps() {
   runningProcesses.forEach(({ process: child }, appPath) => {
@@ -96,7 +96,7 @@ function isValidExePath(p: unknown) {
  * Executes a list of applications sequentially with a delay.
  * @param profileApps Array of executable paths to launch.
  */
-ipcMain.handle('launch-profile', (event, profileApps) => {
+ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[]) => {
   if (!Array.isArray(profileApps) || profileApps.length === 0) {
     return { success: false, error: 'Profile is empty.' }
   }
@@ -109,7 +109,7 @@ ipcMain.handle('launch-profile', (event, profileApps) => {
     }
     setTimeout(() => {
       const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
-      runningProcesses.set(appPath, { process: child, name: path.basename(appPath) })
+      runningProcesses.set(appPath, { process: child, name: path.basename(appPath), gameKey })
       child.on('error', (err) => {
         runningProcesses.delete(appPath)
         console.error(`Error launching ${appPath}: ${err.message}`)
@@ -167,7 +167,8 @@ ipcMain.handle('window-close', () => {
 ipcMain.handle('get-running-apps', () => {
   return Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
     path: appPath,
-    name: appProcess.name
+    name: appProcess.name,
+    gameKey: appProcess.gameKey
   }))
 })
 

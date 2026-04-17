@@ -3,21 +3,22 @@ import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
-function GameRow({ 
-  game, 
-  isActive, 
+function GameRow({
+  game,
+  isActive,
   isRunning,
-  onToggleEditor 
-}: { 
+  runningAppIcons,
+  onToggleEditor
+}: {
   game: Game
   isActive: boolean
   isRunning: boolean
-  onToggleEditor: () => void 
+  runningAppIcons: string[]
+  onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
   const [iconUrl, setIconUrl] = useState<string | null>(null)
 
-  // Resolve icon URL via IPC
   useEffect(() => {
     async function resolveIcon() {
       const filename = game.icon.split('/').pop() || ''
@@ -26,8 +27,6 @@ function GameRow({
     }
     resolveIcon()
   }, [game.icon])
-
-
 
   const handleLaunch = async () => {
     try {
@@ -56,7 +55,7 @@ function GameRow({
       }
 
       if (pathsToLaunch.length > 0) {
-        await window.electronAPI.launchProfile(pathsToLaunch)
+        await window.electronAPI.launchProfile(game.key, pathsToLaunch)
         notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
       } else {
         notify('No executable paths configured for launch', 'error')
@@ -66,8 +65,6 @@ function GameRow({
       console.error(err)
     }
   }
-
-
 
   const rowRef = useRef<HTMLDivElement | null>(null)
 
@@ -86,21 +83,36 @@ function GameRow({
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && (
-              <img 
-                src={iconUrl} 
-                alt={game.name} 
+              <img
+                src={iconUrl}
+                alt={game.name}
                 className="h-12 w-12 object-contain animate-fade-slide drop-shadow-md"
                 onError={(e) => { e.currentTarget.style.display = 'none' }}
               />
             )}
             {isRunning && (
-              <div 
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80]" 
+              <div
+                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80]"
                 title="Running"
               />
             )}
           </div>
-          <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+          <div className="flex flex-col gap-0.5">
+            <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+            {runningAppIcons.length > 0 && (
+              <div className="flex items-center gap-1">
+                {runningAppIcons.map((icon, i) => (
+                  <img
+                    key={i}
+                    src={icon}
+                    alt=""
+                    className="h-4 w-4 object-contain opacity-80"
+                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3 no-drag">
@@ -115,8 +127,8 @@ function GameRow({
             type="button"
             onClick={handleToggle}
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-lg leading-none transition-all duration-300
-              ${isActive 
-                ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow' 
+              ${isActive
+                ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow'
                 : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
@@ -125,15 +137,15 @@ function GameRow({
           </button>
         </div>
       </div>
-      
+
       <div className={`profile-editor-wrapper mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
         <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
           {isActive && (
             <div className="animate-fade-slide">
-              <ProfileEditor 
-                gameKey={game.key} 
-                gameName={game.name} 
-                onClose={onToggleEditor} 
+              <ProfileEditor
+                gameKey={game.key}
+                gameName={game.name}
+                onClose={onToggleEditor}
               />
             </div>
           )}
@@ -147,12 +159,16 @@ export function GameList() {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
+  const [runningApps, setRunningApps] = useState<{ path: string; name: string; gameKey: string }[]>([])
+  const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
+  const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function loadGames() {
       try {
-        const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-        const available = GAMES.filter(game => !!gamePaths[game.key])
+        const paths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
+        setGamePaths(paths)
+        const available = GAMES.filter(game => !!paths[game.key])
         setConfiguredGames(available)
       } catch (err) {
         console.error('Failed to load game paths', err)
@@ -162,7 +178,28 @@ export function GameList() {
     loadGames()
   }, [])
 
-  // Consolidated Polling for all games
+  // Load app icons once at mount
+  useEffect(() => {
+    async function loadAppIcons() {
+      try {
+        const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
+        const cache: Record<string, string> = {}
+        await Promise.all(
+          Object.values(appPaths).filter(Boolean).map(async (p) => {
+            const icon = await window.electronAPI.getFileIcon(p)
+            if (icon) cache[p.toLowerCase()] = icon
+          })
+        )
+        setAppIconCache(cache)
+      } catch (err) {
+        console.error('Failed to load app icons', err)
+      }
+    }
+
+    loadAppIcons()
+  }, [])
+
+  // Poll running state every 2s
   useEffect(() => {
     let mounted = true
     let intervalId: number
@@ -171,35 +208,15 @@ export function GameList() {
       try {
         if (configuredGames.length === 0) return
 
-        const [runningApps, profiles, appPaths, gamePaths] = await Promise.all([
-          window.electronAPI.getRunningApps(),
-          window.electronAPI.storeGet('profiles') as Promise<Profiles>,
-          window.electronAPI.storeGet('appPaths') as Promise<Record<string, string>>,
-          window.electronAPI.storeGet('gamePaths') as Promise<Record<string, string>>
-        ])
-
+        const apps = await window.electronAPI.getRunningApps()
         if (!mounted) return
 
+        setRunningApps(apps || [])
+
         const newStatus: Record<string, boolean> = {}
-        const normalizedRunningPaths = (runningApps || []).map((a: any) => a.path.toLowerCase())
-
         configuredGames.forEach(game => {
-          const profile = (profiles || {})[game.key] || {}
-          const gamePath = (gamePaths || {})[game.key]
-          
-          const pathsToCheck: string[] = []
-          if (profile.launchAutomatically !== false && gamePath) {
-            pathsToCheck.push(gamePath.toLowerCase())
-          }
-          UTILITIES.forEach(u => {
-            if (profile[u.key] && appPaths?.[u.key]) {
-              pathsToCheck.push(appPaths[u.key].toLowerCase())
-            }
-          })
-
-          newStatus[game.key] = pathsToCheck.some(p => normalizedRunningPaths.includes(p))
+          newStatus[game.key] = (apps || []).some((a: { gameKey: string }) => a.gameKey === game.key)
         })
-
         setRunningStatus(newStatus)
       } catch (err) {
         console.error('Consolidated polling error:', err)
@@ -226,15 +243,26 @@ export function GameList() {
 
   return (
     <div className="flex flex-col gap-3 px-1 py-2">
-      {configuredGames.map(game => (
-        <GameRow 
-          key={game.key} 
-          game={game} 
-          isActive={activeEditorKey === game.key}
-          isRunning={!!runningStatus[game.key]}
-          onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
-        />
-      ))}
+      {configuredGames.map(game => {
+        const gamePathLower = gamePaths[game.key]?.toLowerCase()
+        const appsForGame = runningApps.filter(
+          a => a.gameKey === game.key && a.path.toLowerCase() !== gamePathLower
+        )
+        const runningAppIcons = appsForGame
+          .map(a => appIconCache[a.path.toLowerCase()])
+          .filter(Boolean) as string[]
+
+        return (
+          <GameRow
+            key={game.key}
+            game={game}
+            isActive={activeEditorKey === game.key}
+            isRunning={!!runningStatus[game.key]}
+            runningAppIcons={runningAppIcons}
+            onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
+          />
+        )
+      })}
     </div>
   )
 }
