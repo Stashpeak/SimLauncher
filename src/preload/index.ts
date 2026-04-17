@@ -35,5 +35,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // electron-store
   storeGet: (key: string) => ipcRenderer.invoke('store-get', key),
   storeSet: (key: string, value: unknown) => ipcRenderer.invoke('store-set', key, value),
-  getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename)
+  getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),
+  getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath)
 })

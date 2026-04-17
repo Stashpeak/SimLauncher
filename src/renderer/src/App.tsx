@@ -8,6 +8,7 @@ import { SettingsView } from './components/SettingsView'
 
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
+  const [bgTinted, setBgTinted] = useState(false)
 
   useEffect(() => {
     // One-time migration from localStorage (vanilla app) to electron-store
@@ -56,6 +57,9 @@ export default function App() {
       try {
         const preset = await window.electronAPI.storeGet('accentPreset') as string || '#00eaff'
         const custom = await window.electronAPI.storeGet('accentCustom') as string
+        const tint = await window.electronAPI.storeGet('accentBgTint') as boolean || false
+
+        setBgTinted(tint)
 
         const hex = preset === 'custom' ? custom : preset
         if (hex) {
@@ -72,11 +76,16 @@ export default function App() {
       }
     }
     initTheme()
+
+    // Listen for custom events to update bgTint from SettingsView without reload
+    const handleTintChange = (e: CustomEvent) => setBgTinted(e.detail)
+    window.addEventListener('bg-tint-change', handleTintChange as EventListener)
+    return () => window.removeEventListener('bg-tint-change', handleTintChange as EventListener)
   }, [])
 
   return (
     <NotifyProvider>
-      <div className="h-screen overflow-hidden relative">
+      <div className={`h-screen overflow-hidden relative transition-colors duration-500 ${bgTinted ? 'bg-tinted' : ''}`}>
         <div className="absolute top-0 left-0 w-full z-20 header-glass">
           <WindowControls view={view} onNavigate={setView} />
           <UpdateBanner />
@@ -90,7 +99,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Settings View - padding-top remains 1.5rem for content but starts below header */}
+          {/* Settings View */}
           {view === 'settings' && (
             <div className="absolute inset-0 pt-16 h-full z-10 px-4 pb-4">
               <SettingsView onClose={() => setView('games')} />

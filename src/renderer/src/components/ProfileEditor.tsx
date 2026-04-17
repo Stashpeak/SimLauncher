@@ -132,14 +132,14 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 cursor-pointer rounded-xl bg-[var(--accent)] py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="flex-1 cursor-pointer rounded-xl bg-[var(--accent)] py-2.5 text-sm font-semibold text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-95"
           >
             Save Profile
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 cursor-pointer rounded-xl bg-[var(--glass-bg-elevated)] py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--glass-border)] font-medium"
+            className="flex-1 cursor-pointer rounded-xl bg-[var(--glass-bg-elevated)] py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--glass-border)] font-medium active:scale-95"
           >
             Cancel
           </button>

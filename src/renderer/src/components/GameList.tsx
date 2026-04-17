@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
@@ -69,44 +69,55 @@ function GameRow({
 
 
 
+  const rowRef = useRef<HTMLDivElement | null>(null)
+
+  const handleToggle = () => {
+    onToggleEditor()
+    if (!isActive && rowRef.current) {
+      setTimeout(() => {
+        rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 50)
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all hover:bg-[var(--glass-bg-elevated)]">
+    <div className="flex flex-col gap-2" ref={rowRef}>
+      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-[var(--glass-bg-elevated)] hover:scale-[1.01] hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && (
               <img 
                 src={iconUrl} 
                 alt={game.name} 
-                className="h-12 w-12 object-contain animate-fade-slide"
+                className="h-12 w-12 object-contain animate-fade-slide drop-shadow-md"
                 onError={(e) => { e.currentTarget.style.display = 'none' }}
               />
             )}
             {isRunning && (
               <div 
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] outline outline-2 outline-[#1b1921]" 
+                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80] outline outline-2 outline-[#1b1921]" 
                 title="Running"
               />
             )}
           </div>
-          <h3 className="font-semibold text-[var(--text-primary)]">{game.name}</h3>
+          <h3 className="font-semibold text-[var(--text-primary)] text-shadow-sm">{game.name}</h3>
         </div>
 
         <div className="flex items-center gap-3 no-drag">
           <button
             type="button"
             onClick={handleLaunch}
-            className="cursor-pointer rounded-full bg-[var(--accent)] px-6 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="cursor-pointer rounded-full bg-[var(--accent)] px-6 py-2 text-sm font-semibold text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-95"
           >
             Launch
           </button>
           <button
             type="button"
-            onClick={onToggleEditor}
-            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-lg leading-none transition-colors 
+            onClick={handleToggle}
+            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-lg leading-none transition-all duration-300
               ${isActive 
-                ? 'bg-[var(--purple-accent)] text-[var(--accent)]' 
-                : 'text-[var(--text-subtle)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]'
+                ? 'bg-[var(--purple-accent)] text-[var(--accent)] rotate-90 scale-110 neon-glow' 
+                : 'text-[var(--text-subtle)] hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)] rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
           >
@@ -115,15 +126,19 @@ function GameRow({
         </div>
       </div>
       
-      {isActive && (
-        <div className="mx-2">
-          <ProfileEditor 
-            gameKey={game.key} 
-            gameName={game.name} 
-            onClose={onToggleEditor} 
-          />
+      <div className={`profile-editor-wrapper mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
+        <div className="overflow-hidden">
+          {isActive && (
+            <div className="py-2 animate-fade-slide">
+              <ProfileEditor 
+                gameKey={game.key} 
+                gameName={game.name} 
+                onClose={onToggleEditor} 
+              />
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

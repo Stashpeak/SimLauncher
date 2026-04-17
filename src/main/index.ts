@@ -12,6 +12,7 @@ const store = new Store({
     appNames:     { type: 'object',  default: {} },
     accentPreset: { type: 'string',  default: '' },
     accentCustom: { type: 'string',  default: '' },
+    accentBgTint: { type: 'boolean', default: false },
     killOnClose:  { type: 'boolean', default: false },
     migrated:     { type: 'boolean', default: false },
   }
@@ -180,6 +181,19 @@ ipcMain.handle('get-asset-data', async (_event, filename: string) => {
     return img.toDataURL()
   } catch (err) {
     console.error(`Error loading asset ${filename}:`, err)
+    return null
+  }
+})
+
+ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
+  try {
+    const icon = await app.getFileIcon(filePath, { size: 'normal' })
+    if (!icon.isEmpty()) {
+      return icon.toDataURL()
+    }
+    return null
+  } catch (err) {
+    console.error(`Failed to get file icon for ${filePath}:`, err)
     return null
   }
 })
