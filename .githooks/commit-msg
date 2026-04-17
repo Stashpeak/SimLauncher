@@ -1,0 +1,17 @@
+#!/bin/sh
+# Enforce issue reference in every commit message.
+# Every commit must contain #N (e.g. "refs #29" or "Closes #29").
+
+MSG=$(cat "$1")
+
+if ! echo "$MSG" | grep -qE '#[0-9]+'; then
+  echo ""
+  echo "  Commit rejected: missing issue reference."
+  echo "  Every commit must reference an issue, e.g.:"
+  echo "    fix: correct label alignment (refs #29)"
+  echo "    feat: add collapsible sections (Closes #31)"
+  echo ""
+  exit 1
+fi
+
+exit 0

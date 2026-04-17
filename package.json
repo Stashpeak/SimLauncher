@@ -8,7 +8,8 @@
     "build": "electron-vite build",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [],
   "author": "",
