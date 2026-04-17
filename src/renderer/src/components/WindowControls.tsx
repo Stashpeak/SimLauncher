@@ -16,9 +16,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
   }
   const handleClose = () => window.electronAPI.close()
   const handleInstallUpdate = () => {
-    if (window.confirm(`Restart SimLauncher to install version ${updateInfo?.version}?`)) {
-      window.electronAPI.installUpdate()
-    }
+    onNavigate('settings')
   }
 
   return (

@@ -30,8 +30,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
 
   const [isCustomColor, setIsCustomColor] = useState(false)
-  const [appsOpen, setAppsOpen] = useState(true)
-  const [gamesOpen, setGamesOpen] = useState(true)
+  const [appsOpen, setAppsOpen] = useState(false)
+  const [gamesOpen, setGamesOpen] = useState(false)
 
   // Cache for file icons
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
@@ -178,6 +178,160 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
+        
+        {/* About Section */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">About</h3>
+          <div className="glass-surface p-5 rounded-2xl space-y-4">
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-(--text-secondary)">Installed Version</span>
+              <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              {updateInfo ? (
+                <button
+                  onClick={handleInstallUpdate}
+                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)]"
+                >
+                  Restart to Update (v{updateInfo.version})
+                </button>
+              ) : (
+                <button
+                  onClick={handleManualCheck}
+                  disabled={checkingUpdate}
+                  className={`w-full cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:opacity-50 disabled:cursor-wait`}
+                >
+                  {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
+                </button>
+              )}
+              
+              {updateStatus === 'up-to-date' && (
+                <p className="text-[10px] text-center text-(--status-success) animate-fade-slide">
+                  SimLauncher is up to date!
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Appearance Section */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Appearance</h3>
+          <div className="glass-surface p-5 rounded-2xl space-y-6">
+            <div className="space-y-3">
+              <label className="text-sm text-(--text-secondary)">Accent Color</label>
+              <div className="flex flex-wrap gap-2">
+                {ACCENT_PRESETS.map(preset => (
+                  <button
+                    key={preset.hex}
+                    onClick={() => handleAccentChange(preset.hex)}
+                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: preset.hex }}
+                    title={preset.name}
+                  />
+                ))}
+                <button
+                  onClick={() => handleAccentChange('custom')}
+                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
+                >
+                  Custom
+                </button>
+              </div>
+              {isCustomColor && (
+                <div className="flex items-center gap-3 pt-2 animate-fade-slide">
+                  <input
+                    type="color"
+                    value={accentCustom || '#ad46ff'}
+                    onChange={(e) => handleCustomColorChange(e.target.value)}
+                    className="h-10 w-20 cursor-pointer rounded bg-transparent p-0"
+                  />
+                  <span className="text-xs font-mono text-(--text-muted) uppercase">{accentCustom}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Behavior Section */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Behavior</h3>
+          <div className="glass-surface rounded-2xl flex flex-col pt-1">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <span className="text-sm font-medium text-(--text-primary)">Kill launched apps when SimLauncher closes</span>
+              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Kill apps on close" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-4">
+              <span className="text-sm font-medium text-(--text-primary)">Accent Glow Background</span>
+              <Toggle 
+                checked={accentBgTint} 
+                onChange={(checked) => {
+                  setAccentBgTint(checked)
+                  window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
+                }} 
+                aria-label="Toggle accent glow background"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Games Section */}
+        <section className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setGamesOpen(v => !v)}
+            className="flex w-full cursor-pointer items-center gap-2 px-1"
+          >
+            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">Games</h3>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-(--text-subtle) transition-transform duration-300 ${gamesOpen ? 'rotate-0' : '-rotate-90'}`}>
+              <path d="M3 6l5 5 5-5" />
+            </svg>
+          </button>
+          <div className={`grid transition-all duration-300 ${gamesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div className="overflow-hidden">
+              <div className="glass-surface rounded-2xl flex flex-col pt-1">
+                {GAMES.map((g, index) => (
+                  <div key={g.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}>
+                    {/* Game Title Above */}
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
+                      {g.name}
+                    </div>
+
+                    {/* Functional Row */}
+                    <div className="flex items-center gap-4">
+                      {gameIcons[g.key] ? (
+                        <img src={gameIcons[g.key]} alt={g.name} className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                          </svg>
+                        </div>
+                      )}
+
+                      <input
+                        type="text"
+                        value={gamePaths[g.key] || ''}
+                        readOnly
+                        placeholder="No game path set"
+                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                      />
+                      
+                      <button
+                        onClick={() => handleBrowse(g.key, true)}
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
+                      >
+                        Browse
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Apps Section */}
         <section className="space-y-4">
           <button
@@ -243,159 +397,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
           </div>
         </section>
 
-        {/* Games Section */}
-        <section className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setGamesOpen(v => !v)}
-            className="flex w-full cursor-pointer items-center gap-2 px-1"
-          >
-            <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">Games</h3>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-(--text-subtle) transition-transform duration-300 ${gamesOpen ? 'rotate-0' : '-rotate-90'}`}>
-              <path d="M3 6l5 5 5-5" />
-            </svg>
-          </button>
-          <div className={`grid transition-all duration-300 ${gamesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-            <div className="overflow-hidden">
-              <div className="glass-surface rounded-2xl flex flex-col pt-1">
-                {GAMES.map((g, index) => (
-                  <div key={g.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}>
-                    {/* Game Title Above */}
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
-                      {g.name}
-                    </div>
-
-                    {/* Functional Row */}
-                    <div className="flex items-center gap-4">
-                      {gameIcons[g.key] ? (
-                        <img src={gameIcons[g.key]} alt={g.name} className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
-                      ) : (
-                        <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                          </svg>
-                        </div>
-                      )}
-
-                      <input
-                        type="text"
-                        value={gamePaths[g.key] || ''}
-                        readOnly
-                        placeholder="No game path set"
-                        className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
-                      />
-                      
-                      <button
-                        onClick={() => handleBrowse(g.key, true)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
-                      >
-                        Browse
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Appearance Section */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Appearance</h3>
-          <div className="glass-surface p-5 rounded-2xl space-y-6">
-            <div className="space-y-3">
-              <label className="text-sm text-(--text-secondary)">Accent Color</label>
-              <div className="flex flex-wrap gap-2">
-                {ACCENT_PRESETS.map(preset => (
-                  <button
-                    key={preset.hex}
-                    onClick={() => handleAccentChange(preset.hex)}
-                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
-                    style={{ backgroundColor: preset.hex }}
-                    title={preset.name}
-                  />
-                ))}
-                <button
-                  onClick={() => handleAccentChange('custom')}
-                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
-                >
-                  Custom
-                </button>
-              </div>
-              {isCustomColor && (
-                <div className="flex items-center gap-3 pt-2 animate-fade-slide">
-                  <input
-                    type="color"
-                    value={accentCustom || '#ad46ff'}
-                    onChange={(e) => handleCustomColorChange(e.target.value)}
-                    className="h-10 w-20 cursor-pointer rounded bg-transparent p-0"
-                  />
-                  <span className="text-xs font-mono text-(--text-muted) uppercase">{accentCustom}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Behavior Section */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Behavior</h3>
-          <div className="glass-surface rounded-2xl flex flex-col pt-1">
-            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-              <span className="text-sm font-medium text-(--text-primary)">Kill launched apps when SimLauncher closes</span>
-              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Kill apps on close" />
-            </div>
-            <div className="flex items-center justify-between px-4 py-4">
-              <span className="text-sm font-medium text-(--text-primary)">Accent Glow Background</span>
-              <Toggle 
-                checked={accentBgTint} 
-                onChange={(checked) => {
-                  setAccentBgTint(checked)
-                  window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
-                }} 
-                aria-label="Toggle accent glow background"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Software Updates Section */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Software Updates</h3>
-          <div className="glass-surface p-5 rounded-2xl space-y-4">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm text-(--text-secondary)">Installed Version</span>
-              <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
-            </div>
-            
-            <div className="flex flex-col gap-2">
-              {updateInfo ? (
-                <button
-                  onClick={handleInstallUpdate}
-                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)]"
-                >
-                  Restart to Update (v{updateInfo.version})
-                </button>
-              ) : (
-                <button
-                  onClick={handleManualCheck}
-                  disabled={checkingUpdate}
-                  className={`w-full cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:opacity-50 disabled:cursor-wait`}
-                >
-                  {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
-                </button>
-              )}
-              
-              {updateStatus === 'up-to-date' && (
-                <p className="text-[10px] text-center text-(--status-success) animate-fade-slide">
-                  SimLauncher is up to date!
-                </p>
-              )}
-            </div>
-          </div>
-        </section>
-
         {/* Actions */}
         <div className="flex gap-4 pt-4 px-1">
           <button
@@ -411,6 +412,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
             Back to Games
           </button>
         </div>
+      
       </div>
     </div>
   )
