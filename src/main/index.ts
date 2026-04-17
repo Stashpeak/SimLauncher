@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
-import { spawn, type ChildProcess } from 'child_process'
+import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
 import Store from 'electron-store'
@@ -21,6 +21,11 @@ const store = new Store({
 
 let mainWindow: BrowserWindow | null = null
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string }>()
+
+interface StoredProfile {
+  trackingEnabled?: boolean
+  trackedProcessPaths?: string[]
+}
 
 function killLaunchedApps() {
   runningProcesses.forEach(({ process: child }, appPath) => {
@@ -85,7 +90,7 @@ app.whenReady().then(createWindow)
 // HELPERS
 // ----------------------------------------------------------------
 
-function isValidExePath(p: unknown) {
+function isValidExePath(p: unknown): p is string {
   return typeof p === 'string' && p.trim().length > 0 && /\.exe$/i.test(p.trim())
 }
 
@@ -97,6 +102,67 @@ function getLaunchDelayMs() {
   }
 
   return Math.min(Math.max(Math.round(value), 0), 5000)
+}
+
+function getExeName(filePath: string) {
+  return path.basename(filePath).toLowerCase()
+}
+
+function readRunningProcessNames() {
+  return new Promise<Set<string>>((resolve) => {
+    execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
+      if (error) {
+        console.error('Failed to read running processes:', error)
+        resolve(new Set())
+        return
+      }
+
+      const names = new Set<string>()
+      stdout.split(/\r?\n/).forEach((line) => {
+        const match = line.match(/^"([^"]+)"/)
+        if (match) {
+          names.add(match[1].toLowerCase())
+        }
+      })
+      resolve(names)
+    })
+  })
+}
+
+async function getTrackedRunningApps() {
+  const processNames = await readRunningProcessNames()
+  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const trackedApps: { path: string; name: string; gameKey: string; tracked: boolean }[] = []
+  const seen = new Set<string>()
+
+  Object.entries(profiles || {}).forEach(([gameKey, profile]) => {
+    if (profile?.trackingEnabled === false) {
+      return
+    }
+
+    const pathsToTrack = [
+      gamePaths?.[gameKey],
+      ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+    ].filter(isValidExePath)
+
+    pathsToTrack.forEach((trackedPath) => {
+      const processName = getExeName(trackedPath)
+      const dedupeKey = `${gameKey}:${trackedPath.toLowerCase()}`
+
+      if (processNames.has(processName) && !seen.has(dedupeKey)) {
+        trackedApps.push({
+          path: trackedPath,
+          name: path.basename(trackedPath),
+          gameKey,
+          tracked: true
+        })
+        seen.add(dedupeKey)
+      }
+    })
+  })
+
+  return trackedApps
 }
 
 // ----------------------------------------------------------------
@@ -176,12 +242,19 @@ ipcMain.handle('window-close', () => {
   mainWindow?.close()
 })
 
-ipcMain.handle('get-running-apps', () => {
-  return Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
+ipcMain.handle('get-running-apps', async () => {
+  const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
     path: appPath,
     name: appProcess.name,
-    gameKey: appProcess.gameKey
+    gameKey: appProcess.gameKey,
+    tracked: false
   }))
+  const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
+  const trackedApps = (await getTrackedRunningApps()).filter(
+    (appProcess) => !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+  )
+
+  return [...launchedApps, ...trackedApps]
 })
 
 ipcMain.handle('kill-launched-apps', () => {

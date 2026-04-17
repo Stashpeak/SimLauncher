@@ -16,6 +16,10 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const [appNames, setAppNames] = useState<Record<string, string>>({})
   const [selection, setSelection] = useState<Record<string, boolean>>({})
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
+  const [trackingEnabled, setTrackingEnabled] = useState(true)
+  const [killControlsEnabled, setKillControlsEnabled] = useState(false)
+  const [relaunchControlsEnabled, setRelaunchControlsEnabled] = useState(false)
+  const [trackedProcessPaths, setTrackedProcessPaths] = useState<string[]>([])
 
   useEffect(() => {
     async function loadData() {
@@ -31,12 +35,16 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       // Initialize selection state based on existing profile
       const initialSelection: Record<string, boolean> = {}
       UTILITIES.forEach((u) => {
-        initialSelection[u.key] = profile[u.key] || false
+        initialSelection[u.key] = profile[u.key] === true
       })
       
       setSelection(initialSelection)
       // Default auto-launch to true unless explicitly disabled
       setLaunchAutomatically(profile.launchAutomatically !== false)
+      setTrackingEnabled(profile.trackingEnabled !== false)
+      setKillControlsEnabled(profile.killControlsEnabled === true)
+      setRelaunchControlsEnabled(profile.relaunchControlsEnabled === true)
+      setTrackedProcessPaths(Array.isArray(profile.trackedProcessPaths) ? profile.trackedProcessPaths : [])
       setLoading(false)
     }
 
@@ -47,13 +55,35 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     setSelection((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
+  const handleAddTrackedProcess = () => {
+    setTrackedProcessPaths((prev) => [...prev, ''])
+  }
+
+  const handleBrowseTrackedProcess = async (index: number) => {
+    const result = await window.electronAPI.browsePath(`${gameKey}-tracked-${index}`)
+
+    if (result.filePath) {
+      setTrackedProcessPaths((prev) => prev.map((current, currentIndex) => (
+        currentIndex === index ? result.filePath || current : current
+      )))
+    }
+  }
+
+  const handleRemoveTrackedProcess = (index: number) => {
+    setTrackedProcessPaths((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
+  }
+
   const handleSave = async () => {
     // Read-modify-write pattern for the 'profiles' object store
     const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
     
     allProfiles[gameKey] = {
       ...selection,
-      launchAutomatically
+      launchAutomatically,
+      trackingEnabled,
+      killControlsEnabled,
+      relaunchControlsEnabled,
+      trackedProcessPaths: trackedProcessPaths.filter((processPath) => processPath.trim().length > 0)
     }
 
     await window.electronAPI.storeSet('profiles', allProfiles)
@@ -116,6 +146,79 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
             Launch game automatically after utilities
           </span>
           <Toggle checked={launchAutomatically} onChange={setLaunchAutomatically} />
+        </div>
+
+        <div className="space-y-4 border-t border-(--glass-border) pt-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">
+            Process tracking
+          </p>
+
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[13px] font-medium text-(--text-primary)">
+              Track running indicator for this game
+            </span>
+            <Toggle checked={trackingEnabled} onChange={setTrackingEnabled} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between rounded-xl bg-(--glass-bg) p-3">
+              <span className="text-sm font-medium text-(--text-secondary)">Allow kill controls</span>
+              <Toggle checked={killControlsEnabled} onChange={setKillControlsEnabled} />
+            </div>
+            <div className="flex items-center justify-between rounded-xl bg-(--glass-bg) p-3">
+              <span className="text-sm font-medium text-(--text-secondary)">Allow relaunch controls</span>
+              <Toggle checked={relaunchControlsEnabled} onChange={setRelaunchControlsEnabled} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-medium text-(--text-primary)">
+                Secondary executables to watch
+              </span>
+              <button
+                type="button"
+                onClick={handleAddTrackedProcess}
+                className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-1.5 text-xs font-semibold text-(--text-primary) transition-colors hover:bg-(--glass-border)"
+              >
+                Add
+              </button>
+            </div>
+
+            {trackedProcessPaths.length > 0 ? (
+              <div className="space-y-2">
+                {trackedProcessPaths.map((processPath, index) => (
+                  <div key={`${index}-${processPath}`} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={processPath}
+                      readOnly
+                      placeholder="No secondary executable selected"
+                      className="min-w-0 flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleBrowseTrackedProcess(index)}
+                      className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-2 text-xs font-semibold text-(--text-primary) transition-colors hover:bg-(--glass-border)"
+                    >
+                      Browse
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTrackedProcess(index)}
+                      className="cursor-pointer rounded-lg bg-(--danger-surface) px-3 py-2 text-xs font-semibold text-(--danger-text) transition-colors hover:bg-(--danger-border)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-14 items-center justify-center rounded-xl border border-dashed border-(--glass-border) bg-(--glass-bg)">
+                <p className="text-sm text-(--text-muted)">No secondary executables configured</p>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-3 pt-2">

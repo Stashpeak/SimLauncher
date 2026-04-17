@@ -42,7 +42,7 @@ function GameRow({
 
       // Queue utilities first
       UTILITIES.forEach((u) => {
-        if (profile[u.key] && appPaths[u.key]) {
+        if (profile[u.key] === true && appPaths[u.key]) {
           pathsToLaunch.push(appPaths[u.key])
           appCount++
         }

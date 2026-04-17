@@ -1,7 +1,11 @@
 export interface Game { key: string; name: string; icon: string }
 export interface Utility { key: string; name: string; isCustom?: boolean }
-export type GameProfile = Record<string, boolean | undefined> & {
+export type GameProfile = Record<string, boolean | string[] | undefined> & {
   launchAutomatically?: boolean
+  trackingEnabled?: boolean
+  killControlsEnabled?: boolean
+  relaunchControlsEnabled?: boolean
+  trackedProcessPaths?: string[]
 }
 export type Profiles = Record<string, GameProfile>
 

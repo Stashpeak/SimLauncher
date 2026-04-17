@@ -6,6 +6,7 @@ interface RunningApp {
   path: string
   name: string
   gameKey: string
+  tracked?: boolean
 }
 
 interface BrowsePathResult {
