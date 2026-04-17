@@ -95,7 +95,7 @@ function GameRow({
             )}
             {isRunning && (
               <div 
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80] outline-2 outline outline-[#1b1921]" 
+                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80]" 
                 title="Running"
               />
             )}
@@ -181,7 +181,7 @@ export function GameList() {
         if (!mounted) return
 
         const newStatus: Record<string, boolean> = {}
-        const normalizedRunningPaths = (runningApps || []).map(a => a.path.toLowerCase())
+        const normalizedRunningPaths = (runningApps || []).map((a: any) => a.path.toLowerCase())
 
         configuredGames.forEach(game => {
           const profile = (profiles || {})[game.key] || {}
