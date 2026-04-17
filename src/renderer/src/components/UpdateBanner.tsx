@@ -33,8 +33,7 @@ export function UpdateBanner() {
 
   return (
     <div 
-      className="glass-surface flex h-9 w-full items-center justify-between border-l-4 border-l-(--accent) px-4 text-[13px] shadow-sm animate-in fade-in slide-in-from-top-2 duration-300"
-      style={{ isolation: 'isolate' }}
+      className="glass-surface isolate flex h-9 w-full items-center justify-between border-l-4 border-l-(--accent) px-4 text-[13px] shadow-sm animate-in fade-in slide-in-from-top-2 duration-300"
     >
       <div className="flex items-center gap-2 overflow-hidden">
         <span className="truncate text-(--text-secondary)">

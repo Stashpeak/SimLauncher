@@ -49,31 +49,17 @@ function ToastCard({
   return (
     <button
       type="button"
-      className="glass-surface-elevated rounded-[16px] text-left"
+      className={`glass-surface-elevated overflow-hidden relative rounded-[16px] text-left px-[18px] py-[16px] min-w-[260px] max-w-[380px] text-(--text-primary) shadow-[0_4px_18px_#00000060] transition-all duration-250 ease-out ${isDismissing ? 'opacity-0 translate-x-5 scale-95' : 'opacity-100 translate-x-0 scale-100'}`}
       onClick={() => onDismiss(toast.id)}
       style={{
-        minWidth: 260,
-        maxWidth: 380,
-        padding: '16px 18px',
-        color: 'var(--text-primary)',
-        boxShadow: '0 4px 18px #00000060',
-        animation: 'notifSlideIn 0.25s ease forwards',
-        opacity: isDismissing ? 0 : 1,
-        overflow: 'hidden',
-        position: 'relative',
-        transform: isDismissing ? 'translateX(20px) scale(0.95)' : undefined,
-        transition: 'opacity 250ms ease, transform 250ms ease'
+        animation: isDismissing ? 'none' : 'notifSlideIn 0.25s ease forwards'
       }}
     >
       {toast.message}
       <span
         aria-hidden="true"
+        className="absolute bottom-0 left-0 h-1 w-full"
         style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          height: 4,
-          width: '100%',
           background: TOAST_COLORS[toast.type],
           animation: `notifProgress ${toast.duration}ms linear forwards`
         }}
@@ -117,42 +103,16 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
     <NotifyContext.Provider value={value}>
       {children}
       {createPortal(
-        <>
-          <style>
-            {`
-              @keyframes notifSlideIn {
-                0%   { opacity: 0; transform: translateX(30px) scale(0.92); }
-                60%  { opacity: 1; transform: translateX(0px) scale(1.03); }
-                100% { opacity: 1; transform: translateX(0px) scale(1.00); }
-              }
-
-              @keyframes notifProgress {
-                from { width: 100%; }
-                to   { width: 0%; }
-              }
-            `}
-          </style>
-          <div
-            style={{
-              position: 'fixed',
-              right: 25,
-              bottom: 25,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              zIndex: 9999
-            }}
-          >
-            {toasts.map((toast) => (
-              <ToastCard
-                key={toast.id}
-                toast={toast}
-                isDismissing={dismissingToastIds.has(toast.id)}
-                onDismiss={dismissToast}
-              />
-            ))}
-          </div>
-        </>,
+        <div className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-[9999]">
+          {toasts.map((toast) => (
+            <ToastCard
+              key={toast.id}
+              toast={toast}
+              isDismissing={dismissingToastIds.has(toast.id)}
+              onDismiss={dismissToast}
+            />
+          ))}
+        </div>,
         document.body
       )}
     </NotifyContext.Provider>

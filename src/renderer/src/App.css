@@ -197,3 +197,14 @@ textarea {
 .scroll-fade-mask-bottom {
   --scroll-fade-bottom: black calc(100% - var(--scroll-fade-size)), transparent 100%;
 }
+
+@keyframes notifSlideIn {
+  0%   { opacity: 0; transform: translateX(30px) scale(0.92); }
+  60%  { opacity: 1; transform: translateX(0px) scale(1.03); }
+  100% { opacity: 1; transform: translateX(0px) scale(1.00); }
+}
+
+@keyframes notifProgress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
