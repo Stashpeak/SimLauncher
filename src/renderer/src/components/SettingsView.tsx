@@ -273,8 +273,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
           <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Behavior</h3>
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-              <span className="text-sm font-medium text-(--text-primary)">Kill launched apps when SimLauncher closes</span>
-              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Kill apps on close" />
+              <span className="text-sm font-medium text-(--text-primary)">Close launched apps when SimLauncher closes</span>
+              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Close apps on exit" />
             </div>
             <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
               <div className="flex items-center justify-between gap-4">

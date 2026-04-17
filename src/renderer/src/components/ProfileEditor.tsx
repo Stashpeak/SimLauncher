@@ -162,7 +162,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex items-center justify-between rounded-xl bg-(--glass-bg) p-3">
-              <span className="text-sm font-medium text-(--text-secondary)">Allow kill controls</span>
+              <span className="text-sm font-medium text-(--text-secondary)">Allow close apps controls</span>
               <Toggle checked={killControlsEnabled} onChange={setKillControlsEnabled} />
             </div>
             <div className="flex items-center justify-between rounded-xl bg-(--glass-bg) p-3">

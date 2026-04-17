@@ -78,9 +78,9 @@ function GameRow({
   const handleKill = async () => {
     try {
       await window.electronAPI.killLaunchedApps(game.key)
-      notify(`Stopping launched apps for ${game.name}`, 'warn')
+      notify(`Closing launched apps for ${game.name}`, 'warn')
     } catch (err) {
-      notify('Failed to kill launched apps', 'error')
+      notify('Failed to close launched apps', 'error')
       console.error(err)
     }
   }
@@ -149,7 +149,7 @@ function GameRow({
   const canKill = isRunning && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
-  const primaryLabel = canKill ? 'Kill' : 'Launch'
+  const primaryLabel = canKill ? 'Close Apps' : 'Launch'
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
     : 'bg-(--accent) text-white neon-glow hover:opacity-90'
