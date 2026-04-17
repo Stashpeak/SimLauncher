@@ -127,9 +127,9 @@ function GameRow({
       </div>
       
       <div className={`profile-editor-wrapper mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
-        <div className="overflow-hidden px-4 pb-8 -mx-4">
+        <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
           {isActive && (
-            <div className="py-2 animate-fade-slide">
+            <div className="animate-fade-slide">
               <ProfileEditor 
                 gameKey={game.key} 
                 gameName={game.name} 
