@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { UTILITIES, GAMES } from '../lib/config'
 import { useNotify } from './Notify'
+import { Toggle } from './Toggle'
 
 
 const ACCENT_PRESETS = [
@@ -310,30 +311,17 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
               <span className="text-sm font-medium text-[var(--text-primary)]">Kill launched apps when SimLauncher closes</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={killOnClose}
-                  onChange={(e) => setKillOnClose(e.target.checked)}
-                  className="peer sr-only"
-                />
-                <div className="h-6 w-11 rounded-full bg-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] peer-checked:bg-[var(--accent)] transition-colors duration-300 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
-              </label>
+              <Toggle checked={killOnClose} onChange={setKillOnClose} />
             </div>
             <div className="flex items-center justify-between px-4 py-4">
               <span className="text-sm font-medium text-[var(--text-primary)]">Accent Glow Background</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={accentBgTint}
-                  onChange={(e) => {
-                    setAccentBgTint(e.target.checked)
-                    window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: e.target.checked }))
-                  }}
-                  className="peer sr-only"
-                />
-                <div className="h-6 w-11 rounded-full bg-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] peer-checked:bg-[var(--accent)] transition-colors duration-300 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
-              </label>
+              <Toggle 
+                checked={accentBgTint} 
+                onChange={(checked) => {
+                  setAccentBgTint(checked)
+                  window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
+                }} 
+              />
             </div>
           </div>
         </section>

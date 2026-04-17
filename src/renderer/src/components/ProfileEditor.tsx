@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { UTILITIES, type Profiles } from '../lib/config'
 import { useNotify } from './Notify'
+import { Toggle } from './Toggle'
 
 interface ProfileEditorProps {
   gameKey: string
@@ -91,18 +92,14 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           {availableUtilities.length > 0 ? (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {availableUtilities.map((u) => (
-                <label
+                <div
                   key={u.key}
-                  className="flex cursor-pointer items-center gap-3 rounded-xl bg-[var(--glass-bg)] p-3 transition-all duration-200 hover:bg-[var(--accent)] hover:text-white"
+                  onClick={() => handleToggleUtility(u.key)}
+                  className="flex cursor-pointer items-center justify-between rounded-xl bg-[var(--glass-bg)] p-3 transition-all duration-200 hover:bg-[var(--accent)] hover:text-white group"
                 >
-                  <input
-                    type="checkbox"
-                    checked={!!selection[u.key]}
-                    onChange={() => handleToggleUtility(u.key)}
-                    className="h-4 w-4 cursor-pointer rounded border-[var(--glass-border)] bg-transparent accent-[var(--accent)]"
-                  />
-                  <span className="text-sm text-[var(--text-secondary)]">{appNames[u.key] || u.name}</span>
-                </label>
+                  <span className="text-sm font-medium opacity-80 group-hover:opacity-100">{appNames[u.key] || u.name}</span>
+                  <Toggle checked={!!selection[u.key]} onChange={() => handleToggleUtility(u.key)} />
+                </div>
               ))}
             </div>
           ) : (
@@ -114,18 +111,11 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           )}
         </div>
 
-        <div className="border-t border-[var(--glass-border)] pt-4">
-          <label className="flex cursor-pointer items-center gap-3">
-            <input
-              type="checkbox"
-              checked={launchAutomatically}
-              onChange={(e) => setLaunchAutomatically(e.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border-[var(--glass-border)] bg-transparent accent-[var(--accent)]"
-            />
-            <span className="text-[13px] font-medium text-[var(--text-primary)]">
-              Launch game automatically after utilities
-            </span>
-          </label>
+        <div className="border-t border-[var(--glass-border)] pt-4 flex items-center justify-between px-1">
+          <span className="text-[13px] font-medium text-[var(--text-primary)]">
+            Launch game automatically after utilities
+          </span>
+          <Toggle checked={launchAutomatically} onChange={setLaunchAutomatically} />
         </div>
 
         <div className="flex gap-3 pt-2">
