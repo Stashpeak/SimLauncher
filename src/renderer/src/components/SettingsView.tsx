@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { UTILITIES, GAMES } from '../lib/config'
 import { useNotify } from './Notify'
-import { ScrollFade } from './ScrollFade'
+
 
 const ACCENT_PRESETS = [
   { name: 'Electric Aqua', hex: '#00eaff' },
@@ -108,18 +108,9 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="animate-fade-slide flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 px-1">
-        <h2 className="text-2xl font-bold text-[var(--text-primary)]">Settings</h2>
-        <button
-          onClick={onClose}
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-2xl leading-none text-[var(--text-subtle)] transition-colors hover:bg-[var(--glass-bg)] hover:text-[var(--text-primary)]"
-        >
-          ×
-        </button>
-      </div>
 
-      <ScrollFade className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
+
+      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
         {/* Apps Section */}
         <section className="space-y-4">
           <button
@@ -287,7 +278,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             Back to Games
           </button>
         </div>
-      </ScrollFade>
+      </div>
     </div>
   )
 }

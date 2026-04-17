@@ -4,7 +4,7 @@ import { WindowControls } from './components/WindowControls'
 import { UpdateBanner } from './components/UpdateBanner'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
-import { ScrollFade } from './components/ScrollFade'
+
 
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
@@ -76,21 +76,23 @@ export default function App() {
 
   return (
     <NotifyProvider>
-      <div className="flex flex-col h-screen overflow-hidden">
-        <WindowControls view={view} onNavigate={setView} />
-        <UpdateBanner />
+      <div className="h-screen overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full z-20 header-glass">
+          <WindowControls view={view} onNavigate={setView} />
+          <UpdateBanner />
+        </div>
 
-        <main className="flex-1 flex flex-col min-h-0 relative">
+        <main className="h-full relative overflow-hidden">
           {/* Games View */}
-          <div className={`px-4 py-[1.5rem] h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}>
-            <ScrollFade className="flex-1 overflow-y-auto pr-1 -mr-1 custom-scrollbar">
+          <div className={`h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}>
+            <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
               <GameList />
-            </ScrollFade>
+            </div>
           </div>
 
-          {/* Settings View */}
+          {/* Settings View - padding-top remains 1.5rem for content but starts below header */}
           {view === 'settings' && (
-            <div className="absolute inset-0 px-4 py-[1.5rem] h-full z-10">
+            <div className="absolute inset-0 pt-16 h-full z-10 px-4 pb-4">
               <SettingsView onClose={() => setView('games')} />
             </div>
           )}
