@@ -3,9 +3,10 @@ import { useState } from 'react'
 interface WindowControlsProps {
   view: 'games' | 'settings'
   onNavigate: (view: 'games' | 'settings') => void
+  updateInfo: { version: string } | null
 }
 
-export function WindowControls({ view, onNavigate }: WindowControlsProps) {
+export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsProps) {
   const [isMaximized, setIsMaximized] = useState(false)
 
   const handleMinimize = () => window.electronAPI.minimize()
@@ -14,9 +15,14 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
     setIsMaximized((current) => !current)
   }
   const handleClose = () => window.electronAPI.close()
+  const handleInstallUpdate = () => {
+    if (window.confirm(`Restart SimLauncher to install version ${updateInfo?.version}?`)) {
+      window.electronAPI.installUpdate()
+    }
+  }
 
   return (
-    <div className="drag-region flex h-12 w-full items-center px-4 gap-3 shrink-0">
+    <div className="drag-region flex h-12 w-full items-center px-4 gap-2 shrink-0">
       {/* Pill: branding + settings gear */}
       <div className="no-drag glass-surface rounded-full flex items-center shrink-0">
         {/* Launcher branding */}
@@ -55,6 +61,20 @@ export function WindowControls({ view, onNavigate }: WindowControlsProps) {
           </svg>
         </button>
       </div>
+
+      {/* Update Pill */}
+      {updateInfo && (
+        <button
+          type="button"
+          onClick={handleInstallUpdate}
+          className="no-drag glass-surface-elevated animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border-(--accent)/30 shadow-[0_0_15px_-5px_var(--accent-glow)] hover:bg-(--accent)/10 active:scale-[0.98] transition-all"
+        >
+          <div className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-(--accent)">
+            Update v{updateInfo.version} Available
+          </span>
+        </button>
+      )}
 
       {/* Spacer */}
       <div className="flex-1" />

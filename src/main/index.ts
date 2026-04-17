@@ -54,11 +54,20 @@ function createWindow() {
     mainWindow?.webContents.send('update-downloaded', info)
   })
 
+  autoUpdater.on('update-not-available', (info) => {
+    mainWindow?.webContents.send('update-not-available', info)
+  })
+
   mainWindow.webContents.once('did-finish-load', () => {
     if (app.isPackaged) {
       autoUpdater.checkForUpdatesAndNotify().catch((err) => {
         console.error('Update check failed:', err)
       })
+    }
+
+    // DEV: fake update — remove this block to disable
+    if (!app.isPackaged) {
+      setTimeout(() => mainWindow?.webContents.send('update-available', { version: '99.0.0' }), 1500)
     }
   })
 
@@ -168,6 +177,10 @@ ipcMain.handle('kill-launched-apps', () => {
 
 ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall()
+})
+
+ipcMain.handle('check-for-updates', async () => {
+  return await autoUpdater.checkForUpdatesAndNotify()
 })
 
 ipcMain.handle('get-asset-data', async (_event, filename: string) => {

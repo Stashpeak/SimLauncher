@@ -13,7 +13,7 @@ const ACCENT_PRESETS = [
   { name: 'Caution Yellow', hex: '#ffd600' },
 ]
 
-export function SettingsView({ onClose }: { onClose: () => void }) {
+export function SettingsView({ onClose, updateInfo }: { onClose: () => void, updateInfo: { version: string } | null }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
 
@@ -25,6 +25,9 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
   const [killOnClose, setKillOnClose] = useState<boolean>(false)
+
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null)
 
   const [isCustomColor, setIsCustomColor] = useState(false)
   const [appsOpen, setAppsOpen] = useState(true)
@@ -129,7 +132,27 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
       setAppVersion(v)
     }
     load()
+
+    const unsubscribe = window.electronAPI.onUpdateNotAvailable(() => {
+      setCheckingUpdate(false)
+      setUpdateStatus('up-to-date')
+      setTimeout(() => setUpdateStatus(null), 3000)
+    })
+
+    return () => unsubscribe()
   }, [])
+
+  const handleManualCheck = async () => {
+    setCheckingUpdate(true)
+    setUpdateStatus(null)
+    await window.electronAPI.checkForUpdates()
+  }
+
+  const handleInstallUpdate = () => {
+    if (window.confirm(`Restart SimLauncher to install version ${updateInfo?.version}?`)) {
+      window.electronAPI.installUpdate()
+    }
+  }
 
   const handleSave = async () => {
     try {
@@ -331,7 +354,44 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
                   setAccentBgTint(checked)
                   window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
                 }} 
+                aria-label="Toggle accent glow background"
               />
+            </div>
+          </div>
+        </section>
+
+        {/* Software Updates Section */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Software Updates</h3>
+          <div className="glass-surface p-5 rounded-2xl space-y-4">
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-(--text-secondary)">Installed Version</span>
+              <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              {updateInfo ? (
+                <button
+                  onClick={handleInstallUpdate}
+                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)]"
+                >
+                  Restart to Update (v{updateInfo.version})
+                </button>
+              ) : (
+                <button
+                  onClick={handleManualCheck}
+                  disabled={checkingUpdate}
+                  className={`w-full cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:opacity-50 disabled:cursor-wait`}
+                >
+                  {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
+                </button>
+              )}
+              
+              {updateStatus === 'up-to-date' && (
+                <p className="text-[10px] text-center text-(--status-success) animate-fade-slide">
+                  SimLauncher is up to date!
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -351,14 +411,6 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             Back to Games
           </button>
         </div>
-
-        {appVersion && (
-          <div className="pt-4 text-center">
-            <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-(--text-muted) opacity-50">
-              SimLauncher v{appVersion}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   )

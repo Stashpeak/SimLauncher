@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NotifyProvider } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
-import { UpdateBanner } from './components/UpdateBanner'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 
@@ -9,6 +8,7 @@ import { SettingsView } from './components/SettingsView'
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
   const [bgTinted, setBgTinted] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
 
   useEffect(() => {
     // One-time migration from localStorage (vanilla app) to electron-store
@@ -80,15 +80,23 @@ export default function App() {
     // Listen for custom events to update bgTint from SettingsView without reload
     const handleTintChange = (e: CustomEvent) => setBgTinted(e.detail)
     window.addEventListener('bg-tint-change', handleTintChange as EventListener)
-    return () => window.removeEventListener('bg-tint-change', handleTintChange as EventListener)
+
+    // Listen for auto-updates
+    const unsubscribe = window.electronAPI.onUpdateAvailable((info: any) => {
+      if (info?.version) setUpdateInfo({ version: info.version })
+    })
+
+    return () => {
+      window.removeEventListener('bg-tint-change', handleTintChange as EventListener)
+      unsubscribe()
+    }
   }, [])
 
   return (
     <NotifyProvider>
       <div className={`h-screen overflow-hidden relative transition-colors duration-500 ${bgTinted ? 'bg-tinted' : ''}`}>
         <div className="absolute top-0 left-0 w-full z-20 header-glass">
-          <WindowControls view={view} onNavigate={setView} />
-          <UpdateBanner />
+          <WindowControls view={view} onNavigate={setView} updateInfo={updateInfo} />
         </div>
 
         <main className="h-full relative overflow-hidden">
@@ -102,7 +110,7 @@ export default function App() {
           {/* Settings View */}
           {view === 'settings' && (
             <div className="absolute inset-0 pt-16 h-full z-10 px-4 pb-4">
-              <SettingsView onClose={() => setView('games')} />
+              <SettingsView onClose={() => setView('games')} updateInfo={updateInfo} />
             </div>
           )}
         </main>

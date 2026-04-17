@@ -29,9 +29,11 @@ declare global {
       close: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
       killLaunchedApps: () => Promise<void>
-      onUpdateAvailable: (cb: (info: unknown) => void) => Unsubscribe
-      onUpdateDownloaded: (cb: (info: unknown) => void) => Unsubscribe
+      onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
+      onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
+      onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe
       installUpdate: () => Promise<void>
+      checkForUpdates: () => Promise<void>
       storeGet: (key: string) => Promise<unknown>
       storeSet: (key: string, value: unknown) => Promise<void>
       getAssetData: (filename: string) => Promise<string | null>

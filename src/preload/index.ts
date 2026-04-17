@@ -30,7 +30,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('update-downloaded', handler)
     return () => ipcRenderer.removeListener('update-downloaded', handler)
   },
+  onUpdateNotAvailable: (cb: (info: any) => void) => {
+    const handler = (_: unknown, info: any) => cb(info)
+    ipcRenderer.on('update-not-available', handler)
+    return () => ipcRenderer.removeListener('update-not-available', handler)
+  },
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 
   // electron-store
   storeGet: (key: string) => ipcRenderer.invoke('store-get', key),
