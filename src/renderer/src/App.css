@@ -204,7 +204,26 @@ textarea {
   100% { opacity: 1; transform: translateX(0px) scale(1.00); }
 }
 
-@keyframes notifProgress {
-  from { width: 100%; }
-  to   { width: 0%; }
+.toast-card {
+  animation: notifSlideIn 0.25s ease forwards;
+}
+
+.toast-card-dismissing {
+  animation: none;
+}
+
+.toast-progress {
+  background: var(--status-success);
+}
+
+.toast-progress-success {
+  background: var(--status-success);
+}
+
+.toast-progress-warn {
+  background: var(--status-warning);
+}
+
+.toast-progress-error {
+  background: var(--status-danger);
 }
