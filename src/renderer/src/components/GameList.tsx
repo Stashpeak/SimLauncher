@@ -80,9 +80,9 @@ function GameRow({
   const handleKill = async () => {
     try {
       await window.electronAPI.killLaunchedApps(game.key)
-      notify(`Closing launched apps for ${game.name}`, 'warn')
+      notify(`Closing companion apps for ${game.name}`, 'warn')
     } catch (err) {
-      notify('Failed to close launched apps', 'error')
+      notify('Failed to close companion apps', 'error')
       console.error(err)
     }
   }

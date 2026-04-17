@@ -21,7 +21,7 @@ const store = new Store({
 })
 
 let mainWindow: BrowserWindow | null = null
-const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string }>()
+const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
 
 interface StoredProfile {
   trackingEnabled?: boolean
@@ -32,6 +32,9 @@ function killLaunchedApps(gameKey?: string) {
   runningProcesses.forEach(({ process: child }, appPath) => {
     const appProcess = runningProcesses.get(appPath)
     if (gameKey && appProcess?.gameKey !== gameKey) {
+      return
+    }
+    if (appProcess?.isGame) {
       return
     }
 
@@ -186,6 +189,8 @@ ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[])
 
   let delay = 0
   const launchDelayMs = getLaunchDelayMs()
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
   profileApps.forEach((appPath) => {
     if (!isValidExePath(appPath)) {
       console.error(`Skipping invalid path: ${appPath}`)
@@ -193,7 +198,12 @@ ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[])
     }
     setTimeout(() => {
       const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
-      runningProcesses.set(appPath, { process: child, name: path.basename(appPath), gameKey })
+      runningProcesses.set(appPath, {
+        process: child,
+        name: path.basename(appPath),
+        gameKey,
+        isGame: !!gamePath && appPath.toLowerCase() === gamePath
+      })
       child.on('error', (err) => {
         runningProcesses.delete(appPath)
         console.error(`Error launching ${appPath}: ${err.message}`)
