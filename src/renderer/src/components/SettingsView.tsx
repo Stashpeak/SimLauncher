@@ -33,6 +33,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
   const [killOnClose, setKillOnClose] = useState<boolean>(false)
+  const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -55,6 +56,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
       const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
       const savedKillOnClose = (await window.electronAPI.storeGet('killOnClose')) as boolean || false
+      const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
 
       setAppPaths(savedAppPaths)
@@ -64,6 +66,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setAccentCustom(savedAccentCustom)
       setAccentBgTint(savedBgTint)
       setKillOnClose(savedKillOnClose)
+      setFocusActiveTitle(savedFocusActiveTitle !== false)
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       
       setIsCustomColor(savedAccentPreset === 'custom')
@@ -176,6 +179,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('accentCustom', accentCustom)
       await window.electronAPI.storeSet('accentBgTint', accentBgTint)
       await window.electronAPI.storeSet('killOnClose', killOnClose)
+      await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
@@ -275,6 +279,10 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
               <span className="text-sm font-medium text-(--text-primary)">Close launched apps when SimLauncher closes</span>
               <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Close apps on exit" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <span className="text-sm font-medium text-(--text-primary)">Focus active title</span>
+              <Toggle checked={focusActiveTitle} onChange={setFocusActiveTitle} aria-label="Focus active title" />
             </div>
             <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
               <div className="flex items-center justify-between gap-4">

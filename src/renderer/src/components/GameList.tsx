@@ -9,6 +9,7 @@ function GameRow({
   isRunning,
   runningAppIcons,
   runningApps,
+  isDimmed,
   onToggleEditor
 }: {
   game: Game
@@ -16,6 +17,7 @@ function GameRow({
   isRunning: boolean
   runningAppIcons: string[]
   runningApps: { path: string; name: string; gameKey: string }[]
+  isDimmed: boolean
   onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
@@ -155,7 +157,7 @@ function GameRow({
     : 'bg-(--accent) text-white neon-glow hover:opacity-90'
 
   return (
-    <div className="flex flex-col gap-2" ref={rowRef}>
+    <div className={`flex flex-col gap-2 transition-opacity duration-300 ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
       <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
@@ -248,6 +250,7 @@ export function GameList() {
   const [runningApps, setRunningApps] = useState<{ path: string; name: string; gameKey: string }[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
+  const [focusActiveTitle, setFocusActiveTitle] = useState(true)
 
   useEffect(() => {
     async function loadGames() {
@@ -262,6 +265,26 @@ export function GameList() {
     }
 
     loadGames()
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function loadFocusActiveTitle() {
+      const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
+
+      if (mounted) {
+        setFocusActiveTitle(savedFocusActiveTitle !== false)
+      }
+    }
+
+    loadFocusActiveTitle()
+    window.addEventListener('focus', loadFocusActiveTitle)
+
+    return () => {
+      mounted = false
+      window.removeEventListener('focus', loadFocusActiveTitle)
+    }
   }, [])
 
   // Load app icons once at mount
@@ -329,7 +352,15 @@ export function GameList() {
 
   return (
     <div className="flex flex-col gap-3 px-1 py-2">
-      {configuredGames.map(game => {
+      {configuredGames.map((game, index) => ({ game, index })).sort((firstEntry, secondEntry) => {
+        if (!focusActiveTitle) {
+          return 0
+        }
+
+        const runningSort = Number(!!runningStatus[secondEntry.game.key]) - Number(!!runningStatus[firstEntry.game.key])
+        return runningSort || firstEntry.index - secondEntry.index
+      }).map(({ game }) => {
+        const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
         const gamePathLower = gamePaths[game.key]?.toLowerCase()
         const appsForGame = runningApps.filter(
           a => a.gameKey === game.key && a.path.toLowerCase() !== gamePathLower
@@ -346,6 +377,7 @@ export function GameList() {
             isRunning={!!runningStatus[game.key]}
             runningAppIcons={runningAppIcons}
             runningApps={runningApps.filter(a => a.gameKey === game.key)}
+            isDimmed={hasActiveTitle && !runningStatus[game.key]}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
           />
         )

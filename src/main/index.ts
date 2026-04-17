@@ -14,6 +14,7 @@ const store = new Store({
     accentCustom: { type: 'string',  default: '' },
     accentBgTint: { type: 'boolean', default: false },
     killOnClose:  { type: 'boolean', default: false },
+    focusActiveTitle: { type: 'boolean', default: true },
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     migrated:     { type: 'boolean', default: false },
   }
