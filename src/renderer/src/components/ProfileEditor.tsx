@@ -12,6 +12,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
+  const [appNames, setAppNames] = useState<Record<string, string>>({})
   const [selection, setSelection] = useState<Record<string, boolean>>({})
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
 
@@ -19,10 +20,12 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     async function loadData() {
       // Load configuration from electron-store via IPC
       const paths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
+      const names = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
       const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
       const profile = allProfiles[gameKey] || {}
 
       setAppPaths(paths)
+      setAppNames(names)
       
       // Initialize selection state based on existing profile
       const initialSelection: Record<string, boolean> = {}
@@ -98,7 +101,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
                     onChange={() => handleToggleUtility(u.key)}
                     className="h-4 w-4 cursor-pointer rounded border-[var(--glass-border)] bg-transparent accent-[var(--accent)]"
                   />
-                  <span className="text-sm text-[var(--text-secondary)]">{u.name}</span>
+                  <span className="text-sm text-[var(--text-secondary)]">{appNames[u.key] || u.name}</span>
                 </label>
               ))}
             </div>

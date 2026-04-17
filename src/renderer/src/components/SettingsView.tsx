@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { UTILITIES, GAMES } from '../lib/config'
 import { useNotify } from './Notify'
+import { ScrollFade } from './ScrollFade'
 
 const ACCENT_PRESETS = [
   { name: 'Electric Aqua', hex: '#00eaff' },
@@ -118,7 +119,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
+      <ScrollFade className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
         {/* Apps Section */}
         <section className="space-y-4">
           <button
@@ -286,7 +287,7 @@ export function SettingsView({ onClose }: { onClose: () => void }) {
             Back to Games
           </button>
         </div>
-      </div>
+      </ScrollFade>
     </div>
   )
 }

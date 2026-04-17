@@ -56,7 +56,6 @@ function ToastCard({
         maxWidth: 380,
         padding: '16px 18px',
         color: 'var(--text-primary)',
-        borderLeft: `5px solid ${TOAST_COLORS[toast.type]}`,
         boxShadow: '0 4px 18px #00000060',
         animation: 'notifSlideIn 0.25s ease forwards',
         opacity: isDismissing ? 0 : 1,
