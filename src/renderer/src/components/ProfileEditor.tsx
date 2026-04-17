@@ -93,7 +93,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
               {availableUtilities.map((u) => (
                 <label
                   key={u.key}
-                  className="flex cursor-pointer items-center gap-3 rounded-xl bg-[var(--glass-bg)] p-3 transition-colors hover:bg-[var(--purple-accent)]"
+                  className="flex cursor-pointer items-center gap-3 rounded-xl bg-[var(--glass-bg)] p-3 transition-colors hover:bg-[var(--accent-glow)]"
                 >
                   <input
                     type="checkbox"
