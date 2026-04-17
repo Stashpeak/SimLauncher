@@ -14,6 +14,7 @@ const store = new Store({
     accentCustom: { type: 'string',  default: '' },
     accentBgTint: { type: 'boolean', default: false },
     killOnClose:  { type: 'boolean', default: false },
+    launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     migrated:     { type: 'boolean', default: false },
   }
 })
@@ -88,6 +89,16 @@ function isValidExePath(p: unknown) {
   return typeof p === 'string' && p.trim().length > 0 && /\.exe$/i.test(p.trim())
 }
 
+function getLaunchDelayMs() {
+  const value = store.get('launchDelayMs')
+
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 1000
+  }
+
+  return Math.min(Math.max(Math.round(value), 0), 5000)
+}
+
 // ----------------------------------------------------------------
 // MAIN LAUNCH LOGIC
 // ----------------------------------------------------------------
@@ -102,6 +113,7 @@ ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[])
   }
 
   let delay = 0
+  const launchDelayMs = getLaunchDelayMs()
   profileApps.forEach((appPath) => {
     if (!isValidExePath(appPath)) {
       console.error(`Skipping invalid path: ${appPath}`)
@@ -120,7 +132,7 @@ ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[])
       })
       child.unref()
     }, delay)
-    delay += 1000 // 1 second delay between app launches for stability
+    delay += launchDelayMs
   })
 
   return { success: true, message: 'All profile applications launching.' }
