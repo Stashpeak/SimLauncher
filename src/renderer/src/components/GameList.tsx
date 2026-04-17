@@ -82,7 +82,7 @@ function GameRow({
 
   return (
     <div className="flex flex-col gap-2" ref={rowRef}>
-      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:scale-[1.01] hover:border-[rgba(255,255,255,0.1)]">
+      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && (
