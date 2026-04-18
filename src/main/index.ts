@@ -31,6 +31,7 @@ const runningProcesses = new Map<string, { process: ChildProcess; name: string; 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 let launchBlockedUntil = 0
+let iconExtractionQueue = Promise.resolve()
 
 autoUpdater.autoDownload = false
 
@@ -288,6 +289,58 @@ function spawnDetachedApp(sender: WebContents, gameKey: string, appPath: string,
   })
 }
 
+function extractIconWithPowerShell(filePath: string) {
+  return new Promise<string | null>((resolve) => {
+    if (process.platform !== 'win32' || !isValidExePath(filePath)) {
+      resolve(null)
+      return
+    }
+
+    const script = `& {
+      param([string]$exePath)
+      Add-Type -AssemblyName System.Drawing
+      $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath)
+      if ($null -eq $icon) { exit 2 }
+      $bitmap = $icon.ToBitmap()
+      $stream = New-Object System.IO.MemoryStream
+      try {
+        $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+        [Convert]::ToBase64String($stream.ToArray())
+      } finally {
+        $stream.Dispose()
+        $bitmap.Dispose()
+        $icon.Dispose()
+      }
+    }`
+
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script, filePath],
+      { windowsHide: true, timeout: 8000, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          console.error(`PowerShell icon extraction failed for ${filePath}:`, error)
+          resolve(null)
+          return
+        }
+
+        if (stderr.trim()) {
+          console.warn(`PowerShell icon extraction warning for ${filePath}:`, stderr.trim())
+        }
+
+        const base64Icon = stdout.trim()
+        resolve(base64Icon ? `data:image/png;base64,${base64Icon}` : null)
+      }
+    )
+  })
+}
+
+function queuePowerShellIconExtraction(filePath: string) {
+  const extraction = iconExtractionQueue.then(() => extractIconWithPowerShell(filePath))
+  iconExtractionQueue = extraction.then(() => undefined, () => undefined)
+  return extraction
+}
+
 function readRunningProcessNames() {
   return new Promise<Set<string>>((resolve) => {
     execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
@@ -507,11 +560,11 @@ ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
     if (!icon.isEmpty()) {
       return icon.toDataURL()
     }
-    return null
   } catch (err) {
     console.error(`Failed to get file icon for ${filePath}:`, err)
-    return null
   }
+
+  return await queuePowerShellIconExtraction(filePath)
 })
 
 ipcMain.handle('get-version', () => {
