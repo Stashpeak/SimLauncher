@@ -38,6 +38,8 @@ declare global {
       checkForUpdates: () => Promise<void>
       storeGet: (key: string) => Promise<unknown>
       storeSet: (key: string, value: unknown) => Promise<void>
+      setLoginItem: (openAtLogin: boolean) => Promise<void>
+      setZoom: (factor: number) => Promise<void>
       getAssetData: (filename: string) => Promise<string | null>
       getFileIcon: (filePath: string) => Promise<string | null>
       getVersion: () => Promise<string>

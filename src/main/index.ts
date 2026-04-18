@@ -13,9 +13,11 @@ const store = new Store({
     accentPreset: { type: 'string',  default: '' },
     accentCustom: { type: 'string',  default: '' },
     accentBgTint: { type: 'boolean', default: false },
-    killOnClose:  { type: 'boolean', default: false },
     focusActiveTitle: { type: 'boolean', default: true },
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
+    startWithWindows: { type: 'boolean', default: false },
+    startMinimized:   { type: 'boolean', default: false },
+    zoomFactor:       { type: 'number',  default: 1.0 },
     migrated:     { type: 'boolean', default: false },
   }
 })
@@ -48,18 +50,36 @@ function killLaunchedApps(gameKey?: string) {
 }
 
 function createWindow() {
+  const savedZoom = store.get('zoomFactor') as number
+  const zoomFactor = typeof savedZoom === 'number' && Number.isFinite(savedZoom) ? savedZoom : 1.0
+
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     frame: false,
+    show: false,
     autoHideMenuBar: true,
     icon: path.join(__dirname, '../../SimLauncher.ico'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      zoomFactor,
       preload: path.join(__dirname, '../preload/index.js')
     }
   })
+
+  // Show window once ready — optionally minimized
+  mainWindow.once('ready-to-show', () => {
+    const startMinimized = store.get('startMinimized') as boolean
+    mainWindow!.show()
+    if (startMinimized) {
+      mainWindow!.minimize()
+    }
+  })
+
+  // Apply login-item setting on startup
+  const startWithWindows = store.get('startWithWindows') as boolean
+  app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
 
   autoUpdater.on('update-available', (info) => {
     mainWindow?.webContents.send('update-available', info)
@@ -317,6 +337,16 @@ ipcMain.handle('get-version', () => {
   return app.getVersion()
 })
 
+ipcMain.handle('set-login-item', (_event, openAtLogin: boolean) => {
+  store.set('startWithWindows', openAtLogin)
+  app.setLoginItemSettings({ openAtLogin })
+})
+
+ipcMain.handle('set-zoom', (_event, factor: number) => {
+  store.set('zoomFactor', factor)
+  mainWindow?.webContents.setZoomFactor(factor)
+})
+
 ipcMain.handle('store-get', (_event, key) => {
   return store.get(key)
 })
@@ -325,8 +355,3 @@ ipcMain.handle('store-set', (_event, key, value) => {
   store.set(key, value)
 })
 
-app.on('before-quit', () => {
-  if (store.get('killOnClose')) {
-    killLaunchedApps()
-  }
-})

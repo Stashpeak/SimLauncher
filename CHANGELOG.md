@@ -12,11 +12,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Added `preload.js` with `contextBridge` for safe IPC — renderer no longer has direct Node.js access
 - Replaced `child_process.exec()` with `spawn()` — app paths are no longer shell-interpolated
 - Added path validation before launching executables
-- Added `sanitizePaths()` to validate data loaded from localStorage
 
 ### Added
 - User-facing error toast when an individual app fails to launch
-- Content Security Policy meta tag blocking external resource loading
 - ESLint config and `npm run lint` script
 
 ### Changed
