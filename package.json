@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "@tailwindcss/vite": "^4.1.0",
     "electron-store": "^10.0.0",
@@ -30,5 +30,8 @@
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
     "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "js-yaml": "4.1.1"
   }
 }
