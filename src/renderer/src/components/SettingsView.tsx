@@ -284,6 +284,19 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
               )}
             </div>
 
+            {/* Accent Glow Background */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/5">
+              <label className="text-sm text-(--text-secondary)">Accent Glow Background</label>
+              <Toggle
+                checked={accentBgTint}
+                onChange={(checked) => {
+                  setAccentBgTint(checked)
+                  window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
+                }}
+                aria-label="Toggle accent glow background"
+              />
+            </div>
+
             {/* UI Scale */}
             <div className="space-y-3 pt-2 border-t border-white/5">
               <label className="text-sm text-(--text-secondary)">UI Scale</label>
@@ -368,17 +381,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                 onChange={(e) => setLaunchDelayMs(normalizeLaunchDelayMs(Number(e.target.value)))}
                 className="w-full accent-(--accent)"
                 aria-label="Launch delay slider"
-              />
-            </div>
-            <div className="flex items-center justify-between px-4 py-4">
-              <span className="text-sm font-medium text-(--text-primary)">Accent Glow Background</span>
-              <Toggle 
-                checked={accentBgTint} 
-                onChange={(checked) => {
-                  setAccentBgTint(checked)
-                  window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
-                }} 
-                aria-label="Toggle accent glow background"
               />
             </div>
           </div>
