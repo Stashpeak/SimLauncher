@@ -17,6 +17,7 @@ const store = new Store({
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     startWithWindows: { type: 'boolean', default: false },
     startMinimized:   { type: 'boolean', default: false },
+    autoCheckUpdates:  { type: 'boolean', default: true },
     zoomFactor:       { type: 'number',  default: 1.0 },
     windowBounds:      { type: 'object',  default: {} },
     migrated:     { type: 'boolean', default: false },
@@ -24,8 +25,12 @@ const store = new Store({
 })
 
 let mainWindow: BrowserWindow | null = null
+let installAfterDownload = false
+let updateDownloaded = false
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
 const activeLaunches = new Set<string>()
+
+autoUpdater.autoDownload = false
 
 interface StoredProfile {
   trackingEnabled?: boolean
@@ -74,6 +79,23 @@ function getInitialWindowBounds() {
     width,
     height
   }
+}
+
+function sendToRenderer(channel: string, payload: unknown) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+
+  mainWindow.webContents.send(channel, payload)
+}
+
+async function checkForUpdates() {
+  if (!app.isPackaged) {
+    sendToRenderer('update-available', { version: '99.0.0' })
+    return null
+  }
+
+  return await autoUpdater.checkForUpdates()
 }
 
 function killLaunchedApps(gameKey?: string) {
@@ -136,27 +158,44 @@ function createWindow() {
   app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
 
   autoUpdater.on('update-available', (info) => {
-    mainWindow?.webContents.send('update-available', info)
+    updateDownloaded = false
+    sendToRenderer('update-available', info)
   })
 
   autoUpdater.on('update-downloaded', (info) => {
-    mainWindow?.webContents.send('update-downloaded', info)
+    updateDownloaded = true
+    sendToRenderer('update-downloaded', info)
+
+    if (installAfterDownload) {
+      autoUpdater.quitAndInstall()
+    }
   })
 
   autoUpdater.on('update-not-available', (info) => {
-    mainWindow?.webContents.send('update-not-available', info)
+    sendToRenderer('update-not-available', info)
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendToRenderer('update-download-progress', progress)
+  })
+
+  autoUpdater.on('error', (err) => {
+    installAfterDownload = false
+    sendToRenderer('update-error', { message: err.message })
   })
 
   mainWindow.webContents.once('did-finish-load', () => {
-    if (app.isPackaged) {
-      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    const autoCheckUpdates = store.get('autoCheckUpdates') !== false
+
+    if (app.isPackaged && autoCheckUpdates) {
+      checkForUpdates().catch((err) => {
         console.error('Update check failed:', err)
       })
     }
 
     // DEV: fake update — remove this block to disable
-    if (!app.isPackaged) {
-      setTimeout(() => mainWindow?.webContents.send('update-available', { version: '99.0.0' }), 1500)
+    if (!app.isPackaged && autoCheckUpdates) {
+      setTimeout(() => sendToRenderer('update-available', { version: '99.0.0' }), 1500)
     }
   })
 
@@ -410,12 +449,30 @@ ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
   killLaunchedApps(gameKey)
 })
 
-ipcMain.handle('install-update', () => {
-  autoUpdater.quitAndInstall()
+ipcMain.handle('install-update', async () => {
+  if (!app.isPackaged) {
+    sendToRenderer('update-downloaded', { version: '99.0.0' })
+    return { success: true }
+  }
+
+  installAfterDownload = true
+
+  if (updateDownloaded) {
+    autoUpdater.quitAndInstall()
+    return { success: true }
+  }
+
+  try {
+    await autoUpdater.downloadUpdate()
+    return { success: true }
+  } catch (err) {
+    installAfterDownload = false
+    throw err
+  }
 })
 
 ipcMain.handle('check-for-updates', async () => {
-  return await autoUpdater.checkForUpdatesAndNotify()
+  return await checkForUpdates()
 })
 
 ipcMain.handle('get-asset-data', async (_event, filename: string) => {

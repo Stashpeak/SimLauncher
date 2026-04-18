@@ -43,9 +43,12 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
   const [startMinimized, setStartMinimized] = useState<boolean>(false)
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
   const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [installingUpdate, setInstallingUpdate] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null)
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
 
   const [isCustomColor, setIsCustomColor] = useState(false)
@@ -68,6 +71,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
       const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
       const savedStartMinimized = (await window.electronAPI.storeGet('startMinimized')) as boolean || false
+      const savedAutoCheckUpdates = await window.electronAPI.storeGet('autoCheckUpdates')
       const savedZoomFactor = (await window.electronAPI.storeGet('zoomFactor')) as number
 
       setAppPaths(savedAppPaths)
@@ -80,6 +84,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       setStartWithWindows(savedStartWithWindows)
       setStartMinimized(savedStartMinimized)
+      setAutoCheckUpdates(savedAutoCheckUpdates !== false)
       setZoomFactor(typeof savedZoomFactor === 'number' && Number.isFinite(savedZoomFactor) ? savedZoomFactor : 1.0)
       
       setIsCustomColor(savedAccentPreset === 'custom')
@@ -160,24 +165,76 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     }
     load()
 
-    const unsubscribe = window.electronAPI.onUpdateNotAvailable(() => {
+    const unsubscribeAvailable = window.electronAPI.onUpdateAvailable(() => {
+      setCheckingUpdate(false)
+      setUpdateStatus(null)
+    })
+    const unsubscribeNotAvailable = window.electronAPI.onUpdateNotAvailable(() => {
       setCheckingUpdate(false)
       setUpdateStatus('up-to-date')
       setTimeout(() => setUpdateStatus(null), 3000)
     })
+    const unsubscribeProgress = window.electronAPI.onUpdateDownloadProgress((progress: any) => {
+      if (typeof progress?.percent === 'number') {
+        setUpdateProgress(progress.percent)
+      }
+    })
+    const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(() => {
+      setCheckingUpdate(false)
+      setInstallingUpdate(false)
+      setUpdateProgress(null)
+      setUpdateStatus('downloaded')
+    })
+    const unsubscribeError = window.electronAPI.onUpdateError((error: any) => {
+      setCheckingUpdate(false)
+      setInstallingUpdate(false)
+      setUpdateProgress(null)
+      setUpdateStatus('error')
+      notify(error?.message || 'Update check failed', 'error')
+      setTimeout(() => setUpdateStatus(null), 4000)
+    })
 
-    return () => unsubscribe()
-  }, [])
+    return () => {
+      unsubscribeAvailable()
+      unsubscribeNotAvailable()
+      unsubscribeProgress()
+      unsubscribeDownloaded()
+      unsubscribeError()
+    }
+  }, [notify])
 
   const handleManualCheck = async () => {
     setCheckingUpdate(true)
     setUpdateStatus(null)
-    await window.electronAPI.checkForUpdates()
+    try {
+      await window.electronAPI.checkForUpdates()
+    } catch (err) {
+      setCheckingUpdate(false)
+      setUpdateStatus('error')
+      notify('Update check failed', 'error')
+      console.error(err)
+    }
   }
 
-  const handleInstallUpdate = () => {
-    if (window.confirm(`Restart SimLauncher to install version ${updateInfo?.version}?`)) {
-      window.electronAPI.installUpdate()
+  const handleInstallUpdate = async () => {
+    if (!updateInfo) {
+      return
+    }
+
+    if (window.confirm(`Download and install version ${updateInfo.version}? SimLauncher will restart when ready.`)) {
+      setInstallingUpdate(true)
+      setUpdateProgress(null)
+      setUpdateStatus(null)
+
+      try {
+        await window.electronAPI.installUpdate()
+      } catch (err) {
+        setInstallingUpdate(false)
+        setUpdateProgress(null)
+        setUpdateStatus('error')
+        notify('Failed to install update', 'error')
+        console.error(err)
+      }
     }
   }
 
@@ -194,6 +251,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
       await window.electronAPI.storeSet('startMinimized', startMinimized)
+      await window.electronAPI.storeSet('autoCheckUpdates', autoCheckUpdates)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
@@ -216,14 +274,31 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
               <span className="text-sm text-(--text-secondary)">Installed Version</span>
               <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
             </div>
+
+            <div className="flex items-center justify-between border-t border-white/5 pt-4">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-(--text-primary)">Automatically check for updates</span>
+                <span className="text-[10px] text-(--text-muted)">Check on startup when enabled</span>
+              </div>
+              <Toggle
+                checked={autoCheckUpdates}
+                onChange={setAutoCheckUpdates}
+                aria-label="Automatically check for updates"
+              />
+            </div>
             
             <div className="flex flex-col gap-2">
               {updateInfo ? (
                 <button
                   onClick={handleInstallUpdate}
-                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)]"
+                  disabled={installingUpdate}
+                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
                 >
-                  Restart to Update (v{updateInfo.version})
+                  {installingUpdate
+                    ? updateProgress !== null
+                      ? `Downloading ${Math.round(updateProgress)}%`
+                      : 'Preparing update...'
+                    : `Download & Install (v${updateInfo.version})`}
                 </button>
               ) : (
                 <button
@@ -238,6 +313,11 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
               {updateStatus === 'up-to-date' && (
                 <p className="text-[10px] text-center text-(--status-success) animate-fade-slide">
                   SimLauncher is up to date!
+                </p>
+              )}
+              {updateStatus === 'error' && (
+                <p className="text-[10px] text-center text-red-400 animate-fade-slide">
+                  Update failed. Try again later.
                 </p>
               )}
             </div>

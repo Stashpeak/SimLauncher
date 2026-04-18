@@ -34,8 +34,10 @@ declare global {
       onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
       onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
       onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe
-      installUpdate: () => Promise<void>
-      checkForUpdates: () => Promise<void>
+      onUpdateDownloadProgress: (cb: (progress: any) => void) => Unsubscribe
+      onUpdateError: (cb: (error: any) => void) => Unsubscribe
+      installUpdate: () => Promise<unknown>
+      checkForUpdates: () => Promise<unknown>
       storeGet: (key: string) => Promise<unknown>
       storeSet: (key: string, value: unknown) => Promise<void>
       setLoginItem: (openAtLogin: boolean) => Promise<void>
