@@ -109,8 +109,10 @@ export default function App() {
 
           {/* Settings View */}
           {view === 'settings' && (
-            <div className="absolute inset-0 pt-16 h-full z-10 px-4 pb-4">
-              <SettingsView onClose={() => setView('games')} updateInfo={updateInfo} />
+            <div className="absolute inset-0 z-10 h-full flex flex-col">
+              <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
+                <SettingsView onClose={() => setView('games')} updateInfo={updateInfo} />
+              </div>
             </div>
           )}
         </main>

@@ -193,10 +193,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   if (loading) return null
 
   return (
-    <div className="animate-fade-slide flex flex-col h-full overflow-hidden">
-
-
-      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-8 pb-10">
+    <div className="animate-fade-slide space-y-8 pb-10">
         
         {/* About Section */}
         <section className="space-y-4">
@@ -463,8 +460,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
             Back to Games
           </button>
         </div>
-      
-      </div>
     </div>
   )
 }
