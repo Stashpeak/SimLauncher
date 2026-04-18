@@ -356,8 +356,8 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
     return { success: false, error: 'Profile is empty.' }
   }
 
-  if (activeLaunches.has(gameKey)) {
-    return { success: false, error: 'This profile is already launching.' }
+  if (activeLaunches.size > 0) {
+    return { success: false, error: 'Another profile is already launching.' }
   }
 
   activeLaunches.add(gameKey)
