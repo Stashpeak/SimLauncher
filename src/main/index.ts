@@ -29,6 +29,8 @@ let installAfterDownload = false
 let updateDownloaded = false
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
 const activeLaunches = new Set<string>()
+const POST_LAUNCH_BLOCK_MS = 10000
+let launchBlockedUntil = 0
 
 autoUpdater.autoDownload = false
 
@@ -360,6 +362,14 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
     return { success: false, error: 'Another profile is already launching.' }
   }
 
+  const cooldownRemainingMs = launchBlockedUntil - Date.now()
+  if (cooldownRemainingMs > 0) {
+    return {
+      success: false,
+      error: `Launch is settling. Try again in ${Math.ceil(cooldownRemainingMs / 1000)}s.`
+    }
+  }
+
   activeLaunches.add(gameKey)
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
@@ -388,6 +398,7 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
 
     return { success: true, message: 'All profile applications launched.' }
   } finally {
+    launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
     activeLaunches.delete(gameKey)
   }
 })

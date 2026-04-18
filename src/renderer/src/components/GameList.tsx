@@ -3,6 +3,8 @@ import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
+const POST_LAUNCH_BLOCK_MS = 10000
+
 function GameRow({
   game,
   isActive,
@@ -25,7 +27,7 @@ function GameRow({
   isLaunching: boolean
   isLaunchBlocked: boolean
   onLaunchStart: (gameKey: string) => void
-  onLaunchEnd: (gameKey: string) => void
+  onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
   onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
@@ -73,7 +75,7 @@ function GameRow({
       return
     }
 
-    onLaunchStart(game.key)
+    let cooldownMs = 0
 
     try {
       const { pathsToLaunch, appCount } = await getProfileLaunchPaths()
@@ -83,18 +85,20 @@ function GameRow({
         return
       }
 
+      onLaunchStart(game.key)
       const result = await window.electronAPI.launchProfile(game.key, pathsToLaunch)
       if (!result.success) {
         notify(result.error || 'Failed to launch profile', 'error')
         return
       }
 
+      cooldownMs = POST_LAUNCH_BLOCK_MS
       notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
     } finally {
-      onLaunchEnd(game.key)
+      onLaunchEnd(game.key, cooldownMs)
     }
   }
 
@@ -113,7 +117,7 @@ function GameRow({
       return
     }
 
-    onLaunchStart(game.key)
+    let cooldownMs = 0
 
     try {
       const { pathsToLaunch } = await getProfileLaunchPaths()
@@ -125,18 +129,20 @@ function GameRow({
         return
       }
 
+      onLaunchStart(game.key)
       const result = await window.electronAPI.launchProfile(game.key, missingPaths)
       if (!result.success) {
         notify(result.error || 'Failed to relaunch missing apps', 'error')
         return
       }
 
+      cooldownMs = POST_LAUNCH_BLOCK_MS
       notify(`Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
     } finally {
-      onLaunchEnd(game.key)
+      onLaunchEnd(game.key, cooldownMs)
     }
   }
 
@@ -288,6 +294,43 @@ export function GameList() {
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const [launchingGameKey, setLaunchingGameKey] = useState<string | null>(null)
+  const launchBlockTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (launchBlockTimeoutRef.current !== null) {
+        window.clearTimeout(launchBlockTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleLaunchStart = (gameKey: string) => {
+    if (launchBlockTimeoutRef.current !== null) {
+      window.clearTimeout(launchBlockTimeoutRef.current)
+      launchBlockTimeoutRef.current = null
+    }
+
+    setLaunchingGameKey(gameKey)
+  }
+
+  const handleLaunchEnd = (finishedGameKey: string, cooldownMs = 0) => {
+    setLaunchingGameKey((currentGameKey) => {
+      if (currentGameKey !== finishedGameKey) {
+        return currentGameKey
+      }
+
+      if (cooldownMs <= 0) {
+        return null
+      }
+
+      launchBlockTimeoutRef.current = window.setTimeout(() => {
+        setLaunchingGameKey((latestGameKey) => latestGameKey === finishedGameKey ? null : latestGameKey)
+        launchBlockTimeoutRef.current = null
+      }, cooldownMs)
+
+      return currentGameKey
+    })
+  }
 
   useEffect(() => {
     async function loadGames() {
@@ -417,10 +460,8 @@ export function GameList() {
             isDimmed={hasActiveTitle && !runningStatus[game.key]}
             isLaunching={launchingGameKey === game.key}
             isLaunchBlocked={launchingGameKey !== null}
-            onLaunchStart={setLaunchingGameKey}
-            onLaunchEnd={(finishedGameKey) => {
-              setLaunchingGameKey((currentGameKey) => currentGameKey === finishedGameKey ? null : currentGameKey)
-            }}
+            onLaunchStart={handleLaunchStart}
+            onLaunchEnd={handleLaunchEnd}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
           />
         )
