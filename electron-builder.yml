@@ -14,6 +14,7 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  perMachine: false
 publish:
   provider: github
   owner: Stashpeak
