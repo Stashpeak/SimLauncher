@@ -28,23 +28,6 @@ function normalizeLaunchDelayMs(value: number) {
   return Math.min(Math.max(Math.round(value), 0), 5000)
 }
 
-function getInitials(label: string) {
-  const words = label
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-
-  if (words.length === 0) {
-    return 'APP'
-  }
-
-  return words
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase()
-}
-
 export function SettingsView({ onClose, updateInfo }: { onClose: () => void, updateInfo: { version: string } | null }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
@@ -572,11 +555,10 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       {appIcons[u.key] ? (
                         <img src={appIcons[u.key]} alt="Icon" className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
                       ) : (
-                        <div
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-(--accent)/30 bg-(--accent)/10 text-[10px] font-black text-(--accent) shadow-[0_0_12px_-7px_var(--accent-glow)]"
-                          title={`${appNames[u.key] || u.name} icon fallback`}
-                        >
-                          {getInitials(appNames[u.key] || u.name)}
+                        <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                          </svg>
                         </div>
                       )}
                       
