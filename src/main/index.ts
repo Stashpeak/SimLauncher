@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, type WebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, Menu, Tray, type WebContents } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -25,6 +25,8 @@ const store = new Store({
 })
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
 let installAfterDownload = false
 let updateDownloaded = false
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
@@ -91,6 +93,55 @@ function sendToRenderer(channel: string, payload: unknown) {
   mainWindow.webContents.send(channel, payload)
 }
 
+function getAppIconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'SimLauncher.ico')
+    : path.join(app.getAppPath(), 'SimLauncher.ico')
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray() {
+  if (tray) {
+    return
+  }
+
+  const icon = nativeImage.createFromPath(getAppIconPath())
+  tray = new Tray(icon)
+  tray.setToolTip('SimLauncher')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show SimLauncher', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      }
+    }
+  ]))
+
+  tray.on('click', showMainWindow)
+  tray.on('double-click', showMainWindow)
+}
+
+function quitAndInstallUpdate() {
+  isQuitting = true
+  autoUpdater.quitAndInstall()
+}
+
 async function checkForUpdates() {
   if (!app.isPackaged) {
     sendToRenderer('update-available', { version: '99.0.0' })
@@ -129,7 +180,7 @@ function createWindow() {
     frame: false,
     show: false,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, '../../SimLauncher.ico'),
+    icon: getAppIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -138,20 +189,24 @@ function createWindow() {
     }
   })
 
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (event) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return
     }
 
     store.set('windowBounds', mainWindow.getBounds())
+
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
   })
 
-  // Show window once ready — optionally minimized
+  // Show window once ready, or keep it hidden when starting minimized to tray.
   mainWindow.once('ready-to-show', () => {
     const startMinimized = store.get('startMinimized') as boolean
-    mainWindow!.show()
-    if (startMinimized) {
-      mainWindow!.minimize()
+    if (!startMinimized) {
+      mainWindow!.show()
     }
   })
 
@@ -169,7 +224,7 @@ function createWindow() {
     sendToRenderer('update-downloaded', info)
 
     if (installAfterDownload) {
-      autoUpdater.quitAndInstall()
+      quitAndInstallUpdate()
     }
   })
 
@@ -208,7 +263,14 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
+app.whenReady().then(() => {
+  createTray()
+  createWindow()
+})
 
 // ----------------------------------------------------------------
 // HELPERS
@@ -469,7 +531,7 @@ ipcMain.handle('install-update', async () => {
   installAfterDownload = true
 
   if (updateDownloaded) {
-    autoUpdater.quitAndInstall()
+    quitAndInstallUpdate()
     return { success: true }
   }
 

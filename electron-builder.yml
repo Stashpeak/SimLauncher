@@ -8,6 +8,8 @@ files:
 extraResources:
   - from: assets/
     to: assets/
+  - from: SimLauncher.ico
+    to: SimLauncher.ico
 win:
   target: nsis
   icon: SimLauncher.ico

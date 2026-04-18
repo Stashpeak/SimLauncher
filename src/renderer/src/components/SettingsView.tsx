@@ -444,7 +444,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-(--text-primary)">Start minimized</span>
-                <span className="text-[10px] text-(--text-muted)">Minimize window to taskbar on startup</span>
+                <span className="text-[10px] text-(--text-muted)">Start hidden in the system tray</span>
               </div>
               <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
             </div>
