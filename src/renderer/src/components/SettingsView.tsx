@@ -293,6 +293,12 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
               />
             </div>
 
+            {/* Focus Active Title */}
+            <div className="flex items-center justify-between pt-2 border-t border-white/5">
+              <label className="text-sm text-(--text-secondary)">Focus active title</label>
+              <Toggle checked={focusActiveTitle} onChange={setFocusActiveTitle} aria-label="Focus active title" />
+            </div>
+
             {/* UI Scale */}
             <div className="space-y-3 pt-2 border-t border-white/5">
               <label className="text-sm text-(--text-secondary)">UI Scale</label>
@@ -342,10 +348,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                 <span className="text-[10px] text-(--text-muted)">Minimize window to taskbar on startup</span>
               </div>
               <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
-            </div>
-            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-              <span className="text-sm font-medium text-(--text-primary)">Focus active title</span>
-              <Toggle checked={focusActiveTitle} onChange={setFocusActiveTitle} aria-label="Focus active title" />
             </div>
             <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
               <div className="flex items-center justify-between gap-4">
