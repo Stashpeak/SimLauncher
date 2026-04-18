@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -18,6 +18,7 @@ const store = new Store({
     startWithWindows: { type: 'boolean', default: false },
     startMinimized:   { type: 'boolean', default: false },
     zoomFactor:       { type: 'number',  default: 1.0 },
+    windowBounds:      { type: 'object',  default: {} },
     migrated:     { type: 'boolean', default: false },
   }
 })
@@ -28,6 +29,50 @@ const runningProcesses = new Map<string, { process: ChildProcess; name: string; 
 interface StoredProfile {
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
+}
+
+interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function isWindowBounds(value: unknown): value is WindowBounds {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const bounds = value as Record<string, unknown>
+  return ['x', 'y', 'width', 'height'].every((key) => {
+    const coordinate = bounds[key]
+    return typeof coordinate === 'number' && Number.isFinite(coordinate)
+  })
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getInitialWindowBounds() {
+  const defaultBounds = { width: 800, height: 600 }
+  const savedBounds = store.get('windowBounds')
+
+  if (!isWindowBounds(savedBounds)) {
+    return defaultBounds
+  }
+
+  const display = screen.getDisplayMatching(savedBounds)
+  const { workArea } = display
+  const width = clamp(savedBounds.width, 640, workArea.width)
+  const height = clamp(savedBounds.height, 480, workArea.height)
+
+  return {
+    x: clamp(savedBounds.x, workArea.x, workArea.x + workArea.width - width),
+    y: clamp(savedBounds.y, workArea.y, workArea.y + workArea.height - height),
+    width,
+    height
+  }
 }
 
 function killLaunchedApps(gameKey?: string) {
@@ -52,10 +97,10 @@ function killLaunchedApps(gameKey?: string) {
 function createWindow() {
   const savedZoom = store.get('zoomFactor') as number
   const zoomFactor = typeof savedZoom === 'number' && Number.isFinite(savedZoom) ? savedZoom : 1.0
+  const windowBounds = getInitialWindowBounds()
 
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    ...windowBounds,
     frame: false,
     show: false,
     autoHideMenuBar: true,
@@ -66,6 +111,14 @@ function createWindow() {
       zoomFactor,
       preload: path.join(__dirname, '../preload/index.js')
     }
+  })
+
+  mainWindow.on('close', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+
+    store.set('windowBounds', mainWindow.getBounds())
   })
 
   // Show window once ready — optionally minimized
