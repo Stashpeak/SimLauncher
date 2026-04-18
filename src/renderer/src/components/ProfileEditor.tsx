@@ -3,6 +3,36 @@ import { UTILITIES, type Profiles } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
+interface ProfileToggleRowProps {
+  label: string
+  checked: boolean
+  onToggle: () => void
+  onChange: (checked: boolean) => void
+}
+
+function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleRowProps) {
+  return (
+    <div
+      role="switch"
+      aria-checked={checked}
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onToggle()
+        }
+      }}
+      className="group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
+    >
+      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">{label}</span>
+      <span onClick={(event) => event.stopPropagation()}>
+        <Toggle checked={checked} onChange={onChange} aria-label={label} />
+      </span>
+    </div>
+  )
+}
+
 interface ProfileEditorProps {
   gameKey: string
   gameName: string
@@ -124,11 +154,22 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
               {availableUtilities.map((u) => (
                 <div
                   key={u.key}
+                  role="switch"
+                  aria-checked={!!selection[u.key]}
+                  tabIndex={0}
                   onClick={() => handleToggleUtility(u.key)}
-                  className="flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-white group"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleToggleUtility(u.key)
+                    }
+                  }}
+                  className="flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) group"
                 >
                   <span className="text-sm font-medium opacity-80 group-hover:opacity-100">{appNames[u.key] || u.name}</span>
-                  <Toggle checked={!!selection[u.key]} onChange={() => handleToggleUtility(u.key)} />
+                  <span onClick={(event) => event.stopPropagation()}>
+                    <Toggle checked={!!selection[u.key]} onChange={() => handleToggleUtility(u.key)} aria-label={appNames[u.key] || u.name} />
+                  </span>
                 </div>
               ))}
             </div>
@@ -141,11 +182,21 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           )}
         </div>
 
-        <div className="border-t border-(--glass-border) pt-4 flex items-center justify-between px-1">
-          <span className="text-[13px] font-medium text-(--text-primary)">
-            Launch game automatically after utilities
-          </span>
-          <Toggle checked={launchAutomatically} onChange={setLaunchAutomatically} />
+        <div className="border-t border-(--glass-border) pt-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <ProfileToggleRow
+              label="Launch game automatically after utilities"
+              checked={launchAutomatically}
+              onToggle={() => setLaunchAutomatically((value) => !value)}
+              onChange={setLaunchAutomatically}
+            />
+            <ProfileToggleRow
+              label="Track running indicator for this game"
+              checked={trackingEnabled}
+              onToggle={() => setTrackingEnabled((value) => !value)}
+              onChange={setTrackingEnabled}
+            />
+          </div>
         </div>
 
         <div className="space-y-4 border-t border-(--glass-border) pt-4">
@@ -153,22 +204,19 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
             Process tracking
           </p>
 
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[13px] font-medium text-(--text-primary)">
-              Track running indicator for this game
-            </span>
-            <Toggle checked={trackingEnabled} onChange={setTrackingEnabled} />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex items-center justify-between rounded-xl bg-(--glass-bg) p-3">
-              <span className="text-sm font-medium text-(--text-secondary)">Allow close apps controls</span>
-              <Toggle checked={killControlsEnabled} onChange={setKillControlsEnabled} />
-            </div>
-            <div className="flex items-center justify-between rounded-xl bg-(--glass-bg) p-3">
-              <span className="text-sm font-medium text-(--text-secondary)">Allow relaunch controls</span>
-              <Toggle checked={relaunchControlsEnabled} onChange={setRelaunchControlsEnabled} />
-            </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <ProfileToggleRow
+              label="Allow close apps controls"
+              checked={killControlsEnabled}
+              onToggle={() => setKillControlsEnabled((value) => !value)}
+              onChange={setKillControlsEnabled}
+            />
+            <ProfileToggleRow
+              label="Allow relaunch controls"
+              checked={relaunchControlsEnabled}
+              onToggle={() => setRelaunchControlsEnabled((value) => !value)}
+              onChange={setRelaunchControlsEnabled}
+            />
           </div>
 
           <div className="space-y-2">
