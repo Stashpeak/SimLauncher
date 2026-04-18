@@ -274,6 +274,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                     value={accentCustom || '#ad46ff'}
                     onChange={(e) => handleCustomColorChange(e.target.value)}
                     className="h-10 w-20 cursor-pointer rounded bg-transparent p-0"
+                    aria-label="Custom accent color"
+                    title="Custom accent color"
                   />
                   <span className="text-xs font-mono text-(--text-muted) uppercase">{accentCustom}</span>
                 </div>
