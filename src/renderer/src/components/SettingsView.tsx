@@ -3,6 +3,13 @@ import { UTILITIES, GAMES } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
+const ZOOM_PRESETS = [
+  { label: '100%', factor: 1.0 },
+  { label: '125%', factor: 1.25 },
+  { label: '150%', factor: 1.5 },
+  { label: '175%', factor: 1.75 },
+]
+
 
 const ACCENT_PRESETS = [
   { name: 'Electric Aqua', hex: '#00eaff' },
@@ -35,6 +42,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [killOnClose, setKillOnClose] = useState<boolean>(false)
   const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
+  const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
+  const [startMinimized, setStartMinimized] = useState<boolean>(false)
+  const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
@@ -58,6 +68,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedKillOnClose = (await window.electronAPI.storeGet('killOnClose')) as boolean || false
       const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
+      const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
+      const savedStartMinimized = (await window.electronAPI.storeGet('startMinimized')) as boolean || false
+      const savedZoomFactor = (await window.electronAPI.storeGet('zoomFactor')) as number
 
       setAppPaths(savedAppPaths)
       setAppNames(savedAppNames)
@@ -68,6 +81,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setKillOnClose(savedKillOnClose)
       setFocusActiveTitle(savedFocusActiveTitle !== false)
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
+      setStartWithWindows(savedStartWithWindows)
+      setStartMinimized(savedStartMinimized)
+      setZoomFactor(typeof savedZoomFactor === 'number' && Number.isFinite(savedZoomFactor) ? savedZoomFactor : 1.0)
       
       setIsCustomColor(savedAccentPreset === 'custom')
 
@@ -181,6 +197,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('killOnClose', killOnClose)
       await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
+      await window.electronAPI.storeSet('startMinimized', startMinimized)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
@@ -266,6 +283,29 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                 </div>
               )}
             </div>
+
+            {/* UI Scale */}
+            <div className="space-y-3 pt-2 border-t border-white/5">
+              <label className="text-sm text-(--text-secondary)">UI Scale</label>
+              <div className="flex rounded-xl overflow-hidden border border-(--glass-border)">
+                {ZOOM_PRESETS.map(preset => (
+                  <button
+                    key={preset.factor}
+                    onClick={() => {
+                      setZoomFactor(preset.factor)
+                      window.electronAPI.setZoom(preset.factor)
+                    }}
+                    className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all ${
+                      zoomFactor === preset.factor
+                        ? 'bg-(--accent) text-white shadow-[0_0_15px_-5px_var(--accent-glow)]'
+                        : 'bg-(--glass-bg-elevated) text-(--text-secondary) hover:bg-(--glass-border) hover:text-(--text-primary)'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -273,6 +313,27 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
         <section className="space-y-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">Behavior</h3>
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-(--text-primary)">Start with Windows</span>
+                <span className="text-[10px] text-(--text-muted)">Launch SimLauncher automatically at login</span>
+              </div>
+              <Toggle
+                checked={startWithWindows}
+                onChange={(checked) => {
+                  setStartWithWindows(checked)
+                  window.electronAPI.setLoginItem(checked)
+                }}
+                aria-label="Start with Windows"
+              />
+            </div>
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-(--text-primary)">Start minimized</span>
+                <span className="text-[10px] text-(--text-muted)">Minimize window to taskbar on startup</span>
+              </div>
+              <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
+            </div>
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
               <span className="text-sm font-medium text-(--text-primary)">Close launched apps when SimLauncher closes</span>
               <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Close apps on exit" />
