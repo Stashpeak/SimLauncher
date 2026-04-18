@@ -39,7 +39,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [accentPreset, setAccentPreset] = useState<string>('#00eaff')
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
-  const [killOnClose, setKillOnClose] = useState<boolean>(false)
   const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
@@ -65,7 +64,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || '#00eaff'
       const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
       const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
-      const savedKillOnClose = (await window.electronAPI.storeGet('killOnClose')) as boolean || false
       const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
       const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
@@ -78,7 +76,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setAccentPreset(savedAccentPreset)
       setAccentCustom(savedAccentCustom)
       setAccentBgTint(savedBgTint)
-      setKillOnClose(savedKillOnClose)
       setFocusActiveTitle(savedFocusActiveTitle !== false)
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       setStartWithWindows(savedStartWithWindows)
@@ -194,7 +191,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('accentPreset', accentPreset)
       await window.electronAPI.storeSet('accentCustom', accentCustom)
       await window.electronAPI.storeSet('accentBgTint', accentBgTint)
-      await window.electronAPI.storeSet('killOnClose', killOnClose)
       await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
       await window.electronAPI.storeSet('startMinimized', startMinimized)
@@ -346,10 +342,6 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                 <span className="text-[10px] text-(--text-muted)">Minimize window to taskbar on startup</span>
               </div>
               <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
-            </div>
-            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
-              <span className="text-sm font-medium text-(--text-primary)">Close launched apps when SimLauncher closes</span>
-              <Toggle checked={killOnClose} onChange={setKillOnClose} aria-label="Close apps on exit" />
             </div>
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
               <span className="text-sm font-medium text-(--text-primary)">Focus active title</span>
