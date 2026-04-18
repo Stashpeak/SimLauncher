@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, type WebContents } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -25,6 +25,7 @@ const store = new Store({
 
 let mainWindow: BrowserWindow | null = null
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
+const activeLaunches = new Set<string>()
 
 interface StoredProfile {
   trackingEnabled?: boolean
@@ -190,6 +191,62 @@ function getExeName(filePath: string) {
   return path.basename(filePath).toLowerCase()
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function sendLaunchError(sender: WebContents, appPath: string, error: string) {
+  if (!sender.isDestroyed()) {
+    sender.send('app-launch-error', { app: appPath, error })
+  }
+}
+
+function spawnDetachedApp(sender: WebContents, gameKey: string, appPath: string, gamePath?: string) {
+  return new Promise<void>((resolve) => {
+    let settled = false
+
+    const resolveOnce = () => {
+      if (!settled) {
+        settled = true
+        resolve()
+      }
+    }
+
+    try {
+      const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
+      runningProcesses.set(appPath, {
+        process: child,
+        name: path.basename(appPath),
+        gameKey,
+        isGame: !!gamePath && appPath.toLowerCase() === gamePath
+      })
+
+      child.once('spawn', () => {
+        child.unref()
+        resolveOnce()
+      })
+
+      child.once('error', (err) => {
+        runningProcesses.delete(appPath)
+        console.error(`Error launching ${appPath}: ${err.message}`)
+        sendLaunchError(sender, appPath, err.message)
+        resolveOnce()
+      })
+
+      child.once('exit', () => {
+        runningProcesses.delete(appPath)
+      })
+
+      setTimeout(resolveOnce, 500)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Error launching ${appPath}: ${message}`)
+      sendLaunchError(sender, appPath, message)
+      resolveOnce()
+    }
+  })
+}
+
 function readRunningProcessNames() {
   return new Promise<Set<string>>((resolve) => {
     execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
@@ -255,42 +312,45 @@ async function getTrackedRunningApps() {
  * Executes a list of applications sequentially with a delay.
  * @param profileApps Array of executable paths to launch.
  */
-ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[]) => {
+ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: string[]) => {
   if (!Array.isArray(profileApps) || profileApps.length === 0) {
     return { success: false, error: 'Profile is empty.' }
   }
 
-  let delay = 0
+  if (activeLaunches.has(gameKey)) {
+    return { success: false, error: 'This profile is already launching.' }
+  }
+
+  activeLaunches.add(gameKey)
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
-  profileApps.forEach((appPath) => {
-    if (!isValidExePath(appPath)) {
+  const validApps = profileApps.filter((appPath) => {
+    const valid = isValidExePath(appPath)
+    if (!valid) {
       console.error(`Skipping invalid path: ${appPath}`)
-      return
     }
-    setTimeout(() => {
-      const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
-      runningProcesses.set(appPath, {
-        process: child,
-        name: path.basename(appPath),
-        gameKey,
-        isGame: !!gamePath && appPath.toLowerCase() === gamePath
-      })
-      child.on('error', (err) => {
-        runningProcesses.delete(appPath)
-        console.error(`Error launching ${appPath}: ${err.message}`)
-        event.sender.send('app-launch-error', { app: appPath, error: err.message })
-      })
-      child.on('exit', () => {
-        runningProcesses.delete(appPath)
-      })
-      child.unref()
-    }, delay)
-    delay += launchDelayMs
+    return valid
   })
 
-  return { success: true, message: 'All profile applications launching.' }
+  if (validApps.length === 0) {
+    activeLaunches.delete(gameKey)
+    return { success: false, error: 'No valid executable paths configured.' }
+  }
+
+  try {
+    for (let index = 0; index < validApps.length; index += 1) {
+      await spawnDetachedApp(event.sender, gameKey, validApps[index], gamePath)
+
+      if (index < validApps.length - 1 && launchDelayMs > 0) {
+        await wait(launchDelayMs)
+      }
+    }
+
+    return { success: true, message: 'All profile applications launched.' }
+  } finally {
+    activeLaunches.delete(gameKey)
+  }
 })
 
 // ----------------------------------------------------------------

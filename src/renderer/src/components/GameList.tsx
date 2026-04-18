@@ -22,6 +22,7 @@ function GameRow({
 }) {
   const { notify } = useNotify()
   const [iconUrl, setIconUrl] = useState<string | null>(null)
+  const [isLaunching, setIsLaunching] = useState(false)
 
   useEffect(() => {
     async function resolveIcon() {
@@ -61,6 +62,12 @@ function GameRow({
   }
 
   const handleLaunch = async () => {
+    if (isLaunching) {
+      return
+    }
+
+    setIsLaunching(true)
+
     try {
       const { pathsToLaunch, appCount } = await getProfileLaunchPaths()
 
@@ -69,11 +76,18 @@ function GameRow({
         return
       }
 
-      await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      const result = await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      if (!result.success) {
+        notify(result.error || 'Failed to launch profile', 'error')
+        return
+      }
+
       notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
+    } finally {
+      setIsLaunching(false)
     }
   }
 
@@ -88,6 +102,12 @@ function GameRow({
   }
 
   const handleRelaunchMissing = async () => {
+    if (isLaunching) {
+      return
+    }
+
+    setIsLaunching(true)
+
     try {
       const { pathsToLaunch } = await getProfileLaunchPaths()
       const runningPathSet = new Set(runningApps.map((appProcess) => appProcess.path.toLowerCase()))
@@ -98,11 +118,18 @@ function GameRow({
         return
       }
 
-      await window.electronAPI.launchProfile(game.key, missingPaths)
+      const result = await window.electronAPI.launchProfile(game.key, missingPaths)
+      if (!result.success) {
+        notify(result.error || 'Failed to relaunch missing apps', 'error')
+        return
+      }
+
       notify(`Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
+    } finally {
+      setIsLaunching(false)
     }
   }
 
@@ -151,7 +178,7 @@ function GameRow({
   const canKill = isRunning && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
-  const primaryLabel = canKill ? 'Close Apps' : 'Launch'
+  const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
     : 'bg-(--accent) text-white neon-glow hover:opacity-90'
@@ -198,7 +225,8 @@ function GameRow({
           <button
             type="button"
             onClick={primaryAction}
-            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-95 ${primaryButtonClass}`}
+            disabled={isLaunching && !canKill}
+            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-95 disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100 ${primaryButtonClass}`}
           >
             {primaryLabel}
           </button>
@@ -206,9 +234,10 @@ function GameRow({
             <button
               type="button"
               onClick={handleRelaunchMissing}
-              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-95"
+              disabled={isLaunching}
+              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-95 disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
             >
-              Relaunch
+              {isLaunching ? 'Launching...' : 'Relaunch'}
             </button>
           )}
           <button
