@@ -36,3 +36,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npx electron-builder --win --publish always
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit ${{ github.ref_name }} \
+            --repo Stashpeak/SimLauncher \
+            --notes "$(gh api repos/Stashpeak/SimLauncher/releases/generate-notes \
+              -f tag_name=${{ github.ref_name }} \
+              --jq '.body')"
