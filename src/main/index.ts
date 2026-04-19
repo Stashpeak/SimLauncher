@@ -37,6 +37,9 @@ const POST_LAUNCH_BLOCK_MS = 10000
 let launchBlockedUntil = 0
 let genericIconFingerprint: string | null | undefined
 let genericIconFingerprintPromise: Promise<string | null> | null = null
+const UTILITY_COMPANION_PROCESS_NAMES: Record<string, string[]> = {
+  garage61: ['Garage61 telemetry agent.exe']
+}
 
 autoUpdater.autoDownload = false
 
@@ -155,7 +158,81 @@ async function checkForUpdates() {
   return await autoUpdater.checkForUpdates()
 }
 
-function killLaunchedApps(gameKey?: string) {
+function runTaskkill(args: string[], description: string) {
+  return new Promise<void>((resolve) => {
+    execFile('taskkill', args, { windowsHide: true }, (error, _stdout, stderr) => {
+      if (error) {
+        const detail = stderr.trim() || error.message
+        if (!/not found/i.test(detail)) {
+          console.error(`Failed to ${description}: ${detail}`)
+        }
+      }
+
+      resolve()
+    })
+  })
+}
+
+function killProcessTree(child: ChildProcess, appPath: string) {
+  if (process.platform === 'win32' && child.pid) {
+    return runTaskkill(['/PID', String(child.pid), '/T', '/F'], `kill process tree for ${appPath}`)
+  }
+
+  try {
+    child.kill()
+  } catch (err) {
+    console.error(`Error killing ${appPath}:`, err)
+  }
+
+  return Promise.resolve()
+}
+
+function killProcessByImageName(processName: string) {
+  if (process.platform !== 'win32') {
+    return Promise.resolve()
+  }
+
+  return runTaskkill(['/IM', processName, '/T', '/F'], `kill companion process ${processName}`)
+}
+
+function getProfileCompanionProcessNames(gameKey?: string) {
+  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const companionNames = new Set<string>()
+
+  Object.entries(profiles || {}).forEach(([profileGameKey, profile]) => {
+    if (gameKey && profileGameKey !== gameKey) {
+      return
+    }
+
+    Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
+      if (profile?.[utilityKey] === true) {
+        processNames.forEach((processName) => companionNames.add(processName.toLowerCase()))
+      }
+    })
+
+    const gameExeName = isValidExePath(gamePaths?.[profileGameKey])
+      ? getExeName(gamePaths![profileGameKey])
+      : null
+
+    if (Array.isArray(profile?.trackedProcessPaths)) {
+      profile.trackedProcessPaths.filter(isValidExePath).forEach((processPath) => {
+        const processName = getExeName(processPath)
+        if (processName !== gameExeName) {
+          companionNames.add(processName)
+        }
+      })
+    }
+  })
+
+  return companionNames
+}
+
+async function killLaunchedApps(gameKey?: string) {
+  const processNames = await readRunningProcessNames()
+  const companionProcessNames = getProfileCompanionProcessNames(gameKey)
+  const killTasks: Promise<void>[] = []
+
   runningProcesses.forEach(({ process: child }, appPath) => {
     const appProcess = runningProcesses.get(appPath)
     if (gameKey && appProcess?.gameKey !== gameKey) {
@@ -165,13 +242,18 @@ function killLaunchedApps(gameKey?: string) {
       return
     }
 
-    try {
-      child.kill()
-    } catch (err) {
-      console.error(`Error killing ${appPath}:`, err)
-    }
+    companionProcessNames.delete(getExeName(appPath))
+    killTasks.push(killProcessTree(child, appPath))
     runningProcesses.delete(appPath)
   })
+
+  companionProcessNames.forEach((processName) => {
+    if (processNames.has(processName)) {
+      killTasks.push(killProcessByImageName(processName))
+    }
+  })
+
+  await Promise.all(killTasks)
 }
 
 function createWindow() {
@@ -637,7 +719,7 @@ ipcMain.handle('get-running-apps', async () => {
 })
 
 ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
-  killLaunchedApps(gameKey)
+  return killLaunchedApps(gameKey)
 })
 
 ipcMain.handle('install-update', async () => {
