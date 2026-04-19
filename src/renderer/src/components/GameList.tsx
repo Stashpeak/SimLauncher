@@ -7,9 +7,20 @@ const POST_LAUNCH_BLOCK_MS = 10000
 
 type RunningApp = { path: string; name: string; gameKey: string }
 
-  onRunningStateRefresh: () => Promise<void>
-  onToggleEditor: () => void
-  cacheInitialized: boolean
+function GameRow({
+  game,
+  isActive,
+  isRunning,
+  runningAppIcons,
+  runningApps,
+  isDimmed,
+  isLaunching,
+  isLaunchBlocked,
+  onLaunchStart,
+  onLaunchEnd,
+  onRunningStateRefresh,
+  onToggleEditor,
+  cacheInitialized
 }: {
   game: Game
   isActive: boolean
@@ -229,7 +240,7 @@ type RunningApp = { path: string; name: string; gameKey: string }
                     return (
                       <img
                         key={i}
-                        src={app.icon}
+                        src={app.icon ?? undefined}
                         alt=""
                         className="h-4 w-4 object-contain opacity-80"
                         onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
