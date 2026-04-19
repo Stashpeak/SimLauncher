@@ -32,11 +32,14 @@ function GameRow({
 }) {
   const { notify } = useNotify()
   const [iconUrl, setIconUrl] = useState<string | null>(null)
+  const [iconLoadFailed, setIconLoadFailed] = useState(false)
+  const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
 
   useEffect(() => {
     async function resolveIcon() {
       const filename = game.icon.split('/').pop() || ''
       const data = await window.electronAPI.getAssetData(filename)
+      setIconLoadFailed(false)
       setIconUrl(data)
     }
     resolveIcon()
@@ -201,12 +204,12 @@ function GameRow({
       <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
-            {iconUrl && (
+            {iconUrl && !iconLoadFailed && (
               <img
                 src={iconUrl}
                 alt={game.name}
                 className="h-12 w-12 object-contain animate-fade-slide drop-shadow-md"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
+                onError={() => setIconLoadFailed(true)}
               />
             )}
             {isRunning && (
@@ -220,13 +223,13 @@ function GameRow({
             <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
-                {runningAppIcons.map((icon, i) => (
+                {runningAppIcons.filter((icon) => !failedRunningIcons[icon]).map((icon, i) => (
                   <img
                     key={i}
                     src={icon}
                     alt=""
                     className="h-4 w-4 object-contain opacity-80"
-                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                    onError={() => setFailedRunningIcons((current) => ({ ...current, [icon]: true }))}
                   />
                 ))}
               </div>
