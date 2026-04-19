@@ -381,7 +381,7 @@ function GameRow({
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
-    <div className={`flex flex-col gap-2 transition-opacity duration-300 ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
+    <div className={`relative flex flex-col gap-2 transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
       <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
