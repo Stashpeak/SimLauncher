@@ -75,6 +75,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   // Cache for file icons
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
   const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
+  const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     async function loadSettings() {
@@ -569,8 +570,13 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
                     {/* Functional Row */}
                     <div className="flex items-center gap-4">
-                      {appIcons[u.key] ? (
-                        <img src={appIcons[u.key]} alt="Icon" className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
+                      {appIcons[u.key] && !iconLoadErrors.has(u.key) ? (
+                        <img
+                          src={appIcons[u.key]}
+                          alt="Icon"
+                          className="w-8 h-8 object-contain drop-shadow-md shrink-0"
+                          onError={() => setIconLoadErrors(prev => new Set([...prev, u.key]))}
+                        />
                       ) : (
                         <div
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-(--accent)/30 bg-(--accent)/10 text-[10px] font-black text-(--accent) shadow-[0_0_12px_-7px_var(--accent-glow)]"
