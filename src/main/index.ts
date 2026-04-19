@@ -29,6 +29,42 @@ const store = new Store({
   }
 })
 
+const CONFIG_FILE_NAME = 'simlauncher-config.json'
+const EXPECTED_CONFIG_KEYS = new Set([
+  'appPaths',
+  'gamePaths',
+  'profiles',
+  'appNames',
+  'customSlots',
+  'accentPreset',
+  'accentCustom',
+  'accentBgTint',
+  'focusActiveTitle',
+  'launchDelayMs',
+  'startWithWindows',
+  'startMinimized',
+  'minimizeToTray',
+  'autoCheckUpdates',
+  'zoomFactor',
+  'windowBounds',
+  'profileUtilityOrderMigrated',
+  'profileSetsMigrated',
+  'migrated'
+])
+const OBJECT_CONFIG_KEYS = new Set(['appPaths', 'gamePaths', 'profiles', 'appNames', 'windowBounds'])
+const STRING_CONFIG_KEYS = new Set(['accentPreset', 'accentCustom'])
+const BOOLEAN_CONFIG_KEYS = new Set([
+  'accentBgTint',
+  'focusActiveTitle',
+  'startWithWindows',
+  'startMinimized',
+  'minimizeToTray',
+  'autoCheckUpdates',
+  'profileUtilityOrderMigrated',
+  'profileSetsMigrated',
+  'migrated'
+])
+
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
@@ -117,6 +153,78 @@ function sendToRenderer(channel: string, payload: unknown) {
   }
 
   mainWindow.webContents.send(channel, payload)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function validateImportedConfig(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error('Config file must contain a JSON object.')
+  }
+
+  const keys = Object.keys(value)
+
+  if (keys.length === 0) {
+    throw new Error('Config file is empty.')
+  }
+
+  const unexpectedKeys = keys.filter((key) => !EXPECTED_CONFIG_KEYS.has(key))
+
+  if (unexpectedKeys.length > 0) {
+    throw new Error(`Config file contains unsupported keys: ${unexpectedKeys.join(', ')}`)
+  }
+
+  if (!keys.some((key) => EXPECTED_CONFIG_KEYS.has(key))) {
+    throw new Error('Config file does not contain SimLauncher settings.')
+  }
+
+  keys.forEach((key) => {
+    const setting = value[key]
+
+    if (OBJECT_CONFIG_KEYS.has(key) && !isRecord(setting)) {
+      throw new Error(`Config value "${key}" must be an object.`)
+    }
+
+    if (STRING_CONFIG_KEYS.has(key) && typeof setting !== 'string') {
+      throw new Error(`Config value "${key}" must be a string.`)
+    }
+
+    if (BOOLEAN_CONFIG_KEYS.has(key) && typeof setting !== 'boolean') {
+      throw new Error(`Config value "${key}" must be a boolean.`)
+    }
+
+    if (key === 'customSlots') {
+      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting < 1) {
+        throw new Error('Config value "customSlots" must be a number greater than or equal to 1.')
+      }
+    }
+
+    if (key === 'launchDelayMs') {
+      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting < 0 || setting > 5000) {
+        throw new Error('Config value "launchDelayMs" must be a number from 0 to 5000.')
+      }
+    }
+
+    if (key === 'zoomFactor') {
+      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting <= 0) {
+        throw new Error('Config value "zoomFactor" must be a positive number.')
+      }
+    }
+  })
+
+  return true
+}
+
+function applyRuntimeConfigSettings() {
+  const startWithWindows = store.get('startWithWindows') as boolean
+  app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
+
+  const zoomFactor = store.get('zoomFactor')
+  if (typeof zoomFactor === 'number' && Number.isFinite(zoomFactor) && zoomFactor > 0) {
+    mainWindow?.webContents.setZoomFactor(zoomFactor)
+  }
 }
 
 function getAppIconPath() {
@@ -942,6 +1050,66 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
       launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
     }
     activeLaunches.delete(gameKey)
+  }
+})
+
+// ----------------------------------------------------------------
+// CONFIG EXPORT / IMPORT
+// ----------------------------------------------------------------
+
+ipcMain.handle('export-config', async () => {
+  try {
+    const options = {
+      title: 'Export SimLauncher Config',
+      defaultPath: CONFIG_FILE_NAME,
+      filters: [{ name: 'JSON Files', extensions: ['json'] }]
+    }
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options)
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true }
+    }
+
+    await fs.promises.writeFile(result.filePath, JSON.stringify(store.store, null, 2), 'utf8')
+    return { success: true, filePath: result.filePath }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('Failed to export config:', err)
+    return { success: false, error: message }
+  }
+})
+
+ipcMain.handle('import-config', async () => {
+  try {
+    const options = {
+      title: 'Import SimLauncher Config',
+      properties: ['openFile'] as const,
+      filters: [{ name: 'JSON Files', extensions: ['json'] }]
+    }
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true }
+    }
+
+    const rawConfig = await fs.promises.readFile(result.filePaths[0], 'utf8')
+    const parsedConfig = JSON.parse(rawConfig) as unknown
+    validateImportedConfig(parsedConfig)
+
+    store.clear()
+    store.set(parsedConfig)
+    migrateProfilesToNamedSets()
+    applyRuntimeConfigSettings()
+
+    return { success: true, filePath: result.filePaths[0] }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('Failed to import config:', err)
+    return { success: false, error: message }
   }
 })
 
