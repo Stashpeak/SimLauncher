@@ -24,6 +24,7 @@ const store = new Store({
     zoomFactor:       { type: 'number',  default: 1.0 },
     windowBounds:      { type: 'object',  default: {} },
     profileUtilityOrderMigrated: { type: 'boolean', default: false },
+    profileSetsMigrated: { type: 'boolean', default: false },
     migrated:     { type: 'boolean', default: false },
   }
 })
@@ -51,6 +52,15 @@ interface StoredProfile extends Record<string, unknown> {
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
 }
+interface StoredNamedProfile extends StoredProfile {
+  id: string
+  name: string
+}
+interface StoredProfileSet {
+  activeProfileId: string
+  profiles: StoredNamedProfile[]
+}
+type StoredProfileEntry = StoredProfile | StoredProfileSet
 
 interface StoredProfileUtility {
   id: string
@@ -205,14 +215,16 @@ function killProcessByImageName(processName: string) {
 }
 
 function getProfileCompanionProcessNames(gameKey?: string) {
-  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const companionNames = new Set<string>()
 
-  Object.entries(profiles || {}).forEach(([profileGameKey, profile]) => {
+  Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
       return
     }
+
+    const profile = getActiveStoredProfile(profileEntry)
 
     Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
       if (isUtilityEnabled(profile, utilityKey)) {
@@ -259,6 +271,48 @@ async function killLaunchedApps(gameKey?: string) {
   companionProcessNames.forEach((processName) => {
     if (processNames.has(processName)) {
       killTasks.push(killProcessByImageName(processName))
+    }
+  })
+
+  await Promise.all(killTasks)
+}
+
+async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
+  const processNames = await readRunningProcessNames()
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const killTasks: Promise<void>[] = []
+  const killedExeNames = new Set<string>()
+
+  appPathsToKill.filter(isValidExePath).forEach((appPath) => {
+    if (gamePath && appPath.toLowerCase() === gamePath) {
+      return
+    }
+
+    const runningAppEntry = Array.from(runningProcesses.entries()).find(([runningPath, runningApp]) => (
+      runningPath.toLowerCase() === appPath.toLowerCase() &&
+      runningApp.gameKey === gameKey &&
+      !runningApp.isGame
+    ))
+
+    if (runningAppEntry) {
+      const [runningPath, runningApp] = runningAppEntry
+      killTasks.push(killProcessTree(runningApp.process, appPath))
+      runningProcesses.delete(runningPath)
+      killedExeNames.add(getExeName(appPath))
+    }
+  })
+
+  appPathsToKill.filter(isValidExePath).forEach((appPath) => {
+    if (gamePath && appPath.toLowerCase() === gamePath) {
+      return
+    }
+
+    const processName = getExeName(appPath)
+
+    if (!killedExeNames.has(processName) && processNames.has(processName)) {
+      killTasks.push(killProcessByImageName(processName))
+      killedExeNames.add(processName)
     }
   })
 
@@ -365,7 +419,7 @@ app.on('before-quit', () => {
 })
 
 app.whenReady().then(() => {
-  migrateLegacyProfilesToUtilityOrder()
+  migrateProfilesToNamedSets()
   createTray()
   createWindow()
 })
@@ -401,6 +455,15 @@ function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
   return typeof utility.id === 'string' && typeof utility.enabled === 'boolean'
 }
 
+function isStoredProfileSet(value: unknown): value is StoredProfileSet {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const profileSet = value as Record<string, unknown>
+  return typeof profileSet.activeProfileId === 'string' && Array.isArray(profileSet.profiles)
+}
+
 function getCustomSlotNumber(key: string) {
   const match = key.match(/^customapp(\d+)$/)
   return match ? Number(match[1]) : null
@@ -409,8 +472,17 @@ function getCustomSlotNumber(key: string) {
 function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
   let highestSlot = 0
 
-  records.forEach((record) => {
+  const scanRecord = (record: Record<string, unknown> | undefined) => {
     Object.entries(record || {}).forEach(([key, value]) => {
+      if (key === 'profiles' && Array.isArray(value)) {
+        value.forEach((profile) => {
+          if (profile && typeof profile === 'object') {
+            scanRecord(profile as Record<string, unknown>)
+          }
+        })
+        return
+      }
+
       const slotNumber = getCustomSlotNumber(key)
 
       if (slotNumber !== null && (value === true || (typeof value === 'string' && value.trim().length > 0))) {
@@ -427,6 +499,10 @@ function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefi
         })
       }
     })
+  }
+
+  records.forEach((record) => {
+    scanRecord(record)
   })
 
   return highestSlot
@@ -473,48 +549,129 @@ function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey: string
   return profile[utilityKey] === true
 }
 
-function migrateLegacyProfilesToUtilityOrder() {
-  if (store.get('profileUtilityOrderMigrated') === true) {
+function getActiveStoredProfile(profileEntry: StoredProfileEntry | undefined) {
+  if (!profileEntry) {
+    return undefined
+  }
+
+  if (isStoredProfileSet(profileEntry)) {
+    return profileEntry.profiles.find((profile) => profile.id === profileEntry.activeProfileId) || profileEntry.profiles[0]
+  }
+
+  return profileEntry
+}
+
+function normalizeStoredProfileUtilityOrder(profile: StoredProfile, utilityKeys: string[]) {
+  const normalizedProfile: StoredProfile = {
+    ...profile,
+    utilities: Array.isArray(profile.utilities)
+      ? profile.utilities.filter(isStoredProfileUtility)
+      : utilityKeys.map((utilityKey) => ({
+        id: utilityKey,
+        enabled: profile[utilityKey] === true
+      }))
+  }
+
+  utilityKeys.forEach((utilityKey) => {
+    delete normalizedProfile[utilityKey]
+  })
+
+  return normalizedProfile
+}
+
+function normalizeStoredNamedProfile(value: unknown, utilityKeys: string[], fallbackIndex: number): StoredNamedProfile | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const profile = value as StoredProfile
+  const orderedProfile = normalizeStoredProfileUtilityOrder(profile, utilityKeys)
+  const rawProfile = value as Record<string, unknown>
+
+  return {
+    ...orderedProfile,
+    id: typeof rawProfile.id === 'string' && rawProfile.id.trim().length > 0
+      ? rawProfile.id
+      : `profile-${Date.now().toString(36)}-${fallbackIndex}`,
+    name: typeof rawProfile.name === 'string' && rawProfile.name.trim().length > 0
+      ? rawProfile.name.trim()
+      : fallbackIndex === 0 ? 'Default' : `Profile ${fallbackIndex + 1}`
+  }
+}
+
+function normalizeStoredProfileSet(profileEntry: StoredProfileEntry, utilityKeys: string[]) {
+  if (isStoredProfileSet(profileEntry)) {
+    const seen = new Set<string>()
+    const profiles = profileEntry.profiles.flatMap((profile, index) => {
+      const normalizedProfile = normalizeStoredNamedProfile(profile, utilityKeys, index)
+
+      if (!normalizedProfile || seen.has(normalizedProfile.id)) {
+        return []
+      }
+
+      seen.add(normalizedProfile.id)
+      return [normalizedProfile]
+    })
+
+    if (profiles.length === 0) {
+      const defaultProfile = normalizeStoredNamedProfile({}, utilityKeys, 0)!
+      defaultProfile.id = 'default'
+      defaultProfile.name = 'Default'
+      return {
+        activeProfileId: defaultProfile.id,
+        profiles: [defaultProfile]
+      }
+    }
+
+    return {
+      activeProfileId: profiles.some((profile) => profile.id === profileEntry.activeProfileId)
+        ? profileEntry.activeProfileId
+        : profiles[0].id,
+      profiles
+    }
+  }
+
+  const defaultProfile = normalizeStoredNamedProfile(profileEntry, utilityKeys, 0)!
+  defaultProfile.id = 'default'
+  defaultProfile.name = 'Default'
+
+  return {
+    activeProfileId: defaultProfile.id,
+    profiles: [defaultProfile]
+  }
+}
+
+function migrateProfilesToNamedSets() {
+  if (store.get('profileSetsMigrated') === true) {
     return
   }
 
-  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const appPaths = store.get('appPaths') as Record<string, string> | undefined
 
   if (!profiles || Object.keys(profiles).length === 0) {
     store.set('profileUtilityOrderMigrated', true)
+    store.set('profileSetsMigrated', true)
     return
   }
 
   const savedCustomSlots = store.get('customSlots')
   const customSlots = Math.max(
     typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots) ? savedCustomSlots : 1,
-    getHighestCustomSlot(appPaths, ...Object.values(profiles))
+    getHighestCustomSlot(appPaths, ...Object.values(profiles).map((profile) => profile as Record<string, unknown>))
   )
   const utilityKeys = getUtilityKeys(customSlots)
-  const migratedProfiles: Record<string, StoredProfile> = {}
-
-  Object.entries(profiles).forEach(([gameKey, profile]) => {
-    const migratedProfile: StoredProfile = {
-      ...profile,
-      utilities: Array.isArray(profile.utilities)
-        ? profile.utilities.filter(isStoredProfileUtility)
-        : utilityKeys.map((utilityKey) => ({
-          id: utilityKey,
-          enabled: profile[utilityKey] === true
-        }))
-    }
-
-    utilityKeys.forEach((utilityKey) => {
-      delete migratedProfile[utilityKey]
-    })
-
-    migratedProfiles[gameKey] = migratedProfile
-  })
+  const migratedProfiles = Object.fromEntries(
+    Object.entries(profiles).map(([gameKey, profileEntry]) => [
+      gameKey,
+      normalizeStoredProfileSet(profileEntry, utilityKeys)
+    ])
+  )
 
   store.set('customSlots', customSlots)
   store.set('profiles', migratedProfiles)
   store.set('profileUtilityOrderMigrated', true)
+  store.set('profileSetsMigrated', true)
 }
 
 function isRunningExePath(processNames: Set<string>, appPath: string) {
@@ -665,13 +822,15 @@ function getGenericIconFingerprint() {
 // INVARIANT: an exe name can only be "running" for one gameKey at a time.
 // Never match by exe name globally without deduplicating across all gameKeys.
 async function getTrackedRunningApps(processNames: Set<string>) {
-  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const trackedApps: { path: string; name: string; gameKey: string; tracked: boolean }[] = []
   const seen = new Set<string>()
 
-  Object.entries(profiles || {}).forEach(([gameKey, profile]) => {
+  Object.entries(profiles || {}).forEach(([gameKey, profileEntry]) => {
+    const profile = getActiveStoredProfile(profileEntry)
+
     if (profile?.trackingEnabled === false) {
       return
     }
@@ -855,6 +1014,10 @@ ipcMain.handle('get-running-apps', async () => {
 
 ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
   return killLaunchedApps(gameKey)
+})
+
+ipcMain.handle('kill-profile-apps', (_event, gameKey: string, appPathsToKill: string[]) => {
+  return killProfileApps(gameKey, Array.isArray(appPathsToKill) ? appPathsToKill : [])
 })
 
 ipcMain.handle('install-update', async () => {

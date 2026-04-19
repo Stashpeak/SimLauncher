@@ -5,9 +5,12 @@ import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 import {
   DEFAULT_ACCENT_COLOR,
+  DEFAULT_PROFILE_ID,
+  createDefaultProfile,
   getHighestCustomSlot,
   getUtilities,
   migrateProfileToUtilityOrder,
+  type GameProfileSet,
   type GameProfile
 } from './lib/config'
 
@@ -54,12 +57,15 @@ export default function App() {
         }
         const migratedCustomSlots = getHighestCustomSlot(appPaths, appNames, ...Object.values(profiles))
         const utilities = getUtilities(migratedCustomSlots)
-        const migratedProfiles = Object.fromEntries(
+        const migratedProfiles: Record<string, GameProfileSet> = Object.fromEntries(
           Object.entries(profiles).map(([gameKey, profile]) => [
             gameKey,
-            migrateProfileToUtilityOrder(profile, utilities)
+            {
+              activeProfileId: DEFAULT_PROFILE_ID,
+              profiles: [createDefaultProfile(migrateProfileToUtilityOrder(profile, utilities))]
+            }
           ])
-        )
+        ) as Record<string, GameProfileSet>
 
         if (migratedCustomSlots > 1) await window.electronAPI.storeSet('customSlots', migratedCustomSlots)
         if (Object.keys(migratedProfiles).length > 0) await window.electronAPI.storeSet('profiles', migratedProfiles)

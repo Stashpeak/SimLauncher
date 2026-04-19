@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
+  getActiveGameProfile,
   getUtilities,
+  normalizeGameProfileSet,
   normalizeProfileUtilities,
   resolveCustomSlots,
   type ProfileUtility,
@@ -43,15 +45,19 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
 interface ProfileEditorProps {
   gameKey: string
   gameName: string
+  activeProfileId: string
+  onProfilesChanged: () => Promise<unknown>
   onClose: () => void
 }
 
-export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps) {
+export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesChanged, onClose }: ProfileEditorProps) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
   const [utilities, setUtilities] = useState<Utility[]>(() => getUtilities(1))
+  const [profileName, setProfileName] = useState('Default')
+  const [profileCount, setProfileCount] = useState(1)
   const [profileUtilities, setProfileUtilities] = useState<ProfileUtility[]>([])
   const [dragUtilityId, setDragUtilityId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
@@ -66,17 +72,21 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true)
       // Load configuration from electron-store via IPC
       const paths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
       const names = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
       const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
       const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
-      const profile = allProfiles[gameKey] || {}
+      const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
+      const profile = profileSet.profiles.find((entry) => entry.id === activeProfileId) || getActiveGameProfile(profileSet)
       const resolvedUtilities = getUtilities(resolveCustomSlots(savedCustomSlots, paths, names, profile))
 
       setAppPaths(paths)
       setAppNames(names)
       setUtilities(resolvedUtilities)
+      setProfileName(profile.name)
+      setProfileCount(profileSet.profiles.length)
       
       setProfileUtilities(normalizeProfileUtilities(profile, resolvedUtilities))
       // Default auto-launch to true unless explicitly disabled
@@ -106,7 +116,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     }
 
     loadData()
-  }, [gameKey])
+  }, [gameKey, activeProfileId])
 
   const handleToggleUtility = (key: string) => {
     setProfileUtilities((currentUtilities) => {
@@ -190,8 +200,13 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const handleSave = async () => {
     // Read-modify-write pattern for the 'profiles' object store
     const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
+    const activeProfile = profileSet.profiles.find((profile) => profile.id === activeProfileId) || getActiveGameProfile(profileSet)
+    const normalizedProfileName = profileName.trim() || activeProfile.name
     
-    allProfiles[gameKey] = {
+    const updatedProfile = {
+      ...activeProfile,
+      name: normalizedProfileName,
       utilities: profileUtilities.map((utility) => ({
         id: utility.id,
         enabled: utility.enabled
@@ -203,9 +218,44 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       trackedProcessPaths: trackedProcessPaths.filter((processPath) => processPath.trim().length > 0)
     }
 
+    allProfiles[gameKey] = {
+      activeProfileId: updatedProfile.id,
+      profiles: profileSet.profiles.map((profile) => (
+        profile.id === updatedProfile.id ? updatedProfile : profile
+      ))
+    }
+
     await window.electronAPI.storeSet('profiles', allProfiles)
+    await onProfilesChanged()
     
     notify('Profile saved!', 'success', 2500)
+    onClose()
+  }
+
+  const handleDeleteProfile = async () => {
+    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
+    const activeProfile = profileSet.profiles.find((profile) => profile.id === activeProfileId) || getActiveGameProfile(profileSet)
+
+    if (profileSet.profiles.length <= 1) {
+      notify('At least one profile is required', 'warn')
+      return
+    }
+
+    if (!window.confirm(`Delete profile "${activeProfile.name}"?`)) {
+      return
+    }
+
+    const nextProfiles = profileSet.profiles.filter((profile) => profile.id !== activeProfile.id)
+
+    allProfiles[gameKey] = {
+      activeProfileId: nextProfiles[0].id,
+      profiles: nextProfiles
+    }
+
+    await window.electronAPI.storeSet('profiles', allProfiles)
+    await onProfilesChanged()
+    notify('Profile deleted', 'warn', 2500)
     onClose()
   }
 
@@ -363,6 +413,19 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       <div className="space-y-5">
         <div className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">
+            Profile name
+          </p>
+          <input
+            type="text"
+            value={profileName}
+            onChange={(event) => setProfileName(event.target.value)}
+            className="w-full glass-recessed rounded-lg px-3 py-2 text-sm text-(--text-primary) outline-none transition-colors focus:ring-2 focus:ring-(--accent)"
+            aria-label="Profile name"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">
             Utilities to launch
           </p>
           
@@ -490,6 +553,23 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           >
             Cancel
           </button>
+          {profileCount > 1 && (
+            <button
+              type="button"
+              onClick={handleDeleteProfile}
+              className="flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl bg-(--danger-surface) text-(--danger-text) transition-all duration-300 hover:bg-(--danger-border) active:scale-[0.98]"
+              title="Delete profile"
+              aria-label="Delete profile"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v5" />
+                <path d="M14 11v5" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>

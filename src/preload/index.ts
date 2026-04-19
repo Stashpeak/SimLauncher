@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // process monitoring
   getRunningApps:   () => ipcRenderer.invoke('get-running-apps'),
   killLaunchedApps: (gameKey?: string) => ipcRenderer.invoke('kill-launched-apps', gameKey),
+  killProfileApps:  (gameKey: string, appPaths: string[]) => ipcRenderer.invoke('kill-profile-apps', gameKey, appPaths),
 
   // updater
   onUpdateAvailable: (cb: (info: any) => void) => {

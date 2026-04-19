@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { GAMES, getEnabledProfileUtilities, getUtilities, resolveCustomSlots, type Game, type Profiles } from '../lib/config'
+import {
+  GAMES,
+  createProfileId,
+  getActiveGameProfile,
+  getEnabledProfileUtilities,
+  getUtilities,
+  normalizeGameProfileSet,
+  resolveCustomSlots,
+  type Game,
+  type GameProfileSet,
+  type NamedGameProfile,
+  type Profiles,
+  type Utility
+} from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
@@ -40,6 +53,7 @@ function GameRow({
   const [iconUrl, setIconUrl] = useState<string | null>(null)
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
+  const [profileSet, setProfileSet] = useState<GameProfileSet>(() => normalizeGameProfileSet(undefined))
 
   useEffect(() => {
     async function resolveIcon() {
@@ -51,14 +65,49 @@ function GameRow({
     resolveIcon()
   }, [game.icon])
 
-  const getProfileLaunchPaths = async () => {
+  const loadProfileSet = useCallback(async () => {
+    const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+    const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
+    setProfileSet(nextProfileSet)
+    return nextProfileSet
+  }, [game.key])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function load() {
+      const nextProfileSet = await loadProfileSet()
+
+      if (!mounted) {
+        return
+      }
+
+      setProfileSet(nextProfileSet)
+    }
+
+    load()
+    window.addEventListener('focus', load)
+
+    return () => {
+      mounted = false
+      window.removeEventListener('focus', load)
+    }
+  }, [loadProfileSet, isActive])
+
+  const getProfileRuntimeConfig = async () => {
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
     const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
     const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
     const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
     const utilities = getUtilities(resolveCustomSlots(savedCustomSlots, appPaths, ...Object.values(profiles)))
+    const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
 
-    const profile = profiles[game.key] || {}
+    return { profiles, appPaths, gamePaths, utilities, profileSet: nextProfileSet }
+  }
+
+  const getProfileLaunchPaths = async () => {
+    const { appPaths, gamePaths, utilities, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
+    const profile = getActiveGameProfile(nextProfileSet)
     const configuredGamePath = gamePaths[game.key]
 
     const pathsToLaunch: string[] = []
@@ -78,6 +127,109 @@ function GameRow({
     })
 
     return { profile, pathsToLaunch, appCount }
+  }
+
+  const getOrderedUtilityPaths = (
+    profile: NamedGameProfile,
+    utilities: Utility[],
+    appPaths: Record<string, string>
+  ) => getEnabledProfileUtilities(profile, utilities)
+    .map((utility) => appPaths[utility.id])
+    .filter((appPath): appPath is string => typeof appPath === 'string' && appPath.trim().length > 0)
+
+  const saveProfileSet = async (profiles: Profiles, nextProfileSet: GameProfileSet) => {
+    await window.electronAPI.storeSet('profiles', {
+      ...profiles,
+      [game.key]: nextProfileSet
+    })
+    setProfileSet(nextProfileSet)
+  }
+
+  const handleCreateProfile = async () => {
+    const name = window.prompt('New profile name')
+
+    if (!name || name.trim().length === 0) {
+      return
+    }
+
+    const { profiles, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
+    const activeProfile = getActiveGameProfile(nextProfileSet)
+    const newProfile: NamedGameProfile = {
+      ...JSON.parse(JSON.stringify(activeProfile)),
+      id: createProfileId(),
+      name: name.trim()
+    }
+    const updatedProfileSet = {
+      activeProfileId: newProfile.id,
+      profiles: [...nextProfileSet.profiles, newProfile]
+    }
+
+    await saveProfileSet(profiles, updatedProfileSet)
+    notify(`Created profile ${newProfile.name}`, 'success')
+  }
+
+  const handleProfileSelect = async (nextProfileId: string) => {
+    if (nextProfileId === '__new__') {
+      await handleCreateProfile()
+      return
+    }
+
+    if (nextProfileId === profileSet.activeProfileId) {
+      return
+    }
+
+    if (isRunning && isLaunchBlocked) {
+      notify('Launch is settling. Try again shortly.', 'warn')
+      return
+    }
+
+    const { profiles, appPaths, utilities, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
+    const currentProfile = getActiveGameProfile(latestProfileSet)
+    const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
+
+    if (!nextProfile) {
+      return
+    }
+
+    const updatedProfileSet = {
+      ...latestProfileSet,
+      activeProfileId: nextProfile.id
+    }
+
+    try {
+      if (isRunning) {
+        const currentPaths = getOrderedUtilityPaths(currentProfile, utilities, appPaths)
+        const nextPaths = getOrderedUtilityPaths(nextProfile, utilities, appPaths)
+        const currentPathSet = new Set(currentPaths.map((appPath) => appPath.toLowerCase()))
+        const nextPathSet = new Set(nextPaths.map((appPath) => appPath.toLowerCase()))
+        const pathsToStop = currentPaths.filter((appPath) => !nextPathSet.has(appPath.toLowerCase()))
+        const pathsToStart = nextPaths.filter((appPath) => !currentPathSet.has(appPath.toLowerCase()))
+
+        if (pathsToStop.length > 0) {
+          await window.electronAPI.killProfileApps(game.key, pathsToStop)
+        }
+
+        if (pathsToStart.length > 0) {
+          onLaunchStart(game.key)
+          const result = await window.electronAPI.launchProfile(game.key, pathsToStart)
+          if (!result.success) {
+            notify(result.error || 'Failed to switch profile', 'error')
+            onLaunchEnd(game.key, 0)
+            return
+          }
+          onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+        }
+
+        await onRunningStateRefresh()
+      }
+
+      await saveProfileSet(profiles, updatedProfileSet)
+      notify(`Switched to ${nextProfile.name}`, 'success')
+    } catch (err) {
+      onLaunchEnd(game.key, 0)
+      notify('Failed to switch profile', 'error')
+      console.error(err)
+    }
   }
 
   const handleLaunch = async () => {
@@ -178,7 +330,7 @@ function GameRow({
 
     async function loadProfileState() {
       const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const profile = profiles[game.key] || {}
+      const profile = getActiveGameProfile(profiles[game.key])
 
       if (!mounted) {
         return
@@ -197,7 +349,7 @@ function GameRow({
       mounted = false
       window.removeEventListener('focus', loadProfileState)
     }
-  }, [game.key, isActive])
+  }, [game.key, isActive, profileSet.activeProfileId])
 
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
@@ -230,7 +382,21 @@ function GameRow({
             )}
           </div>
           <div className="flex flex-col gap-0.5">
-            <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+              <select
+                value={profileSet.activeProfileId}
+                onChange={(event) => handleProfileSelect(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                className="no-drag max-w-36 cursor-pointer rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2 py-0.5 text-[10px] font-semibold text-(--text-secondary) outline-none transition-colors hover:text-(--text-primary) focus:border-(--accent)"
+                aria-label={`${game.name} profile`}
+              >
+                {profileSet.profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>{profile.name}</option>
+                ))}
+                <option value="__new__">+ New profile</option>
+              </select>
+            </div>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
                 {runningAppIcons.map((app, i) => {
@@ -321,6 +487,8 @@ function GameRow({
               <ProfileEditor
                 gameKey={game.key}
                 gameName={game.name}
+                activeProfileId={profileSet.activeProfileId}
+                onProfilesChanged={loadProfileSet}
                 onClose={onToggleEditor}
               />
             </div>

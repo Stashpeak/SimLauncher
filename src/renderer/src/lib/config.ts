@@ -13,10 +13,21 @@ export interface GameProfile {
   relaunchControlsEnabled?: boolean
   trackedProcessPaths?: string[]
 }
-export type Profiles = Record<string, GameProfile>
+export interface NamedGameProfile extends GameProfile {
+  id: string
+  name: string
+}
+export interface GameProfileSet {
+  activeProfileId: string
+  profiles: NamedGameProfile[]
+}
+export type StoredGameProfile = GameProfile | GameProfileSet
+export type Profiles = Record<string, StoredGameProfile>
 
 export const DEFAULT_ACCENT_COLOR = '#00eaff'
 export const DEFAULT_CUSTOM_SLOTS = 1
+export const DEFAULT_PROFILE_ID = 'default'
+export const DEFAULT_PROFILE_NAME = 'Default'
 
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },
@@ -82,8 +93,17 @@ function getCustomSlotNumberFromKey(key: string) {
 export function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
   let highestSlot = 0
 
-  records.forEach((record) => {
+  const scanRecord = (record: Record<string, unknown> | undefined) => {
     Object.entries(record || {}).forEach(([key, value]) => {
+      if (key === 'profiles' && Array.isArray(value)) {
+        value.forEach((profile) => {
+          if (profile && typeof profile === 'object') {
+            scanRecord(profile as Record<string, unknown>)
+          }
+        })
+        return
+      }
+
       if (key === 'utilities' && Array.isArray(value)) {
         value.forEach((entry) => {
           if (!isProfileUtility(entry) || !entry.enabled) {
@@ -106,6 +126,10 @@ export function getHighestCustomSlot(...records: Array<Record<string, unknown> |
         highestSlot = Math.max(highestSlot, slotNumber)
       }
     })
+  }
+
+  records.forEach((record) => {
+    scanRecord(record)
   })
 
   return highestSlot
@@ -191,6 +215,86 @@ export function migrateProfileToUtilityOrder(profile: GameProfile, utilities: Ut
   })
 
   return migratedProfile
+}
+
+export function isGameProfileSet(value: unknown): value is GameProfileSet {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const entry = value as Record<string, unknown>
+  return typeof entry.activeProfileId === 'string' && Array.isArray(entry.profiles)
+}
+
+export function createProfileId() {
+  return `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function normalizeNamedProfile(value: unknown, fallbackIndex: number): NamedGameProfile | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const profile = value as Record<string, unknown>
+  const fallbackName = fallbackIndex === 0 ? DEFAULT_PROFILE_NAME : `Profile ${fallbackIndex + 1}`
+
+  return {
+    ...(profile as GameProfile),
+    id: typeof profile.id === 'string' && profile.id.trim().length > 0
+      ? profile.id
+      : createProfileId(),
+    name: typeof profile.name === 'string' && profile.name.trim().length > 0
+      ? profile.name.trim()
+      : fallbackName
+  }
+}
+
+export function createDefaultProfile(profile: GameProfile = {}): NamedGameProfile {
+  return {
+    ...profile,
+    id: DEFAULT_PROFILE_ID,
+    name: DEFAULT_PROFILE_NAME
+  }
+}
+
+export function normalizeGameProfileSet(value: StoredGameProfile | undefined): GameProfileSet {
+  if (isGameProfileSet(value)) {
+    const seenIds = new Set<string>()
+    const profiles = value.profiles.flatMap((profile, index) => {
+      const normalizedProfile = normalizeNamedProfile(profile, index)
+
+      if (!normalizedProfile || seenIds.has(normalizedProfile.id)) {
+        return []
+      }
+
+      seenIds.add(normalizedProfile.id)
+      return [normalizedProfile]
+    })
+
+    if (profiles.length === 0) {
+      const defaultProfile = createDefaultProfile()
+      return {
+        activeProfileId: defaultProfile.id,
+        profiles: [defaultProfile]
+      }
+    }
+
+    const activeProfileId = profiles.some((profile) => profile.id === value.activeProfileId)
+      ? value.activeProfileId
+      : profiles[0].id
+
+    return { activeProfileId, profiles }
+  }
+
+  return {
+    activeProfileId: DEFAULT_PROFILE_ID,
+    profiles: [createDefaultProfile(value)]
+  }
+}
+
+export function getActiveGameProfile(value: StoredGameProfile | undefined) {
+  const profileSet = normalizeGameProfileSet(value)
+  return profileSet.profiles.find((profile) => profile.id === profileSet.activeProfileId) || profileSet.profiles[0]
 }
 
 export const UTILITIES: Utility[] = getUtilities(DEFAULT_CUSTOM_SLOTS)

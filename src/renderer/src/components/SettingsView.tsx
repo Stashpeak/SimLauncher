@@ -4,8 +4,10 @@ import {
   GAMES,
   getCustomUtilityKey,
   getUtilities,
+  isGameProfileSet,
   isProfileUtility,
   resolveCustomSlots,
+  type NamedGameProfile,
   type Profiles
 } from '../lib/config'
 import { useNotify } from './Notify'
@@ -236,7 +238,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     return shifted
   }
 
-  const shiftProfileCustomSlots = (profile: Profiles[string], removedSlot: number, slotCount: number) => {
+  const shiftSingleProfileCustomSlots = <T extends Profiles[string]>(profile: T, removedSlot: number, slotCount: number) => {
     const shiftedProfile = shiftCustomSlotRecord(profile, removedSlot, slotCount)
 
     if (Array.isArray(profile.utilities)) {
@@ -262,6 +264,19 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     }
 
     return shiftedProfile
+  }
+
+  const shiftProfileCustomSlots = (profile: Profiles[string], removedSlot: number, slotCount: number) => {
+    if (isGameProfileSet(profile)) {
+      return {
+        ...profile,
+        profiles: profile.profiles.map((namedProfile) => (
+          shiftSingleProfileCustomSlots(namedProfile, removedSlot, slotCount) as NamedGameProfile
+        ))
+      }
+    }
+
+    return shiftSingleProfileCustomSlots(profile, removedSlot, slotCount)
   }
 
   const getCustomSlotNumber = (key: string) => Number(key.replace('customapp', ''))
