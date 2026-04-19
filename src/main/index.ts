@@ -1001,10 +1001,13 @@ function getExternallyAdoptableGameKeys(
 
 // INVARIANT: manual companion utilities are only surfaced when the owning game is
 // already launched by SimLauncher or its configured game exe is externally running.
-async function getTrackedRunningApps(processNames: Set<string>, adoptedOrLaunchedGameKeys: Set<string>) {
-  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
-  const appPaths = store.get('appPaths') as Record<string, string> | undefined
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+async function getTrackedRunningApps(
+  processNames: Set<string>,
+  adoptedOrLaunchedGameKeys: Set<string>,
+  profiles: Record<string, StoredProfileEntry> | undefined,
+  appPaths: Record<string, string> | undefined,
+  gamePaths: Record<string, string> | undefined
+) {
   const trackedApps: { path: string; name: string; gameKey: string; tracked: boolean }[] = []
   const seen = new Set<string>()
 
@@ -1238,11 +1241,18 @@ ipcMain.handle('get-running-apps', async () => {
   const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
   const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
   const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
   const adoptedGameKeys = getExternallyAdoptableGameKeys(processNames, profiles, gamePaths, launchedGameKeys)
   const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
-  const trackedApps = (await getTrackedRunningApps(processNames, adoptedOrLaunchedGameKeys)).filter(
+  const trackedApps = (await getTrackedRunningApps(
+    processNames,
+    adoptedOrLaunchedGameKeys,
+    profiles,
+    appPaths,
+    gamePaths
+  )).filter(
     (appProcess) =>
       !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
       !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
