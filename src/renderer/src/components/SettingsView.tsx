@@ -352,14 +352,14 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                   <button
                     key={preset.hex}
                     onClick={() => handleAccentChange(preset.hex)}
-                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
                     style={{ '--preset-color': preset.hex } as React.CSSProperties}
                     title={preset.name}
                   />
                 ))}
                 <button
                   onClick={() => handleAccentChange('custom')}
-                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
+                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all active:scale-[0.98] ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
                 >
                   Custom
                 </button>
@@ -409,7 +409,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       setZoomFactor(preset.factor)
                       window.electronAPI.setZoom(preset.factor)
                     }}
-                    className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all ${
+                    className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all active:scale-[0.98] ${
                       zoomFactor === preset.factor
                         ? 'bg-(--accent) text-white shadow-[0_0_15px_-5px_var(--accent-glow)]'
                         : 'bg-(--glass-bg-elevated) text-(--text-secondary) hover:bg-(--glass-border) hover:text-(--text-primary)'
@@ -524,7 +524,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       
                       <button
                         onClick={() => handleBrowse(g.key, true)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
                       >
                         Browse
                       </button>
@@ -590,7 +590,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       
                       <button
                         onClick={() => handleBrowse(u.key, false)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
                       >
                         Browse
                       </button>

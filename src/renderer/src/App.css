@@ -31,6 +31,7 @@
   --status-danger: var(--danger-text);
   --status-warning: var(--warning-text);
   --status-success: var(--success-text);
+  --status-running: #4ade80;
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(255, 255, 255, 0.4) 0%,

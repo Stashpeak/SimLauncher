@@ -136,7 +136,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
+          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none text-(--text-subtle) transition-all duration-200 hover:bg-(--glass-bg) hover:text-(--text-primary) active:scale-[0.98]"
           title="Close"
         >
           ×
@@ -227,7 +227,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
               <button
                 type="button"
                 onClick={handleAddTrackedProcess}
-                className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-1.5 text-xs font-semibold text-(--text-primary) transition-colors hover:bg-(--glass-border)"
+                className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-1.5 text-xs font-semibold text-(--text-primary) transition-all duration-200 hover:bg-(--glass-border) active:scale-[0.98]"
               >
                 Add
               </button>
@@ -247,14 +247,14 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
                     <button
                       type="button"
                       onClick={() => handleBrowseTrackedProcess(index)}
-                      className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-2 text-xs font-semibold text-(--text-primary) transition-colors hover:bg-(--glass-border)"
+                      className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-2 text-xs font-semibold text-(--text-primary) transition-all duration-200 hover:bg-(--glass-border) active:scale-[0.98]"
                     >
                       Browse
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveTrackedProcess(index)}
-                      className="cursor-pointer rounded-lg bg-(--danger-surface) px-3 py-2 text-xs font-semibold text-(--danger-text) transition-colors hover:bg-(--danger-border)"
+                      className="cursor-pointer rounded-lg bg-(--danger-surface) px-3 py-2 text-xs font-semibold text-(--danger-text) transition-all duration-200 hover:bg-(--danger-border) active:scale-[0.98]"
                     >
                       Remove
                     </button>
@@ -273,14 +273,14 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-2.5 text-sm text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-95"
+            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-2.5 text-sm text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-[0.98]"
           >
             Save Profile
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-sm font-semibold text-(--text-primary) transition-colors hover:bg-(--glass-border) active:scale-95"
+            className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-[0.98]"
           >
             Cancel
           </button>
