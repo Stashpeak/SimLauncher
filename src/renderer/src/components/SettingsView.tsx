@@ -60,6 +60,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
   const [startMinimized, setStartMinimized] = useState<boolean>(false)
+  const [minimizeToTray, setMinimizeToTray] = useState<boolean>(false)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
   const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
@@ -89,6 +90,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
       const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
       const savedStartMinimized = (await window.electronAPI.storeGet('startMinimized')) as boolean || false
+      const savedMinimizeToTray = (await window.electronAPI.storeGet('minimizeToTray')) as boolean || false
       const savedAutoCheckUpdates = await window.electronAPI.storeGet('autoCheckUpdates')
       const savedZoomFactor = (await window.electronAPI.storeGet('zoomFactor')) as number
 
@@ -102,6 +104,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       setStartWithWindows(savedStartWithWindows)
       setStartMinimized(savedStartMinimized)
+      setMinimizeToTray(savedMinimizeToTray)
       setAutoCheckUpdates(savedAutoCheckUpdates !== false)
       setZoomFactor(typeof savedZoomFactor === 'number' && Number.isFinite(savedZoomFactor) ? savedZoomFactor : 1.0)
       
@@ -274,6 +277,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
       await window.electronAPI.storeSet('startMinimized', startMinimized)
+      await window.electronAPI.storeSet('minimizeToTray', minimizeToTray)
       await window.electronAPI.storeSet('autoCheckUpdates', autoCheckUpdates)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
@@ -453,6 +457,13 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                 <span className="text-[10px] text-(--text-muted)">Start hidden in the system tray</span>
               </div>
               <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-(--text-primary)">Minimize to tray on close</span>
+                <span className="text-[10px] text-(--text-muted)">Keep SimLauncher running when the window is closed</span>
+              </div>
+              <Toggle checked={minimizeToTray} onChange={setMinimizeToTray} aria-label="Minimize to tray on close" />
             </div>
             <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
               <div className="flex items-center justify-between gap-4">

@@ -18,6 +18,7 @@ const store = new Store({
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     startWithWindows: { type: 'boolean', default: false },
     startMinimized:   { type: 'boolean', default: false },
+    minimizeToTray:   { type: 'boolean', default: false },
     autoCheckUpdates:  { type: 'boolean', default: true },
     zoomFactor:       { type: 'number',  default: 1.0 },
     windowBounds:      { type: 'object',  default: {} },
@@ -199,7 +200,9 @@ function createWindow() {
 
     store.set('windowBounds', mainWindow.getBounds())
 
-    if (!isQuitting) {
+    const minimizeToTray = store.get('minimizeToTray') === true
+
+    if (!isQuitting && minimizeToTray) {
       event.preventDefault()
       mainWindow.hide()
     }
@@ -594,6 +597,7 @@ ipcMain.handle('window-maximize', () => {
 })
 
 ipcMain.handle('window-close', () => {
+  isQuitting = true
   mainWindow?.close()
 })
 
