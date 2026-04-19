@@ -54,6 +54,8 @@ function GameRow({
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
   const [profileSet, setProfileSet] = useState<GameProfileSet>(() => normalizeGameProfileSet(undefined))
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     async function resolveIcon() {
@@ -64,6 +66,22 @@ function GameRow({
     }
     resolveIcon()
   }, [game.icon])
+
+  useEffect(() => {
+    if (!profileMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setProfileMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+
+    return () => window.removeEventListener('pointerdown', handlePointerDown)
+  }, [profileMenuOpen])
 
   const loadProfileSet = useCallback(async () => {
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
@@ -170,6 +188,7 @@ function GameRow({
 
   const handleProfileSelect = async (nextProfileId: string) => {
     if (nextProfileId === '__new__') {
+      setProfileMenuOpen(false)
       await handleCreateProfile()
       return
     }
@@ -224,6 +243,7 @@ function GameRow({
       }
 
       await saveProfileSet(profiles, updatedProfileSet)
+      setProfileMenuOpen(false)
       notify(`Switched to ${nextProfile.name}`, 'success')
     } catch (err) {
       onLaunchEnd(game.key, 0)
@@ -358,6 +378,7 @@ function GameRow({
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
     : 'bg-(--accent) text-white neon-glow hover:opacity-90'
+  const activeProfile = getActiveGameProfile(profileSet)
 
   return (
     <div className={`flex flex-col gap-2 transition-opacity duration-300 ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
@@ -384,18 +405,71 @@ function GameRow({
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
-              <select
-                value={profileSet.activeProfileId}
-                onChange={(event) => handleProfileSelect(event.target.value)}
-                onClick={(event) => event.stopPropagation()}
-                className="no-drag max-w-36 cursor-pointer rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2 py-0.5 text-[10px] font-semibold text-(--text-secondary) outline-none transition-colors hover:text-(--text-primary) focus:border-(--accent)"
-                aria-label={`${game.name} profile`}
-              >
-                {profileSet.profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>{profile.name}</option>
-                ))}
-                <option value="__new__">+ New profile</option>
-              </select>
+              <div ref={profileMenuRef} className="relative no-drag">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setProfileMenuOpen((open) => !open)
+                  }}
+                  className="flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2.5 py-1 text-[10px] font-semibold text-(--text-primary) outline-none transition-all hover:border-(--accent) hover:bg-(--glass-bg) focus-visible:ring-2 focus-visible:ring-(--accent)"
+                  aria-haspopup="menu"
+                  aria-expanded={profileMenuOpen}
+                  aria-label={`${game.name} profile`}
+                >
+                  <span className="min-w-0 truncate">{activeProfile.name}</span>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}>
+                    <path d="M3 6l5 5 5-5" />
+                  </svg>
+                </button>
+                {profileMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 top-full z-30 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
+                  >
+                    {profileSet.profiles.map((profile) => {
+                      const selected = profile.id === profileSet.activeProfileId
+
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleProfileSelect(profile.id)
+                          }}
+                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
+                            selected
+                              ? 'bg-(--accent)/20 text-(--text-primary)'
+                              : 'text-(--text-secondary) hover:bg-(--glass-bg-elevated) hover:text-(--text-primary)'
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`} />
+                          <span className="min-w-0 flex-1 truncate">{profile.name}</span>
+                        </button>
+                      )
+                    })}
+                    <div className="my-1 h-px bg-(--glass-border)" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleProfileSelect('__new__')
+                      }}
+                      className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                        <path d="M12 5v14" />
+                        <path d="M5 12h14" />
+                      </svg>
+                      New profile
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
