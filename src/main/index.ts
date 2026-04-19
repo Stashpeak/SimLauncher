@@ -11,6 +11,7 @@ const store = new Store({
     gamePaths:    { type: 'object',  default: {} },
     profiles:     { type: 'object',  default: {} },
     appNames:     { type: 'object',  default: {} },
+    customSlots:  { type: 'number',  default: 1, minimum: 1 },
     accentPreset: { type: 'string',  default: '' },
     accentCustom: { type: 'string',  default: '' },
     accentBgTint: { type: 'boolean', default: false },

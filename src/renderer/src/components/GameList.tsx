@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
+import { GAMES, getUtilities, resolveCustomSlots, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
@@ -55,6 +55,8 @@ function GameRow({
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
     const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
     const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
+    const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
+    const utilities = getUtilities(resolveCustomSlots(savedCustomSlots, appPaths, ...Object.values(profiles)))
 
     const profile = profiles[game.key] || {}
     const configuredGamePath = gamePaths[game.key]
@@ -63,7 +65,7 @@ function GameRow({
     let appCount = 0
 
     // Queue utilities first
-    UTILITIES.forEach((u) => {
+    utilities.forEach((u) => {
       if (profile[u.key] === true && appPaths[u.key]) {
         pathsToLaunch.push(appPaths[u.key])
         appCount++

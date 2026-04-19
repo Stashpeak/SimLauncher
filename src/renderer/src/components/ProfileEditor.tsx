@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { UTILITIES, type Profiles } from '../lib/config'
+import { getUtilities, resolveCustomSlots, type Profiles, type Utility } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
@@ -44,6 +44,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const [loading, setLoading] = useState(true)
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
+  const [utilities, setUtilities] = useState<Utility[]>(() => getUtilities(1))
   const [selection, setSelection] = useState<Record<string, boolean>>({})
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
   const [trackingEnabled, setTrackingEnabled] = useState(true)
@@ -60,14 +61,17 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       const paths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
       const names = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
       const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+      const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
       const profile = allProfiles[gameKey] || {}
+      const resolvedUtilities = getUtilities(resolveCustomSlots(savedCustomSlots, paths, names, profile))
 
       setAppPaths(paths)
       setAppNames(names)
+      setUtilities(resolvedUtilities)
       
       // Initialize selection state based on existing profile
       const initialSelection: Record<string, boolean> = {}
-      UTILITIES.forEach((u) => {
+      resolvedUtilities.forEach((u) => {
         initialSelection[u.key] = profile[u.key] === true
       })
       
@@ -145,7 +149,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   if (loading) return null
 
   // Filter utilities to show only those that have a configured executable path
-  const availableUtilities = UTILITIES.filter((u) => appPaths[u.key])
+  const availableUtilities = utilities.filter((u) => appPaths[u.key])
 
   return (
     <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5 shadow-2xl">

@@ -10,6 +10,7 @@ export type GameProfile = Record<string, boolean | string[] | undefined> & {
 export type Profiles = Record<string, GameProfile>
 
 export const DEFAULT_ACCENT_COLOR = '#00eaff'
+export const DEFAULT_CUSTOM_SLOTS = 1
 
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },
@@ -35,15 +36,77 @@ export const GAMES: Game[] = [
   { key: 'rf2', name: 'rFactor 2', icon: 'assets/rf2.png' },
 ]
 
-export const UTILITIES: Utility[] = [
+export const BUILT_IN_UTILITIES: Utility[] = [
   { key: 'simhub', name: 'SimHub' },
   { key: 'crewchief', name: 'Crew Chief' },
   { key: 'tradingpaints', name: 'Trading Paints' },
   { key: 'garage61', name: 'Garage 61' },
   { key: 'secondmonitor', name: 'Second Monitor' },
-  { key: 'customapp1', name: 'Custom App 1', isCustom: true },
-  { key: 'customapp2', name: 'Custom App 2', isCustom: true },
-  { key: 'customapp3', name: 'Custom App 3', isCustom: true },
-  { key: 'customapp4', name: 'Custom App 4', isCustom: true },
-  { key: 'customapp5', name: 'Custom App 5', isCustom: true },
 ]
+
+export function normalizeCustomSlots(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_CUSTOM_SLOTS
+  }
+
+  return Math.max(1, Math.floor(value))
+}
+
+export function getCustomUtilityKey(index: number) {
+  return `customapp${index}`
+}
+
+function hasCustomSlotValue(value: unknown) {
+  if (value === true) {
+    return true
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0
+  }
+
+  return false
+}
+
+export function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
+  let highestSlot = 0
+
+  records.forEach((record) => {
+    Object.entries(record || {}).forEach(([key, value]) => {
+      const match = key.match(/^customapp(\d+)$/)
+
+      if (match && hasCustomSlotValue(value)) {
+        highestSlot = Math.max(highestSlot, Number(match[1]))
+      }
+    })
+  })
+
+  return highestSlot
+}
+
+export function resolveCustomSlots(value: unknown, ...records: Array<Record<string, unknown> | undefined>) {
+  return Math.max(normalizeCustomSlots(value), getHighestCustomSlot(...records))
+}
+
+export function getCustomUtilities(customSlots: unknown): Utility[] {
+  const slotCount = normalizeCustomSlots(customSlots)
+
+  return Array.from({ length: slotCount }, (_, index) => {
+    const slotNumber = index + 1
+
+    return {
+      key: getCustomUtilityKey(slotNumber),
+      name: `Custom App ${slotNumber}`,
+      isCustom: true
+    }
+  })
+}
+
+export function getUtilities(customSlots: unknown): Utility[] {
+  return [
+    ...BUILT_IN_UTILITIES,
+    ...getCustomUtilities(customSlots)
+  ]
+}
+
+export const UTILITIES: Utility[] = getUtilities(DEFAULT_CUSTOM_SLOTS)

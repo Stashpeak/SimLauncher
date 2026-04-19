@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_ACCENT_COLOR, UTILITIES, GAMES } from '../lib/config'
+import {
+  DEFAULT_ACCENT_COLOR,
+  GAMES,
+  getCustomUtilityKey,
+  getUtilities,
+  resolveCustomSlots,
+  type Profiles
+} from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
@@ -52,7 +59,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   // Settings State
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
+  const [profiles, setProfiles] = useState<Profiles>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
+  const [customSlots, setCustomSlots] = useState(1)
   const [accentPreset, setAccentPreset] = useState<string>(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
@@ -82,7 +91,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     async function loadSettings() {
       const savedAppPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
       const savedAppNames = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
+      const savedProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
       const savedGamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
+      const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
       const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || DEFAULT_ACCENT_COLOR
       const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
       const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
@@ -96,7 +107,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
       setAppPaths(savedAppPaths)
       setAppNames(savedAppNames)
+      setProfiles(savedProfiles)
       setGamePaths(savedGamePaths)
+      setCustomSlots(resolveCustomSlots(savedCustomSlots, savedAppPaths, savedAppNames, ...Object.values(savedProfiles)))
       setAccentPreset(savedAccentPreset)
       setAccentCustom(savedAccentCustom)
       setAccentBgTint(savedBgTint)
@@ -180,6 +193,85 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
         }
       }
     }
+  }
+
+  const shiftCustomSlotRecord = <T,>(record: Record<string, T>, removedSlot: number, slotCount: number) => {
+    const next = { ...record }
+
+    for (let slot = removedSlot; slot <= slotCount; slot += 1) {
+      const currentKey = getCustomUtilityKey(slot)
+      const nextKey = getCustomUtilityKey(slot + 1)
+
+      if (slot < slotCount && Object.prototype.hasOwnProperty.call(next, nextKey)) {
+        next[currentKey] = next[nextKey]
+      } else {
+        delete next[currentKey]
+      }
+    }
+
+    return next
+  }
+
+  const shiftCustomSlotSet = (values: Set<string>, removedSlot: number, slotCount: number) => {
+    const shifted = new Set<string>()
+
+    values.forEach((value) => {
+      const match = value.match(/^customapp(\d+)$/)
+
+      if (!match) {
+        shifted.add(value)
+        return
+      }
+
+      const slot = Number(match[1])
+
+      if (slot < removedSlot) {
+        shifted.add(value)
+      } else if (slot > removedSlot && slot <= slotCount) {
+        shifted.add(getCustomUtilityKey(slot - 1))
+      }
+    })
+
+    return shifted
+  }
+
+  const getCustomSlotNumber = (key: string) => Number(key.replace('customapp', ''))
+
+  const handleAddCustomSlot = () => {
+    setCustomSlots((current) => current + 1)
+  }
+
+  const handleRemoveCustomSlot = (slotNumber: number) => {
+    if (customSlots <= 1) {
+      notify('At least one custom app slot is required', 'warn')
+      return
+    }
+
+    const slotKey = getCustomUtilityKey(slotNumber)
+    const slotName = appNames[slotKey] || `Custom App ${slotNumber}`
+
+    if (appPaths[slotKey]) {
+      const confirmed = window.confirm(`Remove ${slotName} and its executable path?`)
+
+      if (!confirmed) {
+        return
+      }
+    }
+
+    setAppPaths((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+    setAppNames((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+    setAppIcons((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+    setIconLoadErrors((current) => shiftCustomSlotSet(current, slotNumber, customSlots))
+    setProfiles((current) => {
+      const nextProfiles: Profiles = {}
+
+      Object.entries(current).forEach(([gameKey, profile]) => {
+        nextProfiles[gameKey] = shiftCustomSlotRecord(profile, slotNumber, customSlots)
+      })
+
+      return nextProfiles
+    })
+    setCustomSlots((current) => Math.max(1, current - 1))
   }
 
   const [appVersion, setAppVersion] = useState<string>('')
@@ -270,7 +362,9 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
       await window.electronAPI.storeSet('appPaths', appPaths)
       await window.electronAPI.storeSet('appNames', appNames)
+      await window.electronAPI.storeSet('profiles', profiles)
       await window.electronAPI.storeSet('gamePaths', gamePaths)
+      await window.electronAPI.storeSet('customSlots', customSlots)
       await window.electronAPI.storeSet('accentPreset', accentPreset)
       await window.electronAPI.storeSet('accentCustom', accentCustom)
       await window.electronAPI.storeSet('accentBgTint', accentBgTint)
@@ -287,6 +381,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       console.error(err)
     }
   }
+
+  const utilities = getUtilities(customSlots)
 
   if (loading) return null
 
@@ -569,18 +665,26 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
           <div className={`grid transition-all duration-300 ${appsOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
             <div className="overflow-hidden">
               <div className="glass-surface rounded-2xl flex flex-col pt-1">
-                {UTILITIES.map((u, index) => (
-                  <div key={u.key} className={`flex flex-col gap-2 px-5 py-3 ${index !== UTILITIES.length - 1 ? 'border-b border-white/5' : ''}`}>
+                {utilities.map((u) => (
+                  <div key={u.key} className="flex flex-col gap-2 border-b border-white/5 px-5 py-3">
                     {/* Utility Title Above */}
                     <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
                       {u.isCustom ? (
-                        <input
-                          type="text"
-                          value={appNames[u.key] || u.name}
-                          onChange={(e) => setAppNames(prev => ({ ...prev, [u.key]: e.target.value }))}
-                          className="bg-transparent border-none outline-none text-inherit w-full py-0 font-bold uppercase tracking-widest"
-                          placeholder="App Name"
-                        />
+                        <div className="flex items-center gap-2">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-(--accent)">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
+                          <input
+                            type="text"
+                            value={appNames[u.key] || u.name}
+                            onChange={(e) => setAppNames(prev => ({ ...prev, [u.key]: e.target.value }))}
+                            className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
+                            placeholder="App Name"
+                            aria-label={`${u.name} name`}
+                            title="Editable app name"
+                          />
+                        </div>
                       ) : u.name}
                     </div>
 
@@ -616,9 +720,40 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       >
                         Browse
                       </button>
+                      {u.isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCustomSlot(getCustomSlotNumber(u.key))}
+                          disabled={customSlots <= 1}
+                          className="flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl bg-(--danger-surface) text-(--danger-text) transition-all hover:bg-(--danger-border) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+                          title={`Remove ${appNames[u.key] || u.name}`}
+                          aria-label={`Remove ${appNames[u.key] || u.name}`}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v5" />
+                            <path d="M14 11v5" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
+                <div className="px-5 py-3">
+                  <button
+                    type="button"
+                    onClick={handleAddCustomSlot}
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98]"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                    Add slot
+                  </button>
+                </div>
               </div>
             </div>
           </div>

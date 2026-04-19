@@ -3,7 +3,7 @@ import { NotifyProvider } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
-import { DEFAULT_ACCENT_COLOR } from './lib/config'
+import { DEFAULT_ACCENT_COLOR, getHighestCustomSlot } from './lib/config'
 
 
 export default function App() {
@@ -20,7 +20,11 @@ export default function App() {
 
         const appPathsRaw = localStorage.getItem('simLauncherAppPaths')
         const gamePathsRaw = localStorage.getItem('simLauncherGamePaths')
-        if (appPathsRaw) await window.electronAPI.storeSet('appPaths', JSON.parse(appPathsRaw))
+        let appPaths: Record<string, unknown> = {}
+        if (appPathsRaw) {
+          appPaths = JSON.parse(appPathsRaw)
+          await window.electronAPI.storeSet('appPaths', appPaths)
+        }
         if (gamePathsRaw) await window.electronAPI.storeSet('gamePaths', JSON.parse(gamePathsRaw))
 
         const accentPreset = localStorage.getItem('simLauncherAccentPreset')
@@ -35,6 +39,8 @@ export default function App() {
           if (name) appNames[key] = name
         }
         if (Object.keys(appNames).length > 0) await window.electronAPI.storeSet('appNames', appNames)
+        const migratedCustomSlots = getHighestCustomSlot(appPaths, appNames)
+        if (migratedCustomSlots > 1) await window.electronAPI.storeSet('customSlots', migratedCustomSlots)
 
         const gameKeys = ['ac', 'acc', 'acevo', 'acrally', 'ams', 'ams2', 'beamng', 'dcsw', 'dirtrally', 'dirtrally2', 'eawrc', 'f124', 'f125', 'iracing', 'lmu', 'pmr', 'raceroom', 'rbr', 'rennsport', 'rf1', 'rf2']
         const profiles: Record<string, unknown> = {}
