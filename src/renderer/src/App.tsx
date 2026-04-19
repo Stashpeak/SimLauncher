@@ -3,7 +3,13 @@ import { NotifyProvider } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
-import { DEFAULT_ACCENT_COLOR, getHighestCustomSlot } from './lib/config'
+import {
+  DEFAULT_ACCENT_COLOR,
+  getHighestCustomSlot,
+  getUtilities,
+  migrateProfileToUtilityOrder,
+  type GameProfile
+} from './lib/config'
 
 
 export default function App() {
@@ -39,16 +45,25 @@ export default function App() {
           if (name) appNames[key] = name
         }
         if (Object.keys(appNames).length > 0) await window.electronAPI.storeSet('appNames', appNames)
-        const migratedCustomSlots = getHighestCustomSlot(appPaths, appNames)
-        if (migratedCustomSlots > 1) await window.electronAPI.storeSet('customSlots', migratedCustomSlots)
 
         const gameKeys = ['ac', 'acc', 'acevo', 'acrally', 'ams', 'ams2', 'beamng', 'dcsw', 'dirtrally', 'dirtrally2', 'eawrc', 'f124', 'f125', 'iracing', 'lmu', 'pmr', 'raceroom', 'rbr', 'rennsport', 'rf1', 'rf2']
-        const profiles: Record<string, unknown> = {}
+        const profiles: Record<string, GameProfile> = {}
         for (const key of gameKeys) {
           const raw = localStorage.getItem(`profile_${key}`)
           if (raw) profiles[key] = JSON.parse(raw)
         }
-        if (Object.keys(profiles).length > 0) await window.electronAPI.storeSet('profiles', profiles)
+        const migratedCustomSlots = getHighestCustomSlot(appPaths, appNames, ...Object.values(profiles))
+        const utilities = getUtilities(migratedCustomSlots)
+        const migratedProfiles = Object.fromEntries(
+          Object.entries(profiles).map(([gameKey, profile]) => [
+            gameKey,
+            migrateProfileToUtilityOrder(profile, utilities)
+          ])
+        )
+
+        if (migratedCustomSlots > 1) await window.electronAPI.storeSet('customSlots', migratedCustomSlots)
+        if (Object.keys(migratedProfiles).length > 0) await window.electronAPI.storeSet('profiles', migratedProfiles)
+        await window.electronAPI.storeSet('profileUtilityOrderMigrated', true)
 
         await window.electronAPI.storeSet('migrated', true)
       } catch (err) {

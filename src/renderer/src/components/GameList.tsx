@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { GAMES, getUtilities, resolveCustomSlots, type Game, type Profiles } from '../lib/config'
+import { GAMES, getEnabledProfileUtilities, getUtilities, resolveCustomSlots, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
@@ -64,19 +64,18 @@ function GameRow({
     const pathsToLaunch: string[] = []
     let appCount = 0
 
-    // Queue utilities first
-    utilities.forEach((u) => {
-      if (profile[u.key] === true && appPaths[u.key]) {
-        pathsToLaunch.push(appPaths[u.key])
-        appCount++
-      }
-    })
-
-    // Queue game last
+    // Queue game first, then ordered utilities.
     if (profile.launchAutomatically !== false && configuredGamePath) {
       pathsToLaunch.push(configuredGamePath)
       appCount++
     }
+
+    getEnabledProfileUtilities(profile, utilities).forEach((utility) => {
+      if (appPaths[utility.id]) {
+        pathsToLaunch.push(appPaths[utility.id])
+        appCount++
+      }
+    })
 
     return { profile, pathsToLaunch, appCount }
   }

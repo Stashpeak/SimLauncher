@@ -23,6 +23,7 @@ const store = new Store({
     autoCheckUpdates:  { type: 'boolean', default: true },
     zoomFactor:       { type: 'number',  default: 1.0 },
     windowBounds:      { type: 'object',  default: {} },
+    profileUtilityOrderMigrated: { type: 'boolean', default: false },
     migrated:     { type: 'boolean', default: false },
   }
 })
@@ -41,12 +42,19 @@ let genericIconFingerprintPromise: Promise<string | null> | null = null
 const UTILITY_COMPANION_PROCESS_NAMES: Record<string, string[]> = {
   garage61: ['Garage61 telemetry agent.exe']
 }
+const BUILT_IN_UTILITY_KEYS = ['simhub', 'crewchief', 'tradingpaints', 'garage61', 'secondmonitor']
 
 autoUpdater.autoDownload = false
 
 interface StoredProfile extends Record<string, unknown> {
+  utilities?: StoredProfileUtility[]
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
+}
+
+interface StoredProfileUtility {
+  id: string
+  enabled: boolean
 }
 
 interface WindowBounds {
@@ -207,7 +215,7 @@ function getProfileCompanionProcessNames(gameKey?: string) {
     }
 
     Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
-      if (profile?.[utilityKey] === true) {
+      if (isUtilityEnabled(profile, utilityKey)) {
         processNames.forEach((processName) => companionNames.add(processName.toLowerCase()))
       }
     })
@@ -357,6 +365,7 @@ app.on('before-quit', () => {
 })
 
 app.whenReady().then(() => {
+  migrateLegacyProfilesToUtilityOrder()
   createTray()
   createWindow()
 })
@@ -381,6 +390,131 @@ function getLaunchDelayMs() {
 
 function getExeName(filePath: string) {
   return path.basename(filePath).toLowerCase()
+}
+
+function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const utility = value as Record<string, unknown>
+  return typeof utility.id === 'string' && typeof utility.enabled === 'boolean'
+}
+
+function getCustomSlotNumber(key: string) {
+  const match = key.match(/^customapp(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
+  let highestSlot = 0
+
+  records.forEach((record) => {
+    Object.entries(record || {}).forEach(([key, value]) => {
+      const slotNumber = getCustomSlotNumber(key)
+
+      if (slotNumber !== null && (value === true || (typeof value === 'string' && value.trim().length > 0))) {
+        highestSlot = Math.max(highestSlot, slotNumber)
+      }
+
+      if (key === 'utilities' && Array.isArray(value)) {
+        value.filter(isStoredProfileUtility).forEach((utility) => {
+          const utilitySlotNumber = getCustomSlotNumber(utility.id)
+
+          if (utility.enabled && utilitySlotNumber !== null) {
+            highestSlot = Math.max(highestSlot, utilitySlotNumber)
+          }
+        })
+      }
+    })
+  })
+
+  return highestSlot
+}
+
+function getUtilityKeys(customSlots: unknown) {
+  const slotCount = typeof customSlots === 'number' && Number.isFinite(customSlots)
+    ? Math.max(1, Math.floor(customSlots))
+    : 1
+
+  return [
+    ...BUILT_IN_UTILITY_KEYS,
+    ...Array.from({ length: slotCount }, (_value, index) => `customapp${index + 1}`)
+  ]
+}
+
+function getEnabledUtilityKeys(profile: StoredProfile | undefined) {
+  if (!profile) {
+    return []
+  }
+
+  if (Array.isArray(profile.utilities)) {
+    return profile.utilities
+      .filter((utility) => isStoredProfileUtility(utility) && utility.enabled)
+      .map((utility) => utility.id)
+  }
+
+  return Object.entries(profile)
+    .filter(([_key, value]) => value === true)
+    .map(([key]) => key)
+}
+
+function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey: string) {
+  if (!profile) {
+    return false
+  }
+
+  if (Array.isArray(profile.utilities)) {
+    return profile.utilities.some((utility) => (
+      isStoredProfileUtility(utility) && utility.id === utilityKey && utility.enabled
+    ))
+  }
+
+  return profile[utilityKey] === true
+}
+
+function migrateLegacyProfilesToUtilityOrder() {
+  if (store.get('profileUtilityOrderMigrated') === true) {
+    return
+  }
+
+  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
+
+  if (!profiles || Object.keys(profiles).length === 0) {
+    store.set('profileUtilityOrderMigrated', true)
+    return
+  }
+
+  const savedCustomSlots = store.get('customSlots')
+  const customSlots = Math.max(
+    typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots) ? savedCustomSlots : 1,
+    getHighestCustomSlot(appPaths, ...Object.values(profiles))
+  )
+  const utilityKeys = getUtilityKeys(customSlots)
+  const migratedProfiles: Record<string, StoredProfile> = {}
+
+  Object.entries(profiles).forEach(([gameKey, profile]) => {
+    const migratedProfile: StoredProfile = {
+      ...profile,
+      utilities: Array.isArray(profile.utilities)
+        ? profile.utilities.filter(isStoredProfileUtility)
+        : utilityKeys.map((utilityKey) => ({
+          id: utilityKey,
+          enabled: profile[utilityKey] === true
+        }))
+    }
+
+    utilityKeys.forEach((utilityKey) => {
+      delete migratedProfile[utilityKey]
+    })
+
+    migratedProfiles[gameKey] = migratedProfile
+  })
+
+  store.set('customSlots', customSlots)
+  store.set('profiles', migratedProfiles)
+  store.set('profileUtilityOrderMigrated', true)
 }
 
 function isRunningExePath(processNames: Set<string>, appPath: string) {
@@ -544,9 +678,9 @@ async function getTrackedRunningApps(processNames: Set<string>) {
 
     const pathsToTrack = [
       gamePaths?.[gameKey],
-      ...Object.entries(profile || {})
-        .filter(([profileKey, value]) => value === true && isValidExePath(appPaths?.[profileKey]))
-        .map(([profileKey]) => appPaths![profileKey]),
+      ...getEnabledUtilityKeys(profile)
+        .filter((profileKey) => isValidExePath(appPaths?.[profileKey]))
+        .map((profileKey) => appPaths![profileKey]),
       ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
     ].filter(isValidExePath)
 

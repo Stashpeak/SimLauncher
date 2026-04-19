@@ -1,6 +1,12 @@
 export interface Game { key: string; name: string; icon: string }
 export interface Utility { key: string; name: string; isCustom?: boolean }
-export type GameProfile = Record<string, boolean | string[] | undefined> & {
+export interface ProfileUtility {
+  id: string
+  enabled: boolean
+}
+export interface GameProfile {
+  [key: string]: unknown
+  utilities?: ProfileUtility[]
   launchAutomatically?: boolean
   trackingEnabled?: boolean
   killControlsEnabled?: boolean
@@ -68,15 +74,36 @@ function hasCustomSlotValue(value: unknown) {
   return false
 }
 
+function getCustomSlotNumberFromKey(key: string) {
+  const match = key.match(/^customapp(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
 export function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
   let highestSlot = 0
 
   records.forEach((record) => {
     Object.entries(record || {}).forEach(([key, value]) => {
-      const match = key.match(/^customapp(\d+)$/)
+      if (key === 'utilities' && Array.isArray(value)) {
+        value.forEach((entry) => {
+          if (!isProfileUtility(entry) || !entry.enabled) {
+            return
+          }
 
-      if (match && hasCustomSlotValue(value)) {
-        highestSlot = Math.max(highestSlot, Number(match[1]))
+          const slotNumber = getCustomSlotNumberFromKey(entry.id)
+
+          if (slotNumber !== null) {
+            highestSlot = Math.max(highestSlot, slotNumber)
+          }
+        })
+
+        return
+      }
+
+      const slotNumber = getCustomSlotNumberFromKey(key)
+
+      if (slotNumber !== null && hasCustomSlotValue(value)) {
+        highestSlot = Math.max(highestSlot, slotNumber)
       }
     })
   })
@@ -107,6 +134,63 @@ export function getUtilities(customSlots: unknown): Utility[] {
     ...BUILT_IN_UTILITIES,
     ...getCustomUtilities(customSlots)
   ]
+}
+
+export function isProfileUtility(value: unknown): value is ProfileUtility {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const entry = value as Record<string, unknown>
+  return typeof entry.id === 'string' && typeof entry.enabled === 'boolean'
+}
+
+export function normalizeProfileUtilities(profile: GameProfile | undefined, utilities: Utility[]) {
+  const utilityIds = new Set(utilities.map((utility) => utility.key))
+  const orderedUtilities: ProfileUtility[] = []
+  const seen = new Set<string>()
+  const storedUtilities = Array.isArray(profile?.utilities)
+    ? profile.utilities.filter(isProfileUtility)
+    : []
+
+  storedUtilities.forEach((entry) => {
+    if (!utilityIds.has(entry.id) || seen.has(entry.id)) {
+      return
+    }
+
+    orderedUtilities.push({ id: entry.id, enabled: entry.enabled })
+    seen.add(entry.id)
+  })
+
+  utilities.forEach((utility) => {
+    if (seen.has(utility.key)) {
+      return
+    }
+
+    orderedUtilities.push({
+      id: utility.key,
+      enabled: profile?.[utility.key] === true
+    })
+  })
+
+  return orderedUtilities
+}
+
+export function getEnabledProfileUtilities(profile: GameProfile | undefined, utilities: Utility[]) {
+  return normalizeProfileUtilities(profile, utilities).filter((utility) => utility.enabled)
+}
+
+export function migrateProfileToUtilityOrder(profile: GameProfile, utilities: Utility[]) {
+  const migratedProfile: GameProfile = {
+    ...profile,
+    utilities: normalizeProfileUtilities(profile, utilities)
+  }
+
+  utilities.forEach((utility) => {
+    delete migratedProfile[utility.key]
+  })
+
+  return migratedProfile
 }
 
 export const UTILITIES: Utility[] = getUtilities(DEFAULT_CUSTOM_SLOTS)

@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { getUtilities, resolveCustomSlots, type Profiles, type Utility } from '../lib/config'
+import {
+  getUtilities,
+  normalizeProfileUtilities,
+  resolveCustomSlots,
+  type ProfileUtility,
+  type Profiles,
+  type Utility
+} from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
@@ -45,7 +52,8 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
   const [utilities, setUtilities] = useState<Utility[]>(() => getUtilities(1))
-  const [selection, setSelection] = useState<Record<string, boolean>>({})
+  const [profileUtilities, setProfileUtilities] = useState<ProfileUtility[]>([])
+  const [dragUtilityId, setDragUtilityId] = useState<string | null>(null)
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
   const [trackingEnabled, setTrackingEnabled] = useState(true)
   const [killControlsEnabled, setKillControlsEnabled] = useState(false)
@@ -69,13 +77,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       setAppNames(names)
       setUtilities(resolvedUtilities)
       
-      // Initialize selection state based on existing profile
-      const initialSelection: Record<string, boolean> = {}
-      resolvedUtilities.forEach((u) => {
-        initialSelection[u.key] = profile[u.key] === true
-      })
-      
-      setSelection(initialSelection)
+      setProfileUtilities(normalizeProfileUtilities(profile, resolvedUtilities))
       // Default auto-launch to true unless explicitly disabled
       setLaunchAutomatically(profile.launchAutomatically !== false)
       setTrackingEnabled(profile.trackingEnabled !== false)
@@ -106,7 +108,54 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   }, [gameKey])
 
   const handleToggleUtility = (key: string) => {
-    setSelection((prev) => ({ ...prev, [key]: !prev[key] }))
+    setProfileUtilities((currentUtilities) => {
+      const currentEntry = currentUtilities.find((entry) => entry.id === key)
+
+      if (!currentEntry) {
+        return currentUtilities
+      }
+
+      const toggledEntry = { ...currentEntry, enabled: !currentEntry.enabled }
+      const remainingEntries = currentUtilities.filter((entry) => entry.id !== key)
+
+      if (toggledEntry.enabled) {
+        const lastEnabledIndex = remainingEntries.reduce(
+          (latestIndex, entry, index) => entry.enabled ? index : latestIndex,
+          -1
+        )
+
+        return [
+          ...remainingEntries.slice(0, lastEnabledIndex + 1),
+          toggledEntry,
+          ...remainingEntries.slice(lastEnabledIndex + 1)
+        ]
+      }
+
+      return [...remainingEntries, toggledEntry]
+    })
+  }
+
+  const moveEnabledUtility = (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) {
+      return
+    }
+
+    setProfileUtilities((currentUtilities) => {
+      const enabledEntries = currentUtilities.filter((entry) => entry.enabled)
+      const disabledEntries = currentUtilities.filter((entry) => !entry.enabled)
+      const fromIndex = enabledEntries.findIndex((entry) => entry.id === draggedId)
+      const toIndex = enabledEntries.findIndex((entry) => entry.id === targetId)
+
+      if (fromIndex === -1 || toIndex === -1) {
+        return currentUtilities
+      }
+
+      const nextEnabledEntries = [...enabledEntries]
+      const [movedEntry] = nextEnabledEntries.splice(fromIndex, 1)
+      nextEnabledEntries.splice(toIndex, 0, movedEntry)
+
+      return [...nextEnabledEntries, ...disabledEntries]
+    })
   }
 
   const handleAddTrackedProcess = () => {
@@ -132,7 +181,10 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
     
     allProfiles[gameKey] = {
-      ...selection,
+      utilities: profileUtilities.map((utility) => ({
+        id: utility.id,
+        enabled: utility.enabled
+      })),
       launchAutomatically,
       trackingEnabled,
       killControlsEnabled,
@@ -149,7 +201,104 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   if (loading) return null
 
   // Filter utilities to show only those that have a configured executable path
-  const availableUtilities = utilities.filter((u) => appPaths[u.key])
+  const utilityByKey = new Map(utilities.map((utility) => [utility.key, utility]))
+  const availableUtilityEntries = profileUtilities.filter((entry) => utilityByKey.has(entry.id) && appPaths[entry.id])
+  const enabledUtilityEntries = availableUtilityEntries.filter((entry) => entry.enabled)
+  const disabledUtilityEntries = availableUtilityEntries.filter((entry) => !entry.enabled)
+  const availableUtilities = availableUtilityEntries.map((entry) => utilityByKey.get(entry.id)!)
+
+  const renderUtilityRow = (entry: ProfileUtility, isEnabled: boolean) => {
+    const utility = utilityByKey.get(entry.id)
+
+    if (!utility) {
+      return null
+    }
+
+    const label = appNames[utility.key] || utility.name
+    const iconPath = appPaths[utility.key]?.toLowerCase()
+    const icon = iconPath ? appIconCache[iconPath] : null
+
+    return (
+      <div
+        key={utility.key}
+        role="switch"
+        aria-checked={isEnabled}
+        tabIndex={0}
+        onClick={() => handleToggleUtility(utility.key)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            handleToggleUtility(utility.key)
+          }
+        }}
+        onDragOver={(event) => {
+          if (isEnabled && dragUtilityId && dragUtilityId !== utility.key) {
+            event.preventDefault()
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault()
+          if (dragUtilityId) {
+            moveEnabledUtility(dragUtilityId, utility.key)
+            setDragUtilityId(null)
+          }
+        }}
+        className={`group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) ${
+          isEnabled ? '' : 'opacity-55 hover:opacity-100'
+        }`}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            draggable={isEnabled}
+            disabled={!isEnabled}
+            onClick={(event) => event.stopPropagation()}
+            onDragStart={(event) => {
+              event.stopPropagation()
+              setDragUtilityId(utility.key)
+              event.dataTransfer.effectAllowed = 'move'
+              event.dataTransfer.setData('text/plain', utility.key)
+            }}
+            onDragEnd={() => setDragUtilityId(null)}
+            className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-(--text-subtle) transition-colors hover:bg-white/10 hover:text-(--text-primary) active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-20"
+            title="Drag to reorder"
+            aria-label={`Reorder ${label}`}
+          >
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+              <circle cx="3" cy="3" r="1.2" />
+              <circle cx="9" cy="3" r="1.2" />
+              <circle cx="3" cy="8" r="1.2" />
+              <circle cx="9" cy="8" r="1.2" />
+              <circle cx="3" cy="13" r="1.2" />
+              <circle cx="9" cy="13" r="1.2" />
+            </svg>
+          </button>
+          <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+            {icon && !failedIcons[utility.key] ? (
+              <img
+                src={icon}
+                alt=""
+                className="h-full w-full object-contain animate-fade-slide"
+                onError={() => setFailedIcons((prev) => ({ ...prev, [utility.key]: true }))}
+              />
+            ) : fetchingIcons && !failedIcons[utility.key] ? (
+              <div className="h-full w-full skeleton-icon animate-pulse" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center rounded bg-(--accent)/20 text-[8px] font-black uppercase text-(--accent)">
+                {label.slice(0, 2)}
+              </div>
+            )}
+          </div>
+          <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80 group-hover:opacity-100">
+            {label}
+          </span>
+        </div>
+        <span onClick={(event) => event.stopPropagation()}>
+          <Toggle checked={isEnabled} onChange={() => handleToggleUtility(utility.key)} aria-label={label} />
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5 shadow-2xl">
@@ -174,48 +323,17 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           </p>
           
           {availableUtilities.length > 0 ? (
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {availableUtilities.map((u) => (
-                <div
-                  key={u.key}
-                  role="switch"
-                  aria-checked={!!selection[u.key]}
-                  tabIndex={0}
-                  onClick={() => handleToggleUtility(u.key)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      handleToggleUtility(u.key)
-                    }
-                  }}
-                  className="flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-                      {appIconCache[appPaths[u.key]?.toLowerCase()] && !failedIcons[u.key] ? (
-                        <img
-                          src={appIconCache[appPaths[u.key].toLowerCase()]}
-                          alt=""
-                          className="h-full w-full object-contain animate-fade-slide"
-                          onError={() => setFailedIcons((prev) => ({ ...prev, [u.key]: true }))}
-                        />
-                      ) : fetchingIcons && !failedIcons[u.key] ? (
-                        <div className="h-full w-full skeleton-icon animate-pulse" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center rounded bg-(--accent)/20 text-[8px] font-black uppercase text-(--accent)">
-                          {(appNames[u.key] || u.name).slice(0, 2)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-sm font-medium opacity-80 group-hover:opacity-100 line-clamp-1">
-                      {appNames[u.key] || u.name}
-                    </span>
-                  </div>
-                  <span onClick={(event) => event.stopPropagation()}>
-                    <Toggle checked={!!selection[u.key]} onChange={() => handleToggleUtility(u.key)} aria-label={appNames[u.key] || u.name} />
-                  </span>
+            <div className="space-y-3">
+              {enabledUtilityEntries.length > 0 && (
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  {enabledUtilityEntries.map((entry) => renderUtilityRow(entry, true))}
                 </div>
-              ))}
+              )}
+              {disabledUtilityEntries.length > 0 && (
+                <div className="grid grid-cols-1 gap-2.5 border-t border-(--glass-border) pt-3 sm:grid-cols-2">
+                  {disabledUtilityEntries.map((entry) => renderUtilityRow(entry, false))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex h-20 items-center justify-center rounded-xl border border-dashed border-(--glass-border) bg-(--glass-bg)">
@@ -229,7 +347,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
         <div className="border-t border-(--glass-border) pt-4">
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <ProfileToggleRow
-              label="Launch game automatically after utilities"
+              label="Launch game with profile"
               checked={launchAutomatically}
               onToggle={() => setLaunchAutomatically((value) => !value)}
               onChange={setLaunchAutomatically}

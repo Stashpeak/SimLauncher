@@ -4,6 +4,7 @@ import {
   GAMES,
   getCustomUtilityKey,
   getUtilities,
+  isProfileUtility,
   resolveCustomSlots,
   type Profiles
 } from '../lib/config'
@@ -235,6 +236,34 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     return shifted
   }
 
+  const shiftProfileCustomSlots = (profile: Profiles[string], removedSlot: number, slotCount: number) => {
+    const shiftedProfile = shiftCustomSlotRecord(profile, removedSlot, slotCount)
+
+    if (Array.isArray(profile.utilities)) {
+      shiftedProfile.utilities = profile.utilities.filter(isProfileUtility).flatMap((utility) => {
+        const match = utility.id.match(/^customapp(\d+)$/)
+
+        if (!match) {
+          return [utility]
+        }
+
+        const slot = Number(match[1])
+
+        if (slot < removedSlot) {
+          return [utility]
+        }
+
+        if (slot > removedSlot && slot <= slotCount) {
+          return [{ ...utility, id: getCustomUtilityKey(slot - 1) }]
+        }
+
+        return []
+      })
+    }
+
+    return shiftedProfile
+  }
+
   const getCustomSlotNumber = (key: string) => Number(key.replace('customapp', ''))
 
   const handleAddCustomSlot = () => {
@@ -266,7 +295,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const nextProfiles: Profiles = {}
 
       Object.entries(current).forEach(([gameKey, profile]) => {
-        nextProfiles[gameKey] = shiftCustomSlotRecord(profile, slotNumber, customSlots)
+        nextProfiles[gameKey] = shiftProfileCustomSlots(profile, slotNumber, customSlots)
       })
 
       return nextProfiles
