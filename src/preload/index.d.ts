@@ -22,6 +22,13 @@ interface LaunchResult {
   skippedCount?: number
 }
 
+interface ConfigFileResult {
+  success: boolean
+  canceled?: boolean
+  error?: string
+  filePath?: string
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -33,6 +40,7 @@ declare global {
       close: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
       killLaunchedApps: (gameKey?: string) => Promise<void>
+      killProfileApps: (gameKey: string, appPaths: string[]) => Promise<void>
       onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
       onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
       onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe
@@ -42,6 +50,8 @@ declare global {
       checkForUpdates: () => Promise<unknown>
       storeGet: (key: string) => Promise<unknown>
       storeSet: (key: string, value: unknown) => Promise<void>
+      exportConfig: () => Promise<ConfigFileResult>
+      importConfig: () => Promise<ConfigFileResult>
       setLoginItem: (openAtLogin: boolean) => Promise<void>
       setZoom: (factor: number) => Promise<void>
       getAssetData: (filename: string) => Promise<string | null>

@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
+import {
+  GAMES,
+  createProfileId,
+  getActiveGameProfile,
+  getEnabledProfileUtilities,
+  getUtilities,
+  normalizeGameProfileSet,
+  resolveCustomSlots,
+  type Game,
+  type GameProfileSet,
+  type NamedGameProfile,
+  type Profiles,
+  type Utility
+} from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
@@ -40,6 +53,12 @@ function GameRow({
   const [iconUrl, setIconUrl] = useState<string | null>(null)
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
+  const [profileSet, setProfileSet] = useState<GameProfileSet>(() => normalizeGameProfileSet(undefined))
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [newProfileFormOpen, setNewProfileFormOpen] = useState(false)
+  const [newProfileName, setNewProfileName] = useState('')
+  const profileMenuRef = useRef<HTMLDivElement | null>(null)
+  const newProfileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     async function resolveIcon() {
@@ -51,32 +70,213 @@ function GameRow({
     resolveIcon()
   }, [game.icon])
 
-  const getProfileLaunchPaths = async () => {
+  useEffect(() => {
+    if (!profileMenuOpen) {
+      setNewProfileFormOpen(false)
+      setNewProfileName('')
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setProfileMenuOpen(false)
+        setNewProfileFormOpen(false)
+        setNewProfileName('')
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+
+    return () => window.removeEventListener('pointerdown', handlePointerDown)
+  }, [profileMenuOpen])
+
+  useEffect(() => {
+    if (!profileMenuOpen || !newProfileFormOpen) {
+      return
+    }
+
+    newProfileInputRef.current?.focus()
+  }, [profileMenuOpen, newProfileFormOpen])
+
+  const loadProfileSet = useCallback(async () => {
+    const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
+    const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
+    setProfileSet(nextProfileSet)
+    return nextProfileSet
+  }, [game.key])
+
+  useEffect(() => {
+    let mounted = true
+
+    async function load() {
+      const nextProfileSet = await loadProfileSet()
+
+      if (!mounted) {
+        return
+      }
+
+      setProfileSet(nextProfileSet)
+    }
+
+    load()
+    window.addEventListener('focus', load)
+
+    return () => {
+      mounted = false
+      window.removeEventListener('focus', load)
+    }
+  }, [loadProfileSet, isActive])
+
+  const getProfileRuntimeConfig = async () => {
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
     const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
     const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
+    const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
+    const utilities = getUtilities(resolveCustomSlots(savedCustomSlots, appPaths, ...Object.values(profiles)))
+    const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
 
-    const profile = profiles[game.key] || {}
+    return { profiles, appPaths, gamePaths, utilities, profileSet: nextProfileSet }
+  }
+
+  const getProfileLaunchPaths = async () => {
+    const { appPaths, gamePaths, utilities, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
+    const profile = getActiveGameProfile(nextProfileSet)
     const configuredGamePath = gamePaths[game.key]
 
     const pathsToLaunch: string[] = []
     let appCount = 0
 
-    // Queue utilities first
-    UTILITIES.forEach((u) => {
-      if (profile[u.key] === true && appPaths[u.key]) {
-        pathsToLaunch.push(appPaths[u.key])
-        appCount++
-      }
-    })
-
-    // Queue game last
+    // Queue game first, then ordered utilities.
     if (profile.launchAutomatically !== false && configuredGamePath) {
       pathsToLaunch.push(configuredGamePath)
       appCount++
     }
 
+    getEnabledProfileUtilities(profile, utilities).forEach((utility) => {
+      if (appPaths[utility.id]) {
+        pathsToLaunch.push(appPaths[utility.id])
+        appCount++
+      }
+    })
+
     return { profile, pathsToLaunch, appCount }
+  }
+
+  const getOrderedUtilityPaths = (
+    profile: NamedGameProfile,
+    utilities: Utility[],
+    appPaths: Record<string, string>
+  ) => getEnabledProfileUtilities(profile, utilities)
+    .map((utility) => appPaths[utility.id])
+    .filter((appPath): appPath is string => typeof appPath === 'string' && appPath.trim().length > 0)
+
+  const saveProfileSet = async (profiles: Profiles, nextProfileSet: GameProfileSet) => {
+    await window.electronAPI.storeSet('profiles', {
+      ...profiles,
+      [game.key]: nextProfileSet
+    })
+    setProfileSet(nextProfileSet)
+  }
+
+  const handleCreateProfile = async (name: string) => {
+    const trimmedName = name.trim()
+
+    if (trimmedName.length === 0) {
+      return
+    }
+
+    const { profiles, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
+    const activeProfile = getActiveGameProfile(nextProfileSet)
+    const newProfile: NamedGameProfile = {
+      ...JSON.parse(JSON.stringify(activeProfile)),
+      id: createProfileId(),
+      name: trimmedName
+    }
+    const updatedProfileSet = {
+      activeProfileId: newProfile.id,
+      profiles: [...nextProfileSet.profiles, newProfile]
+    }
+
+    await saveProfileSet(profiles, updatedProfileSet)
+    notify(`Created profile ${newProfile.name}`, 'success')
+  }
+
+  const handleProfileSelect = async (nextProfileId: string) => {
+    if (nextProfileId === '__new__') {
+      setNewProfileFormOpen(true)
+      return
+    }
+
+    if (nextProfileId === profileSet.activeProfileId) {
+      return
+    }
+
+    if (isRunning && isLaunchBlocked) {
+      notify('Launch is settling. Try again shortly.', 'warn')
+      return
+    }
+
+    const { profiles, appPaths, utilities, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
+    const currentProfile = getActiveGameProfile(latestProfileSet)
+    const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
+
+    if (!nextProfile) {
+      return
+    }
+
+    const updatedProfileSet = {
+      ...latestProfileSet,
+      activeProfileId: nextProfile.id
+    }
+
+    try {
+      if (isRunning) {
+        const currentPaths = getOrderedUtilityPaths(currentProfile, utilities, appPaths)
+        const nextPaths = getOrderedUtilityPaths(nextProfile, utilities, appPaths)
+        const currentPathSet = new Set(currentPaths.map((appPath) => appPath.toLowerCase()))
+        const nextPathSet = new Set(nextPaths.map((appPath) => appPath.toLowerCase()))
+        const pathsToStop = currentPaths.filter((appPath) => !nextPathSet.has(appPath.toLowerCase()))
+        const pathsToStart = nextPaths.filter((appPath) => !currentPathSet.has(appPath.toLowerCase()))
+
+        if (pathsToStop.length > 0) {
+          await window.electronAPI.killProfileApps(game.key, pathsToStop)
+        }
+
+        if (pathsToStart.length > 0) {
+          onLaunchStart(game.key)
+          const result = await window.electronAPI.launchProfile(game.key, pathsToStart)
+          if (!result.success) {
+            notify(result.error || 'Failed to switch profile', 'error')
+            onLaunchEnd(game.key, 0)
+            return
+          }
+          onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+        }
+
+        await onRunningStateRefresh()
+      }
+
+      await saveProfileSet(profiles, updatedProfileSet)
+      setProfileMenuOpen(false)
+      notify(`Switched to ${nextProfile.name}`, 'success')
+    } catch (err) {
+      onLaunchEnd(game.key, 0)
+      notify('Failed to switch profile', 'error')
+      console.error(err)
+    }
+  }
+
+  const handleNewProfileSubmit = async () => {
+    const trimmedName = newProfileName.trim()
+
+    if (trimmedName.length === 0) {
+      return
+    }
+
+    await handleCreateProfile(trimmedName)
+    setNewProfileName('')
+    setNewProfileFormOpen(false)
+    setProfileMenuOpen(false)
   }
 
   const handleLaunch = async () => {
@@ -177,7 +377,7 @@ function GameRow({
 
     async function loadProfileState() {
       const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const profile = profiles[game.key] || {}
+      const profile = getActiveGameProfile(profiles[game.key])
 
       if (!mounted) {
         return
@@ -196,7 +396,7 @@ function GameRow({
       mounted = false
       window.removeEventListener('focus', loadProfileState)
     }
-  }, [game.key, isActive])
+  }, [game.key, isActive, profileSet.activeProfileId])
 
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
@@ -205,10 +405,11 @@ function GameRow({
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
     : 'bg-(--accent) text-white neon-glow hover:opacity-90'
+  const activeProfile = getActiveGameProfile(profileSet)
 
   return (
-    <div className={`flex flex-col gap-2 transition-opacity duration-300 ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
-      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
+    <div className={`relative flex flex-col gap-2 transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
+      <div className={`glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)] ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}>
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && !iconLoadFailed ? (
@@ -229,7 +430,119 @@ function GameRow({
             )}
           </div>
           <div className="flex flex-col gap-0.5">
-            <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+              <div ref={profileMenuRef} className="relative no-drag">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    const nextOpen = !profileMenuOpen
+                    setProfileMenuOpen(nextOpen)
+                    if (!nextOpen) {
+                      setNewProfileFormOpen(false)
+                      setNewProfileName('')
+                    }
+                  }}
+                  className="flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2.5 py-1 text-[10px] font-semibold text-(--text-primary) outline-none transition-all hover:border-(--accent) hover:bg-(--glass-bg) focus-visible:ring-2 focus-visible:ring-(--accent)"
+                  aria-haspopup="menu"
+                  aria-expanded={profileMenuOpen}
+                  aria-label={`${game.name} profile`}
+                >
+                  <span className="min-w-0 truncate">{activeProfile.name}</span>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}>
+                    <path d="M3 6l5 5 5-5" />
+                  </svg>
+                </button>
+                {profileMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
+                  >
+                    {profileSet.profiles.map((profile) => {
+                      const selected = profile.id === profileSet.activeProfileId
+
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleProfileSelect(profile.id)
+                          }}
+                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
+                            selected
+                              ? 'bg-(--accent)/20 text-(--text-primary)'
+                              : 'text-(--text-secondary) hover:bg-(--glass-bg-elevated) hover:text-(--text-primary)'
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`} />
+                          <span className="min-w-0 flex-1 truncate">{profile.name}</span>
+                        </button>
+                      )
+                    })}
+                    <div className="my-1 h-px bg-(--glass-border)" />
+                    {newProfileFormOpen ? (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          handleNewProfileSubmit()
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg px-1.5 py-1"
+                      >
+                        <input
+                          ref={newProfileInputRef}
+                          type="text"
+                          value={newProfileName}
+                          onChange={(event) => setNewProfileName(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.stopPropagation()
+                              setNewProfileFormOpen(false)
+                              setNewProfileName('')
+                            }
+                          }}
+                          placeholder="Profile name"
+                          className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
+                          aria-label="New profile name"
+                        />
+                        <button
+                          type="submit"
+                          disabled={newProfileName.trim().length === 0}
+                          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--accent) text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                          aria-label="Create profile"
+                          title="Create profile"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleProfileSelect('__new__')
+                        }}
+                        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                          <path d="M12 5v14" />
+                          <path d="M5 12h14" />
+                        </svg>
+                        New profile
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
                 {runningAppIcons.map((app, i) => {
@@ -313,13 +626,15 @@ function GameRow({
         </div>
       </div>
 
-      <div className={`profile-editor-wrapper mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
+      <div className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
         <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
           {isActive && (
             <div className="animate-fade-slide">
               <ProfileEditor
                 gameKey={game.key}
                 gameName={game.name}
+                activeProfileId={profileSet.activeProfileId}
+                onProfilesChanged={loadProfileSet}
                 onClose={onToggleEditor}
               />
             </div>

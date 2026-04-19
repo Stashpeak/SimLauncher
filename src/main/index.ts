@@ -11,6 +11,7 @@ const store = new Store({
     gamePaths:    { type: 'object',  default: {} },
     profiles:     { type: 'object',  default: {} },
     appNames:     { type: 'object',  default: {} },
+    customSlots:  { type: 'number',  default: 1, minimum: 1 },
     accentPreset: { type: 'string',  default: '' },
     accentCustom: { type: 'string',  default: '' },
     accentBgTint: { type: 'boolean', default: false },
@@ -22,9 +23,54 @@ const store = new Store({
     autoCheckUpdates:  { type: 'boolean', default: true },
     zoomFactor:       { type: 'number',  default: 1.0 },
     windowBounds:      { type: 'object',  default: {} },
+    profileUtilityOrderMigrated: { type: 'boolean', default: false },
+    profileSetsMigrated: { type: 'boolean', default: false },
     migrated:     { type: 'boolean', default: false },
   }
 })
+
+const CONFIG_FILE_NAME = 'simlauncher-config.json'
+const EXPECTED_CONFIG_KEYS = new Set([
+  'appPaths',
+  'gamePaths',
+  'profiles',
+  'appNames',
+  'customSlots',
+  'accentPreset',
+  'accentCustom',
+  'accentBgTint',
+  'focusActiveTitle',
+  'launchDelayMs',
+  'startWithWindows',
+  'startMinimized',
+  'minimizeToTray',
+  'autoCheckUpdates',
+  'zoomFactor',
+  'windowBounds',
+  'profileUtilityOrderMigrated',
+  'profileSetsMigrated',
+  'migrated'
+])
+const LEGACY_CONFIG_KEYS = new Set([
+  'killOnClose'
+])
+const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFIG_KEYS])
+const OBJECT_CONFIG_KEYS = new Set(['appPaths', 'gamePaths', 'profiles', 'appNames', 'windowBounds'])
+const STRING_CONFIG_KEYS = new Set(['accentPreset', 'accentCustom'])
+const BOOLEAN_CONFIG_KEYS = new Set([
+  'accentBgTint',
+  'focusActiveTitle',
+  'startWithWindows',
+  'startMinimized',
+  'minimizeToTray',
+  'autoCheckUpdates',
+  'profileUtilityOrderMigrated',
+  'profileSetsMigrated',
+  'migrated'
+])
+const LEGACY_BOOLEAN_CONFIG_KEYS = new Set([
+  'killOnClose'
+])
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -40,12 +86,28 @@ let genericIconFingerprintPromise: Promise<string | null> | null = null
 const UTILITY_COMPANION_PROCESS_NAMES: Record<string, string[]> = {
   garage61: ['Garage61 telemetry agent.exe']
 }
+const BUILT_IN_UTILITY_KEYS = ['simhub', 'crewchief', 'tradingpaints', 'garage61', 'secondmonitor']
 
 autoUpdater.autoDownload = false
 
 interface StoredProfile extends Record<string, unknown> {
+  utilities?: StoredProfileUtility[]
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
+}
+interface StoredNamedProfile extends StoredProfile {
+  id: string
+  name: string
+}
+interface StoredProfileSet {
+  activeProfileId: string
+  profiles: StoredNamedProfile[]
+}
+type StoredProfileEntry = StoredProfile | StoredProfileSet
+
+interface StoredProfileUtility {
+  id: string
+  enabled: boolean
 }
 
 interface WindowBounds {
@@ -98,6 +160,94 @@ function sendToRenderer(channel: string, payload: unknown) {
   }
 
   mainWindow.webContents.send(channel, payload)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function validateImportedConfig(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error('Config file must contain a JSON object.')
+  }
+
+  const keys = Object.keys(value)
+
+  if (keys.length === 0) {
+    throw new Error('Config file is empty.')
+  }
+
+  const unexpectedKeys = keys.filter((key) => !IMPORTABLE_CONFIG_KEYS.has(key))
+
+  if (unexpectedKeys.length > 0) {
+    throw new Error(`Config file contains unsupported keys: ${unexpectedKeys.join(', ')}`)
+  }
+
+  if (!keys.some((key) => EXPECTED_CONFIG_KEYS.has(key))) {
+    throw new Error('Config file does not contain SimLauncher settings.')
+  }
+
+  keys.forEach((key) => {
+    const setting = value[key]
+
+    if (OBJECT_CONFIG_KEYS.has(key) && !isRecord(setting)) {
+      throw new Error(`Config value "${key}" must be an object.`)
+    }
+
+    if (STRING_CONFIG_KEYS.has(key) && typeof setting !== 'string') {
+      throw new Error(`Config value "${key}" must be a string.`)
+    }
+
+    if (BOOLEAN_CONFIG_KEYS.has(key) && typeof setting !== 'boolean') {
+      throw new Error(`Config value "${key}" must be a boolean.`)
+    }
+
+    if (LEGACY_BOOLEAN_CONFIG_KEYS.has(key) && typeof setting !== 'boolean') {
+      throw new Error(`Config value "${key}" must be a boolean.`)
+    }
+
+    if (key === 'customSlots') {
+      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting < 1) {
+        throw new Error('Config value "customSlots" must be a number greater than or equal to 1.')
+      }
+    }
+
+    if (key === 'launchDelayMs') {
+      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting < 0 || setting > 5000) {
+        throw new Error('Config value "launchDelayMs" must be a number from 0 to 5000.')
+      }
+    }
+
+    if (key === 'zoomFactor') {
+      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting <= 0) {
+        throw new Error('Config value "zoomFactor" must be a positive number.')
+      }
+    }
+  })
+
+  return true
+}
+
+function getSupportedConfigValues(config: Record<string, unknown>) {
+  const supportedConfig: Record<string, unknown> = {}
+
+  Object.entries(config).forEach(([key, value]) => {
+    if (EXPECTED_CONFIG_KEYS.has(key)) {
+      supportedConfig[key] = value
+    }
+  })
+
+  return supportedConfig
+}
+
+function applyRuntimeConfigSettings() {
+  const startWithWindows = store.get('startWithWindows') as boolean
+  app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
+
+  const zoomFactor = store.get('zoomFactor')
+  if (typeof zoomFactor === 'number' && Number.isFinite(zoomFactor) && zoomFactor > 0) {
+    mainWindow?.webContents.setZoomFactor(zoomFactor)
+  }
 }
 
 function getAppIconPath() {
@@ -196,17 +346,19 @@ function killProcessByImageName(processName: string) {
 }
 
 function getProfileCompanionProcessNames(gameKey?: string) {
-  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const companionNames = new Set<string>()
 
-  Object.entries(profiles || {}).forEach(([profileGameKey, profile]) => {
+  Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
       return
     }
 
+    const profile = getActiveStoredProfile(profileEntry)
+
     Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
-      if (profile?.[utilityKey] === true) {
+      if (isUtilityEnabled(profile, utilityKey)) {
         processNames.forEach((processName) => companionNames.add(processName.toLowerCase()))
       }
     })
@@ -250,6 +402,48 @@ async function killLaunchedApps(gameKey?: string) {
   companionProcessNames.forEach((processName) => {
     if (processNames.has(processName)) {
       killTasks.push(killProcessByImageName(processName))
+    }
+  })
+
+  await Promise.all(killTasks)
+}
+
+async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
+  const processNames = await readRunningProcessNames()
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const killTasks: Promise<void>[] = []
+  const killedExeNames = new Set<string>()
+
+  appPathsToKill.filter(isValidExePath).forEach((appPath) => {
+    if (gamePath && appPath.toLowerCase() === gamePath) {
+      return
+    }
+
+    const runningAppEntry = Array.from(runningProcesses.entries()).find(([runningPath, runningApp]) => (
+      runningPath.toLowerCase() === appPath.toLowerCase() &&
+      runningApp.gameKey === gameKey &&
+      !runningApp.isGame
+    ))
+
+    if (runningAppEntry) {
+      const [runningPath, runningApp] = runningAppEntry
+      killTasks.push(killProcessTree(runningApp.process, appPath))
+      runningProcesses.delete(runningPath)
+      killedExeNames.add(getExeName(appPath))
+    }
+  })
+
+  appPathsToKill.filter(isValidExePath).forEach((appPath) => {
+    if (gamePath && appPath.toLowerCase() === gamePath) {
+      return
+    }
+
+    const processName = getExeName(appPath)
+
+    if (!killedExeNames.has(processName) && processNames.has(processName)) {
+      killTasks.push(killProcessByImageName(processName))
+      killedExeNames.add(processName)
     }
   })
 
@@ -356,6 +550,7 @@ app.on('before-quit', () => {
 })
 
 app.whenReady().then(() => {
+  migrateProfilesToNamedSets()
   createTray()
   createWindow()
 })
@@ -380,6 +575,234 @@ function getLaunchDelayMs() {
 
 function getExeName(filePath: string) {
   return path.basename(filePath).toLowerCase()
+}
+
+function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const utility = value as Record<string, unknown>
+  return typeof utility.id === 'string' && typeof utility.enabled === 'boolean'
+}
+
+function isStoredProfileSet(value: unknown): value is StoredProfileSet {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const profileSet = value as Record<string, unknown>
+  return typeof profileSet.activeProfileId === 'string' && Array.isArray(profileSet.profiles)
+}
+
+function getCustomSlotNumber(key: string) {
+  const match = key.match(/^customapp(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
+function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
+  let highestSlot = 0
+
+  const scanRecord = (record: Record<string, unknown> | undefined) => {
+    Object.entries(record || {}).forEach(([key, value]) => {
+      if (key === 'profiles' && Array.isArray(value)) {
+        value.forEach((profile) => {
+          if (profile && typeof profile === 'object') {
+            scanRecord(profile as Record<string, unknown>)
+          }
+        })
+        return
+      }
+
+      const slotNumber = getCustomSlotNumber(key)
+
+      if (slotNumber !== null && (value === true || (typeof value === 'string' && value.trim().length > 0))) {
+        highestSlot = Math.max(highestSlot, slotNumber)
+      }
+
+      if (key === 'utilities' && Array.isArray(value)) {
+        value.filter(isStoredProfileUtility).forEach((utility) => {
+          const utilitySlotNumber = getCustomSlotNumber(utility.id)
+
+          if (utility.enabled && utilitySlotNumber !== null) {
+            highestSlot = Math.max(highestSlot, utilitySlotNumber)
+          }
+        })
+      }
+    })
+  }
+
+  records.forEach((record) => {
+    scanRecord(record)
+  })
+
+  return highestSlot
+}
+
+function getUtilityKeys(customSlots: unknown) {
+  const slotCount = typeof customSlots === 'number' && Number.isFinite(customSlots)
+    ? Math.max(1, Math.floor(customSlots))
+    : 1
+
+  return [
+    ...BUILT_IN_UTILITY_KEYS,
+    ...Array.from({ length: slotCount }, (_value, index) => `customapp${index + 1}`)
+  ]
+}
+
+function getEnabledUtilityKeys(profile: StoredProfile | undefined) {
+  if (!profile) {
+    return []
+  }
+
+  if (Array.isArray(profile.utilities)) {
+    return profile.utilities
+      .filter((utility) => isStoredProfileUtility(utility) && utility.enabled)
+      .map((utility) => utility.id)
+  }
+
+  return Object.entries(profile)
+    .filter(([_key, value]) => value === true)
+    .map(([key]) => key)
+}
+
+function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey: string) {
+  if (!profile) {
+    return false
+  }
+
+  if (Array.isArray(profile.utilities)) {
+    return profile.utilities.some((utility) => (
+      isStoredProfileUtility(utility) && utility.id === utilityKey && utility.enabled
+    ))
+  }
+
+  return profile[utilityKey] === true
+}
+
+function getActiveStoredProfile(profileEntry: StoredProfileEntry | undefined) {
+  if (!profileEntry) {
+    return undefined
+  }
+
+  if (isStoredProfileSet(profileEntry)) {
+    return profileEntry.profiles.find((profile) => profile.id === profileEntry.activeProfileId) || profileEntry.profiles[0]
+  }
+
+  return profileEntry
+}
+
+function normalizeStoredProfileUtilityOrder(profile: StoredProfile, utilityKeys: string[]) {
+  const normalizedProfile: StoredProfile = {
+    ...profile,
+    utilities: Array.isArray(profile.utilities)
+      ? profile.utilities.filter(isStoredProfileUtility)
+      : utilityKeys.map((utilityKey) => ({
+        id: utilityKey,
+        enabled: profile[utilityKey] === true
+      }))
+  }
+
+  utilityKeys.forEach((utilityKey) => {
+    delete normalizedProfile[utilityKey]
+  })
+
+  return normalizedProfile
+}
+
+function normalizeStoredNamedProfile(value: unknown, utilityKeys: string[], fallbackIndex: number): StoredNamedProfile | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const profile = value as StoredProfile
+  const orderedProfile = normalizeStoredProfileUtilityOrder(profile, utilityKeys)
+  const rawProfile = value as Record<string, unknown>
+
+  return {
+    ...orderedProfile,
+    id: typeof rawProfile.id === 'string' && rawProfile.id.trim().length > 0
+      ? rawProfile.id
+      : `profile-${Date.now().toString(36)}-${fallbackIndex}`,
+    name: typeof rawProfile.name === 'string' && rawProfile.name.trim().length > 0
+      ? rawProfile.name.trim()
+      : fallbackIndex === 0 ? 'Default' : `Profile ${fallbackIndex + 1}`
+  }
+}
+
+function normalizeStoredProfileSet(profileEntry: StoredProfileEntry, utilityKeys: string[]) {
+  if (isStoredProfileSet(profileEntry)) {
+    const seen = new Set<string>()
+    const profiles = profileEntry.profiles.flatMap((profile, index) => {
+      const normalizedProfile = normalizeStoredNamedProfile(profile, utilityKeys, index)
+
+      if (!normalizedProfile || seen.has(normalizedProfile.id)) {
+        return []
+      }
+
+      seen.add(normalizedProfile.id)
+      return [normalizedProfile]
+    })
+
+    if (profiles.length === 0) {
+      const defaultProfile = normalizeStoredNamedProfile({}, utilityKeys, 0)!
+      defaultProfile.id = 'default'
+      defaultProfile.name = 'Default'
+      return {
+        activeProfileId: defaultProfile.id,
+        profiles: [defaultProfile]
+      }
+    }
+
+    return {
+      activeProfileId: profiles.some((profile) => profile.id === profileEntry.activeProfileId)
+        ? profileEntry.activeProfileId
+        : profiles[0].id,
+      profiles
+    }
+  }
+
+  const defaultProfile = normalizeStoredNamedProfile(profileEntry, utilityKeys, 0)!
+  defaultProfile.id = 'default'
+  defaultProfile.name = 'Default'
+
+  return {
+    activeProfileId: defaultProfile.id,
+    profiles: [defaultProfile]
+  }
+}
+
+function migrateProfilesToNamedSets() {
+  if (store.get('profileSetsMigrated') === true) {
+    return
+  }
+
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
+
+  if (!profiles || Object.keys(profiles).length === 0) {
+    store.set('profileUtilityOrderMigrated', true)
+    store.set('profileSetsMigrated', true)
+    return
+  }
+
+  const savedCustomSlots = store.get('customSlots')
+  const customSlots = Math.max(
+    typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots) ? savedCustomSlots : 1,
+    getHighestCustomSlot(appPaths, ...Object.values(profiles).map((profile) => profile as Record<string, unknown>))
+  )
+  const utilityKeys = getUtilityKeys(customSlots)
+  const migratedProfiles = Object.fromEntries(
+    Object.entries(profiles).map(([gameKey, profileEntry]) => [
+      gameKey,
+      normalizeStoredProfileSet(profileEntry, utilityKeys)
+    ])
+  )
+
+  store.set('customSlots', customSlots)
+  store.set('profiles', migratedProfiles)
+  store.set('profileUtilityOrderMigrated', true)
+  store.set('profileSetsMigrated', true)
 }
 
 function isRunningExePath(processNames: Set<string>, appPath: string) {
@@ -527,27 +950,102 @@ function getGenericIconFingerprint() {
   return genericIconFingerprintPromise
 }
 
-// INVARIANT: an exe name can only be "running" for one gameKey at a time.
-// Never match by exe name globally without deduplicating across all gameKeys.
-async function getTrackedRunningApps(processNames: Set<string>) {
-  const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
-  const appPaths = store.get('appPaths') as Record<string, string> | undefined
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+function getProfileTrackablePaths(
+  gameKey: string,
+  profile: StoredProfile | undefined,
+  appPaths: Record<string, string> | undefined,
+  gamePaths: Record<string, string> | undefined
+) {
+  const trackablePaths = [
+    gamePaths?.[gameKey],
+    ...getEnabledUtilityKeys(profile)
+      .filter((profileKey) => isValidExePath(appPaths?.[profileKey]))
+      .map((profileKey) => appPaths![profileKey]),
+    ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+  ].filter(isValidExePath)
+  const seen = new Set<string>()
+
+  return trackablePaths.filter((trackablePath) => {
+    const key = trackablePath.toLowerCase()
+
+    if (seen.has(key)) {
+      return false
+    }
+
+    seen.add(key)
+    return true
+  })
+}
+
+function getExternallyAdoptableGameKeys(
+  processNames: Set<string>,
+  profiles: Record<string, StoredProfileEntry> | undefined,
+  gamePaths: Record<string, string> | undefined,
+  launchedGameKeys: Set<string>
+) {
+  const gameExeOwners = new Map<string, Set<string>>()
+
+  Object.entries(profiles || {}).forEach(([gameKey]) => {
+    const gamePath = gamePaths?.[gameKey]
+
+    if (!isValidExePath(gamePath)) {
+      return
+    }
+
+    const exeName = getExeName(gamePath)
+    const owners = gameExeOwners.get(exeName) || new Set<string>()
+    owners.add(gameKey)
+    gameExeOwners.set(exeName, owners)
+  })
+
+  const adoptableGameKeys = new Set<string>()
+
+  Object.entries(profiles || {}).forEach(([gameKey]) => {
+    if (launchedGameKeys.has(gameKey)) {
+      return
+    }
+
+    const gamePath = gamePaths?.[gameKey]
+
+    if (!isValidExePath(gamePath)) {
+      return
+    }
+
+    const exeName = getExeName(gamePath)
+    const owners = gameExeOwners.get(exeName)
+
+    if (owners?.size === 1 && processNames.has(exeName)) {
+      adoptableGameKeys.add(gameKey)
+    }
+  })
+
+  return adoptableGameKeys
+}
+
+// INVARIANT: manual companion utilities are only surfaced when the owning game is
+// already launched by SimLauncher or its configured game exe is externally running.
+async function getTrackedRunningApps(
+  processNames: Set<string>,
+  adoptedOrLaunchedGameKeys: Set<string>,
+  profiles: Record<string, StoredProfileEntry> | undefined,
+  appPaths: Record<string, string> | undefined,
+  gamePaths: Record<string, string> | undefined
+) {
   const trackedApps: { path: string; name: string; gameKey: string; tracked: boolean }[] = []
   const seen = new Set<string>()
 
-  Object.entries(profiles || {}).forEach(([gameKey, profile]) => {
+  Object.entries(profiles || {}).forEach(([gameKey, profileEntry]) => {
+    if (!adoptedOrLaunchedGameKeys.has(gameKey)) {
+      return
+    }
+
+    const profile = getActiveStoredProfile(profileEntry)
+
     if (profile?.trackingEnabled === false) {
       return
     }
 
-    const pathsToTrack = [
-      gamePaths?.[gameKey],
-      ...Object.entries(profile || {})
-        .filter(([profileKey, value]) => value === true && isValidExePath(appPaths?.[profileKey]))
-        .map(([profileKey]) => appPaths![profileKey]),
-      ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
-    ].filter(isValidExePath)
+    const pathsToTrack = getProfileTrackablePaths(gameKey, profile, appPaths, gamePaths)
 
     pathsToTrack.forEach((trackedPath) => {
       const processName = getExeName(trackedPath)
@@ -652,6 +1150,67 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
 })
 
 // ----------------------------------------------------------------
+// CONFIG EXPORT / IMPORT
+// ----------------------------------------------------------------
+
+ipcMain.handle('export-config', async () => {
+  try {
+    const options = {
+      title: 'Export SimLauncher Config',
+      defaultPath: CONFIG_FILE_NAME,
+      filters: [{ name: 'JSON Files', extensions: ['json'] }]
+    }
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options)
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true }
+    }
+
+    await fs.promises.writeFile(result.filePath, JSON.stringify(getSupportedConfigValues(store.store), null, 2), 'utf8')
+    return { success: true, filePath: result.filePath }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('Failed to export config:', err)
+    return { success: false, error: message }
+  }
+})
+
+ipcMain.handle('import-config', async () => {
+  try {
+    const options = {
+      title: 'Import SimLauncher Config',
+      properties: ['openFile'] as const,
+      filters: [{ name: 'JSON Files', extensions: ['json'] }]
+    }
+    const result = mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true }
+    }
+
+    const rawConfig = await fs.promises.readFile(result.filePaths[0], 'utf8')
+    const parsedConfig = JSON.parse(rawConfig) as unknown
+    validateImportedConfig(parsedConfig)
+    const supportedConfig = getSupportedConfigValues(parsedConfig)
+
+    store.clear()
+    store.set(supportedConfig)
+    migrateProfilesToNamedSets()
+    applyRuntimeConfigSettings()
+
+    return { success: true, filePath: result.filePaths[0] }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('Failed to import config:', err)
+    return { success: false, error: message }
+  }
+})
+
+// ----------------------------------------------------------------
 // FILE BROWSER DIALOG LISTENER
 // ----------------------------------------------------------------
 
@@ -705,12 +1264,20 @@ ipcMain.handle('get-running-apps', async () => {
   }))
   const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
   const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
-  // INVARIANT: only surface tracked apps for gameKeys that SimLauncher actually launched.
-  // Prevents manually-launched utility apps from triggering a false "running" state. (refs #100)
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
-  const trackedApps = (await getTrackedRunningApps(processNames)).filter(
+  const adoptedGameKeys = getExternallyAdoptableGameKeys(processNames, profiles, gamePaths, launchedGameKeys)
+  const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
+  const trackedApps = (await getTrackedRunningApps(
+    processNames,
+    adoptedOrLaunchedGameKeys,
+    profiles,
+    appPaths,
+    gamePaths
+  )).filter(
     (appProcess) =>
-      launchedGameKeys.has(appProcess.gameKey) &&
       !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
       !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
@@ -720,6 +1287,10 @@ ipcMain.handle('get-running-apps', async () => {
 
 ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
   return killLaunchedApps(gameKey)
+})
+
+ipcMain.handle('kill-profile-apps', (_event, gameKey: string, appPathsToKill: string[]) => {
+  return killProfileApps(gameKey, Array.isArray(appPathsToKill) ? appPathsToKill : [])
 })
 
 ipcMain.handle('install-update', async () => {
