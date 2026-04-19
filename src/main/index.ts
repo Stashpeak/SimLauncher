@@ -927,9 +927,81 @@ function getGenericIconFingerprint() {
   return genericIconFingerprintPromise
 }
 
-// INVARIANT: an exe name can only be "running" for one gameKey at a time.
-// Never match by exe name globally without deduplicating across all gameKeys.
-async function getTrackedRunningApps(processNames: Set<string>) {
+function getProfileTrackablePaths(
+  gameKey: string,
+  profile: StoredProfile | undefined,
+  appPaths: Record<string, string> | undefined,
+  gamePaths: Record<string, string> | undefined
+) {
+  const trackablePaths = [
+    gamePaths?.[gameKey],
+    ...getEnabledUtilityKeys(profile)
+      .filter((profileKey) => isValidExePath(appPaths?.[profileKey]))
+      .map((profileKey) => appPaths![profileKey]),
+    ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+  ].filter(isValidExePath)
+  const seen = new Set<string>()
+
+  return trackablePaths.filter((trackablePath) => {
+    const key = trackablePath.toLowerCase()
+
+    if (seen.has(key)) {
+      return false
+    }
+
+    seen.add(key)
+    return true
+  })
+}
+
+function getExternallyAdoptableGameKeys(
+  processNames: Set<string>,
+  profiles: Record<string, StoredProfileEntry> | undefined,
+  gamePaths: Record<string, string> | undefined,
+  launchedGameKeys: Set<string>
+) {
+  const gameExeOwners = new Map<string, Set<string>>()
+
+  Object.entries(profiles || {}).forEach(([gameKey]) => {
+    const gamePath = gamePaths?.[gameKey]
+
+    if (!isValidExePath(gamePath)) {
+      return
+    }
+
+    const exeName = getExeName(gamePath)
+    const owners = gameExeOwners.get(exeName) || new Set<string>()
+    owners.add(gameKey)
+    gameExeOwners.set(exeName, owners)
+  })
+
+  const adoptableGameKeys = new Set<string>()
+
+  Object.entries(profiles || {}).forEach(([gameKey]) => {
+    if (launchedGameKeys.has(gameKey)) {
+      return
+    }
+
+    const gamePath = gamePaths?.[gameKey]
+
+    if (!isValidExePath(gamePath)) {
+      return
+    }
+
+    const exeName = getExeName(gamePath)
+    const owners = gameExeOwners.get(exeName)
+
+    if (owners?.size === 1 && processNames.has(exeName)) {
+      adoptableGameKeys.add(gameKey)
+    }
+  })
+
+  return adoptableGameKeys
+}
+
+// INVARIANT: manual companion utilities are only surfaced when the owning game is
+// already launched by SimLauncher or its configured game exe is externally running.
+async function getTrackedRunningApps(processNames: Set<string>, adoptedOrLaunchedGameKeys: Set<string>) {
   const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
@@ -937,19 +1009,17 @@ async function getTrackedRunningApps(processNames: Set<string>) {
   const seen = new Set<string>()
 
   Object.entries(profiles || {}).forEach(([gameKey, profileEntry]) => {
+    if (!adoptedOrLaunchedGameKeys.has(gameKey)) {
+      return
+    }
+
     const profile = getActiveStoredProfile(profileEntry)
 
     if (profile?.trackingEnabled === false) {
       return
     }
 
-    const pathsToTrack = [
-      gamePaths?.[gameKey],
-      ...getEnabledUtilityKeys(profile)
-        .filter((profileKey) => isValidExePath(appPaths?.[profileKey]))
-        .map((profileKey) => appPaths![profileKey]),
-      ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
-    ].filter(isValidExePath)
+    const pathsToTrack = getProfileTrackablePaths(gameKey, profile, appPaths, gamePaths)
 
     pathsToTrack.forEach((trackedPath) => {
       const processName = getExeName(trackedPath)
@@ -1167,12 +1237,13 @@ ipcMain.handle('get-running-apps', async () => {
   }))
   const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
   const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
-  // INVARIANT: only surface tracked apps for gameKeys that SimLauncher actually launched.
-  // Prevents manually-launched utility apps from triggering a false "running" state. (refs #100)
+  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
-  const trackedApps = (await getTrackedRunningApps(processNames)).filter(
+  const adoptedGameKeys = getExternallyAdoptableGameKeys(processNames, profiles, gamePaths, launchedGameKeys)
+  const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
+  const trackedApps = (await getTrackedRunningApps(processNames, adoptedOrLaunchedGameKeys)).filter(
     (appProcess) =>
-      launchedGameKeys.has(appProcess.gameKey) &&
       !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
       !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
