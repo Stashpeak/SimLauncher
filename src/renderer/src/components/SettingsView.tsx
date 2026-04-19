@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { UTILITIES, GAMES } from '../lib/config'
+import { DEFAULT_ACCENT_COLOR, UTILITIES, GAMES } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
@@ -12,7 +12,7 @@ const ZOOM_PRESETS = [
 
 
 const ACCENT_PRESETS = [
-  { name: 'Electric Aqua', hex: '#00eaff' },
+  { name: 'Electric Aqua', hex: DEFAULT_ACCENT_COLOR },
   { name: 'Sky Blue', hex: '#4d9fff' },
   { name: 'Racing Green', hex: '#00c853' },
   { name: 'Sunset Orange', hex: '#ff6b35' },
@@ -53,7 +53,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
-  const [accentPreset, setAccentPreset] = useState<string>('#00eaff')
+  const [accentPreset, setAccentPreset] = useState<string>(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
   const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
@@ -83,7 +83,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedAppPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
       const savedAppNames = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
       const savedGamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-      const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || '#00eaff'
+      const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || DEFAULT_ACCENT_COLOR
       const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
       const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
       const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
