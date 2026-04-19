@@ -1,9 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
 const POST_LAUNCH_BLOCK_MS = 10000
+
+type RunningApp = { path: string; name: string; gameKey: string }
 
 function GameRow({
   game,
@@ -16,18 +18,20 @@ function GameRow({
   isLaunchBlocked,
   onLaunchStart,
   onLaunchEnd,
+  onRunningStateRefresh,
   onToggleEditor
 }: {
   game: Game
   isActive: boolean
   isRunning: boolean
   runningAppIcons: { icon: string | null; name: string }[]
-  runningApps: { path: string; name: string; gameKey: string }[]
+  runningApps: RunningApp[]
   isDimmed: boolean
   isLaunching: boolean
   isLaunchBlocked: boolean
   onLaunchStart: (gameKey: string) => void
   onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
+  onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
@@ -108,6 +112,7 @@ function GameRow({
   const handleKill = async () => {
     try {
       await window.electronAPI.killLaunchedApps(game.key)
+      await onRunningStateRefresh()
       notify(`Closing companion apps for ${game.name}`, 'warn')
     } catch (err) {
       notify('Failed to close companion apps', 'error')
@@ -191,7 +196,7 @@ function GameRow({
     }
   }, [game.key, isActive])
 
-  const canKill = isRunning && profileState.killControlsEnabled
+  const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
   const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
@@ -314,7 +319,7 @@ export function GameList() {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
-  const [runningApps, setRunningApps] = useState<{ path: string; name: string; gameKey: string }[]>([])
+  const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
@@ -413,38 +418,45 @@ export function GameList() {
     loadAppIcons()
   }, [])
 
+  const refreshRunningState = useCallback(async (isMounted: () => boolean = () => true) => {
+    try {
+      if (configuredGames.length === 0) {
+        if (isMounted()) {
+          setRunningApps([])
+          setRunningStatus({})
+        }
+        return
+      }
+
+      const apps = await window.electronAPI.getRunningApps()
+      if (!isMounted()) return
+
+      const nextApps = apps || []
+      setRunningApps(nextApps)
+
+      const newStatus: Record<string, boolean> = {}
+      configuredGames.forEach(game => {
+        newStatus[game.key] = nextApps.some((a: { gameKey: string }) => a.gameKey === game.key)
+      })
+      setRunningStatus(newStatus)
+    } catch (err) {
+      console.error('Consolidated polling error:', err)
+    }
+  }, [configuredGames])
+
   // Poll running state every 2s
   useEffect(() => {
     let mounted = true
-    let intervalId: number
+    const isMounted = () => mounted
 
-    const checkRunningState = async () => {
-      try {
-        if (configuredGames.length === 0) return
-
-        const apps = await window.electronAPI.getRunningApps()
-        if (!mounted) return
-
-        setRunningApps(apps || [])
-
-        const newStatus: Record<string, boolean> = {}
-        configuredGames.forEach(game => {
-          newStatus[game.key] = (apps || []).some((a: { gameKey: string }) => a.gameKey === game.key)
-        })
-        setRunningStatus(newStatus)
-      } catch (err) {
-        console.error('Consolidated polling error:', err)
-      }
-    }
-
-    checkRunningState()
-    intervalId = window.setInterval(checkRunningState, 2000)
+    refreshRunningState(isMounted)
+    const intervalId = window.setInterval(() => refreshRunningState(isMounted), 2000)
 
     return () => {
       mounted = false
       window.clearInterval(intervalId)
     }
-  }, [configuredGames])
+  }, [refreshRunningState])
 
   if (configuredGames.length === 0) {
     return (
@@ -488,6 +500,7 @@ export function GameList() {
             isLaunchBlocked={launchingGameKey !== null}
             onLaunchStart={handleLaunchStart}
             onLaunchEnd={handleLaunchEnd}
+            onRunningStateRefresh={refreshRunningState}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
           />
         )

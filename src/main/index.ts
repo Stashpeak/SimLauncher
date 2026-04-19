@@ -304,6 +304,14 @@ function isRunningExePath(processNames: Set<string>, appPath: string) {
   return processNames.has(getExeName(appPath))
 }
 
+function pruneStoppedRunningProcesses(processNames: Set<string>) {
+  runningProcesses.forEach((_appProcess, appPath) => {
+    if (!processNames.has(getExeName(appPath))) {
+      runningProcesses.delete(appPath)
+    }
+  })
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -439,8 +447,7 @@ function getGenericIconFingerprint() {
 
 // INVARIANT: an exe name can only be "running" for one gameKey at a time.
 // Never match by exe name globally without deduplicating across all gameKeys.
-async function getTrackedRunningApps() {
-  const processNames = await readRunningProcessNames()
+async function getTrackedRunningApps(processNames: Set<string>) {
   const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
   const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
@@ -605,6 +612,9 @@ ipcMain.handle('window-close', () => {
 })
 
 ipcMain.handle('get-running-apps', async () => {
+  const processNames = await readRunningProcessNames()
+  pruneStoppedRunningProcesses(processNames)
+
   const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
     path: appPath,
     name: appProcess.name,
@@ -616,7 +626,7 @@ ipcMain.handle('get-running-apps', async () => {
   // INVARIANT: only surface tracked apps for gameKeys that SimLauncher actually launched.
   // Prevents manually-launched utility apps from triggering a false "running" state. (refs #100)
   const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
-  const trackedApps = (await getTrackedRunningApps()).filter(
+  const trackedApps = (await getTrackedRunningApps(processNames)).filter(
     (appProcess) =>
       launchedGameKeys.has(appProcess.gameKey) &&
       !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
