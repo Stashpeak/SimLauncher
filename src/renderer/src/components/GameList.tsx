@@ -19,7 +19,8 @@ function GameRow({
   onLaunchStart,
   onLaunchEnd,
   onRunningStateRefresh,
-  onToggleEditor
+  onToggleEditor,
+  cacheInitialized
 }: {
   game: Game
   isActive: boolean
@@ -33,6 +34,7 @@ function GameRow({
   onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
   onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
+  cacheInitialized: boolean
 }) {
   const { notify } = useNotify()
   const [iconUrl, setIconUrl] = useState<string | null>(null)
@@ -209,14 +211,16 @@ function GameRow({
       <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
-            {iconUrl && !iconLoadFailed && (
+            {iconUrl && !iconLoadFailed ? (
               <img
                 src={iconUrl}
                 alt={game.name}
                 className="h-12 w-12 object-contain animate-fade-slide drop-shadow-md"
                 onError={() => setIconLoadFailed(true)}
               />
-            )}
+            ) : !iconLoadFailed ? (
+              <div className="h-12 w-12 skeleton-icon animate-pulse" />
+            ) : null}
             {isRunning && (
               <div
                 className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]"
@@ -228,16 +232,27 @@ function GameRow({
             <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
-                {runningAppIcons.map((app, i) =>
-                  app.icon && !failedRunningIcons[app.icon] ? (
-                    <img
-                      key={i}
-                      src={app.icon}
-                      alt=""
-                      className="h-4 w-4 object-contain opacity-80"
-                      onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
-                    />
-                  ) : (
+                {runningAppIcons.map((app, i) => {
+                  const isAvailable = !!app.icon && !failedRunningIcons[app.icon]
+                  const isFailed = failedRunningIcons[app.icon!]
+
+                  if (isAvailable) {
+                    return (
+                      <img
+                        key={i}
+                        src={app.icon ?? undefined}
+                        alt=""
+                        className="h-4 w-4 object-contain opacity-80"
+                        onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
+                      />
+                    )
+                  }
+
+                  if (app.icon === null && !isFailed && !cacheInitialized) {
+                    return <div key={i} className="h-4 w-4 skeleton-icon animate-pulse" />
+                  }
+
+                  return (
                     <div
                       key={i}
                       className="h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0"
@@ -246,7 +261,7 @@ function GameRow({
                       {app.name.replace(/\.exe$/i, '').slice(0, 2).toUpperCase()}
                     </div>
                   )
-                )}
+                })}
               </div>
             )}
           </div>
@@ -321,6 +336,7 @@ export function GameList() {
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
   const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
+  const [cacheInitialized, setCacheInitialized] = useState(false)
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const [launchingGameKey, setLaunchingGameKey] = useState<string | null>(null)
@@ -410,8 +426,10 @@ export function GameList() {
           })
         )
         setAppIconCache(cache)
+        setCacheInitialized(true)
       } catch (err) {
         console.error('Failed to load app icons', err)
+        setCacheInitialized(true)
       }
     }
 
@@ -502,6 +520,7 @@ export function GameList() {
             onLaunchEnd={handleLaunchEnd}
             onRunningStateRefresh={refreshRunningState}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
+            cacheInitialized={cacheInitialized}
           />
         )
       })}
