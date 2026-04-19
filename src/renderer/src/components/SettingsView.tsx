@@ -28,6 +28,15 @@ function normalizeLaunchDelayMs(value: number) {
   return Math.min(Math.max(Math.round(value), 0), 5000)
 }
 
+function validateIcon(src: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight > 0)
+    img.onerror = () => resolve(false)
+    img.src = src
+  })
+}
+
 function getInitials(label: string) {
   const words = label
     .trim()
@@ -112,7 +121,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       for (const [key, path] of Object.entries(savedAppPaths)) {
         if (path) {
           const icon = await window.electronAPI.getFileIcon(path)
-          if (icon) icons[key] = icon
+          if (icon && await validateIcon(icon)) icons[key] = icon
         }
       }
       setAppIcons(icons)
@@ -167,7 +176,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
         setAppPaths(prev => ({ ...prev, [key]: result.filePath }))
         // Fetch icon immediately when a new path is selected
         const icon = await window.electronAPI.getFileIcon(result.filePath)
-        if (icon) {
+        if (icon && await validateIcon(icon)) {
           setAppIcons(prev => ({ ...prev, [key]: icon }))
         }
       }
