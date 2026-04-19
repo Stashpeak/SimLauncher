@@ -52,6 +52,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const [trackedProcessPaths, setTrackedProcessPaths] = useState<string[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
+  const [fetchingIcons, setFetchingIcons] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -77,19 +78,24 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       setKillControlsEnabled(profile.killControlsEnabled === true)
       setRelaunchControlsEnabled(profile.relaunchControlsEnabled === true)
       setTrackedProcessPaths(Array.isArray(profile.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+      setLoading(false)
 
       // Fetch icons for all configured app paths
+      setFetchingIcons(true)
       const cache: Record<string, string> = {}
-      await Promise.all(
-        Object.values(paths).filter(Boolean).map(async (path) => {
-          const icon = await window.electronAPI.getFileIcon(path)
-          if (icon) {
-            cache[path.toLowerCase()] = icon
-          }
-        })
-      )
-      setAppIconCache(cache)
-      setLoading(false)
+      try {
+        await Promise.all(
+          Object.values(paths).filter(Boolean).map(async (path) => {
+            const icon = await window.electronAPI.getFileIcon(path)
+            if (icon) {
+              cache[path.toLowerCase()] = icon
+            }
+          })
+        )
+      } finally {
+        setAppIconCache(cache)
+        setFetchingIcons(false)
+      }
     }
 
     loadData()
@@ -189,6 +195,8 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
                           className="h-full w-full object-contain animate-fade-slide"
                           onError={() => setFailedIcons((prev) => ({ ...prev, [u.key]: true }))}
                         />
+                      ) : fetchingIcons && !failedIcons[u.key] ? (
+                        <div className="h-full w-full skeleton-icon animate-pulse" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center rounded bg-(--accent)/20 text-[8px] font-black uppercase text-(--accent)">
                           {(appNames[u.key] || u.name).slice(0, 2)}

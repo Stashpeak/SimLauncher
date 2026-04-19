@@ -158,6 +158,20 @@ textarea {
   animation: fadeSlide 0.25s ease-out forwards;
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.skeleton-icon {
+  background-color: var(--glass-bg-elevated);
+  border-radius: 8px;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
