@@ -36,7 +36,7 @@ let launchBlockedUntil = 0
 
 autoUpdater.autoDownload = false
 
-interface StoredProfile {
+interface StoredProfile extends Record<string, unknown> {
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
 }
@@ -294,6 +294,10 @@ function getExeName(filePath: string) {
   return path.basename(filePath).toLowerCase()
 }
 
+function isRunningExePath(processNames: Set<string>, appPath: string) {
+  return processNames.has(getExeName(appPath))
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -374,6 +378,7 @@ function readRunningProcessNames() {
 async function getTrackedRunningApps() {
   const processNames = await readRunningProcessNames()
   const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const trackedApps: { path: string; name: string; gameKey: string; tracked: boolean }[] = []
   const seen = new Set<string>()
@@ -385,6 +390,9 @@ async function getTrackedRunningApps() {
 
     const pathsToTrack = [
       gamePaths?.[gameKey],
+      ...Object.entries(profile || {})
+        .filter(([profileKey, value]) => value === true && isValidExePath(appPaths?.[profileKey]))
+        .map(([profileKey]) => appPaths![profileKey]),
       ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
     ].filter(isValidExePath)
 
@@ -436,6 +444,7 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const processNames = await readRunningProcessNames()
   const validApps = profileApps.filter((appPath) => {
     const valid = isValidExePath(appPath)
     if (!valid) {
@@ -449,18 +458,42 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
     return { success: false, error: 'No valid executable paths configured.' }
   }
 
-  try {
-    for (let index = 0; index < validApps.length; index += 1) {
-      await spawnDetachedApp(event.sender, gameKey, validApps[index], gamePath)
+  let launchedAny = false
 
-      if (index < validApps.length - 1 && launchDelayMs > 0) {
+  try {
+    const appsToLaunch = validApps.filter((appPath) => !isRunningExePath(processNames, appPath))
+    const skippedCount = validApps.length - appsToLaunch.length
+
+    if (appsToLaunch.length === 0) {
+      return {
+        success: true,
+        message: 'All profile applications are already running.',
+        launchedCount: 0,
+        skippedCount
+      }
+    }
+
+    for (let index = 0; index < appsToLaunch.length; index += 1) {
+      launchedAny = true
+      await spawnDetachedApp(event.sender, gameKey, appsToLaunch[index], gamePath)
+
+      if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
         await wait(launchDelayMs)
       }
     }
 
-    return { success: true, message: 'All profile applications launched.' }
+    return {
+      success: true,
+      message: skippedCount > 0
+        ? `Started ${appsToLaunch.length} app${appsToLaunch.length === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
+        : 'All profile applications launched.',
+      launchedCount: appsToLaunch.length,
+      skippedCount
+    }
   } finally {
-    launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
+    if (launchedAny) {
+      launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
+    }
     activeLaunches.delete(gameKey)
   }
 })

@@ -18,6 +18,8 @@ interface LaunchResult {
   success: boolean
   message?: string
   error?: string
+  launchedCount?: number
+  skippedCount?: number
 }
 
 declare global {

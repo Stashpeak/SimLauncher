@@ -95,8 +95,8 @@ function GameRow({
         return
       }
 
-      cooldownMs = POST_LAUNCH_BLOCK_MS
-      notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
+      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+      notify(result.message || `Starting ${game.name} + ${appCount - 1} apps`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
@@ -139,8 +139,8 @@ function GameRow({
         return
       }
 
-      cooldownMs = POST_LAUNCH_BLOCK_MS
-      notify(`Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
+      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+      notify(result.message || `Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
