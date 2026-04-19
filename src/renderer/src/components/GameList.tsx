@@ -55,7 +55,10 @@ function GameRow({
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
   const [profileSet, setProfileSet] = useState<GameProfileSet>(() => normalizeGameProfileSet(undefined))
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [newProfileFormOpen, setNewProfileFormOpen] = useState(false)
+  const [newProfileName, setNewProfileName] = useState('')
   const profileMenuRef = useRef<HTMLDivElement | null>(null)
+  const newProfileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     async function resolveIcon() {
@@ -69,12 +72,16 @@ function GameRow({
 
   useEffect(() => {
     if (!profileMenuOpen) {
+      setNewProfileFormOpen(false)
+      setNewProfileName('')
       return
     }
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!profileMenuRef.current?.contains(event.target as Node)) {
         setProfileMenuOpen(false)
+        setNewProfileFormOpen(false)
+        setNewProfileName('')
       }
     }
 
@@ -82,6 +89,14 @@ function GameRow({
 
     return () => window.removeEventListener('pointerdown', handlePointerDown)
   }, [profileMenuOpen])
+
+  useEffect(() => {
+    if (!profileMenuOpen || !newProfileFormOpen) {
+      return
+    }
+
+    newProfileInputRef.current?.focus()
+  }, [profileMenuOpen, newProfileFormOpen])
 
   const loadProfileSet = useCallback(async () => {
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
@@ -163,10 +178,10 @@ function GameRow({
     setProfileSet(nextProfileSet)
   }
 
-  const handleCreateProfile = async () => {
-    const name = window.prompt('New profile name')
+  const handleCreateProfile = async (name: string) => {
+    const trimmedName = name.trim()
 
-    if (!name || name.trim().length === 0) {
+    if (trimmedName.length === 0) {
       return
     }
 
@@ -175,7 +190,7 @@ function GameRow({
     const newProfile: NamedGameProfile = {
       ...JSON.parse(JSON.stringify(activeProfile)),
       id: createProfileId(),
-      name: name.trim()
+      name: trimmedName
     }
     const updatedProfileSet = {
       activeProfileId: newProfile.id,
@@ -188,8 +203,7 @@ function GameRow({
 
   const handleProfileSelect = async (nextProfileId: string) => {
     if (nextProfileId === '__new__') {
-      setProfileMenuOpen(false)
-      await handleCreateProfile()
+      setNewProfileFormOpen(true)
       return
     }
 
@@ -250,6 +264,19 @@ function GameRow({
       notify('Failed to switch profile', 'error')
       console.error(err)
     }
+  }
+
+  const handleNewProfileSubmit = async () => {
+    const trimmedName = newProfileName.trim()
+
+    if (trimmedName.length === 0) {
+      return
+    }
+
+    await handleCreateProfile(trimmedName)
+    setNewProfileName('')
+    setNewProfileFormOpen(false)
+    setProfileMenuOpen(false)
   }
 
   const handleLaunch = async () => {
@@ -410,7 +437,12 @@ function GameRow({
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation()
-                    setProfileMenuOpen((open) => !open)
+                    const nextOpen = !profileMenuOpen
+                    setProfileMenuOpen(nextOpen)
+                    if (!nextOpen) {
+                      setNewProfileFormOpen(false)
+                      setNewProfileName('')
+                    }
                   }}
                   className="flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2.5 py-1 text-[10px] font-semibold text-(--text-primary) outline-none transition-all hover:border-(--accent) hover:bg-(--glass-bg) focus-visible:ring-2 focus-visible:ring-(--accent)"
                   aria-haspopup="menu"
@@ -452,21 +484,61 @@ function GameRow({
                       )
                     })}
                     <div className="my-1 h-px bg-(--glass-border)" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleProfileSelect('__new__')
-                      }}
-                      className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                        <path d="M12 5v14" />
-                        <path d="M5 12h14" />
-                      </svg>
-                      New profile
-                    </button>
+                    {newProfileFormOpen ? (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          handleNewProfileSubmit()
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg px-1.5 py-1"
+                      >
+                        <input
+                          ref={newProfileInputRef}
+                          type="text"
+                          value={newProfileName}
+                          onChange={(event) => setNewProfileName(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.stopPropagation()
+                              setNewProfileFormOpen(false)
+                              setNewProfileName('')
+                            }
+                          }}
+                          placeholder="Profile name"
+                          className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
+                          aria-label="New profile name"
+                        />
+                        <button
+                          type="submit"
+                          disabled={newProfileName.trim().length === 0}
+                          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--accent) text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                          aria-label="Create profile"
+                          title="Create profile"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleProfileSelect('__new__')
+                        }}
+                        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                          <path d="M12 5v14" />
+                          <path d="M5 12h14" />
+                        </svg>
+                        New profile
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
