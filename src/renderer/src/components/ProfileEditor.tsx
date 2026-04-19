@@ -50,6 +50,8 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const [killControlsEnabled, setKillControlsEnabled] = useState(false)
   const [relaunchControlsEnabled, setRelaunchControlsEnabled] = useState(false)
   const [trackedProcessPaths, setTrackedProcessPaths] = useState<string[]>([])
+  const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
+  const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     async function loadData() {
@@ -75,6 +77,18 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
       setKillControlsEnabled(profile.killControlsEnabled === true)
       setRelaunchControlsEnabled(profile.relaunchControlsEnabled === true)
       setTrackedProcessPaths(Array.isArray(profile.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+
+      // Fetch icons for all configured app paths
+      const cache: Record<string, string> = {}
+      await Promise.all(
+        Object.values(paths).filter(Boolean).map(async (path) => {
+          const icon = await window.electronAPI.getFileIcon(path)
+          if (icon) {
+            cache[path.toLowerCase()] = icon
+          }
+        })
+      )
+      setAppIconCache(cache)
       setLoading(false)
     }
 
@@ -166,7 +180,25 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
                   }}
                   className="flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) group"
                 >
-                  <span className="text-sm font-medium opacity-80 group-hover:opacity-100">{appNames[u.key] || u.name}</span>
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                      {appIconCache[appPaths[u.key]?.toLowerCase()] && !failedIcons[u.key] ? (
+                        <img
+                          src={appIconCache[appPaths[u.key].toLowerCase()]}
+                          alt=""
+                          className="h-full w-full object-contain animate-fade-slide"
+                          onError={() => setFailedIcons((prev) => ({ ...prev, [u.key]: true }))}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center rounded bg-(--accent)/20 text-[8px] font-black uppercase text-(--accent)">
+                          {(appNames[u.key] || u.name).slice(0, 2)}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-sm font-medium opacity-80 group-hover:opacity-100 line-clamp-1">
+                      {appNames[u.key] || u.name}
+                    </span>
+                  </div>
                   <span onClick={(event) => event.stopPropagation()}>
                     <Toggle checked={!!selection[u.key]} onChange={() => handleToggleUtility(u.key)} aria-label={appNames[u.key] || u.name} />
                   </span>
