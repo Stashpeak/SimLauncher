@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { UTILITIES, GAMES } from '../lib/config'
+import { DEFAULT_ACCENT_COLOR, UTILITIES, GAMES } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
 
@@ -12,7 +12,7 @@ const ZOOM_PRESETS = [
 
 
 const ACCENT_PRESETS = [
-  { name: 'Electric Aqua', hex: '#00eaff' },
+  { name: 'Electric Aqua', hex: DEFAULT_ACCENT_COLOR },
   { name: 'Sky Blue', hex: '#4d9fff' },
   { name: 'Racing Green', hex: '#00c853' },
   { name: 'Sunset Orange', hex: '#ff6b35' },
@@ -53,13 +53,14 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
-  const [accentPreset, setAccentPreset] = useState<string>('#00eaff')
+  const [accentPreset, setAccentPreset] = useState<string>(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
   const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
   const [startMinimized, setStartMinimized] = useState<boolean>(false)
+  const [minimizeToTray, setMinimizeToTray] = useState<boolean>(false)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
   const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
@@ -75,19 +76,21 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   // Cache for file icons
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
   const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
+  const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     async function loadSettings() {
       const savedAppPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
       const savedAppNames = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
       const savedGamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-      const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || '#00eaff'
+      const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || DEFAULT_ACCENT_COLOR
       const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
       const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
       const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
       const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
       const savedStartMinimized = (await window.electronAPI.storeGet('startMinimized')) as boolean || false
+      const savedMinimizeToTray = (await window.electronAPI.storeGet('minimizeToTray')) as boolean || false
       const savedAutoCheckUpdates = await window.electronAPI.storeGet('autoCheckUpdates')
       const savedZoomFactor = (await window.electronAPI.storeGet('zoomFactor')) as number
 
@@ -101,6 +104,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       setStartWithWindows(savedStartWithWindows)
       setStartMinimized(savedStartMinimized)
+      setMinimizeToTray(savedMinimizeToTray)
       setAutoCheckUpdates(savedAutoCheckUpdates !== false)
       setZoomFactor(typeof savedZoomFactor === 'number' && Number.isFinite(savedZoomFactor) ? savedZoomFactor : 1.0)
       
@@ -168,6 +172,11 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
         const icon = await window.electronAPI.getFileIcon(result.filePath)
         if (icon) {
           setAppIcons(prev => ({ ...prev, [key]: icon }))
+          setIconLoadErrors(prev => {
+            const next = new Set(prev)
+            next.delete(key)
+            return next
+          })
         }
       }
     }
@@ -268,6 +277,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
       await window.electronAPI.storeSet('startMinimized', startMinimized)
+      await window.electronAPI.storeSet('minimizeToTray', minimizeToTray)
       await window.electronAPI.storeSet('autoCheckUpdates', autoCheckUpdates)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
@@ -352,14 +362,14 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                   <button
                     key={preset.hex}
                     onClick={() => handleAccentChange(preset.hex)}
-                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
                     style={{ '--preset-color': preset.hex } as React.CSSProperties}
                     title={preset.name}
                   />
                 ))}
                 <button
                   onClick={() => handleAccentChange('custom')}
-                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
+                  className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all active:scale-[0.98] ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
                 >
                   Custom
                 </button>
@@ -409,7 +419,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       setZoomFactor(preset.factor)
                       window.electronAPI.setZoom(preset.factor)
                     }}
-                    className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all ${
+                    className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all active:scale-[0.98] ${
                       zoomFactor === preset.factor
                         ? 'bg-(--accent) text-white shadow-[0_0_15px_-5px_var(--accent-glow)]'
                         : 'bg-(--glass-bg-elevated) text-(--text-secondary) hover:bg-(--glass-border) hover:text-(--text-primary)'
@@ -447,6 +457,13 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                 <span className="text-[10px] text-(--text-muted)">Start hidden in the system tray</span>
               </div>
               <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-(--text-primary)">Minimize to tray on close</span>
+                <span className="text-[10px] text-(--text-muted)">Keep SimLauncher running when the window is closed</span>
+              </div>
+              <Toggle checked={minimizeToTray} onChange={setMinimizeToTray} aria-label="Minimize to tray on close" />
             </div>
             <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
               <div className="flex items-center justify-between gap-4">
@@ -524,7 +541,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       
                       <button
                         onClick={() => handleBrowse(g.key, true)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
                       >
                         Browse
                       </button>
@@ -569,8 +586,13 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
                     {/* Functional Row */}
                     <div className="flex items-center gap-4">
-                      {appIcons[u.key] ? (
-                        <img src={appIcons[u.key]} alt="Icon" className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
+                      {appIcons[u.key] && !iconLoadErrors.has(u.key) ? (
+                        <img
+                          src={appIcons[u.key]}
+                          alt="Icon"
+                          className="w-8 h-8 object-contain drop-shadow-md shrink-0"
+                          onError={() => setIconLoadErrors(prev => new Set([...prev, u.key]))}
+                        />
                       ) : (
                         <div
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-(--accent)/30 bg-(--accent)/10 text-[10px] font-black text-(--accent) shadow-[0_0_12px_-7px_var(--accent-glow)]"
@@ -590,7 +612,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       
                       <button
                         onClick={() => handleBrowse(u.key, false)}
-                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-colors hover:text-white"
+                        className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
                       >
                         Browse
                       </button>

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, Menu, Tray, type WebContents } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
+import fs from 'fs'
 import { autoUpdater } from 'electron-updater'
 import Store from 'electron-store'
 
@@ -17,6 +18,7 @@ const store = new Store({
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     startWithWindows: { type: 'boolean', default: false },
     startMinimized:   { type: 'boolean', default: false },
+    minimizeToTray:   { type: 'boolean', default: false },
     autoCheckUpdates:  { type: 'boolean', default: true },
     zoomFactor:       { type: 'number',  default: 1.0 },
     windowBounds:      { type: 'object',  default: {} },
@@ -33,10 +35,12 @@ const runningProcesses = new Map<string, { process: ChildProcess; name: string; 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 let launchBlockedUntil = 0
+let genericIconFingerprint: string | null | undefined
+let genericIconFingerprintPromise: Promise<string | null> | null = null
 
 autoUpdater.autoDownload = false
 
-interface StoredProfile {
+interface StoredProfile extends Record<string, unknown> {
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
 }
@@ -196,7 +200,9 @@ function createWindow() {
 
     store.set('windowBounds', mainWindow.getBounds())
 
-    if (!isQuitting) {
+    const minimizeToTray = store.get('minimizeToTray') === true
+
+    if (!isQuitting && minimizeToTray) {
       event.preventDefault()
       mainWindow.hide()
     }
@@ -294,6 +300,18 @@ function getExeName(filePath: string) {
   return path.basename(filePath).toLowerCase()
 }
 
+function isRunningExePath(processNames: Set<string>, appPath: string) {
+  return processNames.has(getExeName(appPath))
+}
+
+function pruneStoppedRunningProcesses(processNames: Set<string>) {
+  runningProcesses.forEach((_appProcess, appPath) => {
+    if (!processNames.has(getExeName(appPath))) {
+      runningProcesses.delete(appPath)
+    }
+  })
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -371,9 +389,67 @@ function readRunningProcessNames() {
   })
 }
 
-async function getTrackedRunningApps() {
-  const processNames = await readRunningProcessNames()
+async function computeGenericIconFingerprint() {
+  if (process.platform !== 'win32') {
+    return null
+  }
+
+  const tempExePath = path.join(
+    app.getPath('temp'),
+    `simlauncher-generic-icon-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.exe`
+  )
+  let tempFileCreated = false
+
+  try {
+    const fileDescriptor = fs.openSync(tempExePath, 'wx')
+    fs.closeSync(fileDescriptor)
+    tempFileCreated = true
+
+    const icon = await app.getFileIcon(tempExePath, { size: 'normal' })
+    return icon.isEmpty() ? null : icon.toDataURL()
+  } catch (err) {
+    console.error('Failed to fingerprint generic Windows app icon:', err)
+    return null
+  } finally {
+    if (tempFileCreated) {
+      try {
+        fs.unlinkSync(tempExePath)
+      } catch {
+        // Cleanup failures should not hide valid executable icons.
+      }
+    }
+  }
+}
+
+function getGenericIconFingerprint() {
+  if (genericIconFingerprint !== undefined) {
+    return Promise.resolve(genericIconFingerprint)
+  }
+
+  if (!genericIconFingerprintPromise) {
+    genericIconFingerprintPromise = computeGenericIconFingerprint()
+      .then((fingerprint) => {
+        genericIconFingerprint = fingerprint
+        return fingerprint
+      })
+      .catch((err) => {
+        console.error('Failed to cache generic Windows app icon fingerprint:', err)
+        genericIconFingerprint = null
+        return null
+      })
+      .finally(() => {
+        genericIconFingerprintPromise = null
+      })
+  }
+
+  return genericIconFingerprintPromise
+}
+
+// INVARIANT: an exe name can only be "running" for one gameKey at a time.
+// Never match by exe name globally without deduplicating across all gameKeys.
+async function getTrackedRunningApps(processNames: Set<string>) {
   const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const trackedApps: { path: string; name: string; gameKey: string; tracked: boolean }[] = []
   const seen = new Set<string>()
@@ -385,6 +461,9 @@ async function getTrackedRunningApps() {
 
     const pathsToTrack = [
       gamePaths?.[gameKey],
+      ...Object.entries(profile || {})
+        .filter(([profileKey, value]) => value === true && isValidExePath(appPaths?.[profileKey]))
+        .map(([profileKey]) => appPaths![profileKey]),
       ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
     ].filter(isValidExePath)
 
@@ -436,6 +515,7 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const processNames = await readRunningProcessNames()
   const validApps = profileApps.filter((appPath) => {
     const valid = isValidExePath(appPath)
     if (!valid) {
@@ -449,18 +529,42 @@ ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: str
     return { success: false, error: 'No valid executable paths configured.' }
   }
 
-  try {
-    for (let index = 0; index < validApps.length; index += 1) {
-      await spawnDetachedApp(event.sender, gameKey, validApps[index], gamePath)
+  let launchedAny = false
 
-      if (index < validApps.length - 1 && launchDelayMs > 0) {
+  try {
+    const appsToLaunch = validApps.filter((appPath) => !isRunningExePath(processNames, appPath))
+    const skippedCount = validApps.length - appsToLaunch.length
+
+    if (appsToLaunch.length === 0) {
+      return {
+        success: true,
+        message: 'All profile applications are already running.',
+        launchedCount: 0,
+        skippedCount
+      }
+    }
+
+    for (let index = 0; index < appsToLaunch.length; index += 1) {
+      launchedAny = true
+      await spawnDetachedApp(event.sender, gameKey, appsToLaunch[index], gamePath)
+
+      if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
         await wait(launchDelayMs)
       }
     }
 
-    return { success: true, message: 'All profile applications launched.' }
+    return {
+      success: true,
+      message: skippedCount > 0
+        ? `Started ${appsToLaunch.length} app${appsToLaunch.length === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
+        : 'All profile applications launched.',
+      launchedCount: appsToLaunch.length,
+      skippedCount
+    }
   } finally {
-    launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
+    if (launchedAny) {
+      launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
+    }
     activeLaunches.delete(gameKey)
   }
 })
@@ -500,10 +604,17 @@ ipcMain.handle('window-maximize', () => {
 })
 
 ipcMain.handle('window-close', () => {
+  if (store.get('minimizeToTray') !== true) {
+    isQuitting = true
+  }
+
   mainWindow?.close()
 })
 
 ipcMain.handle('get-running-apps', async () => {
+  const processNames = await readRunningProcessNames()
+  pruneStoppedRunningProcesses(processNames)
+
   const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
     path: appPath,
     name: appProcess.name,
@@ -511,8 +622,15 @@ ipcMain.handle('get-running-apps', async () => {
     tracked: false
   }))
   const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
-  const trackedApps = (await getTrackedRunningApps()).filter(
-    (appProcess) => !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+  const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
+  // INVARIANT: only surface tracked apps for gameKeys that SimLauncher actually launched.
+  // Prevents manually-launched utility apps from triggering a false "running" state. (refs #100)
+  const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
+  const trackedApps = (await getTrackedRunningApps(processNames)).filter(
+    (appProcess) =>
+      launchedGameKeys.has(appProcess.gameKey) &&
+      !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
+      !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
 
   return [...launchedApps, ...trackedApps]
@@ -566,10 +684,19 @@ ipcMain.handle('get-asset-data', async (_event, filename: string) => {
 ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
   try {
     const icon = await app.getFileIcon(filePath, { size: 'normal' })
-    if (!icon.isEmpty()) {
-      return icon.toDataURL()
+
+    if (icon.isEmpty()) {
+      return null
     }
-    return null
+
+    const iconDataUrl = icon.toDataURL()
+    const genericFingerprint = await getGenericIconFingerprint()
+
+    if (genericFingerprint && iconDataUrl === genericFingerprint) {
+      return null
+    }
+
+    return iconDataUrl
   } catch (err) {
     console.error(`Failed to get file icon for ${filePath}:`, err)
     return null

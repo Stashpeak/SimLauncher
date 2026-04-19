@@ -3,6 +3,7 @@ import { NotifyProvider } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
+import { DEFAULT_ACCENT_COLOR } from './lib/config'
 
 
 export default function App() {
@@ -55,7 +56,7 @@ export default function App() {
     // Restore saved theme on startup
     async function initTheme() {
       try {
-        const preset = await window.electronAPI.storeGet('accentPreset') as string || '#00eaff'
+        const preset = await window.electronAPI.storeGet('accentPreset') as string || DEFAULT_ACCENT_COLOR
         const custom = await window.electronAPI.storeGet('accentCustom') as string
         const tint = await window.electronAPI.storeGet('accentBgTint') as boolean || false
 

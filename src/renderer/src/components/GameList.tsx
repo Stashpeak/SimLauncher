@@ -1,9 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
 const POST_LAUNCH_BLOCK_MS = 10000
+
+type RunningApp = { path: string; name: string; gameKey: string }
 
 function GameRow({
   game,
@@ -16,18 +18,20 @@ function GameRow({
   isLaunchBlocked,
   onLaunchStart,
   onLaunchEnd,
+  onRunningStateRefresh,
   onToggleEditor
 }: {
   game: Game
   isActive: boolean
   isRunning: boolean
-  runningAppIcons: string[]
-  runningApps: { path: string; name: string; gameKey: string }[]
+  runningAppIcons: { icon: string | null; name: string }[]
+  runningApps: RunningApp[]
   isDimmed: boolean
   isLaunching: boolean
   isLaunchBlocked: boolean
   onLaunchStart: (gameKey: string) => void
   onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
+  onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
@@ -95,8 +99,8 @@ function GameRow({
         return
       }
 
-      cooldownMs = POST_LAUNCH_BLOCK_MS
-      notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
+      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+      notify(result.message || `Starting ${game.name} + ${appCount - 1} apps`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
@@ -108,6 +112,7 @@ function GameRow({
   const handleKill = async () => {
     try {
       await window.electronAPI.killLaunchedApps(game.key)
+      await onRunningStateRefresh()
       notify(`Closing companion apps for ${game.name}`, 'warn')
     } catch (err) {
       notify('Failed to close companion apps', 'error')
@@ -139,8 +144,8 @@ function GameRow({
         return
       }
 
-      cooldownMs = POST_LAUNCH_BLOCK_MS
-      notify(`Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
+      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+      notify(result.message || `Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
@@ -191,7 +196,7 @@ function GameRow({
     }
   }, [game.key, isActive])
 
-  const canKill = isRunning && profileState.killControlsEnabled
+  const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
   const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
@@ -214,7 +219,7 @@ function GameRow({
             )}
             {isRunning && (
               <div
-                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-[#4ade80] shadow-[0_0_8px_#4ade80]"
+                className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]"
                 title="Running"
               />
             )}
@@ -223,15 +228,25 @@ function GameRow({
             <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
-                {runningAppIcons.filter((icon) => !failedRunningIcons[icon]).map((icon, i) => (
-                  <img
-                    key={i}
-                    src={icon}
-                    alt=""
-                    className="h-4 w-4 object-contain opacity-80"
-                    onError={() => setFailedRunningIcons((current) => ({ ...current, [icon]: true }))}
-                  />
-                ))}
+                {runningAppIcons.map((app, i) =>
+                  app.icon && !failedRunningIcons[app.icon] ? (
+                    <img
+                      key={i}
+                      src={app.icon}
+                      alt=""
+                      className="h-4 w-4 object-contain opacity-80"
+                      onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
+                    />
+                  ) : (
+                    <div
+                      key={i}
+                      className="h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0"
+                      title={app.name}
+                    >
+                      {app.name.replace(/\.exe$/i, '').slice(0, 2).toUpperCase()}
+                    </div>
+                  )
+                )}
               </div>
             )}
           </div>
@@ -242,7 +257,7 @@ function GameRow({
             type="button"
             onClick={primaryAction}
             disabled={isLaunchBlocked && !canKill}
-            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-95 disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100 ${primaryButtonClass}`}
+            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100 ${primaryButtonClass}`}
           >
             {primaryLabel}
           </button>
@@ -251,7 +266,7 @@ function GameRow({
               type="button"
               onClick={handleRelaunchMissing}
               disabled={isLaunchBlocked}
-              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-95 disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
             >
               {isLaunching ? 'Launching...' : 'Relaunch'}
             </button>
@@ -259,14 +274,26 @@ function GameRow({
           <button
             type="button"
             onClick={handleToggle}
-            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-lg leading-none transition-all duration-300
+            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all duration-300 active:scale-[0.98]
               ${isActive
                 ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow'
                 : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
           >
-            ⚙
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
           </button>
         </div>
       </div>
@@ -292,7 +319,7 @@ export function GameList() {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
-  const [runningApps, setRunningApps] = useState<{ path: string; name: string; gameKey: string }[]>([])
+  const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
@@ -391,38 +418,45 @@ export function GameList() {
     loadAppIcons()
   }, [])
 
+  const refreshRunningState = useCallback(async (isMounted: () => boolean = () => true) => {
+    try {
+      if (configuredGames.length === 0) {
+        if (isMounted()) {
+          setRunningApps([])
+          setRunningStatus({})
+        }
+        return
+      }
+
+      const apps = await window.electronAPI.getRunningApps()
+      if (!isMounted()) return
+
+      const nextApps = apps || []
+      setRunningApps(nextApps)
+
+      const newStatus: Record<string, boolean> = {}
+      configuredGames.forEach(game => {
+        newStatus[game.key] = nextApps.some((a: { gameKey: string }) => a.gameKey === game.key)
+      })
+      setRunningStatus(newStatus)
+    } catch (err) {
+      console.error('Consolidated polling error:', err)
+    }
+  }, [configuredGames])
+
   // Poll running state every 2s
   useEffect(() => {
     let mounted = true
-    let intervalId: number
+    const isMounted = () => mounted
 
-    const checkRunningState = async () => {
-      try {
-        if (configuredGames.length === 0) return
-
-        const apps = await window.electronAPI.getRunningApps()
-        if (!mounted) return
-
-        setRunningApps(apps || [])
-
-        const newStatus: Record<string, boolean> = {}
-        configuredGames.forEach(game => {
-          newStatus[game.key] = (apps || []).some((a: { gameKey: string }) => a.gameKey === game.key)
-        })
-        setRunningStatus(newStatus)
-      } catch (err) {
-        console.error('Consolidated polling error:', err)
-      }
-    }
-
-    checkRunningState()
-    intervalId = window.setInterval(checkRunningState, 2000)
+    refreshRunningState(isMounted)
+    const intervalId = window.setInterval(() => refreshRunningState(isMounted), 2000)
 
     return () => {
       mounted = false
       window.clearInterval(intervalId)
     }
-  }, [configuredGames])
+  }, [refreshRunningState])
 
   if (configuredGames.length === 0) {
     return (
@@ -448,9 +482,10 @@ export function GameList() {
         const appsForGame = runningApps.filter(
           a => a.gameKey === game.key && a.path.toLowerCase() !== gamePathLower
         )
-        const runningAppIcons = appsForGame
-          .map(a => appIconCache[a.path.toLowerCase()])
-          .filter(Boolean) as string[]
+        const runningAppIcons = appsForGame.map(a => ({
+          icon: appIconCache[a.path.toLowerCase()] ?? null,
+          name: a.name
+        }))
 
         return (
           <GameRow
@@ -465,6 +500,7 @@ export function GameList() {
             isLaunchBlocked={launchingGameKey !== null}
             onLaunchStart={handleLaunchStart}
             onLaunchEnd={handleLaunchEnd}
+            onRunningStateRefresh={refreshRunningState}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
           />
         )

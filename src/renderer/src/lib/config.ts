@@ -9,6 +9,8 @@ export type GameProfile = Record<string, boolean | string[] | undefined> & {
 }
 export type Profiles = Record<string, GameProfile>
 
+export const DEFAULT_ACCENT_COLOR = '#00eaff'
+
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },
   { key: 'acc', name: 'Assetto Corsa Competizione', icon: 'assets/acc.png' },
