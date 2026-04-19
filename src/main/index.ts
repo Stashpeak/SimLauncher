@@ -547,8 +547,12 @@ ipcMain.handle('get-running-apps', async () => {
   }))
   const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
   const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
+  // INVARIANT: only surface tracked apps for gameKeys that SimLauncher actually launched.
+  // Prevents manually-launched utility apps from triggering a false "running" state. (refs #100)
+  const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
   const trackedApps = (await getTrackedRunningApps()).filter(
     (appProcess) =>
+      launchedGameKeys.has(appProcess.gameKey) &&
       !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
       !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
