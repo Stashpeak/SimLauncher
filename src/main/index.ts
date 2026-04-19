@@ -51,6 +51,10 @@ const EXPECTED_CONFIG_KEYS = new Set([
   'profileSetsMigrated',
   'migrated'
 ])
+const LEGACY_CONFIG_KEYS = new Set([
+  'killOnClose'
+])
+const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFIG_KEYS])
 const OBJECT_CONFIG_KEYS = new Set(['appPaths', 'gamePaths', 'profiles', 'appNames', 'windowBounds'])
 const STRING_CONFIG_KEYS = new Set(['accentPreset', 'accentCustom'])
 const BOOLEAN_CONFIG_KEYS = new Set([
@@ -63,6 +67,9 @@ const BOOLEAN_CONFIG_KEYS = new Set([
   'profileUtilityOrderMigrated',
   'profileSetsMigrated',
   'migrated'
+])
+const LEGACY_BOOLEAN_CONFIG_KEYS = new Set([
+  'killOnClose'
 ])
 
 let mainWindow: BrowserWindow | null = null
@@ -170,7 +177,7 @@ function validateImportedConfig(value: unknown): value is Record<string, unknown
     throw new Error('Config file is empty.')
   }
 
-  const unexpectedKeys = keys.filter((key) => !EXPECTED_CONFIG_KEYS.has(key))
+  const unexpectedKeys = keys.filter((key) => !IMPORTABLE_CONFIG_KEYS.has(key))
 
   if (unexpectedKeys.length > 0) {
     throw new Error(`Config file contains unsupported keys: ${unexpectedKeys.join(', ')}`)
@@ -195,6 +202,10 @@ function validateImportedConfig(value: unknown): value is Record<string, unknown
       throw new Error(`Config value "${key}" must be a boolean.`)
     }
 
+    if (LEGACY_BOOLEAN_CONFIG_KEYS.has(key) && typeof setting !== 'boolean') {
+      throw new Error(`Config value "${key}" must be a boolean.`)
+    }
+
     if (key === 'customSlots') {
       if (typeof setting !== 'number' || !Number.isFinite(setting) || setting < 1) {
         throw new Error('Config value "customSlots" must be a number greater than or equal to 1.')
@@ -215,6 +226,18 @@ function validateImportedConfig(value: unknown): value is Record<string, unknown
   })
 
   return true
+}
+
+function getSupportedConfigValues(config: Record<string, unknown>) {
+  const supportedConfig: Record<string, unknown> = {}
+
+  Object.entries(config).forEach(([key, value]) => {
+    if (EXPECTED_CONFIG_KEYS.has(key)) {
+      supportedConfig[key] = value
+    }
+  })
+
+  return supportedConfig
 }
 
 function applyRuntimeConfigSettings() {
@@ -1145,7 +1168,7 @@ ipcMain.handle('export-config', async () => {
       return { success: false, canceled: true }
     }
 
-    await fs.promises.writeFile(result.filePath, JSON.stringify(store.store, null, 2), 'utf8')
+    await fs.promises.writeFile(result.filePath, JSON.stringify(getSupportedConfigValues(store.store), null, 2), 'utf8')
     return { success: true, filePath: result.filePath }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -1172,9 +1195,10 @@ ipcMain.handle('import-config', async () => {
     const rawConfig = await fs.promises.readFile(result.filePaths[0], 'utf8')
     const parsedConfig = JSON.parse(rawConfig) as unknown
     validateImportedConfig(parsedConfig)
+    const supportedConfig = getSupportedConfigValues(parsedConfig)
 
     store.clear()
-    store.set(parsedConfig)
+    store.set(supportedConfig)
     migrateProfilesToNamedSets()
     applyRuntimeConfigSettings()
 
