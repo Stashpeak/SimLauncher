@@ -352,8 +352,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                   <button
                     key={preset.hex}
                     onClick={() => handleAccentChange(preset.hex)}
-                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
-                    style={{ backgroundColor: preset.hex }}
+                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                    style={{ '--preset-color': preset.hex } as React.CSSProperties}
                     title={preset.name}
                   />
                 ))}
