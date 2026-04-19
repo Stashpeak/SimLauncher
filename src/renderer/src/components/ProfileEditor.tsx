@@ -54,6 +54,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const [utilities, setUtilities] = useState<Utility[]>(() => getUtilities(1))
   const [profileUtilities, setProfileUtilities] = useState<ProfileUtility[]>([])
   const [dragUtilityId, setDragUtilityId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
   const [trackingEnabled, setTrackingEnabled] = useState(true)
   const [killControlsEnabled, setKillControlsEnabled] = useState(false)
@@ -135,7 +136,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     })
   }
 
-  const moveEnabledUtility = (draggedId: string, targetId: string) => {
+  const moveEnabledUtility = (draggedId: string, targetId: string, placement: 'before' | 'after') => {
     if (draggedId === targetId) {
       return
     }
@@ -152,7 +153,17 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
 
       const nextEnabledEntries = [...enabledEntries]
       const [movedEntry] = nextEnabledEntries.splice(fromIndex, 1)
-      nextEnabledEntries.splice(toIndex, 0, movedEntry)
+      const targetIndexAfterRemoval = nextEnabledEntries.findIndex((entry) => entry.id === targetId)
+
+      if (targetIndexAfterRemoval === -1) {
+        return currentUtilities
+      }
+
+      nextEnabledEntries.splice(
+        placement === 'after' ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval,
+        0,
+        movedEntry
+      )
 
       return [...nextEnabledEntries, ...disabledEntries]
     })
@@ -207,7 +218,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
   const disabledUtilityEntries = availableUtilityEntries.filter((entry) => !entry.enabled)
   const availableUtilities = availableUtilityEntries.map((entry) => utilityByKey.get(entry.id)!)
 
-  const renderUtilityRow = (entry: ProfileUtility, isEnabled: boolean) => {
+  const renderUtilityRow = (entry: ProfileUtility, isEnabled: boolean, orderIndex?: number) => {
     const utility = utilityByKey.get(entry.id)
 
     if (!utility) {
@@ -217,6 +228,7 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
     const label = appNames[utility.key] || utility.name
     const iconPath = appPaths[utility.key]?.toLowerCase()
     const icon = iconPath ? appIconCache[iconPath] : null
+    const dropPlacement = dropTarget?.id === utility.key ? dropTarget.placement : null
 
     return (
       <div
@@ -234,20 +246,42 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
         onDragOver={(event) => {
           if (isEnabled && dragUtilityId && dragUtilityId !== utility.key) {
             event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+            const bounds = event.currentTarget.getBoundingClientRect()
+            const placement = event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after'
+            setDropTarget({ id: utility.key, placement })
+          }
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDropTarget((currentTarget) => currentTarget?.id === utility.key ? null : currentTarget)
           }
         }}
         onDrop={(event) => {
           event.preventDefault()
-          if (dragUtilityId) {
-            moveEnabledUtility(dragUtilityId, utility.key)
+          if (dragUtilityId && dropPlacement) {
+            moveEnabledUtility(dragUtilityId, utility.key, dropPlacement)
             setDragUtilityId(null)
+            setDropTarget(null)
           }
         }}
-        className={`group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) ${
+        className={`group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) ${
           isEnabled ? '' : 'opacity-55 hover:opacity-100'
         }`}
       >
+        {dropPlacement && (
+          <span
+            className={`pointer-events-none absolute left-3 right-3 h-0.5 rounded-full bg-(--accent) shadow-[0_0_10px_var(--accent-glow)] ${
+              dropPlacement === 'before' ? '-top-1.5' : '-bottom-1.5'
+            }`}
+          />
+        )}
         <div className="flex min-w-0 items-center gap-3">
+          {isEnabled && typeof orderIndex === 'number' && (
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-(--accent)/15 text-[11px] font-black tabular-nums text-(--accent)">
+              {orderIndex + 1}
+            </span>
+          )}
           <button
             type="button"
             draggable={isEnabled}
@@ -258,8 +292,18 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
               setDragUtilityId(utility.key)
               event.dataTransfer.effectAllowed = 'move'
               event.dataTransfer.setData('text/plain', utility.key)
+              const dragImage = document.createElement('div')
+              dragImage.style.width = '1px'
+              dragImage.style.height = '1px'
+              dragImage.style.opacity = '0'
+              document.body.appendChild(dragImage)
+              event.dataTransfer.setDragImage(dragImage, 0, 0)
+              window.setTimeout(() => dragImage.remove(), 0)
             }}
-            onDragEnd={() => setDragUtilityId(null)}
+            onDragEnd={() => {
+              setDragUtilityId(null)
+              setDropTarget(null)
+            }}
             className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-(--text-subtle) transition-colors hover:bg-white/10 hover:text-(--text-primary) active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-20"
             title="Drag to reorder"
             aria-label={`Reorder ${label}`}
@@ -325,8 +369,8 @@ export function ProfileEditor({ gameKey, gameName, onClose }: ProfileEditorProps
           {availableUtilities.length > 0 ? (
             <div className="space-y-3">
               {enabledUtilityEntries.length > 0 && (
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                  {enabledUtilityEntries.map((entry) => renderUtilityRow(entry, true))}
+                <div className="grid grid-cols-1 gap-2.5">
+                  {enabledUtilityEntries.map((entry, index) => renderUtilityRow(entry, true, index))}
                 </div>
               )}
               {disabledUtilityEntries.length > 0 && (
