@@ -597,7 +597,10 @@ ipcMain.handle('window-maximize', () => {
 })
 
 ipcMain.handle('window-close', () => {
-  isQuitting = true
+  if (store.get('minimizeToTray') !== true) {
+    isQuitting = true
+  }
+
   mainWindow?.close()
 })
 
