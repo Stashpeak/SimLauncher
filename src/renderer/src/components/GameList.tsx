@@ -5,15 +5,6 @@ import { useNotify } from './Notify'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
-function validateIcon(src: string): Promise<boolean> {
-  return new Promise(resolve => {
-    const img = new Image()
-    img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight > 0)
-    img.onerror = () => resolve(false)
-    img.src = src
-  })
-}
-
 function GameRow({
   game,
   isActive,
@@ -410,7 +401,7 @@ export function GameList() {
         await Promise.all(
           Object.values(appPaths).filter(Boolean).map(async (p) => {
             const icon = await window.electronAPI.getFileIcon(p)
-            if (icon && await validateIcon(icon)) cache[p.toLowerCase()] = icon
+            if (icon) cache[p.toLowerCase()] = icon
           })
         )
         setAppIconCache(cache)
