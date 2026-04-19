@@ -169,6 +169,11 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
         const icon = await window.electronAPI.getFileIcon(result.filePath)
         if (icon) {
           setAppIcons(prev => ({ ...prev, [key]: icon }))
+          setIconLoadErrors(prev => {
+            const next = new Set(prev)
+            next.delete(key)
+            return next
+          })
         }
       }
     }
