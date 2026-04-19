@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, Menu, Tray, type WebContents } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
+import fs from 'fs'
 import { autoUpdater } from 'electron-updater'
 import Store from 'electron-store'
 
@@ -33,6 +34,8 @@ const runningProcesses = new Map<string, { process: ChildProcess; name: string; 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 let launchBlockedUntil = 0
+let genericIconFingerprint: string | null | undefined
+let genericIconFingerprintPromise: Promise<string | null> | null = null
 
 autoUpdater.autoDownload = false
 
@@ -375,6 +378,62 @@ function readRunningProcessNames() {
   })
 }
 
+async function computeGenericIconFingerprint() {
+  if (process.platform !== 'win32') {
+    return null
+  }
+
+  const tempExePath = path.join(
+    app.getPath('temp'),
+    `simlauncher-generic-icon-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.exe`
+  )
+  let tempFileCreated = false
+
+  try {
+    const fileDescriptor = fs.openSync(tempExePath, 'wx')
+    fs.closeSync(fileDescriptor)
+    tempFileCreated = true
+
+    const icon = await app.getFileIcon(tempExePath, { size: 'normal' })
+    return icon.isEmpty() ? null : icon.toDataURL()
+  } catch (err) {
+    console.error('Failed to fingerprint generic Windows app icon:', err)
+    return null
+  } finally {
+    if (tempFileCreated) {
+      try {
+        fs.unlinkSync(tempExePath)
+      } catch {
+        // Cleanup failures should not hide valid executable icons.
+      }
+    }
+  }
+}
+
+function getGenericIconFingerprint() {
+  if (genericIconFingerprint !== undefined) {
+    return Promise.resolve(genericIconFingerprint)
+  }
+
+  if (!genericIconFingerprintPromise) {
+    genericIconFingerprintPromise = computeGenericIconFingerprint()
+      .then((fingerprint) => {
+        genericIconFingerprint = fingerprint
+        return fingerprint
+      })
+      .catch((err) => {
+        console.error('Failed to cache generic Windows app icon fingerprint:', err)
+        genericIconFingerprint = null
+        return null
+      })
+      .finally(() => {
+        genericIconFingerprintPromise = null
+      })
+  }
+
+  return genericIconFingerprintPromise
+}
+
 // INVARIANT: an exe name can only be "running" for one gameKey at a time.
 // Never match by exe name globally without deduplicating across all gameKeys.
 async function getTrackedRunningApps() {
@@ -608,10 +667,19 @@ ipcMain.handle('get-asset-data', async (_event, filename: string) => {
 ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
   try {
     const icon = await app.getFileIcon(filePath, { size: 'normal' })
-    if (!icon.isEmpty()) {
-      return icon.toDataURL()
+
+    if (icon.isEmpty()) {
+      return null
     }
-    return null
+
+    const iconDataUrl = icon.toDataURL()
+    const genericFingerprint = await getGenericIconFingerprint()
+
+    if (genericFingerprint && iconDataUrl === genericFingerprint) {
+      return null
+    }
+
+    return iconDataUrl
   } catch (err) {
     console.error(`Failed to get file icon for ${filePath}:`, err)
     return null
