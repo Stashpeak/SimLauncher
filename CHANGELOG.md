@@ -21,6 +21,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - File browser dialog no longer shows "All Files" option — restricted to `.exe` only
 - `preload.js` added to electron-builder `files` list
 
+### Fixed
+- Utility app icons now fall back to initials when Windows returns the generic default `.exe` icon instead of the app's real icon.
+- Selecting a new valid utility executable now clears any previous icon load error for that utility.
+
 ### Documentation
 - Rewrote `README.md` with features list, supported games/utilities, dev setup, and contribution guide
 - Added `CHANGELOG.md`
