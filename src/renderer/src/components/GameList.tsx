@@ -3,6 +3,8 @@ import { GAMES, UTILITIES, type Game, type Profiles } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
+const POST_LAUNCH_BLOCK_MS = 10000
+
 function GameRow({
   game,
   isActive,
@@ -10,6 +12,10 @@ function GameRow({
   runningAppIcons,
   runningApps,
   isDimmed,
+  isLaunching,
+  isLaunchBlocked,
+  onLaunchStart,
+  onLaunchEnd,
   onToggleEditor
 }: {
   game: Game
@@ -18,15 +24,22 @@ function GameRow({
   runningAppIcons: string[]
   runningApps: { path: string; name: string; gameKey: string }[]
   isDimmed: boolean
+  isLaunching: boolean
+  isLaunchBlocked: boolean
+  onLaunchStart: (gameKey: string) => void
+  onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
   onToggleEditor: () => void
 }) {
   const { notify } = useNotify()
   const [iconUrl, setIconUrl] = useState<string | null>(null)
+  const [iconLoadFailed, setIconLoadFailed] = useState(false)
+  const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
 
   useEffect(() => {
     async function resolveIcon() {
       const filename = game.icon.split('/').pop() || ''
       const data = await window.electronAPI.getAssetData(filename)
+      setIconLoadFailed(false)
       setIconUrl(data)
     }
     resolveIcon()
@@ -61,6 +74,12 @@ function GameRow({
   }
 
   const handleLaunch = async () => {
+    if (isLaunchBlocked) {
+      return
+    }
+
+    let cooldownMs = 0
+
     try {
       const { pathsToLaunch, appCount } = await getProfileLaunchPaths()
 
@@ -69,11 +88,20 @@ function GameRow({
         return
       }
 
-      await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      onLaunchStart(game.key)
+      const result = await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      if (!result.success) {
+        notify(result.error || 'Failed to launch profile', 'error')
+        return
+      }
+
+      cooldownMs = POST_LAUNCH_BLOCK_MS
       notify(`Starting ${game.name} + ${appCount - 1} apps`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
+    } finally {
+      onLaunchEnd(game.key, cooldownMs)
     }
   }
 
@@ -88,6 +116,12 @@ function GameRow({
   }
 
   const handleRelaunchMissing = async () => {
+    if (isLaunchBlocked) {
+      return
+    }
+
+    let cooldownMs = 0
+
     try {
       const { pathsToLaunch } = await getProfileLaunchPaths()
       const runningPathSet = new Set(runningApps.map((appProcess) => appProcess.path.toLowerCase()))
@@ -98,11 +132,20 @@ function GameRow({
         return
       }
 
-      await window.electronAPI.launchProfile(game.key, missingPaths)
+      onLaunchStart(game.key)
+      const result = await window.electronAPI.launchProfile(game.key, missingPaths)
+      if (!result.success) {
+        notify(result.error || 'Failed to relaunch missing apps', 'error')
+        return
+      }
+
+      cooldownMs = POST_LAUNCH_BLOCK_MS
       notify(`Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
+    } finally {
+      onLaunchEnd(game.key, cooldownMs)
     }
   }
 
@@ -151,7 +194,7 @@ function GameRow({
   const canKill = isRunning && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
-  const primaryLabel = canKill ? 'Close Apps' : 'Launch'
+  const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
     : 'bg-(--accent) text-white neon-glow hover:opacity-90'
@@ -161,12 +204,12 @@ function GameRow({
       <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
         <div className="flex items-center gap-5">
           <div className="relative">
-            {iconUrl && (
+            {iconUrl && !iconLoadFailed && (
               <img
                 src={iconUrl}
                 alt={game.name}
                 className="h-12 w-12 object-contain animate-fade-slide drop-shadow-md"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
+                onError={() => setIconLoadFailed(true)}
               />
             )}
             {isRunning && (
@@ -180,13 +223,13 @@ function GameRow({
             <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
-                {runningAppIcons.map((icon, i) => (
+                {runningAppIcons.filter((icon) => !failedRunningIcons[icon]).map((icon, i) => (
                   <img
                     key={i}
                     src={icon}
                     alt=""
                     className="h-4 w-4 object-contain opacity-80"
-                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                    onError={() => setFailedRunningIcons((current) => ({ ...current, [icon]: true }))}
                   />
                 ))}
               </div>
@@ -198,7 +241,8 @@ function GameRow({
           <button
             type="button"
             onClick={primaryAction}
-            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-95 ${primaryButtonClass}`}
+            disabled={isLaunchBlocked && !canKill}
+            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-95 disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100 ${primaryButtonClass}`}
           >
             {primaryLabel}
           </button>
@@ -206,9 +250,10 @@ function GameRow({
             <button
               type="button"
               onClick={handleRelaunchMissing}
-              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-95"
+              disabled={isLaunchBlocked}
+              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-95 disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
             >
-              Relaunch
+              {isLaunching ? 'Launching...' : 'Relaunch'}
             </button>
           )}
           <button
@@ -251,6 +296,44 @@ export function GameList() {
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
+  const [launchingGameKey, setLaunchingGameKey] = useState<string | null>(null)
+  const launchBlockTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (launchBlockTimeoutRef.current !== null) {
+        window.clearTimeout(launchBlockTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleLaunchStart = (gameKey: string) => {
+    if (launchBlockTimeoutRef.current !== null) {
+      window.clearTimeout(launchBlockTimeoutRef.current)
+      launchBlockTimeoutRef.current = null
+    }
+
+    setLaunchingGameKey(gameKey)
+  }
+
+  const handleLaunchEnd = (finishedGameKey: string, cooldownMs = 0) => {
+    setLaunchingGameKey((currentGameKey) => {
+      if (currentGameKey !== finishedGameKey) {
+        return currentGameKey
+      }
+
+      if (cooldownMs <= 0) {
+        return null
+      }
+
+      launchBlockTimeoutRef.current = window.setTimeout(() => {
+        setLaunchingGameKey((latestGameKey) => latestGameKey === finishedGameKey ? null : latestGameKey)
+        launchBlockTimeoutRef.current = null
+      }, cooldownMs)
+
+      return currentGameKey
+    })
+  }
 
   useEffect(() => {
     async function loadGames() {
@@ -378,6 +461,10 @@ export function GameList() {
             runningAppIcons={runningAppIcons}
             runningApps={runningApps.filter(a => a.gameKey === game.key)}
             isDimmed={hasActiveTitle && !runningStatus[game.key]}
+            isLaunching={launchingGameKey === game.key}
+            isLaunchBlocked={launchingGameKey !== null}
+            onLaunchStart={handleLaunchStart}
+            onLaunchEnd={handleLaunchEnd}
             onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
           />
         )

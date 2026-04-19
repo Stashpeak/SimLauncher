@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeImage, screen, Menu, Tray, type WebContents } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'child_process'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -17,17 +17,138 @@ const store = new Store({
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     startWithWindows: { type: 'boolean', default: false },
     startMinimized:   { type: 'boolean', default: false },
+    autoCheckUpdates:  { type: 'boolean', default: true },
     zoomFactor:       { type: 'number',  default: 1.0 },
+    windowBounds:      { type: 'object',  default: {} },
     migrated:     { type: 'boolean', default: false },
   }
 })
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
+let installAfterDownload = false
+let updateDownloaded = false
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
+const activeLaunches = new Set<string>()
+const POST_LAUNCH_BLOCK_MS = 10000
+let launchBlockedUntil = 0
+
+autoUpdater.autoDownload = false
 
 interface StoredProfile {
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
+}
+
+interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function isWindowBounds(value: unknown): value is WindowBounds {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const bounds = value as Record<string, unknown>
+  return ['x', 'y', 'width', 'height'].every((key) => {
+    const coordinate = bounds[key]
+    return typeof coordinate === 'number' && Number.isFinite(coordinate)
+  })
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getInitialWindowBounds() {
+  const defaultBounds = { width: 800, height: 600 }
+  const savedBounds = store.get('windowBounds')
+
+  if (!isWindowBounds(savedBounds)) {
+    return defaultBounds
+  }
+
+  const display = screen.getDisplayMatching(savedBounds)
+  const { workArea } = display
+  const width = clamp(savedBounds.width, 640, workArea.width)
+  const height = clamp(savedBounds.height, 480, workArea.height)
+
+  return {
+    x: clamp(savedBounds.x, workArea.x, workArea.x + workArea.width - width),
+    y: clamp(savedBounds.y, workArea.y, workArea.y + workArea.height - height),
+    width,
+    height
+  }
+}
+
+function sendToRenderer(channel: string, payload: unknown) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+
+  mainWindow.webContents.send(channel, payload)
+}
+
+function getAppIconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'SimLauncher.ico')
+    : path.join(app.getAppPath(), 'SimLauncher.ico')
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function createTray() {
+  if (tray) {
+    return
+  }
+
+  const icon = nativeImage.createFromPath(getAppIconPath())
+  tray = new Tray(icon)
+  tray.setToolTip('SimLauncher')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show SimLauncher', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      }
+    }
+  ]))
+
+  tray.on('click', showMainWindow)
+  tray.on('double-click', showMainWindow)
+}
+
+function quitAndInstallUpdate() {
+  isQuitting = true
+  autoUpdater.quitAndInstall()
+}
+
+async function checkForUpdates() {
+  if (!app.isPackaged) {
+    sendToRenderer('update-available', { version: '99.0.0' })
+    return null
+  }
+
+  return await autoUpdater.checkForUpdates()
 }
 
 function killLaunchedApps(gameKey?: string) {
@@ -52,14 +173,14 @@ function killLaunchedApps(gameKey?: string) {
 function createWindow() {
   const savedZoom = store.get('zoomFactor') as number
   const zoomFactor = typeof savedZoom === 'number' && Number.isFinite(savedZoom) ? savedZoom : 1.0
+  const windowBounds = getInitialWindowBounds()
 
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    ...windowBounds,
     frame: false,
     show: false,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, '../../SimLauncher.ico'),
+    icon: getAppIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -68,12 +189,24 @@ function createWindow() {
     }
   })
 
-  // Show window once ready — optionally minimized
+  mainWindow.on('close', (event) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+
+    store.set('windowBounds', mainWindow.getBounds())
+
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
+  })
+
+  // Show window once ready, or keep it hidden when starting minimized to tray.
   mainWindow.once('ready-to-show', () => {
     const startMinimized = store.get('startMinimized') as boolean
-    mainWindow!.show()
-    if (startMinimized) {
-      mainWindow!.minimize()
+    if (!startMinimized) {
+      mainWindow!.show()
     }
   })
 
@@ -82,27 +215,44 @@ function createWindow() {
   app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
 
   autoUpdater.on('update-available', (info) => {
-    mainWindow?.webContents.send('update-available', info)
+    updateDownloaded = false
+    sendToRenderer('update-available', info)
   })
 
   autoUpdater.on('update-downloaded', (info) => {
-    mainWindow?.webContents.send('update-downloaded', info)
+    updateDownloaded = true
+    sendToRenderer('update-downloaded', info)
+
+    if (installAfterDownload) {
+      quitAndInstallUpdate()
+    }
   })
 
   autoUpdater.on('update-not-available', (info) => {
-    mainWindow?.webContents.send('update-not-available', info)
+    sendToRenderer('update-not-available', info)
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendToRenderer('update-download-progress', progress)
+  })
+
+  autoUpdater.on('error', (err) => {
+    installAfterDownload = false
+    sendToRenderer('update-error', { message: err.message })
   })
 
   mainWindow.webContents.once('did-finish-load', () => {
-    if (app.isPackaged) {
-      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    const autoCheckUpdates = store.get('autoCheckUpdates') !== false
+
+    if (app.isPackaged && autoCheckUpdates) {
+      checkForUpdates().catch((err) => {
         console.error('Update check failed:', err)
       })
     }
 
     // DEV: fake update — remove this block to disable
-    if (!app.isPackaged) {
-      setTimeout(() => mainWindow?.webContents.send('update-available', { version: '99.0.0' }), 1500)
+    if (!app.isPackaged && autoCheckUpdates) {
+      setTimeout(() => sendToRenderer('update-available', { version: '99.0.0' }), 1500)
     }
   })
 
@@ -113,7 +263,14 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
+app.whenReady().then(() => {
+  createTray()
+  createWindow()
+})
 
 // ----------------------------------------------------------------
 // HELPERS
@@ -135,6 +292,62 @@ function getLaunchDelayMs() {
 
 function getExeName(filePath: string) {
   return path.basename(filePath).toLowerCase()
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function sendLaunchError(sender: WebContents, appPath: string, error: string) {
+  if (!sender.isDestroyed()) {
+    sender.send('app-launch-error', { app: appPath, error })
+  }
+}
+
+function spawnDetachedApp(sender: WebContents, gameKey: string, appPath: string, gamePath?: string) {
+  return new Promise<void>((resolve) => {
+    let settled = false
+
+    const resolveOnce = () => {
+      if (!settled) {
+        settled = true
+        resolve()
+      }
+    }
+
+    try {
+      const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
+      runningProcesses.set(appPath, {
+        process: child,
+        name: path.basename(appPath),
+        gameKey,
+        isGame: !!gamePath && appPath.toLowerCase() === gamePath
+      })
+
+      child.once('spawn', () => {
+        child.unref()
+        resolveOnce()
+      })
+
+      child.once('error', (err) => {
+        runningProcesses.delete(appPath)
+        console.error(`Error launching ${appPath}: ${err.message}`)
+        sendLaunchError(sender, appPath, err.message)
+        resolveOnce()
+      })
+
+      child.once('exit', () => {
+        runningProcesses.delete(appPath)
+      })
+
+      setTimeout(resolveOnce, 500)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Error launching ${appPath}: ${message}`)
+      sendLaunchError(sender, appPath, message)
+      resolveOnce()
+    }
+  })
 }
 
 function readRunningProcessNames() {
@@ -202,42 +415,54 @@ async function getTrackedRunningApps() {
  * Executes a list of applications sequentially with a delay.
  * @param profileApps Array of executable paths to launch.
  */
-ipcMain.handle('launch-profile', (event, gameKey: string, profileApps: string[]) => {
+ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: string[]) => {
   if (!Array.isArray(profileApps) || profileApps.length === 0) {
     return { success: false, error: 'Profile is empty.' }
   }
 
-  let delay = 0
+  if (activeLaunches.size > 0) {
+    return { success: false, error: 'Another profile is already launching.' }
+  }
+
+  const cooldownRemainingMs = launchBlockedUntil - Date.now()
+  if (cooldownRemainingMs > 0) {
+    return {
+      success: false,
+      error: `Launch is settling. Try again in ${Math.ceil(cooldownRemainingMs / 1000)}s.`
+    }
+  }
+
+  activeLaunches.add(gameKey)
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
-  profileApps.forEach((appPath) => {
-    if (!isValidExePath(appPath)) {
+  const validApps = profileApps.filter((appPath) => {
+    const valid = isValidExePath(appPath)
+    if (!valid) {
       console.error(`Skipping invalid path: ${appPath}`)
-      return
     }
-    setTimeout(() => {
-      const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
-      runningProcesses.set(appPath, {
-        process: child,
-        name: path.basename(appPath),
-        gameKey,
-        isGame: !!gamePath && appPath.toLowerCase() === gamePath
-      })
-      child.on('error', (err) => {
-        runningProcesses.delete(appPath)
-        console.error(`Error launching ${appPath}: ${err.message}`)
-        event.sender.send('app-launch-error', { app: appPath, error: err.message })
-      })
-      child.on('exit', () => {
-        runningProcesses.delete(appPath)
-      })
-      child.unref()
-    }, delay)
-    delay += launchDelayMs
+    return valid
   })
 
-  return { success: true, message: 'All profile applications launching.' }
+  if (validApps.length === 0) {
+    activeLaunches.delete(gameKey)
+    return { success: false, error: 'No valid executable paths configured.' }
+  }
+
+  try {
+    for (let index = 0; index < validApps.length; index += 1) {
+      await spawnDetachedApp(event.sender, gameKey, validApps[index], gamePath)
+
+      if (index < validApps.length - 1 && launchDelayMs > 0) {
+        await wait(launchDelayMs)
+      }
+    }
+
+    return { success: true, message: 'All profile applications launched.' }
+  } finally {
+    launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
+    activeLaunches.delete(gameKey)
+  }
 })
 
 // ----------------------------------------------------------------
@@ -297,12 +522,30 @@ ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
   killLaunchedApps(gameKey)
 })
 
-ipcMain.handle('install-update', () => {
-  autoUpdater.quitAndInstall()
+ipcMain.handle('install-update', async () => {
+  if (!app.isPackaged) {
+    sendToRenderer('update-downloaded', { version: '99.0.0' })
+    return { success: true }
+  }
+
+  installAfterDownload = true
+
+  if (updateDownloaded) {
+    quitAndInstallUpdate()
+    return { success: true }
+  }
+
+  try {
+    await autoUpdater.downloadUpdate()
+    return { success: true }
+  } catch (err) {
+    installAfterDownload = false
+    throw err
+  }
 })
 
 ipcMain.handle('check-for-updates', async () => {
-  return await autoUpdater.checkForUpdatesAndNotify()
+  return await checkForUpdates()
 })
 
 ipcMain.handle('get-asset-data', async (_event, filename: string) => {

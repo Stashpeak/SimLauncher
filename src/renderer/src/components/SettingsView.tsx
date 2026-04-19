@@ -28,6 +28,23 @@ function normalizeLaunchDelayMs(value: number) {
   return Math.min(Math.max(Math.round(value), 0), 5000)
 }
 
+function getInitials(label: string) {
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (words.length === 0) {
+    return 'APP'
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+}
+
 export function SettingsView({ onClose, updateInfo }: { onClose: () => void, updateInfo: { version: string } | null }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
@@ -43,9 +60,12 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
   const [startMinimized, setStartMinimized] = useState<boolean>(false)
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
   const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [installingUpdate, setInstallingUpdate] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null)
   const [updateStatus, setUpdateStatus] = useState<string | null>(null)
 
   const [isCustomColor, setIsCustomColor] = useState(false)
@@ -68,6 +88,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
       const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
       const savedStartMinimized = (await window.electronAPI.storeGet('startMinimized')) as boolean || false
+      const savedAutoCheckUpdates = await window.electronAPI.storeGet('autoCheckUpdates')
       const savedZoomFactor = (await window.electronAPI.storeGet('zoomFactor')) as number
 
       setAppPaths(savedAppPaths)
@@ -80,6 +101,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
       setStartWithWindows(savedStartWithWindows)
       setStartMinimized(savedStartMinimized)
+      setAutoCheckUpdates(savedAutoCheckUpdates !== false)
       setZoomFactor(typeof savedZoomFactor === 'number' && Number.isFinite(savedZoomFactor) ? savedZoomFactor : 1.0)
       
       setIsCustomColor(savedAccentPreset === 'custom')
@@ -160,24 +182,76 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     }
     load()
 
-    const unsubscribe = window.electronAPI.onUpdateNotAvailable(() => {
+    const unsubscribeAvailable = window.electronAPI.onUpdateAvailable(() => {
+      setCheckingUpdate(false)
+      setUpdateStatus(null)
+    })
+    const unsubscribeNotAvailable = window.electronAPI.onUpdateNotAvailable(() => {
       setCheckingUpdate(false)
       setUpdateStatus('up-to-date')
       setTimeout(() => setUpdateStatus(null), 3000)
     })
+    const unsubscribeProgress = window.electronAPI.onUpdateDownloadProgress((progress: any) => {
+      if (typeof progress?.percent === 'number') {
+        setUpdateProgress(progress.percent)
+      }
+    })
+    const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(() => {
+      setCheckingUpdate(false)
+      setInstallingUpdate(false)
+      setUpdateProgress(null)
+      setUpdateStatus('downloaded')
+    })
+    const unsubscribeError = window.electronAPI.onUpdateError((error: any) => {
+      setCheckingUpdate(false)
+      setInstallingUpdate(false)
+      setUpdateProgress(null)
+      setUpdateStatus('error')
+      notify(error?.message || 'Update check failed', 'error')
+      setTimeout(() => setUpdateStatus(null), 4000)
+    })
 
-    return () => unsubscribe()
-  }, [])
+    return () => {
+      unsubscribeAvailable()
+      unsubscribeNotAvailable()
+      unsubscribeProgress()
+      unsubscribeDownloaded()
+      unsubscribeError()
+    }
+  }, [notify])
 
   const handleManualCheck = async () => {
     setCheckingUpdate(true)
     setUpdateStatus(null)
-    await window.electronAPI.checkForUpdates()
+    try {
+      await window.electronAPI.checkForUpdates()
+    } catch (err) {
+      setCheckingUpdate(false)
+      setUpdateStatus('error')
+      notify('Update check failed', 'error')
+      console.error(err)
+    }
   }
 
-  const handleInstallUpdate = () => {
-    if (window.confirm(`Restart SimLauncher to install version ${updateInfo?.version}?`)) {
-      window.electronAPI.installUpdate()
+  const handleInstallUpdate = async () => {
+    if (!updateInfo) {
+      return
+    }
+
+    if (window.confirm(`Download and install version ${updateInfo.version}? SimLauncher will restart when ready.`)) {
+      setInstallingUpdate(true)
+      setUpdateProgress(null)
+      setUpdateStatus(null)
+
+      try {
+        await window.electronAPI.installUpdate()
+      } catch (err) {
+        setInstallingUpdate(false)
+        setUpdateProgress(null)
+        setUpdateStatus('error')
+        notify('Failed to install update', 'error')
+        console.error(err)
+      }
     }
   }
 
@@ -194,6 +268,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
       await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
       await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
       await window.electronAPI.storeSet('startMinimized', startMinimized)
+      await window.electronAPI.storeSet('autoCheckUpdates', autoCheckUpdates)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
@@ -216,14 +291,31 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
               <span className="text-sm text-(--text-secondary)">Installed Version</span>
               <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
             </div>
+
+            <div className="flex items-center justify-between border-t border-white/5 pt-4">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-(--text-primary)">Automatically check for updates</span>
+                <span className="text-[10px] text-(--text-muted)">Check on startup when enabled</span>
+              </div>
+              <Toggle
+                checked={autoCheckUpdates}
+                onChange={setAutoCheckUpdates}
+                aria-label="Automatically check for updates"
+              />
+            </div>
             
             <div className="flex flex-col gap-2">
               {updateInfo ? (
                 <button
                   onClick={handleInstallUpdate}
-                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)]"
+                  disabled={installingUpdate}
+                  className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
                 >
-                  Restart to Update (v{updateInfo.version})
+                  {installingUpdate
+                    ? updateProgress !== null
+                      ? `Downloading ${Math.round(updateProgress)}%`
+                      : 'Preparing update...'
+                    : `Download & Install (v${updateInfo.version})`}
                 </button>
               ) : (
                 <button
@@ -238,6 +330,11 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
               {updateStatus === 'up-to-date' && (
                 <p className="text-[10px] text-center text-(--status-success) animate-fade-slide">
                   SimLauncher is up to date!
+                </p>
+              )}
+              {updateStatus === 'error' && (
+                <p className="text-[10px] text-center text-red-400 animate-fade-slide">
+                  Update failed. Try again later.
                 </p>
               )}
             </div>
@@ -255,8 +352,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                   <button
                     key={preset.hex}
                     onClick={() => handleAccentChange(preset.hex)}
-                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
-                    style={{ backgroundColor: preset.hex }}
+                    className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                    style={{ '--preset-color': preset.hex } as React.CSSProperties}
                     title={preset.name}
                   />
                 ))}
@@ -347,7 +444,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
             <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-(--text-primary)">Start minimized</span>
-                <span className="text-[10px] text-(--text-muted)">Minimize window to taskbar on startup</span>
+                <span className="text-[10px] text-(--text-muted)">Start hidden in the system tray</span>
               </div>
               <Toggle checked={startMinimized} onChange={setStartMinimized} aria-label="Start minimized" />
             </div>
@@ -475,10 +572,11 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                       {appIcons[u.key] ? (
                         <img src={appIcons[u.key]} alt="Icon" className="w-8 h-8 object-contain drop-shadow-md shrink-0" />
                       ) : (
-                        <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30">
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                          </svg>
+                        <div
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-(--accent)/30 bg-(--accent)/10 text-[10px] font-black text-(--accent) shadow-[0_0_12px_-7px_var(--accent-glow)]"
+                          title={`${appNames[u.key] || u.name} icon fallback`}
+                        >
+                          {getInitials(appNames[u.key] || u.name)}
                         </div>
                       )}
                       

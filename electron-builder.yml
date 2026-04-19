@@ -8,12 +8,15 @@ files:
 extraResources:
   - from: assets/
     to: assets/
+  - from: SimLauncher.ico
+    to: SimLauncher.ico
 win:
   target: nsis
   icon: SimLauncher.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  perMachine: false
 publish:
   provider: github
   owner: Stashpeak
