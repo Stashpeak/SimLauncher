@@ -375,6 +375,8 @@ function readRunningProcessNames() {
   })
 }
 
+// INVARIANT: an exe name can only be "running" for one gameKey at a time.
+// Never match by exe name globally without deduplicating across all gameKeys.
 async function getTrackedRunningApps() {
   const processNames = await readRunningProcessNames()
   const profiles = store.get('profiles') as Record<string, StoredProfile> | undefined
@@ -544,8 +546,11 @@ ipcMain.handle('get-running-apps', async () => {
     tracked: false
   }))
   const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
+  const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
   const trackedApps = (await getTrackedRunningApps()).filter(
-    (appProcess) => !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+    (appProcess) =>
+      !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
+      !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
 
   return [...launchedApps, ...trackedApps]
