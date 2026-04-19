@@ -382,7 +382,7 @@ function GameRow({
 
   return (
     <div className={`relative flex flex-col gap-2 transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
-      <div className="glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)]">
+      <div className={`glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)] ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}>
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && !iconLoadFailed ? (
@@ -425,7 +425,7 @@ function GameRow({
                 {profileMenuOpen && (
                   <div
                     role="menu"
-                    className="absolute left-0 top-full z-30 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
+                    className="absolute left-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
                   >
                     {profileSet.profiles.map((profile) => {
                       const selected = profile.id === profileSet.activeProfileId
@@ -554,7 +554,7 @@ function GameRow({
         </div>
       </div>
 
-      <div className={`profile-editor-wrapper mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
+      <div className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
         <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
           {isActive && (
             <div className="animate-fade-slide">
