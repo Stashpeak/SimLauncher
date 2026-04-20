@@ -78,6 +78,7 @@ let isQuitting = false
 let installAfterDownload = false
 let updateDownloaded = false
 const runningProcesses = new Map<string, { process: ChildProcess; name: string; gameKey: string; isGame: boolean }>()
+const unclosedProcesses = new Map<string, { path: string; name: string; gameKey: string; error: string }>()
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 let launchBlockedUntil = 0
@@ -99,6 +100,26 @@ interface LaunchResult {
   skippedCount?: number
   elevatedCount?: number
   failedCount?: number
+}
+
+interface KillAttemptResult {
+  processName: string
+  success: boolean
+  appPath?: string
+  gameKey?: string
+  error?: string
+  accessDenied?: boolean
+  notFound?: boolean
+  stillRunning?: boolean
+}
+
+interface KillResult {
+  success: boolean
+  message?: string
+  warning?: string
+  error?: string
+  closedCount: number
+  failedCount: number
 }
 
 type AppLaunchResult =
@@ -325,47 +346,192 @@ async function checkForUpdates() {
   return await autoUpdater.checkForUpdates()
 }
 
+function isAccessDeniedMessage(message: string) {
+  return /access is denied/i.test(message)
+}
+
+function isNotFoundMessage(message: string) {
+  return /not found/i.test(message)
+}
+
 function runTaskkill(args: string[], description: string) {
-  return new Promise<void>((resolve) => {
-    execFile('taskkill', args, { windowsHide: true }, (error, _stdout, stderr) => {
-      if (error) {
-        const detail = stderr.trim() || error.message
-        if (!/not found/i.test(detail)) {
-          console.error(`Failed to ${description}: ${detail}`)
-        }
+  return new Promise<{ success: boolean; detail?: string; accessDenied?: boolean; notFound?: boolean }>((resolve) => {
+    execFile('taskkill', args, { windowsHide: true }, (error, stdout, stderr) => {
+      if (!error) {
+        resolve({ success: true })
+        return
       }
 
-      resolve()
+      const detail = stderr.trim() || stdout.trim() || error.message
+      const notFound = isNotFoundMessage(detail)
+      const accessDenied = isAccessDeniedMessage(detail)
+
+      if (!notFound) {
+        console.error(`Failed to ${description}: ${detail}`)
+      }
+
+      resolve({
+        success: notFound,
+        detail,
+        accessDenied,
+        notFound
+      })
     })
   })
 }
 
-function killProcessTree(child: ChildProcess, appPath: string) {
+async function killProcessTree(child: ChildProcess, appPath: string, gameKey?: string): Promise<KillAttemptResult> {
+  const processName = getExeName(appPath)
+
   if (process.platform === 'win32' && child.pid) {
-    return runTaskkill(['/PID', String(child.pid), '/T', '/F'], `kill process tree for ${appPath}`)
+    const result = await runTaskkill(['/PID', String(child.pid), '/T', '/F'], `kill process tree for ${appPath}`)
+    return {
+      processName,
+      appPath,
+      gameKey,
+      success: result.success,
+      error: result.detail,
+      accessDenied: result.accessDenied,
+      notFound: result.notFound
+    }
   }
 
   try {
     child.kill()
+    return { processName, appPath, gameKey, success: true }
   } catch (err) {
+    const error = getErrorMessage(err)
     console.error(`Error killing ${appPath}:`, err)
+    return {
+      processName,
+      appPath,
+      gameKey,
+      success: false,
+      error,
+      accessDenied: isAccessDeniedMessage(error)
+    }
   }
-
-  return Promise.resolve()
 }
 
-function killProcessByImageName(processName: string) {
+async function killProcessByImageName(processName: string, appPath?: string, gameKey?: string): Promise<KillAttemptResult> {
   if (process.platform !== 'win32') {
-    return Promise.resolve()
+    return { processName, appPath, gameKey, success: true }
   }
 
-  return runTaskkill(['/IM', processName, '/T', '/F'], `kill companion process ${processName}`)
+  const result = await runTaskkill(['/IM', processName, '/T', '/F'], `kill companion process ${processName}`)
+  return {
+    processName,
+    appPath,
+    gameKey,
+    success: result.success,
+    error: result.detail,
+    accessDenied: result.accessDenied,
+    notFound: result.notFound
+  }
 }
 
-function getProfileCompanionProcessNames(gameKey?: string) {
+function getUnclosedProcessKey(gameKey: string | undefined, appPath: string, processName: string) {
+  return `${gameKey || 'unknown'}:${(appPath || processName).toLowerCase()}`
+}
+
+function clearUnclosedProcess(gameKey: string | undefined, appPath: string | undefined, processName: string) {
+  unclosedProcesses.delete(getUnclosedProcessKey(gameKey, appPath || processName, processName))
+}
+
+function registerUnclosedProcess(attempt: KillAttemptResult) {
+  const appPath = attempt.appPath || attempt.processName
+  const gameKey = attempt.gameKey || ''
+  const error =
+    attempt.error ||
+    (attempt.accessDenied
+      ? 'Windows denied permission to close this app.'
+      : 'The app is still running after the close request.')
+
+  unclosedProcesses.set(getUnclosedProcessKey(gameKey, appPath, attempt.processName), {
+    path: appPath,
+    name: path.basename(appPath),
+    gameKey,
+    error
+  })
+}
+
+function pruneUnclosedProcesses(processNames: Set<string>) {
+  unclosedProcesses.forEach((entry, key) => {
+    if (!processNames.has(getExeName(entry.path))) {
+      unclosedProcesses.delete(key)
+    }
+  })
+}
+
+function formatKillWarning(failedAttempts: KillAttemptResult[]) {
+  if (failedAttempts.length === 0) {
+    return undefined
+  }
+
+  const first = failedAttempts[0]
+  const appName = path.basename(first.appPath || first.processName)
+
+  if (failedAttempts.length === 1) {
+    return first.accessDenied
+      ? `${appName} is still running because Windows denied permission to close it.`
+      : `${appName} could not be closed and is still running.`
+  }
+
+  return `${failedAttempts.length} apps could not be closed and are still running.`
+}
+
+async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<KillResult> {
+  if (attempts.length === 0) {
+    return {
+      success: true,
+      message: 'No running companion apps to close.',
+      closedCount: 0,
+      failedCount: 0
+    }
+  }
+
+  const processNamesAfterKill = await readRunningProcessNames()
+  const finalizedAttempts = attempts.map((attempt) => ({
+    ...attempt,
+    stillRunning: processNamesAfterKill.has(attempt.processName)
+  }))
+
+  finalizedAttempts.forEach((attempt) => {
+    if (attempt.stillRunning) {
+      registerUnclosedProcess(attempt)
+      return
+    }
+
+    clearUnclosedProcess(attempt.gameKey, attempt.appPath, attempt.processName)
+    runningProcesses.forEach((_appProcess, runningPath) => {
+      if (
+        (attempt.appPath && runningPath.toLowerCase() === attempt.appPath.toLowerCase()) ||
+        getExeName(runningPath) === attempt.processName
+      ) {
+        runningProcesses.delete(runningPath)
+      }
+    })
+  })
+
+  const failedAttempts = finalizedAttempts.filter((attempt) => attempt.stillRunning)
+  const closedCount = finalizedAttempts.length - failedAttempts.length
+  const warning = formatKillWarning(failedAttempts)
+
+  return {
+    success: failedAttempts.length === 0,
+    message: closedCount > 0 ? `Closed ${closedCount} companion app${closedCount === 1 ? '' : 's'}.` : undefined,
+    warning,
+    error: warning,
+    closedCount,
+    failedCount: failedAttempts.length
+  }
+}
+
+function getProfileCompanionTargets(gameKey?: string) {
   const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
-  const companionNames = new Set<string>()
+  const appPaths = store.get('appPaths') as Record<string, string> | undefined
+  const companionTargets = new Map<string, { processName: string; appPath: string; gameKey: string }>()
 
   Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
@@ -373,34 +539,42 @@ function getProfileCompanionProcessNames(gameKey?: string) {
     }
 
     const profile = getActiveStoredProfile(profileEntry)
-
-    Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
-      if (isUtilityEnabled(profile, utilityKey)) {
-        processNames.forEach((processName) => companionNames.add(processName.toLowerCase()))
-      }
-    })
-
     const gameExeName = isValidExePath(gamePaths?.[profileGameKey])
       ? getExeName(gamePaths![profileGameKey])
       : null
 
-    if (Array.isArray(profile?.trackedProcessPaths)) {
-      profile.trackedProcessPaths.filter(isValidExePath).forEach((processPath) => {
-        const processName = getExeName(processPath)
-        if (processName !== gameExeName) {
-          companionNames.add(processName)
-        }
-      })
-    }
+    Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
+      if (isUtilityEnabled(profile, utilityKey)) {
+        processNames.forEach((processName) => {
+          const normalizedProcessName = processName.toLowerCase()
+          companionTargets.set(normalizedProcessName, {
+            processName: normalizedProcessName,
+            appPath: processName,
+            gameKey: profileGameKey
+          })
+        })
+      }
+    })
+
+    getProfileTrackablePaths(profileGameKey, profile, appPaths, gamePaths).forEach((processPath) => {
+      const processName = getExeName(processPath)
+      if (processName !== gameExeName) {
+        companionTargets.set(processName, {
+          processName,
+          appPath: processPath,
+          gameKey: profileGameKey
+        })
+      }
+    })
   })
 
-  return companionNames
+  return companionTargets
 }
 
 async function killLaunchedApps(gameKey?: string) {
   const processNames = await readRunningProcessNames()
-  const companionProcessNames = getProfileCompanionProcessNames(gameKey)
-  const killTasks: Promise<void>[] = []
+  const companionTargets = getProfileCompanionTargets(gameKey)
+  const killTasks: Promise<KillAttemptResult>[] = []
 
   runningProcesses.forEach(({ process: child }, appPath) => {
     const appProcess = runningProcesses.get(appPath)
@@ -411,29 +585,37 @@ async function killLaunchedApps(gameKey?: string) {
       return
     }
 
-    companionProcessNames.delete(getExeName(appPath))
-    killTasks.push(killProcessTree(child, appPath))
-    runningProcesses.delete(appPath)
-  })
+    const processName = getExeName(appPath)
+    companionTargets.delete(processName)
 
-  companionProcessNames.forEach((processName) => {
     if (processNames.has(processName)) {
-      killTasks.push(killProcessByImageName(processName))
+      killTasks.push(killProcessTree(child, appPath, appProcess?.gameKey))
+    } else {
+      runningProcesses.delete(appPath)
     }
   })
 
-  await Promise.all(killTasks)
+  companionTargets.forEach((target) => {
+    if (processNames.has(target.processName)) {
+      killTasks.push(killProcessByImageName(target.processName, target.appPath, target.gameKey))
+    }
+  })
+
+  return finalizeKillAttempts(await Promise.all(killTasks))
 }
 
 async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
   const processNames = await readRunningProcessNames()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
-  const killTasks: Promise<void>[] = []
+  const killTasks: Promise<KillAttemptResult>[] = []
   const killedExeNames = new Set<string>()
 
   appPathsToKill.filter(isValidExePath).forEach((appPath) => {
     if (gamePath && appPath.toLowerCase() === gamePath) {
+      return
+    }
+    if (!processNames.has(getExeName(appPath))) {
       return
     }
 
@@ -445,9 +627,9 @@ async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
 
     if (runningAppEntry) {
       const [runningPath, runningApp] = runningAppEntry
-      killTasks.push(killProcessTree(runningApp.process, appPath))
-      runningProcesses.delete(runningPath)
+      killTasks.push(killProcessTree(runningApp.process, appPath, runningApp.gameKey))
       killedExeNames.add(getExeName(appPath))
+      return
     }
   })
 
@@ -459,12 +641,12 @@ async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
     const processName = getExeName(appPath)
 
     if (!killedExeNames.has(processName) && processNames.has(processName)) {
-      killTasks.push(killProcessByImageName(processName))
+      killTasks.push(killProcessByImageName(processName, appPath, gameKey))
       killedExeNames.add(processName)
     }
   })
 
-  await Promise.all(killTasks)
+  return finalizeKillAttempts(await Promise.all(killTasks))
 }
 
 function createWindow() {
@@ -1378,9 +1560,10 @@ ipcMain.handle('relaunch-missing-profile', async (event, gameKey: string) => {
   return launchProfileApps(event.sender, gameKey, missingPaths)
 })
 
-ipcMain.handle('get-profile-switch-diff', (_event, gameKey: string, fromProfileId: string, toProfileId: string) => {
+ipcMain.handle('get-profile-switch-diff', async (_event, gameKey: string, fromProfileId: string, toProfileId: string) => {
   const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
   const gamePath = gamePaths[gameKey]?.toLowerCase()
+  const processNames = await readRunningProcessNames()
 
   const utilityPaths = (profileId: string) =>
     new Set(
@@ -1391,8 +1574,8 @@ ipcMain.handle('get-profile-switch-diff', (_event, gameKey: string, fromProfileI
 
   const fromPaths = utilityPaths(fromProfileId)
   const toPaths = utilityPaths(toProfileId)
-  const toStopCount = [...fromPaths].filter((p) => !toPaths.has(p)).length
-  const toStartCount = [...toPaths].filter((p) => !fromPaths.has(p)).length
+  const toStopCount = [...fromPaths].filter((p) => !toPaths.has(p) && processNames.has(getExeName(p))).length
+  const toStartCount = [...toPaths].filter((p) => !processNames.has(getExeName(p))).length
 
   return { toStopCount, toStartCount }
 })
@@ -1409,21 +1592,40 @@ ipcMain.handle(
     const toPaths = buildNamedProfileLaunchPaths(gameKey, toProfileId).filter(
       (p) => !gamePath || p.toLowerCase() !== gamePath
     )
-    const fromPathSet = new Set(fromPaths.map((p) => p.toLowerCase()))
     const toPathSet = new Set(toPaths.map((p) => p.toLowerCase()))
+    const processNamesBeforeSwitch = await readRunningProcessNames()
 
-    const pathsToStop = fromPaths.filter((p) => !toPathSet.has(p.toLowerCase()))
-    const pathsToStart = toPaths.filter((p) => !fromPathSet.has(p.toLowerCase()))
+    const pathsToStop = fromPaths.filter(
+      (p) => !toPathSet.has(p.toLowerCase()) && processNamesBeforeSwitch.has(getExeName(p))
+    )
+    let killResult: KillResult | undefined
 
     if (pathsToStop.length > 0) {
-      await killProfileApps(gameKey, pathsToStop)
+      killResult = await killProfileApps(gameKey, pathsToStop)
     }
+
+    const processNamesAfterStop = await readRunningProcessNames()
+    const pathsToStart = toPaths.filter((p) => !processNamesAfterStop.has(getExeName(p)))
 
     if (pathsToStart.length === 0) {
-      return { success: true, launchedCount: 0, skippedCount: 0 }
+      return {
+        success: true,
+        message: killResult?.message,
+        warning: killResult?.warning,
+        launchedCount: 0,
+        skippedCount: 0,
+        failedCount: killResult?.failedCount
+      }
     }
 
-    return launchProfileApps(event.sender, gameKey, pathsToStart)
+    const launchResult = await launchProfileApps(event.sender, gameKey, pathsToStart)
+    const warnings = [killResult?.warning, launchResult.warning].filter(Boolean)
+
+    return {
+      ...launchResult,
+      warning: warnings.length > 0 ? warnings.join(' ') : undefined,
+      failedCount: (launchResult.failedCount || 0) + (killResult?.failedCount || 0)
+    }
   }
 )
 
@@ -1537,6 +1739,7 @@ ipcMain.handle('window-close', () => {
 ipcMain.handle('get-running-apps', async () => {
   const processNames = await readRunningProcessNames()
   pruneStoppedRunningProcesses(processNames)
+  pruneUnclosedProcesses(processNames)
 
   const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
     path: appPath,
@@ -1544,12 +1747,22 @@ ipcMain.handle('get-running-apps', async () => {
     gameKey: appProcess.gameKey,
     tracked: false
   }))
-  const launchedKeys = new Set(launchedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
-  const launchedExeNames = new Set(launchedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
+  const unclosedApps = Array.from(unclosedProcesses.values())
+    .filter((appProcess) => processNames.has(getExeName(appProcess.path)))
+    .map((appProcess) => ({
+      path: appProcess.path,
+      name: appProcess.name,
+      gameKey: appProcess.gameKey,
+      tracked: true,
+      warning: appProcess.error
+    }))
+  const surfacedApps = [...launchedApps, ...unclosedApps]
+  const launchedKeys = new Set(surfacedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`))
+  const launchedExeNames = new Set(surfacedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase()))
   const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
-  const launchedGameKeys = new Set(launchedApps.map((appProcess) => appProcess.gameKey))
+  const launchedGameKeys = new Set(surfacedApps.map((appProcess) => appProcess.gameKey))
   const adoptedGameKeys = getExternallyAdoptableGameKeys(processNames, profiles, gamePaths, launchedGameKeys)
   const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
   const trackedApps = (await getTrackedRunningApps(
@@ -1564,7 +1777,7 @@ ipcMain.handle('get-running-apps', async () => {
       !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
 
-  return [...launchedApps, ...trackedApps]
+  return [...surfacedApps, ...trackedApps]
 })
 
 ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {

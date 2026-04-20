@@ -7,6 +7,7 @@ interface RunningApp {
   name: string
   gameKey: string
   tracked?: boolean
+  warning?: string
 }
 
 interface BrowsePathResult {
@@ -23,6 +24,15 @@ interface LaunchResult {
   skippedCount?: number
   elevatedCount?: number
   failedCount?: number
+}
+
+interface KillResult {
+  success: boolean
+  message?: string
+  warning?: string
+  error?: string
+  closedCount: number
+  failedCount: number
 }
 
 interface ConfigFileResult {
@@ -45,8 +55,8 @@ declare global {
       maximize: () => Promise<void>
       close: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
-      killLaunchedApps: (gameKey?: string) => Promise<void>
-      killProfileApps: (gameKey: string, appPaths: string[]) => Promise<void>
+      killLaunchedApps: (gameKey?: string) => Promise<KillResult>
+      killProfileApps: (gameKey: string, appPaths: string[]) => Promise<KillResult>
       onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
       onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
       onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe

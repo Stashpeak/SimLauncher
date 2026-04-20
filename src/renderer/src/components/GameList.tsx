@@ -14,7 +14,7 @@ import { useNotify } from './Notify'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
-type RunningApp = { path: string; name: string; gameKey: string }
+type RunningApp = { path: string; name: string; gameKey: string; warning?: string }
 
 function GameRow({
   game,
@@ -33,7 +33,7 @@ function GameRow({
   game: Game
   isActive: boolean
   isRunning: boolean
-  runningAppIcons: { icon: string | null; name: string }[]
+  runningAppIcons: { icon: string | null; name: string; warning?: string }[]
   isDimmed: boolean
   isLaunching: boolean
   isLaunchBlocked: boolean
@@ -269,9 +269,15 @@ function GameRow({
 
   const handleKill = async () => {
     try {
-      await window.electronAPI.killLaunchedApps(game.key)
+      const result = await window.electronAPI.killLaunchedApps(game.key)
       await onRunningStateRefresh()
-      notify(`Closing companion apps for ${game.name}`, 'warn')
+
+      if (!result.success) {
+        notify(result.warning || result.error || 'Some companion apps could not be closed', 'warn', 6000)
+        return
+      }
+
+      notify(result.message || `Closing companion apps for ${game.name}`, 'warn')
     } catch (err) {
       notify('Failed to close companion apps', 'error')
       console.error(err)
@@ -503,7 +509,8 @@ function GameRow({
                         key={i}
                         src={app.icon ?? undefined}
                         alt=""
-                        className="h-4 w-4 object-contain opacity-80"
+                        title={app.warning || app.name}
+                        className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
                         onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
                       />
                     )
@@ -516,8 +523,8 @@ function GameRow({
                   return (
                     <div
                       key={i}
-                      className="h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0"
-                      title={app.name}
+                      className={`h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
+                      title={app.warning || app.name}
                     >
                       {app.name.replace(/\.exe$/i, '').slice(0, 2).toUpperCase()}
                     </div>
@@ -765,7 +772,8 @@ export function GameList() {
         )
         const runningAppIcons = appsForGame.map(a => ({
           icon: appIconCache[a.path.toLowerCase()] ?? null,
-          name: a.name
+          name: a.name,
+          warning: a.warning
         }))
 
         return (
