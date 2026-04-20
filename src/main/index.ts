@@ -1505,6 +1505,12 @@ ipcMain.handle('get-asset-data', async (_event, filename: unknown) => {
 })
 
 ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
+  const storedPaths = [
+    ...Object.values((store.get('gamePaths') as Record<string, string>) ?? {}),
+    ...Object.values((store.get('appPaths') as Record<string, string>) ?? {})
+  ]
+  if (!storedPaths.includes(filePath)) return null
+
   try {
     const icon = await app.getFileIcon(filePath, { size: 'normal' })
 
