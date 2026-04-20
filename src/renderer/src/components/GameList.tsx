@@ -238,6 +238,19 @@ function GameRow({
         const pathsToStop = currentPaths.filter((appPath) => !nextPathSet.has(appPath.toLowerCase()))
         const pathsToStart = nextPaths.filter((appPath) => !currentPathSet.has(appPath.toLowerCase()))
 
+        if (pathsToStop.length > 0 || pathsToStart.length > 0) {
+          const parts: string[] = []
+          if (pathsToStop.length > 0) parts.push(`stop ${pathsToStop.length} app(s)`)
+          if (pathsToStart.length > 0) parts.push(`start ${pathsToStart.length} app(s)`)
+          if (
+            !window.confirm(
+              `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
+            )
+          ) {
+            return
+          }
+        }
+
         if (pathsToStop.length > 0) {
           await window.electronAPI.killProfileApps(game.key, pathsToStop)
         }
