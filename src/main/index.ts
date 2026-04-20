@@ -695,6 +695,12 @@ function createWindow() {
     }
   })
 
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
   mainWindow.on('close', (event) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return
@@ -764,7 +770,7 @@ function createWindow() {
     }
   })
 
-  if (process.env['ELECTRON_RENDERER_URL']) {
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
