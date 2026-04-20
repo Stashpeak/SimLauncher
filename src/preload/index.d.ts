@@ -7,6 +7,7 @@ interface RunningApp {
   name: string
   gameKey: string
   tracked?: boolean
+  warning?: string
 }
 
 interface BrowsePathResult {
@@ -17,9 +18,21 @@ interface BrowsePathResult {
 interface LaunchResult {
   success: boolean
   message?: string
+  warning?: string
   error?: string
   launchedCount?: number
   skippedCount?: number
+  elevatedCount?: number
+  failedCount?: number
+}
+
+interface KillResult {
+  success: boolean
+  message?: string
+  warning?: string
+  error?: string
+  closedCount: number
+  failedCount: number
 }
 
 interface ConfigFileResult {
@@ -32,15 +45,18 @@ interface ConfigFileResult {
 declare global {
   interface Window {
     electronAPI: {
-      launchProfile: (gameKey: string, apps: string[]) => Promise<LaunchResult>
+      launchProfile: (gameKey: string) => Promise<LaunchResult>
+      relaunchMissingProfile: (gameKey: string) => Promise<LaunchResult>
+      getProfileSwitchDiff: (gameKey: string, fromProfileId: string, toProfileId: string) => Promise<{ toStopCount: number; toStartCount: number }>
+      switchProfileApps: (gameKey: string, fromProfileId: string, toProfileId: string) => Promise<LaunchResult>
       browsePath: (inputId: string) => Promise<BrowsePathResult>
       onAppLaunchError: (cb: (data: unknown) => void) => Unsubscribe
       minimize: () => Promise<void>
       maximize: () => Promise<void>
       close: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
-      killLaunchedApps: (gameKey?: string) => Promise<void>
-      killProfileApps: (gameKey: string, appPaths: string[]) => Promise<void>
+      killLaunchedApps: (gameKey?: string) => Promise<KillResult>
+      killProfileApps: (gameKey: string, appPaths: string[]) => Promise<KillResult>
       onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
       onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
       onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe

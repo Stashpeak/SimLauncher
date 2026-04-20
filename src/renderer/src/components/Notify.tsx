@@ -33,6 +33,22 @@ const TOAST_PROGRESS_CLASSES: Record<ToastType, string> = {
 
 let toastId = 0
 
+function getPathName(filePath: string) {
+  return filePath.split(/[\\/]/).pop() || filePath
+}
+
+function formatLaunchErrorToast(data: unknown) {
+  if (!data || typeof data !== 'object') {
+    return 'App launch failed'
+  }
+
+  const { app, error } = data as { app?: unknown; error?: unknown }
+  const appName = typeof app === 'string' ? getPathName(app) : 'App'
+  const errorMessage = typeof error === 'string' && error.trim().length > 0 ? error : 'Unknown launch error'
+
+  return `${appName} failed to launch: ${errorMessage}`
+}
+
 function ToastCard({
   toast,
   isDismissing,
@@ -133,6 +149,12 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
 
     setToasts((current) => [...current, toast])
   }, [])
+
+  useEffect(() => {
+    return window.electronAPI.onAppLaunchError((data) => {
+      notify(formatLaunchErrorToast(data), 'error', 5000)
+    })
+  }, [notify])
 
   const value = useMemo(() => ({ notify }), [notify])
 

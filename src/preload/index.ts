@@ -2,7 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // launch
-  launchProfile: (gameKey: string, apps: string[]) => ipcRenderer.invoke('launch-profile', gameKey, apps),
+  launchProfile: (gameKey: string) => ipcRenderer.invoke('launch-profile', gameKey),
+  relaunchMissingProfile: (gameKey: string) => ipcRenderer.invoke('relaunch-missing-profile', gameKey),
+  getProfileSwitchDiff: (gameKey: string, fromProfileId: string, toProfileId: string) =>
+    ipcRenderer.invoke('get-profile-switch-diff', gameKey, fromProfileId, toProfileId),
+  switchProfileApps: (gameKey: string, fromProfileId: string, toProfileId: string) =>
+    ipcRenderer.invoke('switch-profile-apps', gameKey, fromProfileId, toProfileId),
   browsePath: (inputId: string) => ipcRenderer.invoke('browse-path', inputId),
   onAppLaunchError: (cb: (data: unknown) => void) => {
     const handler = (_: unknown, data: unknown) => cb(data)

@@ -3,29 +3,24 @@ import {
   GAMES,
   createProfileId,
   getActiveGameProfile,
-  getEnabledProfileUtilities,
-  getUtilities,
   normalizeGameProfileSet,
-  resolveCustomSlots,
   type Game,
   type GameProfileSet,
   type NamedGameProfile,
   type Profiles,
-  type Utility
 } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
-type RunningApp = { path: string; name: string; gameKey: string }
+type RunningApp = { path: string; name: string; gameKey: string; warning?: string }
 
 function GameRow({
   game,
   isActive,
   isRunning,
   runningAppIcons,
-  runningApps,
   isDimmed,
   isLaunching,
   isLaunchBlocked,
@@ -38,8 +33,7 @@ function GameRow({
   game: Game
   isActive: boolean
   isRunning: boolean
-  runningAppIcons: { icon: string | null; name: string }[]
-  runningApps: RunningApp[]
+  runningAppIcons: { icon: string | null; name: string; warning?: string }[]
   isDimmed: boolean
   isLaunching: boolean
   isLaunchBlocked: boolean
@@ -129,46 +123,9 @@ function GameRow({
 
   const getProfileRuntimeConfig = async () => {
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-    const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-    const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
-    const utilities = getUtilities(resolveCustomSlots(savedCustomSlots, appPaths, ...Object.values(profiles)))
     const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
-
-    return { profiles, appPaths, gamePaths, utilities, profileSet: nextProfileSet }
+    return { profiles, profileSet: nextProfileSet }
   }
-
-  const getProfileLaunchPaths = async () => {
-    const { appPaths, gamePaths, utilities, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
-    const profile = getActiveGameProfile(nextProfileSet)
-    const configuredGamePath = gamePaths[game.key]
-
-    const pathsToLaunch: string[] = []
-    let appCount = 0
-
-    // Queue game first, then ordered utilities.
-    if (profile.launchAutomatically !== false && configuredGamePath) {
-      pathsToLaunch.push(configuredGamePath)
-      appCount++
-    }
-
-    getEnabledProfileUtilities(profile, utilities).forEach((utility) => {
-      if (appPaths[utility.id]) {
-        pathsToLaunch.push(appPaths[utility.id])
-        appCount++
-      }
-    })
-
-    return { profile, pathsToLaunch, appCount }
-  }
-
-  const getOrderedUtilityPaths = (
-    profile: NamedGameProfile,
-    utilities: Utility[],
-    appPaths: Record<string, string>
-  ) => getEnabledProfileUtilities(profile, utilities)
-    .map((utility) => appPaths[utility.id])
-    .filter((appPath): appPath is string => typeof appPath === 'string' && appPath.trim().length > 0)
 
   const saveProfileSet = async (profiles: Profiles, nextProfileSet: GameProfileSet) => {
     await window.electronAPI.storeSet('profiles', {
@@ -216,7 +173,7 @@ function GameRow({
       return
     }
 
-    const { profiles, appPaths, utilities, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
+    const { profiles, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
 
@@ -230,27 +187,32 @@ function GameRow({
     }
 
     try {
+      let switchWarning: string | undefined
+
       if (isRunning) {
-        const currentPaths = getOrderedUtilityPaths(currentProfile, utilities, appPaths)
-        const nextPaths = getOrderedUtilityPaths(nextProfile, utilities, appPaths)
-        const currentPathSet = new Set(currentPaths.map((appPath) => appPath.toLowerCase()))
-        const nextPathSet = new Set(nextPaths.map((appPath) => appPath.toLowerCase()))
-        const pathsToStop = currentPaths.filter((appPath) => !nextPathSet.has(appPath.toLowerCase()))
-        const pathsToStart = nextPaths.filter((appPath) => !currentPathSet.has(appPath.toLowerCase()))
+        const diff = await window.electronAPI.getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
 
-        if (pathsToStop.length > 0) {
-          await window.electronAPI.killProfileApps(game.key, pathsToStop)
-        }
+        if (diff.toStopCount > 0 || diff.toStartCount > 0) {
+          const parts: string[] = []
+          if (diff.toStopCount > 0) parts.push(`stop ${diff.toStopCount} app(s)`)
+          if (diff.toStartCount > 0) parts.push(`start ${diff.toStartCount} app(s)`)
+          if (
+            !window.confirm(
+              `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
+            )
+          ) {
+            return
+          }
 
-        if (pathsToStart.length > 0) {
           onLaunchStart(game.key)
-          const result = await window.electronAPI.launchProfile(game.key, pathsToStart)
+          const result = await window.electronAPI.switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           if (!result.success) {
             notify(result.error || 'Failed to switch profile', 'error')
-            onLaunchEnd(game.key, 0)
+            onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
           onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+          switchWarning = result.warning
         }
 
         await onRunningStateRefresh()
@@ -258,7 +220,7 @@ function GameRow({
 
       await saveProfileSet(profiles, updatedProfileSet)
       setProfileMenuOpen(false)
-      notify(`Switched to ${nextProfile.name}`, 'success')
+      notify(switchWarning || `Switched to ${nextProfile.name}`, switchWarning ? 'warn' : 'success', switchWarning ? 5000 : undefined)
     } catch (err) {
       onLaunchEnd(game.key, 0)
       notify('Failed to switch profile', 'error')
@@ -287,22 +249,16 @@ function GameRow({
     let cooldownMs = 0
 
     try {
-      const { pathsToLaunch, appCount } = await getProfileLaunchPaths()
-
-      if (pathsToLaunch.length === 0) {
-        notify('No executable paths configured for launch', 'error')
-        return
-      }
-
       onLaunchStart(game.key)
-      const result = await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      const result = await window.electronAPI.launchProfile(game.key)
       if (!result.success) {
+        cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         notify(result.error || 'Failed to launch profile', 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.message || `Starting ${game.name} + ${appCount - 1} apps`, 'success')
+      notify(result.warning || result.message || `Launching ${game.name}`, result.warning ? 'warn' : 'success', result.warning ? 5000 : undefined)
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
@@ -313,9 +269,15 @@ function GameRow({
 
   const handleKill = async () => {
     try {
-      await window.electronAPI.killLaunchedApps(game.key)
+      const result = await window.electronAPI.killLaunchedApps(game.key)
       await onRunningStateRefresh()
-      notify(`Closing companion apps for ${game.name}`, 'warn')
+
+      if (!result.success) {
+        notify(result.warning || result.error || 'Some companion apps could not be closed', 'warn', 6000)
+        return
+      }
+
+      notify(result.message || `Closing companion apps for ${game.name}`, 'warn')
     } catch (err) {
       notify('Failed to close companion apps', 'error')
       console.error(err)
@@ -330,24 +292,16 @@ function GameRow({
     let cooldownMs = 0
 
     try {
-      const { pathsToLaunch } = await getProfileLaunchPaths()
-      const runningPathSet = new Set(runningApps.map((appProcess) => appProcess.path.toLowerCase()))
-      const missingPaths = pathsToLaunch.filter((launchPath) => !runningPathSet.has(launchPath.toLowerCase()))
-
-      if (missingPaths.length === 0) {
-        notify('All profile apps are already running', 'success')
-        return
-      }
-
       onLaunchStart(game.key)
-      const result = await window.electronAPI.launchProfile(game.key, missingPaths)
+      const result = await window.electronAPI.relaunchMissingProfile(game.key)
       if (!result.success) {
+        cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         notify(result.error || 'Failed to relaunch missing apps', 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.message || `Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
+      notify(result.warning || result.message || 'Relaunching missing apps', result.warning ? 'warn' : 'success', result.warning ? 5000 : undefined)
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
@@ -555,7 +509,8 @@ function GameRow({
                         key={i}
                         src={app.icon ?? undefined}
                         alt=""
-                        className="h-4 w-4 object-contain opacity-80"
+                        title={app.warning || app.name}
+                        className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
                         onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
                       />
                     )
@@ -568,8 +523,8 @@ function GameRow({
                   return (
                     <div
                       key={i}
-                      className="h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0"
-                      title={app.name}
+                      className={`h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
+                      title={app.warning || app.name}
                     >
                       {app.name.replace(/\.exe$/i, '').slice(0, 2).toUpperCase()}
                     </div>
@@ -817,7 +772,8 @@ export function GameList() {
         )
         const runningAppIcons = appsForGame.map(a => ({
           icon: appIconCache[a.path.toLowerCase()] ?? null,
-          name: a.name
+          name: a.name,
+          warning: a.warning
         }))
 
         return (
@@ -827,7 +783,6 @@ export function GameList() {
             isActive={activeEditorKey === game.key}
             isRunning={!!runningStatus[game.key]}
             runningAppIcons={runningAppIcons}
-            runningApps={runningApps.filter(a => a.gameKey === game.key)}
             isDimmed={hasActiveTitle && !runningStatus[game.key]}
             isLaunching={launchingGameKey === game.key}
             isLaunchBlocked={launchingGameKey !== null}
