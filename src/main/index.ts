@@ -5,6 +5,10 @@ import fs from 'fs'
 import { autoUpdater } from 'electron-updater'
 import Store from 'electron-store'
 
+const DEFAULT_ZOOM_FACTOR = 1.0
+const MIN_ZOOM_FACTOR = 0.5
+const MAX_ZOOM_FACTOR = 3.0
+
 const store = new Store({
   schema: {
     appPaths:     { type: 'object',  default: {} },
@@ -21,7 +25,7 @@ const store = new Store({
     startMinimized:   { type: 'boolean', default: false },
     minimizeToTray:   { type: 'boolean', default: false },
     autoCheckUpdates:  { type: 'boolean', default: true },
-    zoomFactor:       { type: 'number',  default: 1.0 },
+    zoomFactor:       { type: 'number',  default: DEFAULT_ZOOM_FACTOR },
     windowBounds:      { type: 'object',  default: {} },
     profileUtilityOrderMigrated: { type: 'boolean', default: false },
     profileSetsMigrated: { type: 'boolean', default: false },
@@ -171,6 +175,33 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
+function requireSafeZoomFactor(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`Zoom factor must be a finite number from ${MIN_ZOOM_FACTOR} to ${MAX_ZOOM_FACTOR}.`)
+  }
+
+  return clamp(value, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
+}
+
+function getSafeZoomFactor(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_ZOOM_FACTOR
+  }
+
+  return clamp(value, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
+}
+
+function getStoredZoomFactor() {
+  const storedZoomFactor = store.get('zoomFactor')
+  const safeZoomFactor = getSafeZoomFactor(storedZoomFactor)
+
+  if (storedZoomFactor !== safeZoomFactor) {
+    store.set('zoomFactor', safeZoomFactor)
+  }
+
+  return safeZoomFactor
+}
+
 function getInitialWindowBounds() {
   const defaultBounds = { width: 800, height: 600 }
   const savedBounds = store.get('windowBounds')
@@ -257,8 +288,8 @@ function validateImportedConfig(value: unknown): value is Record<string, unknown
     }
 
     if (key === 'zoomFactor') {
-      if (typeof setting !== 'number' || !Number.isFinite(setting) || setting <= 0) {
-        throw new Error('Config value "zoomFactor" must be a positive number.')
+      if (typeof setting !== 'number' || !Number.isFinite(setting)) {
+        throw new Error(`Config value "zoomFactor" must be a finite number from ${MIN_ZOOM_FACTOR} to ${MAX_ZOOM_FACTOR}.`)
       }
     }
   })
@@ -271,7 +302,7 @@ function getSupportedConfigValues(config: Record<string, unknown>) {
 
   Object.entries(config).forEach(([key, value]) => {
     if (EXPECTED_CONFIG_KEYS.has(key)) {
-      supportedConfig[key] = value
+      supportedConfig[key] = key === 'zoomFactor' ? requireSafeZoomFactor(value) : value
     }
   })
 
@@ -282,10 +313,7 @@ function applyRuntimeConfigSettings() {
   const startWithWindows = store.get('startWithWindows') as boolean
   app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
 
-  const zoomFactor = store.get('zoomFactor')
-  if (typeof zoomFactor === 'number' && Number.isFinite(zoomFactor) && zoomFactor > 0) {
-    mainWindow?.webContents.setZoomFactor(zoomFactor)
-  }
+  mainWindow?.webContents.setZoomFactor(getStoredZoomFactor())
 }
 
 function getAppIconPath() {
@@ -650,8 +678,7 @@ async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
 }
 
 function createWindow() {
-  const savedZoom = store.get('zoomFactor') as number
-  const zoomFactor = typeof savedZoom === 'number' && Number.isFinite(savedZoom) ? savedZoom : 1.0
+  const zoomFactor = getStoredZoomFactor()
   const windowBounds = getInitialWindowBounds()
 
   mainWindow = new BrowserWindow({
@@ -1867,9 +1894,11 @@ ipcMain.handle('set-login-item', (_event, openAtLogin: boolean) => {
   app.setLoginItemSettings({ openAtLogin })
 })
 
-ipcMain.handle('set-zoom', (_event, factor: number) => {
-  store.set('zoomFactor', factor)
-  mainWindow?.webContents.setZoomFactor(factor)
+ipcMain.handle('set-zoom', (_event, factor: unknown) => {
+  const zoomFactor = requireSafeZoomFactor(factor)
+
+  store.set('zoomFactor', zoomFactor)
+  mainWindow?.webContents.setZoomFactor(zoomFactor)
 })
 
 ipcMain.handle('store-get', (_event, key: unknown) => {
@@ -1879,6 +1908,11 @@ ipcMain.handle('store-get', (_event, key: unknown) => {
 
 ipcMain.handle('store-set', (_event, key: unknown, value: unknown) => {
   if (typeof key !== 'string' || !EXPECTED_CONFIG_KEYS.has(key)) return
+  if (key === 'zoomFactor') {
+    store.set('zoomFactor', requireSafeZoomFactor(value))
+    return
+  }
+
   store.set(key, value)
 })
 
