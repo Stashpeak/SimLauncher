@@ -92,6 +92,7 @@ autoUpdater.autoDownload = false
 
 interface StoredProfile extends Record<string, unknown> {
   utilities?: StoredProfileUtility[]
+  launchAutomatically?: boolean
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
 }
@@ -561,6 +562,173 @@ app.whenReady().then(() => {
 
 function isValidExePath(p: unknown): p is string {
   return typeof p === 'string' && p.trim().length > 0 && /\.exe$/i.test(p.trim())
+}
+
+function resolveActiveProfile(entry: StoredProfileEntry | undefined): StoredNamedProfile {
+  if (!entry) {
+    return { id: 'default', name: 'Default' }
+  }
+  if (isStoredProfileSet(entry)) {
+    const validProfiles = entry.profiles.filter(
+      (p): p is StoredNamedProfile =>
+        !!p && typeof p === 'object' && typeof (p as Record<string, unknown>).id === 'string'
+    )
+    if (validProfiles.length === 0) return { id: 'default', name: 'Default' }
+    return validProfiles.find((p) => p.id === entry.activeProfileId) || validProfiles[0]
+  }
+  return { ...(entry as StoredProfile), id: 'default', name: 'Default' }
+}
+
+function resolveNamedProfile(entry: StoredProfileEntry | undefined, profileId: string): StoredNamedProfile {
+  if (isStoredProfileSet(entry)) {
+    const validProfiles = entry.profiles.filter(
+      (p): p is StoredNamedProfile =>
+        !!p && typeof p === 'object' && typeof (p as Record<string, unknown>).id === 'string'
+    )
+    return validProfiles.find((p) => p.id === profileId) || validProfiles[0] || { id: 'default', name: 'Default' }
+  }
+  return { ...(entry as StoredProfile | undefined || {}), id: 'default', name: 'Default' }
+}
+
+function getEnabledUtilityPaths(
+  profile: StoredProfile,
+  appPaths: Record<string, string>,
+  customSlots: unknown
+): string[] {
+  const count =
+    typeof customSlots === 'number' && Number.isFinite(customSlots) ? Math.max(1, Math.floor(customSlots)) : 1
+  const utilityKeys = [
+    ...BUILT_IN_UTILITY_KEYS,
+    ...Array.from({ length: count }, (_, i) => `customapp${i + 1}`)
+  ]
+  const paths: string[] = []
+
+  if (Array.isArray(profile.utilities)) {
+    profile.utilities
+      .filter(
+        (u): u is StoredProfileUtility =>
+          !!u &&
+          typeof u === 'object' &&
+          typeof (u as Record<string, unknown>).id === 'string' &&
+          typeof (u as Record<string, unknown>).enabled === 'boolean'
+      )
+      .filter((u) => u.enabled && utilityKeys.includes(u.id) && appPaths[u.id])
+      .forEach((u) => paths.push(appPaths[u.id]))
+  } else {
+    utilityKeys.forEach((key) => {
+      if (profile[key] === true && appPaths[key]) paths.push(appPaths[key])
+    })
+  }
+
+  return paths
+}
+
+function buildActiveProfileLaunchPaths(gameKey: string): string[] {
+  const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
+  const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+  const profiles = (store.get('profiles') as Record<string, StoredProfileEntry> | undefined) || {}
+  const customSlots = store.get('customSlots')
+  const profile = resolveActiveProfile(profiles[gameKey])
+  const paths: string[] = []
+
+  if (profile.launchAutomatically !== false && gamePaths[gameKey]) paths.push(gamePaths[gameKey])
+  getEnabledUtilityPaths(profile, appPaths, customSlots).forEach((p) => paths.push(p))
+
+  return paths
+}
+
+function buildNamedProfileLaunchPaths(gameKey: string, profileId: string): string[] {
+  const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
+  const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+  const profiles = (store.get('profiles') as Record<string, StoredProfileEntry> | undefined) || {}
+  const customSlots = store.get('customSlots')
+  const profile = resolveNamedProfile(profiles[gameKey], profileId)
+  const paths: string[] = []
+
+  if (profile.launchAutomatically !== false && gamePaths[gameKey]) paths.push(gamePaths[gameKey])
+  getEnabledUtilityPaths(profile, appPaths, customSlots).forEach((p) => paths.push(p))
+
+  return paths
+}
+
+async function launchProfileApps(
+  sender: WebContents,
+  gameKey: string,
+  profileApps: string[]
+): Promise<{ success: boolean; message?: string; error?: string; launchedCount?: number; skippedCount?: number }> {
+  if (activeLaunches.size > 0) {
+    return { success: false, error: 'Another profile is already launching.' }
+  }
+
+  const cooldownRemainingMs = launchBlockedUntil - Date.now()
+  if (cooldownRemainingMs > 0) {
+    return {
+      success: false,
+      error: `Launch is settling. Try again in ${Math.ceil(cooldownRemainingMs / 1000)}s.`
+    }
+  }
+
+  activeLaunches.add(gameKey)
+  const launchDelayMs = getLaunchDelayMs()
+  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const processNames = await readRunningProcessNames()
+  const validApps = profileApps.filter((appPath) => {
+    if (!isValidExePath(appPath)) {
+      console.error(`Skipping invalid path: ${appPath}`)
+      return false
+    }
+    if (!fs.existsSync(appPath.trim())) {
+      console.error(`Skipping missing executable: ${appPath}`)
+      return false
+    }
+    return true
+  })
+
+  if (validApps.length === 0) {
+    activeLaunches.delete(gameKey)
+    return { success: false, error: 'No valid executable paths configured.' }
+  }
+
+  let launchedAny = false
+
+  try {
+    const appsToLaunch = validApps.filter((appPath) => !isRunningExePath(processNames, appPath))
+    const skippedCount = validApps.length - appsToLaunch.length
+
+    if (appsToLaunch.length === 0) {
+      return {
+        success: true,
+        message: 'All profile applications are already running.',
+        launchedCount: 0,
+        skippedCount
+      }
+    }
+
+    for (let index = 0; index < appsToLaunch.length; index += 1) {
+      launchedAny = true
+      await spawnDetachedApp(sender, gameKey, appsToLaunch[index], gamePath)
+
+      if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
+        await wait(launchDelayMs)
+      }
+    }
+
+    return {
+      success: true,
+      message:
+        skippedCount > 0
+          ? `Started ${appsToLaunch.length} app${appsToLaunch.length === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
+          : 'All profile applications launched.',
+      launchedCount: appsToLaunch.length,
+      skippedCount
+    }
+  } finally {
+    if (launchedAny) {
+      launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
+    }
+    activeLaunches.delete(gameKey)
+  }
 }
 
 function getLaunchDelayMs() {
@@ -1070,84 +1238,81 @@ async function getTrackedRunningApps(
 // MAIN LAUNCH LOGIC
 // ----------------------------------------------------------------
 
-/**
- * Executes a list of applications sequentially with a delay.
- * @param profileApps Array of executable paths to launch.
- */
-ipcMain.handle('launch-profile', async (event, gameKey: string, profileApps: string[]) => {
-  if (!Array.isArray(profileApps) || profileApps.length === 0) {
-    return { success: false, error: 'Profile is empty.' }
+ipcMain.handle('launch-profile', async (event, gameKey: string) => {
+  const profileApps = buildActiveProfileLaunchPaths(gameKey)
+
+  if (profileApps.length === 0) {
+    return { success: false, error: 'No executable paths configured for this profile.' }
   }
 
-  if (activeLaunches.size > 0) {
-    return { success: false, error: 'Another profile is already launching.' }
-  }
-
-  const cooldownRemainingMs = launchBlockedUntil - Date.now()
-  if (cooldownRemainingMs > 0) {
-    return {
-      success: false,
-      error: `Launch is settling. Try again in ${Math.ceil(cooldownRemainingMs / 1000)}s.`
-    }
-  }
-
-  activeLaunches.add(gameKey)
-  const launchDelayMs = getLaunchDelayMs()
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
-  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
-  const processNames = await readRunningProcessNames()
-  const validApps = profileApps.filter((appPath) => {
-    const valid = isValidExePath(appPath)
-    if (!valid) {
-      console.error(`Skipping invalid path: ${appPath}`)
-    }
-    return valid
-  })
-
-  if (validApps.length === 0) {
-    activeLaunches.delete(gameKey)
-    return { success: false, error: 'No valid executable paths configured.' }
-  }
-
-  let launchedAny = false
-
-  try {
-    const appsToLaunch = validApps.filter((appPath) => !isRunningExePath(processNames, appPath))
-    const skippedCount = validApps.length - appsToLaunch.length
-
-    if (appsToLaunch.length === 0) {
-      return {
-        success: true,
-        message: 'All profile applications are already running.',
-        launchedCount: 0,
-        skippedCount
-      }
-    }
-
-    for (let index = 0; index < appsToLaunch.length; index += 1) {
-      launchedAny = true
-      await spawnDetachedApp(event.sender, gameKey, appsToLaunch[index], gamePath)
-
-      if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
-        await wait(launchDelayMs)
-      }
-    }
-
-    return {
-      success: true,
-      message: skippedCount > 0
-        ? `Started ${appsToLaunch.length} app${appsToLaunch.length === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
-        : 'All profile applications launched.',
-      launchedCount: appsToLaunch.length,
-      skippedCount
-    }
-  } finally {
-    if (launchedAny) {
-      launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
-    }
-    activeLaunches.delete(gameKey)
-  }
+  return launchProfileApps(event.sender, gameKey, profileApps)
 })
+
+ipcMain.handle('relaunch-missing-profile', async (event, gameKey: string) => {
+  const allPaths = buildActiveProfileLaunchPaths(gameKey)
+
+  if (allPaths.length === 0) {
+    return { success: false, error: 'No executable paths configured for this profile.' }
+  }
+
+  const processNames = await readRunningProcessNames()
+  const missingPaths = allPaths.filter((p) => !isRunningExePath(processNames, p))
+
+  if (missingPaths.length === 0) {
+    return { success: true, message: 'All profile apps are already running.', launchedCount: 0, skippedCount: 0 }
+  }
+
+  return launchProfileApps(event.sender, gameKey, missingPaths)
+})
+
+ipcMain.handle('get-profile-switch-diff', (_event, gameKey: string, fromProfileId: string, toProfileId: string) => {
+  const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+  const gamePath = gamePaths[gameKey]?.toLowerCase()
+
+  const utilityPaths = (profileId: string) =>
+    new Set(
+      buildNamedProfileLaunchPaths(gameKey, profileId)
+        .filter((p) => !gamePath || p.toLowerCase() !== gamePath)
+        .map((p) => p.toLowerCase())
+    )
+
+  const fromPaths = utilityPaths(fromProfileId)
+  const toPaths = utilityPaths(toProfileId)
+  const toStopCount = [...fromPaths].filter((p) => !toPaths.has(p)).length
+  const toStartCount = [...toPaths].filter((p) => !fromPaths.has(p)).length
+
+  return { toStopCount, toStartCount }
+})
+
+ipcMain.handle(
+  'switch-profile-apps',
+  async (event, gameKey: string, fromProfileId: string, toProfileId: string) => {
+    const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+    const gamePath = gamePaths[gameKey]?.toLowerCase()
+
+    const fromPaths = buildNamedProfileLaunchPaths(gameKey, fromProfileId).filter(
+      (p) => !gamePath || p.toLowerCase() !== gamePath
+    )
+    const toPaths = buildNamedProfileLaunchPaths(gameKey, toProfileId).filter(
+      (p) => !gamePath || p.toLowerCase() !== gamePath
+    )
+    const fromPathSet = new Set(fromPaths.map((p) => p.toLowerCase()))
+    const toPathSet = new Set(toPaths.map((p) => p.toLowerCase()))
+
+    const pathsToStop = fromPaths.filter((p) => !toPathSet.has(p.toLowerCase()))
+    const pathsToStart = toPaths.filter((p) => !fromPathSet.has(p.toLowerCase()))
+
+    if (pathsToStop.length > 0) {
+      await killProfileApps(gameKey, pathsToStop)
+    }
+
+    if (pathsToStart.length === 0) {
+      return { success: true, launchedCount: 0, skippedCount: 0 }
+    }
+
+    return launchProfileApps(event.sender, gameKey, pathsToStart)
+  }
+)
 
 // ----------------------------------------------------------------
 // CONFIG EXPORT / IMPORT
@@ -1218,13 +1383,17 @@ ipcMain.handle('import-config', async () => {
  * Opens a file dialog to select an executable file and sends the path back.
  * @param inputId The ID of the input field in the Renderer to update.
  */
-ipcMain.handle('browse-path', async (event, inputId) => {
+ipcMain.handle('browse-path', async (_event, inputId) => {
   try {
-    const result = await dialog.showOpenDialog(null as unknown as BrowserWindow, {
+    const options = {
       title: 'Select Executable File (.exe)',
-      properties: ['openFile'],
+      properties: ['openFile'] as const,
       filters: [{ name: 'Executable Files', extensions: ['exe'] }]
-    })
+    }
+    const result =
+      mainWindow && !mainWindow.isDestroyed()
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options)
     if (!result.canceled && result.filePaths.length > 0) {
       return { filePath: result.filePaths[0], inputId }
     }
@@ -1319,7 +1488,8 @@ ipcMain.handle('check-for-updates', async () => {
   return await checkForUpdates()
 })
 
-ipcMain.handle('get-asset-data', async (_event, filename: string) => {
+ipcMain.handle('get-asset-data', async (_event, filename: unknown) => {
+  if (typeof filename !== 'string' || path.basename(filename) !== filename || !filename) return null
   const assetsPath = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
     : path.join(app.getAppPath(), 'assets')
@@ -1370,11 +1540,13 @@ ipcMain.handle('set-zoom', (_event, factor: number) => {
   mainWindow?.webContents.setZoomFactor(factor)
 })
 
-ipcMain.handle('store-get', (_event, key) => {
+ipcMain.handle('store-get', (_event, key: unknown) => {
+  if (typeof key !== 'string' || !EXPECTED_CONFIG_KEYS.has(key)) return undefined
   return store.get(key)
 })
 
-ipcMain.handle('store-set', (_event, key, value) => {
+ipcMain.handle('store-set', (_event, key: unknown, value: unknown) => {
+  if (typeof key !== 'string' || !EXPECTED_CONFIG_KEYS.has(key)) return
   store.set(key, value)
 })
 

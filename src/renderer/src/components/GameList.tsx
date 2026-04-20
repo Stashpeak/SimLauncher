@@ -3,15 +3,11 @@ import {
   GAMES,
   createProfileId,
   getActiveGameProfile,
-  getEnabledProfileUtilities,
-  getUtilities,
   normalizeGameProfileSet,
-  resolveCustomSlots,
   type Game,
   type GameProfileSet,
   type NamedGameProfile,
   type Profiles,
-  type Utility
 } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
@@ -25,7 +21,6 @@ function GameRow({
   isActive,
   isRunning,
   runningAppIcons,
-  runningApps,
   isDimmed,
   isLaunching,
   isLaunchBlocked,
@@ -39,7 +34,6 @@ function GameRow({
   isActive: boolean
   isRunning: boolean
   runningAppIcons: { icon: string | null; name: string }[]
-  runningApps: RunningApp[]
   isDimmed: boolean
   isLaunching: boolean
   isLaunchBlocked: boolean
@@ -129,46 +123,9 @@ function GameRow({
 
   const getProfileRuntimeConfig = async () => {
     const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-    const gamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-    const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
-    const utilities = getUtilities(resolveCustomSlots(savedCustomSlots, appPaths, ...Object.values(profiles)))
     const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
-
-    return { profiles, appPaths, gamePaths, utilities, profileSet: nextProfileSet }
+    return { profiles, profileSet: nextProfileSet }
   }
-
-  const getProfileLaunchPaths = async () => {
-    const { appPaths, gamePaths, utilities, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
-    const profile = getActiveGameProfile(nextProfileSet)
-    const configuredGamePath = gamePaths[game.key]
-
-    const pathsToLaunch: string[] = []
-    let appCount = 0
-
-    // Queue game first, then ordered utilities.
-    if (profile.launchAutomatically !== false && configuredGamePath) {
-      pathsToLaunch.push(configuredGamePath)
-      appCount++
-    }
-
-    getEnabledProfileUtilities(profile, utilities).forEach((utility) => {
-      if (appPaths[utility.id]) {
-        pathsToLaunch.push(appPaths[utility.id])
-        appCount++
-      }
-    })
-
-    return { profile, pathsToLaunch, appCount }
-  }
-
-  const getOrderedUtilityPaths = (
-    profile: NamedGameProfile,
-    utilities: Utility[],
-    appPaths: Record<string, string>
-  ) => getEnabledProfileUtilities(profile, utilities)
-    .map((utility) => appPaths[utility.id])
-    .filter((appPath): appPath is string => typeof appPath === 'string' && appPath.trim().length > 0)
 
   const saveProfileSet = async (profiles: Profiles, nextProfileSet: GameProfileSet) => {
     await window.electronAPI.storeSet('profiles', {
@@ -216,7 +173,7 @@ function GameRow({
       return
     }
 
-    const { profiles, appPaths, utilities, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
+    const { profiles, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
 
@@ -231,17 +188,12 @@ function GameRow({
 
     try {
       if (isRunning) {
-        const currentPaths = getOrderedUtilityPaths(currentProfile, utilities, appPaths)
-        const nextPaths = getOrderedUtilityPaths(nextProfile, utilities, appPaths)
-        const currentPathSet = new Set(currentPaths.map((appPath) => appPath.toLowerCase()))
-        const nextPathSet = new Set(nextPaths.map((appPath) => appPath.toLowerCase()))
-        const pathsToStop = currentPaths.filter((appPath) => !nextPathSet.has(appPath.toLowerCase()))
-        const pathsToStart = nextPaths.filter((appPath) => !currentPathSet.has(appPath.toLowerCase()))
+        const diff = await window.electronAPI.getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
 
-        if (pathsToStop.length > 0 || pathsToStart.length > 0) {
+        if (diff.toStopCount > 0 || diff.toStartCount > 0) {
           const parts: string[] = []
-          if (pathsToStop.length > 0) parts.push(`stop ${pathsToStop.length} app(s)`)
-          if (pathsToStart.length > 0) parts.push(`start ${pathsToStart.length} app(s)`)
+          if (diff.toStopCount > 0) parts.push(`stop ${diff.toStopCount} app(s)`)
+          if (diff.toStartCount > 0) parts.push(`start ${diff.toStartCount} app(s)`)
           if (
             !window.confirm(
               `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
@@ -249,15 +201,9 @@ function GameRow({
           ) {
             return
           }
-        }
 
-        if (pathsToStop.length > 0) {
-          await window.electronAPI.killProfileApps(game.key, pathsToStop)
-        }
-
-        if (pathsToStart.length > 0) {
           onLaunchStart(game.key)
-          const result = await window.electronAPI.launchProfile(game.key, pathsToStart)
+          const result = await window.electronAPI.switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           if (!result.success) {
             notify(result.error || 'Failed to switch profile', 'error')
             onLaunchEnd(game.key, 0)
@@ -300,22 +246,15 @@ function GameRow({
     let cooldownMs = 0
 
     try {
-      const { pathsToLaunch, appCount } = await getProfileLaunchPaths()
-
-      if (pathsToLaunch.length === 0) {
-        notify('No executable paths configured for launch', 'error')
-        return
-      }
-
       onLaunchStart(game.key)
-      const result = await window.electronAPI.launchProfile(game.key, pathsToLaunch)
+      const result = await window.electronAPI.launchProfile(game.key)
       if (!result.success) {
         notify(result.error || 'Failed to launch profile', 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.message || `Starting ${game.name} + ${appCount - 1} apps`, 'success')
+      notify(result.message || `Launching ${game.name}`, 'success')
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
@@ -343,24 +282,15 @@ function GameRow({
     let cooldownMs = 0
 
     try {
-      const { pathsToLaunch } = await getProfileLaunchPaths()
-      const runningPathSet = new Set(runningApps.map((appProcess) => appProcess.path.toLowerCase()))
-      const missingPaths = pathsToLaunch.filter((launchPath) => !runningPathSet.has(launchPath.toLowerCase()))
-
-      if (missingPaths.length === 0) {
-        notify('All profile apps are already running', 'success')
-        return
-      }
-
       onLaunchStart(game.key)
-      const result = await window.electronAPI.launchProfile(game.key, missingPaths)
+      const result = await window.electronAPI.relaunchMissingProfile(game.key)
       if (!result.success) {
         notify(result.error || 'Failed to relaunch missing apps', 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.message || `Relaunching ${missingPaths.length} missing app${missingPaths.length === 1 ? '' : 's'}`, 'success')
+      notify(result.message || 'Relaunching missing apps', 'success')
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
@@ -840,7 +770,6 @@ export function GameList() {
             isActive={activeEditorKey === game.key}
             isRunning={!!runningStatus[game.key]}
             runningAppIcons={runningAppIcons}
-            runningApps={runningApps.filter(a => a.gameKey === game.key)}
             isDimmed={hasActiveTitle && !runningStatus[game.key]}
             isLaunching={launchingGameKey === game.key}
             isLaunchBlocked={launchingGameKey !== null}

@@ -32,7 +32,10 @@ interface ConfigFileResult {
 declare global {
   interface Window {
     electronAPI: {
-      launchProfile: (gameKey: string, apps: string[]) => Promise<LaunchResult>
+      launchProfile: (gameKey: string) => Promise<LaunchResult>
+      relaunchMissingProfile: (gameKey: string) => Promise<LaunchResult>
+      getProfileSwitchDiff: (gameKey: string, fromProfileId: string, toProfileId: string) => Promise<{ toStopCount: number; toStartCount: number }>
+      switchProfileApps: (gameKey: string, fromProfileId: string, toProfileId: string) => Promise<LaunchResult>
       browsePath: (inputId: string) => Promise<BrowsePathResult>
       onAppLaunchError: (cb: (data: unknown) => void) => Unsubscribe
       minimize: () => Promise<void>
