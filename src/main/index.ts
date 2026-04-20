@@ -90,6 +90,22 @@ const BUILT_IN_UTILITY_KEYS = ['simhub', 'crewchief', 'tradingpaints', 'garage61
 
 autoUpdater.autoDownload = false
 
+interface LaunchResult {
+  success: boolean
+  message?: string
+  warning?: string
+  error?: string
+  launchedCount?: number
+  skippedCount?: number
+  elevatedCount?: number
+  failedCount?: number
+}
+
+type AppLaunchResult =
+  | { status: 'launched'; appPath: string }
+  | { status: 'elevated'; appPath: string; warning: string }
+  | { status: 'failed'; appPath: string; error: string }
+
 interface StoredProfile extends Record<string, unknown> {
   utilities?: StoredProfileUtility[]
   launchAutomatically?: boolean
@@ -655,7 +671,7 @@ async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
   profileApps: string[]
-): Promise<{ success: boolean; message?: string; error?: string; launchedCount?: number; skippedCount?: number }> {
+): Promise<LaunchResult> {
   if (activeLaunches.size > 0) {
     return { success: false, error: 'Another profile is already launching.' }
   }
@@ -705,23 +721,59 @@ async function launchProfileApps(
       }
     }
 
+    const launchResults: AppLaunchResult[] = []
+
     for (let index = 0; index < appsToLaunch.length; index += 1) {
       launchedAny = true
-      await spawnDetachedApp(sender, gameKey, appsToLaunch[index], gamePath)
+      launchResults.push(await spawnDetachedApp(sender, gameKey, appsToLaunch[index], gamePath))
 
       if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
         await wait(launchDelayMs)
       }
     }
 
+    const elevatedResults = launchResults.filter(
+      (result): result is Extract<AppLaunchResult, { status: 'elevated' }> => result.status === 'elevated'
+    )
+    const failedResults = launchResults.filter(
+      (result): result is Extract<AppLaunchResult, { status: 'failed' }> => result.status === 'failed'
+    )
+    const launchedCount = launchResults.length - failedResults.length
+
+    if (failedResults.length > 0) {
+      const firstFailure = failedResults[0]
+      const failedAppName = path.basename(firstFailure.appPath)
+
+      return {
+        success: false,
+        error:
+          failedResults.length === 1
+            ? `Failed to launch ${failedAppName}: ${firstFailure.error}`
+            : `Failed to launch ${failedResults.length} apps. First error: ${failedAppName}: ${firstFailure.error}`,
+        launchedCount,
+        skippedCount,
+        elevatedCount: elevatedResults.length,
+        failedCount: failedResults.length
+      }
+    }
+
+    const elevatedWarning =
+      elevatedResults.length === 1
+        ? elevatedResults[0].warning
+        : elevatedResults.length > 1
+          ? `${elevatedResults.length} apps requested administrator permission. SimLauncher cannot track or close elevated apps after launch.`
+          : undefined
+
     return {
       success: true,
       message:
         skippedCount > 0
-          ? `Started ${appsToLaunch.length} app${appsToLaunch.length === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
+          ? `Started ${launchedCount} app${launchedCount === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
           : 'All profile applications launched.',
-      launchedCount: appsToLaunch.length,
-      skippedCount
+      warning: elevatedWarning,
+      launchedCount,
+      skippedCount,
+      elevatedCount: elevatedResults.length
     }
   } finally {
     if (launchedAny) {
@@ -995,14 +1047,56 @@ function sendLaunchError(sender: WebContents, appPath: string, error: string) {
   }
 }
 
-function spawnDetachedApp(sender: WebContents, gameKey: string, appPath: string, gamePath?: string) {
-  return new Promise<void>((resolve) => {
-    let settled = false
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : String(err)
+}
 
-    const resolveOnce = () => {
+function getErrorCode(err: unknown) {
+  return err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code) : undefined
+}
+
+function isElevatedLaunchError(err: unknown) {
+  return process.platform === 'win32' && getErrorCode(err) === 'EACCES'
+}
+
+function launchElevated(appPath: string) {
+  return new Promise<AppLaunchResult>((resolve) => {
+    const escapedAppPath = appPath.replace(/'/g, "''")
+
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', `Start-Process -FilePath '${escapedAppPath}' -Verb RunAs`],
+      { windowsHide: true },
+      (error) => {
+        if (error) {
+          const message = `Administrator permission was requested for ${path.basename(appPath)}, but Windows did not start it. ${getErrorMessage(error)}`
+          console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
+          resolve({ status: 'failed', appPath, error: message })
+          return
+        }
+
+        resolve({
+          status: 'elevated',
+          appPath,
+          warning: `${path.basename(appPath)} requested administrator permission. SimLauncher cannot track or close elevated apps after launch.`
+        })
+      }
+    )
+  })
+}
+
+function spawnDetachedApp(sender: WebContents, gameKey: string, appPath: string, gamePath?: string) {
+  return new Promise<AppLaunchResult>((resolve) => {
+    let settled = false
+    let fallbackTimer: ReturnType<typeof setTimeout> | undefined
+
+    const resolveOnce = (result: AppLaunchResult) => {
       if (!settled) {
         settled = true
-        resolve()
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer)
+        }
+        resolve(result)
       }
     }
 
@@ -1017,26 +1111,45 @@ function spawnDetachedApp(sender: WebContents, gameKey: string, appPath: string,
 
       child.once('spawn', () => {
         child.unref()
-        resolveOnce()
+        resolveOnce({ status: 'launched', appPath })
       })
 
-      child.once('error', (err) => {
+      child.once('error', async (err) => {
         runningProcesses.delete(appPath)
-        console.error(`Error launching ${appPath}: ${err.message}`)
-        sendLaunchError(sender, appPath, err.message)
-        resolveOnce()
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer)
+        }
+        const message = getErrorMessage(err)
+        console.error(`Error launching ${appPath}: ${message}`)
+
+        if (settled) {
+          sendLaunchError(sender, appPath, message)
+          return
+        }
+
+        if (isElevatedLaunchError(err)) {
+          resolveOnce(await launchElevated(appPath))
+          return
+        }
+
+        resolveOnce({ status: 'failed', appPath, error: message })
       })
 
       child.once('exit', () => {
         runningProcesses.delete(appPath)
       })
 
-      setTimeout(resolveOnce, 500)
+      fallbackTimer = setTimeout(() => resolveOnce({ status: 'launched', appPath }), 500)
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = getErrorMessage(err)
       console.error(`Error launching ${appPath}: ${message}`)
-      sendLaunchError(sender, appPath, message)
-      resolveOnce()
+
+      if (isElevatedLaunchError(err)) {
+        launchElevated(appPath).then(resolveOnce)
+        return
+      }
+
+      resolveOnce({ status: 'failed', appPath, error: message })
     }
   })
 }

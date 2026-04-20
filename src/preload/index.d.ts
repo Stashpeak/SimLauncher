@@ -17,9 +17,12 @@ interface BrowsePathResult {
 interface LaunchResult {
   success: boolean
   message?: string
+  warning?: string
   error?: string
   launchedCount?: number
   skippedCount?: number
+  elevatedCount?: number
+  failedCount?: number
 }
 
 interface ConfigFileResult {

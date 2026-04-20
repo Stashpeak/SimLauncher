@@ -187,6 +187,8 @@ function GameRow({
     }
 
     try {
+      let switchWarning: string | undefined
+
       if (isRunning) {
         const diff = await window.electronAPI.getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
 
@@ -206,10 +208,11 @@ function GameRow({
           const result = await window.electronAPI.switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           if (!result.success) {
             notify(result.error || 'Failed to switch profile', 'error')
-            onLaunchEnd(game.key, 0)
+            onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
           onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+          switchWarning = result.warning
         }
 
         await onRunningStateRefresh()
@@ -217,7 +220,7 @@ function GameRow({
 
       await saveProfileSet(profiles, updatedProfileSet)
       setProfileMenuOpen(false)
-      notify(`Switched to ${nextProfile.name}`, 'success')
+      notify(switchWarning || `Switched to ${nextProfile.name}`, switchWarning ? 'warn' : 'success', switchWarning ? 5000 : undefined)
     } catch (err) {
       onLaunchEnd(game.key, 0)
       notify('Failed to switch profile', 'error')
@@ -249,12 +252,13 @@ function GameRow({
       onLaunchStart(game.key)
       const result = await window.electronAPI.launchProfile(game.key)
       if (!result.success) {
+        cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         notify(result.error || 'Failed to launch profile', 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.message || `Launching ${game.name}`, 'success')
+      notify(result.warning || result.message || `Launching ${game.name}`, result.warning ? 'warn' : 'success', result.warning ? 5000 : undefined)
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
@@ -285,12 +289,13 @@ function GameRow({
       onLaunchStart(game.key)
       const result = await window.electronAPI.relaunchMissingProfile(game.key)
       if (!result.success) {
+        cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         notify(result.error || 'Failed to relaunch missing apps', 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.message || 'Relaunching missing apps', 'success')
+      notify(result.warning || result.message || 'Relaunching missing apps', result.warning ? 'warn' : 'success', result.warning ? 5000 : undefined)
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
