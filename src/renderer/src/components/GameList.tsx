@@ -58,12 +58,17 @@ function GameRow({
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
   const {
     profileMenuOpen,
-    setProfileMenuOpen,
+    openProfileMenu,
+    closeProfileMenu,
     newProfileFormOpen,
     setNewProfileFormOpen,
     newProfileName,
     setNewProfileName,
     profileMenuRef,
+    menuRef,
+    triggerRef,
+    handleProfileMenuTriggerKeyDown,
+    handleProfileMenuKeyDown,
     newProfileInputRef
   } = useProfileMenu()
   const { profileSet, profileState, loadProfileSet, getProfileRuntimeConfig, saveProfileSet } =
@@ -109,6 +114,7 @@ function GameRow({
     }
 
     if (nextProfileId === profileSet.activeProfileId) {
+      closeProfileMenu(true)
       return
     }
 
@@ -163,7 +169,7 @@ function GameRow({
       }
 
       await saveProfileSet(updatedProfileSet)
-      setProfileMenuOpen(false)
+      closeProfileMenu(true)
       notify(
         switchWarning || `Switched to ${nextProfile.name}`,
         switchWarning ? 'warn' : 'success',
@@ -186,7 +192,7 @@ function GameRow({
     await handleCreateProfile(trimmedName)
     setNewProfileName('')
     setNewProfileFormOpen(false)
-    setProfileMenuOpen(false)
+    closeProfileMenu(true)
   }
 
   const handleLaunch = async () => {
@@ -322,16 +328,17 @@ function GameRow({
               <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
               <div ref={profileMenuRef} className="relative no-drag">
                 <button
+                  ref={triggerRef}
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation()
-                    const nextOpen = !profileMenuOpen
-                    setProfileMenuOpen(nextOpen)
-                    if (!nextOpen) {
-                      setNewProfileFormOpen(false)
-                      setNewProfileName('')
+                    if (profileMenuOpen) {
+                      closeProfileMenu(false)
+                    } else {
+                      openProfileMenu(false)
                     }
                   }}
+                  onKeyDown={handleProfileMenuTriggerKeyDown}
                   className="flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2.5 py-1 text-[10px] font-semibold text-(--text-primary) outline-none transition-all hover:border-(--accent) hover:bg-(--glass-bg) focus-visible:ring-2 focus-visible:ring-(--accent)"
                   aria-haspopup="menu"
                   aria-expanded={profileMenuOpen}
@@ -354,7 +361,9 @@ function GameRow({
                 </button>
                 {profileMenuOpen && (
                   <div
+                    ref={menuRef}
                     role="menu"
+                    onKeyDown={handleProfileMenuKeyDown}
                     className="absolute left-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
                   >
                     {profileSet.profiles.map((profile) => {
@@ -399,13 +408,6 @@ function GameRow({
                           value={newProfileName}
                           onChange={(event) => setNewProfileName(event.target.value)}
                           onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                              event.stopPropagation()
-                              setNewProfileFormOpen(false)
-                              setNewProfileName('')
-                            }
-                          }}
                           placeholder="Profile name"
                           className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
                           aria-label="New profile name"
