@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 
 export function clamp(value: number, min: number, max: number) {
@@ -9,7 +10,14 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isValidExePath(p: unknown): p is string {
-  return typeof p === 'string' && p.trim().length > 0 && /\.exe$/i.test(p.trim())
+  if (typeof p !== 'string') {
+    return false
+  }
+
+  const trimmedPath = p.trim()
+  const resolvedPath = path.resolve(trimmedPath)
+
+  return trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath) && fs.existsSync(resolvedPath)
 }
 
 export function getExeName(filePath: string) {

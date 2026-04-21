@@ -174,6 +174,20 @@ function pruneUnclosedProcesses(processNames: Set<string>) {
   })
 }
 
+function normalizePathForComparison(appPath: string) {
+  return path.resolve(appPath.trim()).toLowerCase()
+}
+
+function getStoredAppPathTargets() {
+  const storedAppPaths = store.get('appPaths') as Record<string, string> | undefined
+
+  return new Set(
+    Object.values(storedAppPaths || {})
+      .filter((appPath): appPath is string => typeof appPath === 'string' && appPath.trim().length > 0)
+      .map(normalizePathForComparison)
+  )
+}
+
 function formatKillWarning(failedAttempts: KillAttemptResult[]) {
   if (failedAttempts.length === 0) {
     return undefined
@@ -319,10 +333,25 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
   const processNames = await readRunningProcessNames()
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const storedAppPathTargets = getStoredAppPathTargets()
+  const validAppPathsToKill: string[] = []
   const killTasks: Promise<KillAttemptResult>[] = []
   const killedExeNames = new Set<string>()
 
-  appPathsToKill.filter(isValidExePath).forEach((appPath) => {
+  for (const appPath of appPathsToKill) {
+    if (!isValidExePath(appPath) || !storedAppPathTargets.has(normalizePathForComparison(appPath))) {
+      return {
+        success: false,
+        error: 'Kill request includes an app path that is not configured.',
+        closedCount: 0,
+        failedCount: 0
+      }
+    }
+
+    validAppPathsToKill.push(appPath)
+  }
+
+  validAppPathsToKill.forEach((appPath) => {
     if (gamePath && appPath.toLowerCase() === gamePath) {
       return
     }
@@ -344,7 +373,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
     }
   })
 
-  appPathsToKill.filter(isValidExePath).forEach((appPath) => {
+  validAppPathsToKill.forEach((appPath) => {
     if (gamePath && appPath.toLowerCase() === gamePath) {
       return
     }
