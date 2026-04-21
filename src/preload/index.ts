@@ -58,9 +58,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setLoginItem: (openAtLogin: boolean) => ipcRenderer.invoke('set-login-item', openAtLogin),
   setZoom: (factor: number) => ipcRenderer.invoke('set-zoom', factor),
 
-  // electron-store
-  storeGet: (key: string) => ipcRenderer.invoke('store-get', key),
-  storeSet: (key: string, value: unknown) => ipcRenderer.invoke('store-set', key, value),
+  // typed store channels
+  getSettings:       () => ipcRenderer.invoke('get-settings'),
+  saveSettings:      (patch: unknown) => ipcRenderer.invoke('save-settings', patch),
+  getProfiles:       () => ipcRenderer.invoke('get-profiles'),
+  saveProfile:       (gameKey: string, profileSet: unknown) => ipcRenderer.invoke('save-profile', gameKey, profileSet),
+  saveProfiles:      (profiles: unknown) => ipcRenderer.invoke('save-profiles', profiles),
+  getMigrationFlags: () => ipcRenderer.invoke('get-migration-flags'),
+  setMigrationFlags: (patch: unknown) => ipcRenderer.invoke('set-migration-flags', patch),
   exportConfig: () => ipcRenderer.invoke('export-config'),
   importConfig: () => ipcRenderer.invoke('import-config'),
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),

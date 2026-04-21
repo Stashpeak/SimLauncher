@@ -93,8 +93,8 @@ function GameRow({
   }, [profileMenuOpen, newProfileFormOpen])
 
   const loadProfileSet = useCallback(async () => {
-    const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
+    const profiles = await window.electronAPI.getProfiles()
+    const nextProfileSet = normalizeGameProfileSet(profiles[game.key] as Profiles[string] | undefined)
     setProfileSet(nextProfileSet)
     return nextProfileSet
   }, [game.key])
@@ -121,17 +121,13 @@ function GameRow({
     }
   }, [loadProfileSet, isActive])
 
-  const getProfileRuntimeConfig = async () => {
-    const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const nextProfileSet = normalizeGameProfileSet(profiles[game.key])
-    return { profiles, profileSet: nextProfileSet }
+  const getProfileRuntimeConfig = async (): Promise<GameProfileSet> => {
+    const profiles = await window.electronAPI.getProfiles()
+    return normalizeGameProfileSet(profiles[game.key] as Profiles[string] | undefined)
   }
 
-  const saveProfileSet = async (profiles: Profiles, nextProfileSet: GameProfileSet) => {
-    await window.electronAPI.storeSet('profiles', {
-      ...profiles,
-      [game.key]: nextProfileSet
-    })
+  const saveProfileSet = async (nextProfileSet: GameProfileSet) => {
+    await window.electronAPI.saveProfile(game.key, nextProfileSet)
     setProfileSet(nextProfileSet)
   }
 
@@ -142,7 +138,7 @@ function GameRow({
       return
     }
 
-    const { profiles, profileSet: nextProfileSet } = await getProfileRuntimeConfig()
+    const nextProfileSet = await getProfileRuntimeConfig()
     const activeProfile = getActiveGameProfile(nextProfileSet)
     const newProfile: NamedGameProfile = {
       ...JSON.parse(JSON.stringify(activeProfile)),
@@ -154,7 +150,7 @@ function GameRow({
       profiles: [...nextProfileSet.profiles, newProfile]
     }
 
-    await saveProfileSet(profiles, updatedProfileSet)
+    await saveProfileSet(updatedProfileSet)
     notify(`Created profile ${newProfile.name}`, 'success')
   }
 
@@ -173,7 +169,7 @@ function GameRow({
       return
     }
 
-    const { profiles, profileSet: latestProfileSet } = await getProfileRuntimeConfig()
+    const latestProfileSet = await getProfileRuntimeConfig()
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
 
@@ -218,7 +214,7 @@ function GameRow({
         await onRunningStateRefresh()
       }
 
-      await saveProfileSet(profiles, updatedProfileSet)
+      await saveProfileSet(updatedProfileSet)
       setProfileMenuOpen(false)
       notify(switchWarning || `Switched to ${nextProfile.name}`, switchWarning ? 'warn' : 'success', switchWarning ? 5000 : undefined)
     } catch (err) {
@@ -330,8 +326,8 @@ function GameRow({
     let mounted = true
 
     async function loadProfileState() {
-      const profiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const profile = getActiveGameProfile(profiles[game.key])
+      const profiles = await window.electronAPI.getProfiles()
+      const profile = getActiveGameProfile(profiles[game.key] as Profiles[string] | undefined)
 
       if (!mounted) {
         return
@@ -651,9 +647,9 @@ export function GameList() {
   useEffect(() => {
     async function loadGames() {
       try {
-        const paths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-        setGamePaths(paths)
-        const available = GAMES.filter(game => !!paths[game.key])
+        const settings = await window.electronAPI.getSettings()
+        setGamePaths(settings.gamePaths)
+        const available = GAMES.filter(game => !!settings.gamePaths[game.key])
         setConfiguredGames(available)
       } catch (err) {
         console.error('Failed to load game paths', err)
@@ -667,10 +663,10 @@ export function GameList() {
     let mounted = true
 
     async function loadFocusActiveTitle() {
-      const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
+      const settings = await window.electronAPI.getSettings()
 
       if (mounted) {
-        setFocusActiveTitle(savedFocusActiveTitle !== false)
+        setFocusActiveTitle(settings.focusActiveTitle !== false)
       }
     }
 
@@ -687,10 +683,10 @@ export function GameList() {
   useEffect(() => {
     async function loadAppIcons() {
       try {
-        const appPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
+        const settings = await window.electronAPI.getSettings()
         const cache: Record<string, string> = {}
         await Promise.all(
-          Object.values(appPaths).filter(Boolean).map(async (p) => {
+          Object.values(settings.appPaths).filter(Boolean).map(async (p) => {
             const icon = await window.electronAPI.getFileIcon(p)
             if (icon) cache[p.toLowerCase()] = icon
           })

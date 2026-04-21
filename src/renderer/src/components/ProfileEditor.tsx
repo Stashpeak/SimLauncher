@@ -73,12 +73,14 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      // Load configuration from electron-store via IPC
-      const paths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-      const names = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
-      const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
-      const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
+      const [settings, allProfiles] = await Promise.all([
+        window.electronAPI.getSettings(),
+        window.electronAPI.getProfiles(),
+      ])
+      const paths = settings.appPaths
+      const names = settings.appNames
+      const savedCustomSlots = settings.customSlots
+      const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
       const profile = profileSet.profiles.find((entry) => entry.id === activeProfileId) || getActiveGameProfile(profileSet)
       const resolvedUtilities = getUtilities(resolveCustomSlots(savedCustomSlots, paths, names, profile))
 
@@ -198,12 +200,11 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   }
 
   const handleSave = async () => {
-    // Read-modify-write pattern for the 'profiles' object store
-    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
+    const allProfiles = await window.electronAPI.getProfiles()
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
     const activeProfile = profileSet.profiles.find((profile) => profile.id === activeProfileId) || getActiveGameProfile(profileSet)
     const normalizedProfileName = profileName.trim() || activeProfile.name
-    
+
     const updatedProfile = {
       ...activeProfile,
       name: normalizedProfileName,
@@ -218,14 +219,12 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
       trackedProcessPaths: trackedProcessPaths.filter((processPath) => processPath.trim().length > 0)
     }
 
-    allProfiles[gameKey] = {
+    await window.electronAPI.saveProfile(gameKey, {
       activeProfileId: updatedProfile.id,
       profiles: profileSet.profiles.map((profile) => (
         profile.id === updatedProfile.id ? updatedProfile : profile
       ))
-    }
-
-    await window.electronAPI.storeSet('profiles', allProfiles)
+    })
     await onProfilesChanged()
     
     notify('Profile saved!', 'success', 2500)
@@ -233,8 +232,8 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   }
 
   const handleDeleteProfile = async () => {
-    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
+    const allProfiles = await window.electronAPI.getProfiles()
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
     const activeProfile = profileSet.profiles.find((profile) => profile.id === activeProfileId) || getActiveGameProfile(profileSet)
 
     if (profileSet.profiles.length <= 1) {
@@ -248,12 +247,10 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
 
     const nextProfiles = profileSet.profiles.filter((profile) => profile.id !== activeProfile.id)
 
-    allProfiles[gameKey] = {
+    await window.electronAPI.saveProfile(gameKey, {
       activeProfileId: nextProfiles[0].id,
       profiles: nextProfiles
-    }
-
-    await window.electronAPI.storeSet('profiles', allProfiles)
+    })
     await onProfilesChanged()
     notify('Profile deleted', 'warn', 2500)
     onClose()

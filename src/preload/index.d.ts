@@ -1,5 +1,32 @@
 export {}
 
+declare global {
+  interface Settings {
+    appPaths: Record<string, string>
+    gamePaths: Record<string, string>
+    appNames: Record<string, string>
+    customSlots: number
+    accentPreset: string
+    accentCustom: string
+    accentBgTint: boolean
+    focusActiveTitle: boolean
+    launchDelayMs: number
+    startWithWindows: boolean
+    startMinimized: boolean
+    minimizeToTray: boolean
+    autoCheckUpdates: boolean
+    zoomFactor: number
+  }
+
+  type WritableSettings = Omit<Settings, 'startWithWindows' | 'zoomFactor'>
+
+  interface MigrationFlags {
+    migrated: boolean
+    profileUtilityOrderMigrated: boolean
+    profileSetsMigrated: boolean
+  }
+}
+
 type Unsubscribe = () => void
 
 interface RunningApp {
@@ -64,8 +91,13 @@ declare global {
       onUpdateError: (cb: (error: any) => void) => Unsubscribe
       installUpdate: () => Promise<unknown>
       checkForUpdates: () => Promise<unknown>
-      storeGet: (key: string) => Promise<unknown>
-      storeSet: (key: string, value: unknown) => Promise<void>
+      getSettings: () => Promise<Settings>
+      saveSettings: (patch: Partial<WritableSettings>) => Promise<void>
+      getProfiles: () => Promise<Record<string, unknown>>
+      saveProfile: (gameKey: string, profileSet: unknown) => Promise<void>
+      saveProfiles: (profiles: unknown) => Promise<void>
+      getMigrationFlags: () => Promise<MigrationFlags>
+      setMigrationFlags: (patch: Partial<MigrationFlags>) => Promise<void>
       exportConfig: () => Promise<ConfigFileResult>
       importConfig: () => Promise<ConfigFileResult>
       setLoginItem: (openAtLogin: boolean) => Promise<void>

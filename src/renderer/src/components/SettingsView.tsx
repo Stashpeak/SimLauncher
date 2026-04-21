@@ -7,6 +7,7 @@ import {
   isGameProfileSet,
   isProfileUtility,
   resolveCustomSlots,
+  type GameProfile,
   type NamedGameProfile,
   type Profiles
 } from '../lib/config'
@@ -96,43 +97,33 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
 
   useEffect(() => {
     async function loadSettings() {
-      const savedAppPaths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-      const savedAppNames = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
-      const savedProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const savedGamePaths = (await window.electronAPI.storeGet('gamePaths')) as Record<string, string> || {}
-      const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
-      const savedAccentPreset = (await window.electronAPI.storeGet('accentPreset')) as string || DEFAULT_ACCENT_COLOR
-      const savedAccentCustom = (await window.electronAPI.storeGet('accentCustom')) as string || ''
-      const savedBgTint = (await window.electronAPI.storeGet('accentBgTint')) as boolean || false
-      const savedFocusActiveTitle = await window.electronAPI.storeGet('focusActiveTitle')
-      const savedLaunchDelayMs = (await window.electronAPI.storeGet('launchDelayMs')) as number
-      const savedStartWithWindows = (await window.electronAPI.storeGet('startWithWindows')) as boolean || false
-      const savedStartMinimized = (await window.electronAPI.storeGet('startMinimized')) as boolean || false
-      const savedMinimizeToTray = (await window.electronAPI.storeGet('minimizeToTray')) as boolean || false
-      const savedAutoCheckUpdates = await window.electronAPI.storeGet('autoCheckUpdates')
-      const savedZoomFactor = (await window.electronAPI.storeGet('zoomFactor')) as number
+      const [settings, savedProfiles] = await Promise.all([
+        window.electronAPI.getSettings(),
+        window.electronAPI.getProfiles(),
+      ])
+      const typedProfiles = savedProfiles as Profiles
 
-      setAppPaths(savedAppPaths)
-      setAppNames(savedAppNames)
-      setProfiles(savedProfiles)
-      setGamePaths(savedGamePaths)
-      setCustomSlots(resolveCustomSlots(savedCustomSlots, savedAppPaths, savedAppNames, ...Object.values(savedProfiles)))
-      setAccentPreset(savedAccentPreset)
-      setAccentCustom(savedAccentCustom)
-      setAccentBgTint(savedBgTint)
-      setFocusActiveTitle(savedFocusActiveTitle !== false)
-      setLaunchDelayMs(normalizeLaunchDelayMs(savedLaunchDelayMs))
-      setStartWithWindows(savedStartWithWindows)
-      setStartMinimized(savedStartMinimized)
-      setMinimizeToTray(savedMinimizeToTray)
-      setAutoCheckUpdates(savedAutoCheckUpdates !== false)
-      setZoomFactor(typeof savedZoomFactor === 'number' && Number.isFinite(savedZoomFactor) ? savedZoomFactor : 1.0)
-      
-      setIsCustomColor(savedAccentPreset === 'custom')
+      setAppPaths(settings.appPaths)
+      setAppNames(settings.appNames)
+      setProfiles(typedProfiles)
+      setGamePaths(settings.gamePaths)
+      setCustomSlots(resolveCustomSlots(settings.customSlots, settings.appPaths, settings.appNames, ...(Object.values(typedProfiles) as Record<string, unknown>[])))
+      setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
+      setAccentCustom(settings.accentCustom || '')
+      setAccentBgTint(settings.accentBgTint || false)
+      setFocusActiveTitle(settings.focusActiveTitle !== false)
+      setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
+      setStartWithWindows(settings.startWithWindows || false)
+      setStartMinimized(settings.startMinimized || false)
+      setMinimizeToTray(settings.minimizeToTray || false)
+      setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+      setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
+
+      setIsCustomColor(settings.accentPreset === 'custom')
 
       // Load icons for configured app paths (extracted from EXE)
       const icons: Record<string, string> = {}
-      for (const [key, path] of Object.entries(savedAppPaths)) {
+      for (const [key, path] of Object.entries(settings.appPaths)) {
         if (path) {
           const icon = await window.electronAPI.getFileIcon(path)
           if (icon) icons[key] = icon
@@ -242,7 +233,7 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     return shifted
   }
 
-  const shiftSingleProfileCustomSlots = <T extends Profiles[string]>(profile: T, removedSlot: number, slotCount: number) => {
+  const shiftSingleProfileCustomSlots = <T extends GameProfile>(profile: T, removedSlot: number, slotCount: number) => {
     const shiftedProfile = shiftCustomSlotRecord(profile, removedSlot, slotCount)
 
     if (Array.isArray(profile.utilities)) {
@@ -455,19 +446,23 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
     try {
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
 
-      await window.electronAPI.storeSet('appPaths', appPaths)
-      await window.electronAPI.storeSet('appNames', appNames)
-      await window.electronAPI.storeSet('profiles', profiles)
-      await window.electronAPI.storeSet('gamePaths', gamePaths)
-      await window.electronAPI.storeSet('customSlots', customSlots)
-      await window.electronAPI.storeSet('accentPreset', accentPreset)
-      await window.electronAPI.storeSet('accentCustom', accentCustom)
-      await window.electronAPI.storeSet('accentBgTint', accentBgTint)
-      await window.electronAPI.storeSet('focusActiveTitle', focusActiveTitle)
-      await window.electronAPI.storeSet('launchDelayMs', normalizedLaunchDelayMs)
-      await window.electronAPI.storeSet('startMinimized', startMinimized)
-      await window.electronAPI.storeSet('minimizeToTray', minimizeToTray)
-      await window.electronAPI.storeSet('autoCheckUpdates', autoCheckUpdates)
+      await Promise.all([
+        window.electronAPI.saveSettings({
+          appPaths,
+          appNames,
+          gamePaths,
+          customSlots,
+          accentPreset,
+          accentCustom,
+          accentBgTint,
+          focusActiveTitle,
+          launchDelayMs: normalizedLaunchDelayMs,
+          startMinimized,
+          minimizeToTray,
+          autoCheckUpdates,
+        }),
+        window.electronAPI.saveProfiles(profiles),
+      ])
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
