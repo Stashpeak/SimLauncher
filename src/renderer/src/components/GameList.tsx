@@ -1,17 +1,14 @@
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   GAMES,
   createProfileId,
   getActiveGameProfile,
-  normalizeGameProfileSet,
   type Game,
-  type GameProfileSet,
-  type NamedGameProfile,
-  type Profiles
+  type NamedGameProfile
 } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
-import { getProfiles, saveProfile, getSettings } from '../lib/store'
+import { getSettings } from '../lib/store'
 import {
   getAssetData,
   getProfileSwitchDiff,
@@ -19,13 +16,14 @@ import {
   launchProfile,
   killLaunchedApps,
   relaunchMissingProfile,
-  getFileIcon,
-  getRunningApps
+  getFileIcon
 } from '../lib/electron'
+import { useGameProfile } from '../hooks/useGameProfile'
+import { useLaunchBlock } from '../hooks/useLaunchBlock'
+import { useProfileMenu } from '../hooks/useProfileMenu'
+import { useRunningApps } from '../hooks/useRunningApps'
 
 const POST_LAUNCH_BLOCK_MS = 10000
-
-type RunningApp = { path: string; name: string; gameKey: string; warning?: string }
 
 function GameRow({
   game,
@@ -58,14 +56,18 @@ function GameRow({
   const [iconUrl, setIconUrl] = useState<string | null>(null)
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
-  const [profileSet, setProfileSet] = useState<GameProfileSet>(() =>
-    normalizeGameProfileSet(undefined)
-  )
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const [newProfileFormOpen, setNewProfileFormOpen] = useState(false)
-  const [newProfileName, setNewProfileName] = useState('')
-  const profileMenuRef = useRef<HTMLDivElement | null>(null)
-  const newProfileInputRef = useRef<HTMLInputElement | null>(null)
+  const {
+    profileMenuOpen,
+    setProfileMenuOpen,
+    newProfileFormOpen,
+    setNewProfileFormOpen,
+    newProfileName,
+    setNewProfileName,
+    profileMenuRef,
+    newProfileInputRef
+  } = useProfileMenu()
+  const { profileSet, profileState, loadProfileSet, getProfileRuntimeConfig, saveProfileSet } =
+    useGameProfile(game.key, isActive)
 
   useEffect(() => {
     async function resolveIcon() {
@@ -76,75 +78,6 @@ function GameRow({
     }
     resolveIcon()
   }, [game.icon])
-
-  useEffect(() => {
-    if (!profileMenuOpen) {
-      setNewProfileFormOpen(false)
-      setNewProfileName('')
-      return
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
-        setProfileMenuOpen(false)
-        setNewProfileFormOpen(false)
-        setNewProfileName('')
-      }
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown)
-
-    return () => window.removeEventListener('pointerdown', handlePointerDown)
-  }, [profileMenuOpen])
-
-  useEffect(() => {
-    if (!profileMenuOpen || !newProfileFormOpen) {
-      return
-    }
-
-    newProfileInputRef.current?.focus()
-  }, [profileMenuOpen, newProfileFormOpen])
-
-  const loadProfileSet = useCallback(async () => {
-    const profiles = await getProfiles()
-    const nextProfileSet = normalizeGameProfileSet(
-      profiles[game.key] as Profiles[string] | undefined
-    )
-    setProfileSet(nextProfileSet)
-    return nextProfileSet
-  }, [game.key])
-
-  useEffect(() => {
-    let mounted = true
-
-    async function load() {
-      const nextProfileSet = await loadProfileSet()
-
-      if (!mounted) {
-        return
-      }
-
-      setProfileSet(nextProfileSet)
-    }
-
-    load()
-    window.addEventListener('focus', load)
-
-    return () => {
-      mounted = false
-      window.removeEventListener('focus', load)
-    }
-  }, [loadProfileSet, isActive])
-
-  const getProfileRuntimeConfig = async (): Promise<GameProfileSet> => {
-    const profiles = await getProfiles()
-    return normalizeGameProfileSet(profiles[game.key] as Profiles[string] | undefined)
-  }
-
-  const saveProfileSet = async (nextProfileSet: GameProfileSet) => {
-    await saveProfile(game.key, nextProfileSet)
-    setProfileSet(nextProfileSet)
-  }
 
   const handleCreateProfile = async (name: string) => {
     const trimmedName = name.trim()
@@ -347,37 +280,6 @@ function GameRow({
       }, 50)
     }
   }
-
-  const [profileState, setProfileState] = useState({
-    killControlsEnabled: false,
-    relaunchControlsEnabled: false
-  })
-
-  useEffect(() => {
-    let mounted = true
-
-    async function loadProfileState() {
-      const profiles = await getProfiles()
-      const profile = getActiveGameProfile(profiles[game.key] as Profiles[string] | undefined)
-
-      if (!mounted) {
-        return
-      }
-
-      setProfileState({
-        killControlsEnabled: profile.killControlsEnabled === true,
-        relaunchControlsEnabled: profile.relaunchControlsEnabled === true
-      })
-    }
-
-    loadProfileState()
-    window.addEventListener('focus', loadProfileState)
-
-    return () => {
-      mounted = false
-      window.removeEventListener('focus', loadProfileState)
-    }
-  }, [game.key, isActive, profileSet.activeProfileId])
 
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
@@ -672,52 +574,12 @@ function GameRow({
 export function GameList() {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
-  const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
-  const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [cacheInitialized, setCacheInitialized] = useState(false)
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
-  const [launchingGameKey, setLaunchingGameKey] = useState<string | null>(null)
-  const launchBlockTimeoutRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (launchBlockTimeoutRef.current !== null) {
-        window.clearTimeout(launchBlockTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  const handleLaunchStart = (gameKey: string) => {
-    if (launchBlockTimeoutRef.current !== null) {
-      window.clearTimeout(launchBlockTimeoutRef.current)
-      launchBlockTimeoutRef.current = null
-    }
-
-    setLaunchingGameKey(gameKey)
-  }
-
-  const handleLaunchEnd = (finishedGameKey: string, cooldownMs = 0) => {
-    setLaunchingGameKey((currentGameKey) => {
-      if (currentGameKey !== finishedGameKey) {
-        return currentGameKey
-      }
-
-      if (cooldownMs <= 0) {
-        return null
-      }
-
-      launchBlockTimeoutRef.current = window.setTimeout(() => {
-        setLaunchingGameKey((latestGameKey) =>
-          latestGameKey === finishedGameKey ? null : latestGameKey
-        )
-        launchBlockTimeoutRef.current = null
-      }, cooldownMs)
-
-      return currentGameKey
-    })
-  }
+  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock()
+  const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
 
   useEffect(() => {
     async function loadGames() {
@@ -778,49 +640,6 @@ export function GameList() {
 
     loadAppIcons()
   }, [])
-
-  const refreshRunningState = useCallback(
-    async (isMounted: () => boolean = () => true) => {
-      try {
-        if (configuredGames.length === 0) {
-          if (isMounted()) {
-            setRunningApps([])
-            setRunningStatus({})
-          }
-          return
-        }
-
-        const apps = await getRunningApps()
-        if (!isMounted()) return
-
-        const nextApps = apps || []
-        setRunningApps(nextApps)
-
-        const newStatus: Record<string, boolean> = {}
-        configuredGames.forEach((game) => {
-          newStatus[game.key] = nextApps.some((a: { gameKey: string }) => a.gameKey === game.key)
-        })
-        setRunningStatus(newStatus)
-      } catch (err) {
-        console.error('Consolidated polling error:', err)
-      }
-    },
-    [configuredGames]
-  )
-
-  // Poll running state every 2s
-  useEffect(() => {
-    let mounted = true
-    const isMounted = () => mounted
-
-    refreshRunningState(isMounted)
-    const intervalId = window.setInterval(() => refreshRunningState(isMounted), 2000)
-
-    return () => {
-      mounted = false
-      window.clearInterval(intervalId)
-    }
-  }, [refreshRunningState])
 
   if (configuredGames.length === 0) {
     return (
