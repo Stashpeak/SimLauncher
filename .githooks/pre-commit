@@ -1,0 +1,4 @@
+#!/bin/sh
+# Keep committed source formatting consistent.
+
+npm run format:check

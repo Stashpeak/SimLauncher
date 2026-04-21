@@ -35,31 +35,41 @@ export function registerLaunchHandlers() {
     const missingPaths = allPaths.filter((p) => !isRunningExePath(processNames, p))
 
     if (missingPaths.length === 0) {
-      return { success: true, message: 'All profile apps are already running.', launchedCount: 0, skippedCount: 0 }
+      return {
+        success: true,
+        message: 'All profile apps are already running.',
+        launchedCount: 0,
+        skippedCount: 0
+      }
     }
 
     return launchProfileApps(event.sender, gameKey, missingPaths)
   })
 
-  ipcMain.handle('get-profile-switch-diff', async (_event, gameKey: string, fromProfileId: string, toProfileId: string) => {
-    const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
-    const gamePath = gamePaths[gameKey]?.toLowerCase()
-    const processNames = await readRunningProcessNames()
+  ipcMain.handle(
+    'get-profile-switch-diff',
+    async (_event, gameKey: string, fromProfileId: string, toProfileId: string) => {
+      const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+      const gamePath = gamePaths[gameKey]?.toLowerCase()
+      const processNames = await readRunningProcessNames()
 
-    const utilityPaths = (profileId: string) =>
-      new Set(
-        buildNamedProfileLaunchPaths(gameKey, profileId)
-          .filter((p) => !gamePath || p.toLowerCase() !== gamePath)
-          .map((p) => p.toLowerCase())
-      )
+      const utilityPaths = (profileId: string) =>
+        new Set(
+          buildNamedProfileLaunchPaths(gameKey, profileId)
+            .filter((p) => !gamePath || p.toLowerCase() !== gamePath)
+            .map((p) => p.toLowerCase())
+        )
 
-    const fromPaths = utilityPaths(fromProfileId)
-    const toPaths = utilityPaths(toProfileId)
-    const toStopCount = [...fromPaths].filter((p) => !toPaths.has(p) && processNames.has(getExeName(p))).length
-    const toStartCount = [...toPaths].filter((p) => !processNames.has(getExeName(p))).length
+      const fromPaths = utilityPaths(fromProfileId)
+      const toPaths = utilityPaths(toProfileId)
+      const toStopCount = [...fromPaths].filter(
+        (p) => !toPaths.has(p) && processNames.has(getExeName(p))
+      ).length
+      const toStartCount = [...toPaths].filter((p) => !processNames.has(getExeName(p))).length
 
-    return { toStopCount, toStartCount }
-  })
+      return { toStopCount, toStartCount }
+    }
+  )
 
   ipcMain.handle(
     'switch-profile-apps',

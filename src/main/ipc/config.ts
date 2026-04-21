@@ -11,7 +11,7 @@ import {
   getStoredZoomFactor,
   requireSafeZoomFactor,
   sanitizeImportedConfig,
-  store,
+  store
 } from '../store'
 import { isRecord } from '../utils'
 import { applyRuntimeConfigSettings, getMainWindow } from '../window'
@@ -33,7 +33,11 @@ export function registerConfigHandlers() {
         return { success: false, canceled: true }
       }
 
-      await fs.promises.writeFile(result.filePath, JSON.stringify(getSupportedConfigValues(store.store), null, 2), 'utf8')
+      await fs.promises.writeFile(
+        result.filePath,
+        JSON.stringify(getSupportedConfigValues(store.store), null, 2),
+        'utf8'
+      )
       return { success: true, filePath: result.filePath }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -108,29 +112,41 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('get-settings', () => {
     return {
-      appPaths:         store.get('appPaths'),
-      gamePaths:        store.get('gamePaths'),
-      appNames:         store.get('appNames'),
-      customSlots:      store.get('customSlots'),
-      accentPreset:     store.get('accentPreset'),
-      accentCustom:     store.get('accentCustom'),
-      accentBgTint:     store.get('accentBgTint'),
+      appPaths: store.get('appPaths'),
+      gamePaths: store.get('gamePaths'),
+      appNames: store.get('appNames'),
+      customSlots: store.get('customSlots'),
+      accentPreset: store.get('accentPreset'),
+      accentCustom: store.get('accentCustom'),
+      accentBgTint: store.get('accentBgTint'),
       focusActiveTitle: store.get('focusActiveTitle'),
-      launchDelayMs:    store.get('launchDelayMs'),
+      launchDelayMs: store.get('launchDelayMs'),
       startWithWindows: store.get('startWithWindows'),
-      startMinimized:   store.get('startMinimized'),
-      minimizeToTray:   store.get('minimizeToTray'),
+      startMinimized: store.get('startMinimized'),
+      minimizeToTray: store.get('minimizeToTray'),
       autoCheckUpdates: store.get('autoCheckUpdates'),
-      zoomFactor:       getStoredZoomFactor(),
+      zoomFactor: getStoredZoomFactor()
     }
   })
 
   ipcMain.handle('save-settings', (_event, patch: unknown) => {
     if (!isRecord(patch)) return
     const OBJECT_KEYS = new Set(['appPaths', 'gamePaths', 'appNames'])
-    const BOOLEAN_KEYS = new Set(['accentBgTint', 'focusActiveTitle', 'startMinimized', 'minimizeToTray', 'autoCheckUpdates'])
+    const BOOLEAN_KEYS = new Set([
+      'accentBgTint',
+      'focusActiveTitle',
+      'startMinimized',
+      'minimizeToTray',
+      'autoCheckUpdates'
+    ])
     const STRING_KEYS = new Set(['accentPreset', 'accentCustom'])
-    const WRITABLE_KEYS = new Set([...OBJECT_KEYS, ...BOOLEAN_KEYS, ...STRING_KEYS, 'customSlots', 'launchDelayMs'])
+    const WRITABLE_KEYS = new Set([
+      ...OBJECT_KEYS,
+      ...BOOLEAN_KEYS,
+      ...STRING_KEYS,
+      'customSlots',
+      'launchDelayMs'
+    ])
 
     const safe: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(patch)) {
@@ -141,7 +157,12 @@ export function registerConfigHandlers() {
         safe[key] = value
       } else if (STRING_KEYS.has(key) && typeof value === 'string') {
         safe[key] = value
-      } else if (key === 'customSlots' && typeof value === 'number' && Number.isFinite(value) && value >= 1) {
+      } else if (
+        key === 'customSlots' &&
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value >= 1
+      ) {
         safe[key] = Math.min(Math.floor(value), MAX_CUSTOM_SLOTS)
       } else if (key === 'launchDelayMs' && typeof value === 'number' && Number.isFinite(value)) {
         safe[key] = Math.min(Math.max(Math.round(value), 0), 5000)
@@ -177,15 +198,19 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('get-migration-flags', () => {
     return {
-      migrated:                    store.get('migrated'),
+      migrated: store.get('migrated'),
       profileUtilityOrderMigrated: store.get('profileUtilityOrderMigrated'),
-      profileSetsMigrated:         store.get('profileSetsMigrated'),
+      profileSetsMigrated: store.get('profileSetsMigrated')
     }
   })
 
   ipcMain.handle('set-migration-flags', (_event, patch: unknown) => {
     if (!isRecord(patch)) return
-    const MIGRATION_KEYS = ['migrated', 'profileUtilityOrderMigrated', 'profileSetsMigrated'] as const
+    const MIGRATION_KEYS = [
+      'migrated',
+      'profileUtilityOrderMigrated',
+      'profileSetsMigrated'
+    ] as const
     const safe: Record<string, boolean> = {}
     for (const key of MIGRATION_KEYS) {
       if (key in patch && typeof patch[key] === 'boolean') safe[key] = patch[key] as boolean

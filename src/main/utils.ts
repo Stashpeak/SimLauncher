@@ -33,5 +33,7 @@ export function getErrorMessage(err: unknown) {
 }
 
 export function getErrorCode(err: unknown) {
-  return err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code) : undefined
+  return err && typeof err === 'object' && 'code' in err
+    ? String((err as { code?: unknown }).code)
+    : undefined
 }

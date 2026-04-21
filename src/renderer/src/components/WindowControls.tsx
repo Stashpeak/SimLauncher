@@ -31,11 +31,15 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         >
           <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
             <span className="text-(--text-primary)">Sim</span>
-            <span className={`transition-colors ${
-              view === 'games'
-                ? 'text-(--accent)'
-                : 'text-(--text-subtle) group-hover:text-(--accent)'
-            }`}>Launcher</span>
+            <span
+              className={`transition-colors ${
+                view === 'games'
+                  ? 'text-(--accent)'
+                  : 'text-(--text-subtle) group-hover:text-(--accent)'
+              }`}
+            >
+              Launcher
+            </span>
           </span>
         </button>
 
@@ -53,7 +57,16 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           }`}
           title="Settings"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
@@ -85,7 +98,14 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
           title="Minimize"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
             <path d="M2 8h12" />
           </svg>
         </button>
@@ -95,7 +115,16 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
           title={isMaximized ? 'Restore' : 'Maximize'}
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          >
             <rect x="2" y="2" width="12" height="12" rx="2" />
           </svg>
         </button>
@@ -105,7 +134,16 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-[rgba(255,0,0,0.1)] hover:text-red-500"
           title="Close"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
         </button>

@@ -48,25 +48,25 @@ const PROFILE_BOOLEAN_KEYS = [
 
 export const store = new Store({
   schema: {
-    appPaths:     { type: 'object',  default: {} },
-    gamePaths:    { type: 'object',  default: {} },
-    profiles:     { type: 'object',  default: {} },
-    appNames:     { type: 'object',  default: {} },
-    customSlots:  { type: 'number',  default: 1, minimum: 1, maximum: MAX_CUSTOM_SLOTS },
-    accentPreset: { type: 'string',  default: '' },
-    accentCustom: { type: 'string',  default: '' },
+    appPaths: { type: 'object', default: {} },
+    gamePaths: { type: 'object', default: {} },
+    profiles: { type: 'object', default: {} },
+    appNames: { type: 'object', default: {} },
+    customSlots: { type: 'number', default: 1, minimum: 1, maximum: MAX_CUSTOM_SLOTS },
+    accentPreset: { type: 'string', default: '' },
+    accentCustom: { type: 'string', default: '' },
     accentBgTint: { type: 'boolean', default: false },
     focusActiveTitle: { type: 'boolean', default: true },
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     startWithWindows: { type: 'boolean', default: false },
-    startMinimized:   { type: 'boolean', default: false },
-    minimizeToTray:   { type: 'boolean', default: false },
-    autoCheckUpdates:  { type: 'boolean', default: true },
-    zoomFactor:       { type: 'number',  default: DEFAULT_ZOOM_FACTOR },
-    windowBounds:      { type: 'object',  default: {} },
+    startMinimized: { type: 'boolean', default: false },
+    minimizeToTray: { type: 'boolean', default: false },
+    autoCheckUpdates: { type: 'boolean', default: true },
+    zoomFactor: { type: 'number', default: DEFAULT_ZOOM_FACTOR },
+    windowBounds: { type: 'object', default: {} },
     profileUtilityOrderMigrated: { type: 'boolean', default: false },
     profileSetsMigrated: { type: 'boolean', default: false },
-    migrated:     { type: 'boolean', default: false },
+    migrated: { type: 'boolean', default: false }
   }
 })
 
@@ -92,9 +92,7 @@ export const EXPECTED_CONFIG_KEYS = new Set([
   'profileSetsMigrated',
   'migrated'
 ])
-const LEGACY_CONFIG_KEYS = new Set([
-  'killOnClose'
-])
+const LEGACY_CONFIG_KEYS = new Set(['killOnClose'])
 const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFIG_KEYS])
 const BOOLEAN_CONFIG_KEYS = new Set([
   'accentBgTint',
@@ -129,7 +127,9 @@ export function isWindowBounds(value: unknown): value is WindowBounds {
 
 export function requireSafeZoomFactor(value: unknown) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new Error(`Zoom factor must be a finite number from ${MIN_ZOOM_FACTOR} to ${MAX_ZOOM_FACTOR}.`)
+    throw new Error(
+      `Zoom factor must be a finite number from ${MIN_ZOOM_FACTOR} to ${MAX_ZOOM_FACTOR}.`
+    )
   }
 
   return clamp(value, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
@@ -195,7 +195,11 @@ function isImportableExePath(value: unknown): value is string {
 
   const trimmedPath = value.trim()
 
-  return trimmedPath.length > 0 && trimmedPath.length <= MAX_IMPORT_PATH_LENGTH && /\.exe$/i.test(trimmedPath)
+  return (
+    trimmedPath.length > 0 &&
+    trimmedPath.length <= MAX_IMPORT_PATH_LENGTH &&
+    /\.exe$/i.test(trimmedPath)
+  )
 }
 
 function getImportableExePath(value: unknown) {
@@ -282,7 +286,12 @@ function sanitizeProfileUtilities(value: unknown, utilityKeys: Set<string>) {
     const id = entry.id
     const enabled = entry.enabled
 
-    if (typeof id === 'string' && utilityKeys.has(id) && typeof enabled === 'boolean' && !seen.has(id)) {
+    if (
+      typeof id === 'string' &&
+      utilityKeys.has(id) &&
+      typeof enabled === 'boolean' &&
+      !seen.has(id)
+    ) {
       utilities.push({ id, enabled })
       seen.add(id)
     }
@@ -354,12 +363,10 @@ function sanitizeProfileEntry(value: unknown, utilityKeys: Set<string>) {
       return null
     }
 
-    const profiles = value.profiles
-      .slice(0, MAX_PROFILE_COUNT_PER_GAME)
-      .flatMap((profile) => {
-        const safeProfile = sanitizeNamedProfile(profile, utilityKeys)
-        return safeProfile ? [safeProfile] : []
-      })
+    const profiles = value.profiles.slice(0, MAX_PROFILE_COUNT_PER_GAME).flatMap((profile) => {
+      const safeProfile = sanitizeNamedProfile(profile, utilityKeys)
+      return safeProfile ? [safeProfile] : []
+    })
 
     if (profiles.length === 0) {
       return null

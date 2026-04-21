@@ -1,5 +1,13 @@
-export interface Game { key: string; name: string; icon: string }
-export interface Utility { key: string; name: string; isCustom?: boolean }
+export interface Game {
+  key: string
+  name: string
+  icon: string
+}
+export interface Utility {
+  key: string
+  name: string
+  isCustom?: boolean
+}
 export interface ProfileUtility {
   id: string
   enabled: boolean
@@ -51,7 +59,7 @@ export const GAMES: Game[] = [
   { key: 'rbr', name: 'Richard Burns Rally', icon: 'assets/rbr.png' },
   { key: 'rennsport', name: 'Rennsport', icon: 'assets/rennsport.png' },
   { key: 'rf1', name: 'rFactor', icon: 'assets/rf1.png' },
-  { key: 'rf2', name: 'rFactor 2', icon: 'assets/rf2.png' },
+  { key: 'rf2', name: 'rFactor 2', icon: 'assets/rf2.png' }
 ]
 
 export const BUILT_IN_UTILITIES: Utility[] = [
@@ -59,7 +67,7 @@ export const BUILT_IN_UTILITIES: Utility[] = [
   { key: 'crewchief', name: 'Crew Chief' },
   { key: 'tradingpaints', name: 'Trading Paints' },
   { key: 'garage61', name: 'Garage 61' },
-  { key: 'secondmonitor', name: 'Second Monitor' },
+  { key: 'secondmonitor', name: 'Second Monitor' }
 ]
 
 export function normalizeCustomSlots(value: unknown) {
@@ -136,8 +144,14 @@ export function getHighestCustomSlot(...records: Array<Record<string, unknown> |
   return highestSlot
 }
 
-export function resolveCustomSlots(value: unknown, ...records: Array<Record<string, unknown> | undefined>) {
-  return Math.min(Math.max(normalizeCustomSlots(value), getHighestCustomSlot(...records)), MAX_CUSTOM_SLOTS)
+export function resolveCustomSlots(
+  value: unknown,
+  ...records: Array<Record<string, unknown> | undefined>
+) {
+  return Math.min(
+    Math.max(normalizeCustomSlots(value), getHighestCustomSlot(...records)),
+    MAX_CUSTOM_SLOTS
+  )
 }
 
 export function getCustomUtilities(customSlots: unknown): Utility[] {
@@ -155,10 +169,7 @@ export function getCustomUtilities(customSlots: unknown): Utility[] {
 }
 
 export function getUtilities(customSlots: unknown): Utility[] {
-  return [
-    ...BUILT_IN_UTILITIES,
-    ...getCustomUtilities(customSlots)
-  ]
+  return [...BUILT_IN_UTILITIES, ...getCustomUtilities(customSlots)]
 }
 
 export function isProfileUtility(value: unknown): value is ProfileUtility {
@@ -241,12 +252,14 @@ function normalizeNamedProfile(value: unknown, fallbackIndex: number): NamedGame
 
   return {
     ...(profile as GameProfile),
-    id: typeof profile.id === 'string' && profile.id.trim().length > 0
-      ? profile.id
-      : createProfileId(),
-    name: typeof profile.name === 'string' && profile.name.trim().length > 0
-      ? profile.name.trim()
-      : fallbackName
+    id:
+      typeof profile.id === 'string' && profile.id.trim().length > 0
+        ? profile.id
+        : createProfileId(),
+    name:
+      typeof profile.name === 'string' && profile.name.trim().length > 0
+        ? profile.name.trim()
+        : fallbackName
   }
 }
 
@@ -295,7 +308,10 @@ export function normalizeGameProfileSet(value: StoredGameProfile | undefined): G
 
 export function getActiveGameProfile(value: StoredGameProfile | undefined) {
   const profileSet = normalizeGameProfileSet(value)
-  return profileSet.profiles.find((profile) => profile.id === profileSet.activeProfileId) || profileSet.profiles[0]
+  return (
+    profileSet.profiles.find((profile) => profile.id === profileSet.activeProfileId) ||
+    profileSet.profiles[0]
+  )
 }
 
 export const UTILITIES: Utility[] = getUtilities(DEFAULT_CUSTOM_SLOTS)

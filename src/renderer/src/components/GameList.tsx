@@ -7,7 +7,7 @@ import {
   type Game,
   type GameProfileSet,
   type NamedGameProfile,
-  type Profiles,
+  type Profiles
 } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
@@ -47,7 +47,9 @@ function GameRow({
   const [iconUrl, setIconUrl] = useState<string | null>(null)
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
-  const [profileSet, setProfileSet] = useState<GameProfileSet>(() => normalizeGameProfileSet(undefined))
+  const [profileSet, setProfileSet] = useState<GameProfileSet>(() =>
+    normalizeGameProfileSet(undefined)
+  )
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [newProfileFormOpen, setNewProfileFormOpen] = useState(false)
   const [newProfileName, setNewProfileName] = useState('')
@@ -94,7 +96,9 @@ function GameRow({
 
   const loadProfileSet = useCallback(async () => {
     const profiles = await window.electronAPI.getProfiles()
-    const nextProfileSet = normalizeGameProfileSet(profiles[game.key] as Profiles[string] | undefined)
+    const nextProfileSet = normalizeGameProfileSet(
+      profiles[game.key] as Profiles[string] | undefined
+    )
     setProfileSet(nextProfileSet)
     return nextProfileSet
   }, [game.key])
@@ -186,7 +190,11 @@ function GameRow({
       let switchWarning: string | undefined
 
       if (isRunning) {
-        const diff = await window.electronAPI.getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
+        const diff = await window.electronAPI.getProfileSwitchDiff(
+          game.key,
+          currentProfile.id,
+          nextProfile.id
+        )
 
         if (diff.toStopCount > 0 || diff.toStartCount > 0) {
           const parts: string[] = []
@@ -201,7 +209,11 @@ function GameRow({
           }
 
           onLaunchStart(game.key)
-          const result = await window.electronAPI.switchProfileApps(game.key, currentProfile.id, nextProfile.id)
+          const result = await window.electronAPI.switchProfileApps(
+            game.key,
+            currentProfile.id,
+            nextProfile.id
+          )
           if (!result.success) {
             notify(result.error || 'Failed to switch profile', 'error')
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
@@ -216,7 +228,11 @@ function GameRow({
 
       await saveProfileSet(updatedProfileSet)
       setProfileMenuOpen(false)
-      notify(switchWarning || `Switched to ${nextProfile.name}`, switchWarning ? 'warn' : 'success', switchWarning ? 5000 : undefined)
+      notify(
+        switchWarning || `Switched to ${nextProfile.name}`,
+        switchWarning ? 'warn' : 'success',
+        switchWarning ? 5000 : undefined
+      )
     } catch (err) {
       onLaunchEnd(game.key, 0)
       notify('Failed to switch profile', 'error')
@@ -254,7 +270,11 @@ function GameRow({
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.warning || result.message || `Launching ${game.name}`, result.warning ? 'warn' : 'success', result.warning ? 5000 : undefined)
+      notify(
+        result.warning || result.message || `Launching ${game.name}`,
+        result.warning ? 'warn' : 'success',
+        result.warning ? 5000 : undefined
+      )
     } catch (err) {
       notify('Failed to launch profile', 'error')
       console.error(err)
@@ -269,7 +289,11 @@ function GameRow({
       await onRunningStateRefresh()
 
       if (!result.success) {
-        notify(result.warning || result.error || 'Some companion apps could not be closed', 'warn', 6000)
+        notify(
+          result.warning || result.error || 'Some companion apps could not be closed',
+          'warn',
+          6000
+        )
         return
       }
 
@@ -297,7 +321,11 @@ function GameRow({
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-      notify(result.warning || result.message || 'Relaunching missing apps', result.warning ? 'warn' : 'success', result.warning ? 5000 : undefined)
+      notify(
+        result.warning || result.message || 'Relaunching missing apps',
+        result.warning ? 'warn' : 'success',
+        result.warning ? 5000 : undefined
+      )
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
       console.error(err)
@@ -358,8 +386,13 @@ function GameRow({
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
-    <div className={`relative flex flex-col gap-2 transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`} ref={rowRef}>
-      <div className={`glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)] ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}>
+    <div
+      className={`relative flex flex-col gap-2 transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      ref={rowRef}
+    >
+      <div
+        className={`glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)] ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}
+      >
         <div className="flex items-center gap-5">
           <div className="relative">
             {iconUrl && !iconLoadFailed ? (
@@ -400,7 +433,17 @@ function GameRow({
                   aria-label={`${game.name} profile`}
                 >
                   <span className="min-w-0 truncate">{activeProfile.name}</span>
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}>
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
+                  >
                     <path d="M3 6l5 5 5-5" />
                   </svg>
                 </button>
@@ -428,7 +471,9 @@ function GameRow({
                               : 'text-(--text-secondary) hover:bg-(--glass-bg-elevated) hover:text-(--text-primary)'
                           }`}
                         >
-                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`} />
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
+                          />
                           <span className="min-w-0 flex-1 truncate">{profile.name}</span>
                         </button>
                       )
@@ -467,7 +512,16 @@ function GameRow({
                           aria-label="Create profile"
                           title="Create profile"
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
                             <path d="M20 6 9 17l-5-5" />
                           </svg>
                         </button>
@@ -482,7 +536,15 @@ function GameRow({
                         }}
                         className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                        >
                           <path d="M12 5v14" />
                           <path d="M5 12h14" />
                         </svg>
@@ -507,7 +569,9 @@ function GameRow({
                         alt=""
                         title={app.warning || app.name}
                         className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
-                        onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
+                        onError={() =>
+                          setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))
+                        }
                       />
                     )
                   }
@@ -522,7 +586,10 @@ function GameRow({
                       className={`h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
                       title={app.warning || app.name}
                     >
-                      {app.name.replace(/\.exe$/i, '').slice(0, 2).toUpperCase()}
+                      {app.name
+                        .replace(/\.exe$/i, '')
+                        .slice(0, 2)
+                        .toUpperCase()}
                     </div>
                   )
                 })}
@@ -554,9 +621,10 @@ function GameRow({
             type="button"
             onClick={handleToggle}
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all duration-300 active:scale-[0.98]
-              ${isActive
-                ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow'
-                : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
+              ${
+                isActive
+                  ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow'
+                  : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
           >
@@ -577,7 +645,9 @@ function GameRow({
         </div>
       </div>
 
-      <div className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}>
+      <div
+        className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}
+      >
         <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
           {isActive && (
             <div className="animate-fade-slide">
@@ -636,7 +706,9 @@ export function GameList() {
       }
 
       launchBlockTimeoutRef.current = window.setTimeout(() => {
-        setLaunchingGameKey((latestGameKey) => latestGameKey === finishedGameKey ? null : latestGameKey)
+        setLaunchingGameKey((latestGameKey) =>
+          latestGameKey === finishedGameKey ? null : latestGameKey
+        )
         launchBlockTimeoutRef.current = null
       }, cooldownMs)
 
@@ -649,7 +721,7 @@ export function GameList() {
       try {
         const settings = await window.electronAPI.getSettings()
         setGamePaths(settings.gamePaths)
-        const available = GAMES.filter(game => !!settings.gamePaths[game.key])
+        const available = GAMES.filter((game) => !!settings.gamePaths[game.key])
         setConfiguredGames(available)
       } catch (err) {
         console.error('Failed to load game paths', err)
@@ -686,10 +758,12 @@ export function GameList() {
         const settings = await window.electronAPI.getSettings()
         const cache: Record<string, string> = {}
         await Promise.all(
-          Object.values(settings.appPaths).filter(Boolean).map(async (p) => {
-            const icon = await window.electronAPI.getFileIcon(p)
-            if (icon) cache[p.toLowerCase()] = icon
-          })
+          Object.values(settings.appPaths)
+            .filter(Boolean)
+            .map(async (p) => {
+              const icon = await window.electronAPI.getFileIcon(p)
+              if (icon) cache[p.toLowerCase()] = icon
+            })
         )
         setAppIconCache(cache)
         setCacheInitialized(true)
@@ -702,31 +776,34 @@ export function GameList() {
     loadAppIcons()
   }, [])
 
-  const refreshRunningState = useCallback(async (isMounted: () => boolean = () => true) => {
-    try {
-      if (configuredGames.length === 0) {
-        if (isMounted()) {
-          setRunningApps([])
-          setRunningStatus({})
+  const refreshRunningState = useCallback(
+    async (isMounted: () => boolean = () => true) => {
+      try {
+        if (configuredGames.length === 0) {
+          if (isMounted()) {
+            setRunningApps([])
+            setRunningStatus({})
+          }
+          return
         }
-        return
+
+        const apps = await window.electronAPI.getRunningApps()
+        if (!isMounted()) return
+
+        const nextApps = apps || []
+        setRunningApps(nextApps)
+
+        const newStatus: Record<string, boolean> = {}
+        configuredGames.forEach((game) => {
+          newStatus[game.key] = nextApps.some((a: { gameKey: string }) => a.gameKey === game.key)
+        })
+        setRunningStatus(newStatus)
+      } catch (err) {
+        console.error('Consolidated polling error:', err)
       }
-
-      const apps = await window.electronAPI.getRunningApps()
-      if (!isMounted()) return
-
-      const nextApps = apps || []
-      setRunningApps(nextApps)
-
-      const newStatus: Record<string, boolean> = {}
-      configuredGames.forEach(game => {
-        newStatus[game.key] = nextApps.some((a: { gameKey: string }) => a.gameKey === game.key)
-      })
-      setRunningStatus(newStatus)
-    } catch (err) {
-      console.error('Consolidated polling error:', err)
-    }
-  }, [configuredGames])
+    },
+    [configuredGames]
+  )
 
   // Poll running state every 2s
   useEffect(() => {
@@ -746,50 +823,59 @@ export function GameList() {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center text-(--text-secondary)">
         <p>No games configured.</p>
-        <p className="mt-1 text-sm text-(--text-muted)">Configure game paths in settings to see them here.</p>
+        <p className="mt-1 text-sm text-(--text-muted)">
+          Configure game paths in settings to see them here.
+        </p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-3 px-1 py-2">
-      {configuredGames.map((game, index) => ({ game, index })).sort((firstEntry, secondEntry) => {
-        if (!focusActiveTitle) {
-          return 0
-        }
+      {configuredGames
+        .map((game, index) => ({ game, index }))
+        .sort((firstEntry, secondEntry) => {
+          if (!focusActiveTitle) {
+            return 0
+          }
 
-        const runningSort = Number(!!runningStatus[secondEntry.game.key]) - Number(!!runningStatus[firstEntry.game.key])
-        return runningSort || firstEntry.index - secondEntry.index
-      }).map(({ game }) => {
-        const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
-        const gamePathLower = gamePaths[game.key]?.toLowerCase()
-        const appsForGame = runningApps.filter(
-          a => a.gameKey === game.key && a.path.toLowerCase() !== gamePathLower
-        )
-        const runningAppIcons = appsForGame.map(a => ({
-          icon: appIconCache[a.path.toLowerCase()] ?? null,
-          name: a.name,
-          warning: a.warning
-        }))
+          const runningSort =
+            Number(!!runningStatus[secondEntry.game.key]) -
+            Number(!!runningStatus[firstEntry.game.key])
+          return runningSort || firstEntry.index - secondEntry.index
+        })
+        .map(({ game }) => {
+          const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
+          const gamePathLower = gamePaths[game.key]?.toLowerCase()
+          const appsForGame = runningApps.filter(
+            (a) => a.gameKey === game.key && a.path.toLowerCase() !== gamePathLower
+          )
+          const runningAppIcons = appsForGame.map((a) => ({
+            icon: appIconCache[a.path.toLowerCase()] ?? null,
+            name: a.name,
+            warning: a.warning
+          }))
 
-        return (
-          <GameRow
-            key={game.key}
-            game={game}
-            isActive={activeEditorKey === game.key}
-            isRunning={!!runningStatus[game.key]}
-            runningAppIcons={runningAppIcons}
-            isDimmed={hasActiveTitle && !runningStatus[game.key]}
-            isLaunching={launchingGameKey === game.key}
-            isLaunchBlocked={launchingGameKey !== null}
-            onLaunchStart={handleLaunchStart}
-            onLaunchEnd={handleLaunchEnd}
-            onRunningStateRefresh={refreshRunningState}
-            onToggleEditor={() => setActiveEditorKey(activeEditorKey === game.key ? null : game.key)}
-            cacheInitialized={cacheInitialized}
-          />
-        )
-      })}
+          return (
+            <GameRow
+              key={game.key}
+              game={game}
+              isActive={activeEditorKey === game.key}
+              isRunning={!!runningStatus[game.key]}
+              runningAppIcons={runningAppIcons}
+              isDimmed={hasActiveTitle && !runningStatus[game.key]}
+              isLaunching={launchingGameKey === game.key}
+              isLaunchBlocked={launchingGameKey !== null}
+              onLaunchStart={handleLaunchStart}
+              onLaunchEnd={handleLaunchEnd}
+              onRunningStateRefresh={refreshRunningState}
+              onToggleEditor={() =>
+                setActiveEditorKey(activeEditorKey === game.key ? null : game.key)
+              }
+              cacheInitialized={cacheInitialized}
+            />
+          )
+        })}
     </div>
   )
 }

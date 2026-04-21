@@ -65,7 +65,8 @@ function getGenericIconFingerprint() {
 
 export function registerIconHandlers() {
   ipcMain.handle('get-asset-data', async (_event, filename: unknown) => {
-    if (typeof filename !== 'string' || path.basename(filename) !== filename || !filename) return null
+    if (typeof filename !== 'string' || path.basename(filename) !== filename || !filename)
+      return null
     const assetsPath = app.isPackaged
       ? path.join(process.resourcesPath, 'assets')
       : path.join(app.getAppPath(), 'assets')
