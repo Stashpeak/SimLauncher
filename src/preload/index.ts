@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { ProgressInfo, UpdateInfo } from 'electron-updater'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // launch
@@ -28,28 +29,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('kill-profile-apps', gameKey, appPaths),
 
   // updater
-  onUpdateAvailable: (cb: (info: any) => void) => {
-    const handler = (_: unknown, info: any) => cb(info)
+  onUpdateAvailable: (cb: (info: UpdateInfo) => void) => {
+    const handler = (_: unknown, info: UpdateInfo) => cb(info)
     ipcRenderer.on('update-available', handler)
     return () => ipcRenderer.removeListener('update-available', handler)
   },
-  onUpdateDownloaded: (cb: (info: any) => void) => {
-    const handler = (_: unknown, info: any) => cb(info)
+  onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => {
+    const handler = (_: unknown, info: UpdateInfo) => cb(info)
     ipcRenderer.on('update-downloaded', handler)
     return () => ipcRenderer.removeListener('update-downloaded', handler)
   },
-  onUpdateNotAvailable: (cb: (info: any) => void) => {
-    const handler = (_: unknown, info: any) => cb(info)
+  onUpdateNotAvailable: (cb: (info: UpdateInfo) => void) => {
+    const handler = (_: unknown, info: UpdateInfo) => cb(info)
     ipcRenderer.on('update-not-available', handler)
     return () => ipcRenderer.removeListener('update-not-available', handler)
   },
-  onUpdateDownloadProgress: (cb: (progress: any) => void) => {
-    const handler = (_: unknown, progress: any) => cb(progress)
+  onUpdateDownloadProgress: (cb: (progress: ProgressInfo) => void) => {
+    const handler = (_: unknown, progress: ProgressInfo) => cb(progress)
     ipcRenderer.on('update-download-progress', handler)
     return () => ipcRenderer.removeListener('update-download-progress', handler)
   },
-  onUpdateError: (cb: (error: any) => void) => {
-    const handler = (_: unknown, error: any) => cb(error)
+  onUpdateError: (cb: (error: Error) => void) => {
+    const handler = (_: unknown, error: Error) => cb(error)
     ipcRenderer.on('update-error', handler)
     return () => ipcRenderer.removeListener('update-error', handler)
   },

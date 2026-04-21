@@ -1,5 +1,7 @@
 export {}
 
+import type { ProgressInfo, UpdateInfo } from 'electron-updater'
+
 declare global {
   interface Settings {
     appPaths: Record<string, string>
@@ -92,11 +94,11 @@ declare global {
       getRunningApps: () => Promise<RunningApp[]>
       killLaunchedApps: (gameKey?: string) => Promise<KillResult>
       killProfileApps: (gameKey: string, appPaths: string[]) => Promise<KillResult>
-      onUpdateAvailable: (cb: (info: any) => void) => Unsubscribe
-      onUpdateDownloaded: (cb: (info: any) => void) => Unsubscribe
-      onUpdateNotAvailable: (cb: (info: any) => void) => Unsubscribe
-      onUpdateDownloadProgress: (cb: (progress: any) => void) => Unsubscribe
-      onUpdateError: (cb: (error: any) => void) => Unsubscribe
+      onUpdateAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
+      onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => Unsubscribe
+      onUpdateNotAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
+      onUpdateDownloadProgress: (cb: (progress: ProgressInfo) => void) => Unsubscribe
+      onUpdateError: (cb: (error: Error) => void) => Unsubscribe
       installUpdate: () => Promise<unknown>
       checkForUpdates: () => Promise<unknown>
       getSettings: () => Promise<Settings>

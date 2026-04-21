@@ -165,7 +165,7 @@ export default function App() {
     window.addEventListener('bg-tint-change', handleTintChange as EventListener)
 
     // Listen for auto-updates
-    const unsubscribe = window.electronAPI.onUpdateAvailable((info: any) => {
+    const unsubscribe = window.electronAPI.onUpdateAvailable((info) => {
       if (info?.version) setUpdateInfo({ version: info.version })
     })
 

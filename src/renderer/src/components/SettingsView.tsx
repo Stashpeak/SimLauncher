@@ -357,7 +357,7 @@ export function SettingsView({
       setUpdateStatus('up-to-date')
       setTimeout(() => setUpdateStatus(null), 3000)
     })
-    const unsubscribeProgress = window.electronAPI.onUpdateDownloadProgress((progress: any) => {
+    const unsubscribeProgress = window.electronAPI.onUpdateDownloadProgress((progress) => {
       if (typeof progress?.percent === 'number') {
         setUpdateProgress(progress.percent)
       }
@@ -368,7 +368,7 @@ export function SettingsView({
       setUpdateProgress(null)
       setUpdateStatus('downloaded')
     })
-    const unsubscribeError = window.electronAPI.onUpdateError((error: any) => {
+    const unsubscribeError = window.electronAPI.onUpdateError((error) => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
       setUpdateProgress(null)
