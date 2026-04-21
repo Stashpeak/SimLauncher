@@ -417,7 +417,7 @@ function GameRow({
                           key={profile.id}
                           type="button"
                           role="menuitemradio"
-                          aria-checked={selected}
+                          aria-checked={selected ? 'true' : 'false'}
                           onClick={(event) => {
                             event.stopPropagation()
                             handleProfileSelect(profile.id)

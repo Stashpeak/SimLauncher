@@ -23,7 +23,7 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
   return (
     <div
       role="switch"
-      aria-checked={checked}
+      aria-checked={checked ? 'true' : 'false'}
       tabIndex={0}
       onClick={onToggle}
       onKeyDown={(event) => {
@@ -281,7 +281,7 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
       <div
         key={utility.key}
         role="switch"
-        aria-checked={isEnabled}
+        aria-checked={isEnabled ? 'true' : 'false'}
         tabIndex={0}
         onClick={() => handleToggleUtility(utility.key)}
         onKeyDown={(event) => {
