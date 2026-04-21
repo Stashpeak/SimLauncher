@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { minimize, maximize, close } from '../lib/electron'
 
 interface WindowControlsProps {
   view: 'games' | 'settings'
@@ -9,12 +10,12 @@ interface WindowControlsProps {
 export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsProps) {
   const [isMaximized, setIsMaximized] = useState(false)
 
-  const handleMinimize = () => window.electronAPI.minimize()
+  const handleMinimize = () => minimize()
   const handleMaximize = () => {
-    window.electronAPI.maximize()
+    maximize()
     setIsMaximized((current) => !current)
   }
-  const handleClose = () => window.electronAPI.close()
+  const handleClose = () => close()
   const handleInstallUpdate = () => {
     onNavigate('settings')
   }

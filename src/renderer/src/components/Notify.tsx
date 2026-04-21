@@ -9,6 +9,7 @@ import {
   useState
 } from 'react'
 import { createPortal } from 'react-dom'
+import { onAppLaunchError } from '../lib/electron'
 
 type ToastType = 'success' | 'warn' | 'error'
 
@@ -155,7 +156,7 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    return window.electronAPI.onAppLaunchError((data) => {
+    return onAppLaunchError((data) => {
       notify(formatLaunchErrorToast(data), 'error', 5000)
     })
   }, [notify])

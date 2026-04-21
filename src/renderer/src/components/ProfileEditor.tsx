@@ -11,6 +11,8 @@ import {
 } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
+import { getSettings, getProfiles, saveProfile } from '../lib/store'
+import { getFileIcon, browsePath } from '../lib/electron'
 
 interface ProfileToggleRowProps {
   label: string
@@ -84,10 +86,7 @@ export function ProfileEditor({
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      const [settings, allProfiles] = await Promise.all([
-        window.electronAPI.getSettings(),
-        window.electronAPI.getProfiles()
-      ])
+      const [settings, allProfiles] = await Promise.all([getSettings(), getProfiles()])
       const paths = settings.appPaths
       const names = settings.appNames
       const savedCustomSlots = settings.customSlots
@@ -126,7 +125,7 @@ export function ProfileEditor({
           Object.values(paths)
             .filter(Boolean)
             .map(async (path) => {
-              const icon = await window.electronAPI.getFileIcon(path)
+              const icon = await getFileIcon(path)
               if (icon) {
                 cache[path.toLowerCase()] = icon
               }
@@ -211,7 +210,7 @@ export function ProfileEditor({
   }
 
   const handleBrowseTrackedProcess = async (index: number) => {
-    const result = await window.electronAPI.browsePath(`${gameKey}-tracked-${index}`)
+    const result = await browsePath(`${gameKey}-tracked-${index}`)
 
     if (result.filePath) {
       setTrackedProcessPaths((prev) =>
@@ -227,7 +226,7 @@ export function ProfileEditor({
   }
 
   const handleSave = async () => {
-    const allProfiles = await window.electronAPI.getProfiles()
+    const allProfiles = await getProfiles()
     const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
     const activeProfile =
       profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
@@ -250,7 +249,7 @@ export function ProfileEditor({
       )
     }
 
-    await window.electronAPI.saveProfile(gameKey, {
+    await saveProfile(gameKey, {
       activeProfileId: updatedProfile.id,
       profiles: profileSet.profiles.map((profile) =>
         profile.id === updatedProfile.id ? updatedProfile : profile
@@ -263,7 +262,7 @@ export function ProfileEditor({
   }
 
   const handleDeleteProfile = async () => {
-    const allProfiles = await window.electronAPI.getProfiles()
+    const allProfiles = await getProfiles()
     const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
     const activeProfile =
       profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
@@ -280,7 +279,7 @@ export function ProfileEditor({
 
     const nextProfiles = profileSet.profiles.filter((profile) => profile.id !== activeProfile.id)
 
-    await window.electronAPI.saveProfile(gameKey, {
+    await saveProfile(gameKey, {
       activeProfileId: nextProfiles[0].id,
       profiles: nextProfiles
     })

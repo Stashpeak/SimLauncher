@@ -11,6 +11,17 @@ import {
 } from '../lib/config'
 import { ProfileEditor } from './ProfileEditor'
 import { useNotify } from './Notify'
+import { getProfiles, saveProfile, getSettings } from '../lib/store'
+import {
+  getAssetData,
+  getProfileSwitchDiff,
+  switchProfileApps,
+  launchProfile,
+  killLaunchedApps,
+  relaunchMissingProfile,
+  getFileIcon,
+  getRunningApps
+} from '../lib/electron'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
@@ -59,7 +70,7 @@ function GameRow({
   useEffect(() => {
     async function resolveIcon() {
       const filename = game.icon.split('/').pop() || ''
-      const data = await window.electronAPI.getAssetData(filename)
+      const data = await getAssetData(filename)
       setIconLoadFailed(false)
       setIconUrl(data)
     }
@@ -95,7 +106,7 @@ function GameRow({
   }, [profileMenuOpen, newProfileFormOpen])
 
   const loadProfileSet = useCallback(async () => {
-    const profiles = await window.electronAPI.getProfiles()
+    const profiles = await getProfiles()
     const nextProfileSet = normalizeGameProfileSet(
       profiles[game.key] as Profiles[string] | undefined
     )
@@ -126,12 +137,12 @@ function GameRow({
   }, [loadProfileSet, isActive])
 
   const getProfileRuntimeConfig = async (): Promise<GameProfileSet> => {
-    const profiles = await window.electronAPI.getProfiles()
+    const profiles = await getProfiles()
     return normalizeGameProfileSet(profiles[game.key] as Profiles[string] | undefined)
   }
 
   const saveProfileSet = async (nextProfileSet: GameProfileSet) => {
-    await window.electronAPI.saveProfile(game.key, nextProfileSet)
+    await saveProfile(game.key, nextProfileSet)
     setProfileSet(nextProfileSet)
   }
 
@@ -190,11 +201,7 @@ function GameRow({
       let switchWarning: string | undefined
 
       if (isRunning) {
-        const diff = await window.electronAPI.getProfileSwitchDiff(
-          game.key,
-          currentProfile.id,
-          nextProfile.id
-        )
+        const diff = await getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
 
         if (diff.toStopCount > 0 || diff.toStartCount > 0) {
           const parts: string[] = []
@@ -209,11 +216,7 @@ function GameRow({
           }
 
           onLaunchStart(game.key)
-          const result = await window.electronAPI.switchProfileApps(
-            game.key,
-            currentProfile.id,
-            nextProfile.id
-          )
+          const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           if (!result.success) {
             notify(result.error || 'Failed to switch profile', 'error')
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
@@ -262,7 +265,7 @@ function GameRow({
 
     try {
       onLaunchStart(game.key)
-      const result = await window.electronAPI.launchProfile(game.key)
+      const result = await launchProfile(game.key)
       if (!result.success) {
         cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         notify(result.error || 'Failed to launch profile', 'error')
@@ -285,7 +288,7 @@ function GameRow({
 
   const handleKill = async () => {
     try {
-      const result = await window.electronAPI.killLaunchedApps(game.key)
+      const result = await killLaunchedApps(game.key)
       await onRunningStateRefresh()
 
       if (!result.success) {
@@ -313,7 +316,7 @@ function GameRow({
 
     try {
       onLaunchStart(game.key)
-      const result = await window.electronAPI.relaunchMissingProfile(game.key)
+      const result = await relaunchMissingProfile(game.key)
       if (!result.success) {
         cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         notify(result.error || 'Failed to relaunch missing apps', 'error')
@@ -354,7 +357,7 @@ function GameRow({
     let mounted = true
 
     async function loadProfileState() {
-      const profiles = await window.electronAPI.getProfiles()
+      const profiles = await getProfiles()
       const profile = getActiveGameProfile(profiles[game.key] as Profiles[string] | undefined)
 
       if (!mounted) {
@@ -719,7 +722,7 @@ export function GameList() {
   useEffect(() => {
     async function loadGames() {
       try {
-        const settings = await window.electronAPI.getSettings()
+        const settings = await getSettings()
         setGamePaths(settings.gamePaths)
         const available = GAMES.filter((game) => !!settings.gamePaths[game.key])
         setConfiguredGames(available)
@@ -735,7 +738,7 @@ export function GameList() {
     let mounted = true
 
     async function loadFocusActiveTitle() {
-      const settings = await window.electronAPI.getSettings()
+      const settings = await getSettings()
 
       if (mounted) {
         setFocusActiveTitle(settings.focusActiveTitle !== false)
@@ -755,13 +758,13 @@ export function GameList() {
   useEffect(() => {
     async function loadAppIcons() {
       try {
-        const settings = await window.electronAPI.getSettings()
+        const settings = await getSettings()
         const cache: Record<string, string> = {}
         await Promise.all(
           Object.values(settings.appPaths)
             .filter(Boolean)
             .map(async (p) => {
-              const icon = await window.electronAPI.getFileIcon(p)
+              const icon = await getFileIcon(p)
               if (icon) cache[p.toLowerCase()] = icon
             })
         )
@@ -787,7 +790,7 @@ export function GameList() {
           return
         }
 
-        const apps = await window.electronAPI.getRunningApps()
+        const apps = await getRunningApps()
         if (!isMounted()) return
 
         const nextApps = apps || []

@@ -4,6 +4,14 @@ import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 import {
+  getMigrationFlags,
+  saveSettings,
+  saveProfiles,
+  getSettings,
+  setMigrationFlags
+} from './lib/store'
+import { onUpdateAvailable } from './lib/electron'
+import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_PROFILE_ID,
   createDefaultProfile,
@@ -33,7 +41,7 @@ export default function App() {
     // One-time migration from localStorage (vanilla app) to electron-store
     async function migrateFromLocalStorage() {
       try {
-        const flags = await window.electronAPI.getMigrationFlags()
+        const flags = await getMigrationFlags()
         if (flags.migrated) return
 
         const patch: Partial<WritableSettings> = {}
@@ -116,10 +124,9 @@ export default function App() {
         ) as Record<string, GameProfileSet>
 
         if (migratedCustomSlots > 1) patch.customSlots = migratedCustomSlots
-        if (Object.keys(patch).length > 0) await window.electronAPI.saveSettings(patch)
-        if (Object.keys(migratedProfiles).length > 0)
-          await window.electronAPI.saveProfiles(migratedProfiles)
-        await window.electronAPI.setMigrationFlags({
+        if (Object.keys(patch).length > 0) await saveSettings(patch)
+        if (Object.keys(migratedProfiles).length > 0) await saveProfiles(migratedProfiles)
+        await setMigrationFlags({
           profileUtilityOrderMigrated: true,
           migrated: true
         })
@@ -134,7 +141,7 @@ export default function App() {
     // Restore saved theme on startup
     async function initTheme() {
       try {
-        const settings = await window.electronAPI.getSettings()
+        const settings = await getSettings()
         const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
         const custom = settings.accentCustom
         const tint = settings.accentBgTint || false
@@ -165,7 +172,7 @@ export default function App() {
     window.addEventListener('bg-tint-change', handleTintChange as EventListener)
 
     // Listen for auto-updates
-    const unsubscribe = window.electronAPI.onUpdateAvailable((info) => {
+    const unsubscribe = onUpdateAvailable((info) => {
       if (info?.version) setUpdateInfo({ version: info.version })
     })
 

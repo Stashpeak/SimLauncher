@@ -14,6 +14,29 @@ import {
 } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
+import {
+  getSettings,
+  getProfiles,
+  saveSettings,
+  saveProfiles,
+  exportConfig,
+  importConfig
+} from '../lib/store'
+import {
+  getFileIcon,
+  getAssetData,
+  browsePath,
+  getVersion,
+  onUpdateAvailable,
+  onUpdateNotAvailable,
+  onUpdateDownloadProgress,
+  onUpdateDownloaded,
+  onUpdateError,
+  checkForUpdates,
+  installUpdate,
+  setZoom,
+  setLoginItem
+} from '../lib/electron'
 
 const ZOOM_PRESETS = [
   { label: '100%', factor: 1.0 },
@@ -100,10 +123,7 @@ export function SettingsView({
 
   useEffect(() => {
     async function loadSettings() {
-      const [settings, savedProfiles] = await Promise.all([
-        window.electronAPI.getSettings(),
-        window.electronAPI.getProfiles()
-      ])
+      const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
       const typedProfiles = savedProfiles as Profiles
 
       setAppPaths(settings.appPaths)
@@ -135,7 +155,7 @@ export function SettingsView({
       const icons: Record<string, string> = {}
       for (const [key, path] of Object.entries(settings.appPaths)) {
         if (path) {
-          const icon = await window.electronAPI.getFileIcon(path)
+          const icon = await getFileIcon(path)
           if (icon) icons[key] = icon
         }
       }
@@ -145,7 +165,7 @@ export function SettingsView({
       const gIcons: Record<string, string> = {}
       for (const game of GAMES) {
         const filename = game.icon.split('/').pop() || ''
-        const data = await window.electronAPI.getAssetData(filename)
+        const data = await getAssetData(filename)
         if (data) gIcons[game.key] = data
       }
       setGameIcons(gIcons)
@@ -183,7 +203,7 @@ export function SettingsView({
   }
 
   const handleBrowse = async (key: string, isGame: boolean) => {
-    const result = (await window.electronAPI.browsePath(key)) as {
+    const result = (await browsePath(key)) as {
       filePath: string
       inputId: string
     }
@@ -193,7 +213,7 @@ export function SettingsView({
       } else {
         setAppPaths((prev) => ({ ...prev, [key]: result.filePath }))
         // Fetch icon immediately when a new path is selected
-        const icon = await window.electronAPI.getFileIcon(result.filePath)
+        const icon = await getFileIcon(result.filePath)
         if (icon) {
           setAppIcons((prev) => ({ ...prev, [key]: icon }))
           setIconLoadErrors((prev) => {
@@ -343,32 +363,32 @@ export function SettingsView({
 
   useEffect(() => {
     async function load() {
-      const v = await window.electronAPI.getVersion()
+      const v = await getVersion()
       setAppVersion(v)
     }
     load()
 
-    const unsubscribeAvailable = window.electronAPI.onUpdateAvailable(() => {
+    const unsubscribeAvailable = onUpdateAvailable(() => {
       setCheckingUpdate(false)
       setUpdateStatus(null)
     })
-    const unsubscribeNotAvailable = window.electronAPI.onUpdateNotAvailable(() => {
+    const unsubscribeNotAvailable = onUpdateNotAvailable(() => {
       setCheckingUpdate(false)
       setUpdateStatus('up-to-date')
       setTimeout(() => setUpdateStatus(null), 3000)
     })
-    const unsubscribeProgress = window.electronAPI.onUpdateDownloadProgress((progress) => {
+    const unsubscribeProgress = onUpdateDownloadProgress((progress) => {
       if (typeof progress?.percent === 'number') {
         setUpdateProgress(progress.percent)
       }
     })
-    const unsubscribeDownloaded = window.electronAPI.onUpdateDownloaded(() => {
+    const unsubscribeDownloaded = onUpdateDownloaded(() => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
       setUpdateProgress(null)
       setUpdateStatus('downloaded')
     })
-    const unsubscribeError = window.electronAPI.onUpdateError((error) => {
+    const unsubscribeError = onUpdateError((error) => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
       setUpdateProgress(null)
@@ -390,7 +410,7 @@ export function SettingsView({
     setCheckingUpdate(true)
     setUpdateStatus(null)
     try {
-      await window.electronAPI.checkForUpdates()
+      await checkForUpdates()
     } catch (err) {
       setCheckingUpdate(false)
       setUpdateStatus('error')
@@ -414,7 +434,7 @@ export function SettingsView({
       setUpdateStatus(null)
 
       try {
-        await window.electronAPI.installUpdate()
+        await installUpdate()
       } catch (err) {
         setInstallingUpdate(false)
         setUpdateProgress(null)
@@ -429,7 +449,7 @@ export function SettingsView({
     setExportingConfig(true)
 
     try {
-      const result = await window.electronAPI.exportConfig()
+      const result = await exportConfig()
 
       if (result.success) {
         notify('Config exported', 'success', 2500)
@@ -456,7 +476,7 @@ export function SettingsView({
     setImportingConfig(true)
 
     try {
-      const result = await window.electronAPI.importConfig()
+      const result = await importConfig()
 
       if (result.success) {
         window.sessionStorage.setItem(CONFIG_IMPORT_WARNING_KEY, '1')
@@ -477,7 +497,7 @@ export function SettingsView({
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
 
       await Promise.all([
-        window.electronAPI.saveSettings({
+        saveSettings({
           appPaths,
           appNames,
           gamePaths,
@@ -491,7 +511,7 @@ export function SettingsView({
           minimizeToTray,
           autoCheckUpdates
         }),
-        window.electronAPI.saveProfiles(profiles)
+        saveProfiles(profiles)
       ])
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
@@ -644,7 +664,7 @@ export function SettingsView({
                   key={preset.factor}
                   onClick={() => {
                     setZoomFactor(preset.factor)
-                    window.electronAPI.setZoom(preset.factor)
+                    setZoom(preset.factor)
                   }}
                   className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all active:scale-[0.98] ${
                     zoomFactor === preset.factor
@@ -677,7 +697,7 @@ export function SettingsView({
               checked={startWithWindows}
               onChange={(checked) => {
                 setStartWithWindows(checked)
-                window.electronAPI.setLoginItem(checked)
+                setLoginItem(checked)
               }}
               aria-label="Start with Windows"
             />
