@@ -16,16 +16,18 @@ export function createTray({ getIconPath, showMainWindow, quitApp }: CreateTrayO
   const icon = nativeImage.createFromPath(getIconPath())
   tray = new Tray(icon)
   tray.setToolTip('SimLauncher')
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show SimLauncher', click: showMainWindow },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        quitApp()
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show SimLauncher', click: showMainWindow },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          quitApp()
+        }
       }
-    }
-  ]))
+    ])
+  )
 
   tray.on('click', showMainWindow)
   tray.on('double-click', showMainWindow)

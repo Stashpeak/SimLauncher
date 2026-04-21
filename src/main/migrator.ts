@@ -29,7 +29,10 @@ function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefi
 
       const slotNumber = getCustomSlotNumber(key)
 
-      if (slotNumber !== null && (value === true || (typeof value === 'string' && value.trim().length > 0))) {
+      if (
+        slotNumber !== null &&
+        (value === true || (typeof value === 'string' && value.trim().length > 0))
+      ) {
         highestSlot = Math.max(highestSlot, slotNumber)
       }
 
@@ -58,9 +61,9 @@ function normalizeStoredProfileUtilityOrder(profile: StoredProfile, utilityKeys:
     utilities: Array.isArray(profile.utilities)
       ? profile.utilities.filter(isStoredProfileUtility)
       : utilityKeys.map((utilityKey) => ({
-        id: utilityKey,
-        enabled: profile[utilityKey] === true
-      }))
+          id: utilityKey,
+          enabled: profile[utilityKey] === true
+        }))
   }
 
   utilityKeys.forEach((utilityKey) => {
@@ -70,7 +73,11 @@ function normalizeStoredProfileUtilityOrder(profile: StoredProfile, utilityKeys:
   return normalizedProfile
 }
 
-function normalizeStoredNamedProfile(value: unknown, utilityKeys: string[], fallbackIndex: number): StoredNamedProfile | null {
+function normalizeStoredNamedProfile(
+  value: unknown,
+  utilityKeys: string[],
+  fallbackIndex: number
+): StoredNamedProfile | null {
   if (!value || typeof value !== 'object') {
     return null
   }
@@ -81,12 +88,16 @@ function normalizeStoredNamedProfile(value: unknown, utilityKeys: string[], fall
 
   return {
     ...orderedProfile,
-    id: typeof rawProfile.id === 'string' && rawProfile.id.trim().length > 0
-      ? rawProfile.id
-      : `profile-${Date.now().toString(36)}-${fallbackIndex}`,
-    name: typeof rawProfile.name === 'string' && rawProfile.name.trim().length > 0
-      ? rawProfile.name.trim()
-      : fallbackIndex === 0 ? 'Default' : `Profile ${fallbackIndex + 1}`
+    id:
+      typeof rawProfile.id === 'string' && rawProfile.id.trim().length > 0
+        ? rawProfile.id
+        : `profile-${Date.now().toString(36)}-${fallbackIndex}`,
+    name:
+      typeof rawProfile.name === 'string' && rawProfile.name.trim().length > 0
+        ? rawProfile.name.trim()
+        : fallbackIndex === 0
+          ? 'Default'
+          : `Profile ${fallbackIndex + 1}`
   }
 }
 
@@ -148,8 +159,13 @@ export function migrateProfilesToNamedSets() {
 
   const savedCustomSlots = store.get('customSlots')
   const customSlots = Math.max(
-    typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots) ? savedCustomSlots : 1,
-    getHighestCustomSlot(appPaths, ...Object.values(profiles).map((profile) => profile as Record<string, unknown>))
+    typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots)
+      ? savedCustomSlots
+      : 1,
+    getHighestCustomSlot(
+      appPaths,
+      ...Object.values(profiles).map((profile) => profile as Record<string, unknown>)
+    )
   )
   const utilityKeys = getUtilityKeys(customSlots)
   const migratedProfiles = Object.fromEntries(

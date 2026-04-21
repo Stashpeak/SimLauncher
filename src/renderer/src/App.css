@@ -1,4 +1,4 @@
-@import "tailwindcss" source("./");
+@import 'tailwindcss' source('./');
 
 :root {
   --purple-primary: #ad46ff;
@@ -9,11 +9,7 @@
   --glass-bg: rgba(255, 255, 255, 0.02);
   --glass-bg-elevated: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.4);
-  --bg-gradient: linear-gradient(
-    135deg,
-    rgb(25, 25, 25) 5.61%,
-    rgb(42, 36, 50) 94.39%
-  );
+  --bg-gradient: linear-gradient(135deg, rgb(25, 25, 25) 5.61%, rgb(42, 36, 50) 94.39%);
   --text-primary: rgba(255, 255, 255, 1);
   --text-secondary: rgba(255, 255, 255, 0.7);
   --text-muted: rgba(255, 255, 255, 0.5);
@@ -56,7 +52,7 @@ body {
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
-    "Segoe UI",
+    'Segoe UI',
     sans-serif;
 }
 
@@ -88,7 +84,6 @@ textarea {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-
 .glass-surface,
 .glass-input-surface {
   --glass-surface-fill: var(--glass-bg);
@@ -103,7 +98,7 @@ textarea {
 .glass-surface::before,
 .glass-surface-elevated::before,
 .glass-input-surface::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   padding: 1px;
@@ -120,38 +115,53 @@ textarea {
   mask-composite: exclude;
 }
 
-.drag-region { -webkit-app-region: drag; }
-.no-drag { -webkit-app-region: no-drag; }
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
 
 /* 2026 Design Overhaul Utils */
 .bg-tinted {
-  background: radial-gradient(
-    circle at center,
-    var(--accent-glow) 0%,
-    transparent 100%
-  ), var(--bg-gradient);
+  background:
+    radial-gradient(circle at center, var(--accent-glow) 0%, transparent 100%), var(--bg-gradient);
 }
 
 .neon-glow {
-  box-shadow: 0 0 15px -3px var(--accent-glow), 0 0 45px -10px var(--accent-glow);
+  box-shadow:
+    0 0 15px -3px var(--accent-glow),
+    0 0 45px -10px var(--accent-glow);
   text-shadow: 0 0 5px rgba(255, 255, 255, 0.4);
 }
 
 .glass-recessed {
   background: rgba(0, 0, 0, 0.2);
-  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255,255,255,0.05);
+  box-shadow:
+    inset 0 2px 10px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .profile-editor-wrapper {
   display: grid;
   transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.profile-editor-closed { grid-template-rows: 0fr; }
-.profile-editor-open   { grid-template-rows: 1fr; }
+.profile-editor-closed {
+  grid-template-rows: 0fr;
+}
+.profile-editor-open {
+  grid-template-rows: 1fr;
+}
 
 @keyframes fadeSlide {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-slide {
@@ -159,8 +169,13 @@ textarea {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .animate-pulse {
@@ -193,16 +208,8 @@ textarea {
   --scroll-fade-size: 2.5rem;
   --scroll-fade-top: black 0rem, black 0rem;
   --scroll-fade-bottom: black 100%, black 100%;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    var(--scroll-fade-top),
-    var(--scroll-fade-bottom)
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    var(--scroll-fade-top),
-    var(--scroll-fade-bottom)
-  );
+  -webkit-mask-image: linear-gradient(to bottom, var(--scroll-fade-top), var(--scroll-fade-bottom));
+  mask-image: linear-gradient(to bottom, var(--scroll-fade-top), var(--scroll-fade-bottom));
 }
 
 .scroll-fade-mask-top {
@@ -214,9 +221,18 @@ textarea {
 }
 
 @keyframes notifSlideIn {
-  0%   { opacity: 0; transform: translateX(30px) scale(0.92); }
-  60%  { opacity: 1; transform: translateX(0px) scale(1.03); }
-  100% { opacity: 1; transform: translateX(0px) scale(1.00); }
+  0% {
+    opacity: 0;
+    transform: translateX(30px) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(0px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0px) scale(1);
+  }
 }
 
 .toast-card {

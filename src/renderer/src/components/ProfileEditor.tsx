@@ -11,6 +11,8 @@ import {
 } from '../lib/config'
 import { useNotify } from './Notify'
 import { Toggle } from './Toggle'
+import { getSettings, getProfiles, saveProfile } from '../lib/store'
+import { getFileIcon, browsePath } from '../lib/electron'
 
 interface ProfileToggleRowProps {
   label: string
@@ -23,7 +25,7 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
   return (
     <div
       role="switch"
-      aria-checked={checked}
+      aria-checked={checked ? 'true' : 'false'}
       tabIndex={0}
       onClick={onToggle}
       onKeyDown={(event) => {
@@ -34,7 +36,9 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
       }}
       className="group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
     >
-      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">{label}</span>
+      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">
+        {label}
+      </span>
       <span onClick={(event) => event.stopPropagation()}>
         <Toggle checked={checked} onChange={onChange} aria-label={label} />
       </span>
@@ -50,7 +54,13 @@ interface ProfileEditorProps {
   onClose: () => void
 }
 
-export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesChanged, onClose }: ProfileEditorProps) {
+export function ProfileEditor({
+  gameKey,
+  gameName,
+  activeProfileId,
+  onProfilesChanged,
+  onClose
+}: ProfileEditorProps) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
@@ -60,7 +70,10 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   const [profileCount, setProfileCount] = useState(1)
   const [profileUtilities, setProfileUtilities] = useState<ProfileUtility[]>([])
   const [dragUtilityId, setDragUtilityId] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<{ id: string; placement: 'before' | 'after' } | null>(null)
+  const [dropTarget, setDropTarget] = useState<{
+    id: string
+    placement: 'before' | 'after'
+  } | null>(null)
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
   const [trackingEnabled, setTrackingEnabled] = useState(true)
   const [killControlsEnabled, setKillControlsEnabled] = useState(false)
@@ -73,28 +86,35 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   useEffect(() => {
     async function loadData() {
       setLoading(true)
-      // Load configuration from electron-store via IPC
-      const paths = (await window.electronAPI.storeGet('appPaths')) as Record<string, string> || {}
-      const names = (await window.electronAPI.storeGet('appNames')) as Record<string, string> || {}
-      const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-      const savedCustomSlots = await window.electronAPI.storeGet('customSlots')
-      const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
-      const profile = profileSet.profiles.find((entry) => entry.id === activeProfileId) || getActiveGameProfile(profileSet)
-      const resolvedUtilities = getUtilities(resolveCustomSlots(savedCustomSlots, paths, names, profile))
+      const [settings, allProfiles] = await Promise.all([getSettings(), getProfiles()])
+      const paths = settings.appPaths
+      const names = settings.appNames
+      const savedCustomSlots = settings.customSlots
+      const profileSet = normalizeGameProfileSet(
+        allProfiles[gameKey] as Profiles[string] | undefined
+      )
+      const profile =
+        profileSet.profiles.find((entry) => entry.id === activeProfileId) ||
+        getActiveGameProfile(profileSet)
+      const resolvedUtilities = getUtilities(
+        resolveCustomSlots(savedCustomSlots, paths, names, profile)
+      )
 
       setAppPaths(paths)
       setAppNames(names)
       setUtilities(resolvedUtilities)
       setProfileName(profile.name)
       setProfileCount(profileSet.profiles.length)
-      
+
       setProfileUtilities(normalizeProfileUtilities(profile, resolvedUtilities))
       // Default auto-launch to true unless explicitly disabled
       setLaunchAutomatically(profile.launchAutomatically !== false)
       setTrackingEnabled(profile.trackingEnabled !== false)
       setKillControlsEnabled(profile.killControlsEnabled === true)
       setRelaunchControlsEnabled(profile.relaunchControlsEnabled === true)
-      setTrackedProcessPaths(Array.isArray(profile.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+      setTrackedProcessPaths(
+        Array.isArray(profile.trackedProcessPaths) ? profile.trackedProcessPaths : []
+      )
       setLoading(false)
 
       // Fetch icons for all configured app paths
@@ -102,12 +122,14 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
       const cache: Record<string, string> = {}
       try {
         await Promise.all(
-          Object.values(paths).filter(Boolean).map(async (path) => {
-            const icon = await window.electronAPI.getFileIcon(path)
-            if (icon) {
-              cache[path.toLowerCase()] = icon
-            }
-          })
+          Object.values(paths)
+            .filter(Boolean)
+            .map(async (path) => {
+              const icon = await getFileIcon(path)
+              if (icon) {
+                cache[path.toLowerCase()] = icon
+              }
+            })
         )
       } finally {
         setAppIconCache(cache)
@@ -131,7 +153,7 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
 
       if (toggledEntry.enabled) {
         const lastEnabledIndex = remainingEntries.reduce(
-          (latestIndex, entry, index) => entry.enabled ? index : latestIndex,
+          (latestIndex, entry, index) => (entry.enabled ? index : latestIndex),
           -1
         )
 
@@ -146,7 +168,11 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
     })
   }
 
-  const moveEnabledUtility = (draggedId: string, targetId: string, placement: 'before' | 'after') => {
+  const moveEnabledUtility = (
+    draggedId: string,
+    targetId: string,
+    placement: 'before' | 'after'
+  ) => {
     if (draggedId === targetId) {
       return
     }
@@ -184,12 +210,14 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   }
 
   const handleBrowseTrackedProcess = async (index: number) => {
-    const result = await window.electronAPI.browsePath(`${gameKey}-tracked-${index}`)
+    const result = await browsePath(`${gameKey}-tracked-${index}`)
 
     if (result.filePath) {
-      setTrackedProcessPaths((prev) => prev.map((current, currentIndex) => (
-        currentIndex === index ? result.filePath || current : current
-      )))
+      setTrackedProcessPaths((prev) =>
+        prev.map((current, currentIndex) =>
+          currentIndex === index ? result.filePath || current : current
+        )
+      )
     }
   }
 
@@ -198,12 +226,13 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
   }
 
   const handleSave = async () => {
-    // Read-modify-write pattern for the 'profiles' object store
-    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
-    const activeProfile = profileSet.profiles.find((profile) => profile.id === activeProfileId) || getActiveGameProfile(profileSet)
+    const allProfiles = await getProfiles()
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
+    const activeProfile =
+      profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
+      getActiveGameProfile(profileSet)
     const normalizedProfileName = profileName.trim() || activeProfile.name
-    
+
     const updatedProfile = {
       ...activeProfile,
       name: normalizedProfileName,
@@ -215,27 +244,29 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
       trackingEnabled,
       killControlsEnabled,
       relaunchControlsEnabled,
-      trackedProcessPaths: trackedProcessPaths.filter((processPath) => processPath.trim().length > 0)
+      trackedProcessPaths: trackedProcessPaths.filter(
+        (processPath) => processPath.trim().length > 0
+      )
     }
 
-    allProfiles[gameKey] = {
+    await saveProfile(gameKey, {
       activeProfileId: updatedProfile.id,
-      profiles: profileSet.profiles.map((profile) => (
+      profiles: profileSet.profiles.map((profile) =>
         profile.id === updatedProfile.id ? updatedProfile : profile
-      ))
-    }
-
-    await window.electronAPI.storeSet('profiles', allProfiles)
+      )
+    })
     await onProfilesChanged()
-    
+
     notify('Profile saved!', 'success', 2500)
     onClose()
   }
 
   const handleDeleteProfile = async () => {
-    const allProfiles = (await window.electronAPI.storeGet('profiles')) as Profiles || {}
-    const profileSet = normalizeGameProfileSet(allProfiles[gameKey])
-    const activeProfile = profileSet.profiles.find((profile) => profile.id === activeProfileId) || getActiveGameProfile(profileSet)
+    const allProfiles = await getProfiles()
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
+    const activeProfile =
+      profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
+      getActiveGameProfile(profileSet)
 
     if (profileSet.profiles.length <= 1) {
       notify('At least one profile is required', 'warn')
@@ -248,12 +279,10 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
 
     const nextProfiles = profileSet.profiles.filter((profile) => profile.id !== activeProfile.id)
 
-    allProfiles[gameKey] = {
+    await saveProfile(gameKey, {
       activeProfileId: nextProfiles[0].id,
       profiles: nextProfiles
-    }
-
-    await window.electronAPI.storeSet('profiles', allProfiles)
+    })
     await onProfilesChanged()
     notify('Profile deleted', 'warn', 2500)
     onClose()
@@ -263,7 +292,9 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
 
   // Filter utilities to show only those that have a configured executable path
   const utilityByKey = new Map(utilities.map((utility) => [utility.key, utility]))
-  const availableUtilityEntries = profileUtilities.filter((entry) => utilityByKey.has(entry.id) && appPaths[entry.id])
+  const availableUtilityEntries = profileUtilities.filter(
+    (entry) => utilityByKey.has(entry.id) && appPaths[entry.id]
+  )
   const enabledUtilityEntries = availableUtilityEntries.filter((entry) => entry.enabled)
   const disabledUtilityEntries = availableUtilityEntries.filter((entry) => !entry.enabled)
   const availableUtilities = availableUtilityEntries.map((entry) => utilityByKey.get(entry.id)!)
@@ -284,7 +315,7 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
       <div
         key={utility.key}
         role="switch"
-        aria-checked={isEnabled}
+        aria-checked={isEnabled ? 'true' : 'false'}
         tabIndex={0}
         onClick={() => handleToggleUtility(utility.key)}
         onKeyDown={(event) => {
@@ -304,7 +335,9 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
         }}
         onDragLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setDropTarget((currentTarget) => currentTarget?.id === utility.key ? null : currentTarget)
+            setDropTarget((currentTarget) =>
+              currentTarget?.id === utility.key ? null : currentTarget
+            )
           }
         }}
         onDrop={(event) => {
@@ -388,7 +421,11 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
           </span>
         </div>
         <span onClick={(event) => event.stopPropagation()}>
-          <Toggle checked={isEnabled} onChange={() => handleToggleUtility(utility.key)} aria-label={label} />
+          <Toggle
+            checked={isEnabled}
+            onChange={() => handleToggleUtility(utility.key)}
+            aria-label={label}
+          />
         </span>
       </div>
     )
@@ -428,12 +465,14 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
           <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">
             Utilities to launch
           </p>
-          
+
           {availableUtilities.length > 0 ? (
             <div className="space-y-3">
               {enabledUtilityEntries.length > 0 && (
                 <div className="grid grid-cols-1 gap-2.5">
-                  {enabledUtilityEntries.map((entry, index) => renderUtilityRow(entry, true, index))}
+                  {enabledUtilityEntries.map((entry, index) =>
+                    renderUtilityRow(entry, true, index)
+                  )}
                 </div>
               )}
               {disabledUtilityEntries.length > 0 && (
@@ -444,9 +483,7 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
             </div>
           ) : (
             <div className="flex h-20 items-center justify-center rounded-xl border border-dashed border-(--glass-border) bg-(--glass-bg)">
-              <p className="text-sm text-(--text-muted)">
-                No utilities configured in Settings
-              </p>
+              <p className="text-sm text-(--text-muted)">No utilities configured in Settings</p>
             </div>
           )}
         </div>
@@ -561,7 +598,16 @@ export function ProfileEditor({ gameKey, gameName, activeProfileId, onProfilesCh
               title="Delete profile"
               aria-label="Delete profile"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M3 6h18" />
                 <path d="M8 6V4h8v2" />
                 <path d="M19 6l-1 14H6L5 6" />

@@ -1,6 +1,6 @@
 {
   "name": "simlauncher",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "SimLauncher - Multi app launcher for simracing",
   "main": "out/main/index.js",
   "scripts": {
@@ -8,6 +8,8 @@
     "build": "electron-vite build",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "preview": "electron-vite preview",
     "prepare": "git config core.hooksPath .githooks"
   },
@@ -27,11 +29,15 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^39.8.8",
-    "electron-builder": "^26.0.12",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^4.0.0",
-    "typescript": "^5.9.0"
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.2"
   },
   "overrides": {
+    "@electron/asar": "4.2.0",
     "js-yaml": "4.1.1"
   }
 }

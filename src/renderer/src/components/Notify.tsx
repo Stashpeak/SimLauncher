@@ -9,6 +9,7 @@ import {
   useState
 } from 'react'
 import { createPortal } from 'react-dom'
+import { onAppLaunchError } from '../lib/electron'
 
 type ToastType = 'success' | 'warn' | 'error'
 
@@ -44,7 +45,8 @@ function formatLaunchErrorToast(data: unknown) {
 
   const { app, error } = data as { app?: unknown; error?: unknown }
   const appName = typeof app === 'string' ? getPathName(app) : 'App'
-  const errorMessage = typeof error === 'string' && error.trim().length > 0 ? error : 'Unknown launch error'
+  const errorMessage =
+    typeof error === 'string' && error.trim().length > 0 ? error : 'Unknown launch error'
 
   return `${appName} failed to launch: ${errorMessage}`
 }
@@ -118,19 +120,22 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const dismissToast = useCallback((id: number) => {
-    if (dismissTimersRef.current.has(id)) {
-      return
-    }
+  const dismissToast = useCallback(
+    (id: number) => {
+      if (dismissTimersRef.current.has(id)) {
+        return
+      }
 
-    setDismissingToastIds((current) => new Set(current).add(id))
-    const timer = window.setTimeout(() => {
-      dismissTimersRef.current.delete(id)
-      removeToast(id)
-    }, 250)
+      setDismissingToastIds((current) => new Set(current).add(id))
+      const timer = window.setTimeout(() => {
+        dismissTimersRef.current.delete(id)
+        removeToast(id)
+      }, 250)
 
-    dismissTimersRef.current.set(id, timer)
-  }, [removeToast])
+      dismissTimersRef.current.set(id, timer)
+    },
+    [removeToast]
+  )
 
   useEffect(() => {
     return () => {
@@ -151,7 +156,7 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    return window.electronAPI.onAppLaunchError((data) => {
+    return onAppLaunchError((data) => {
       notify(formatLaunchErrorToast(data), 'error', 5000)
     })
   }, [notify])

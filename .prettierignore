@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+electron.vite.config.*.mjs
+vite.config.*.mjs
+*.ico
+*.log

@@ -25,7 +25,13 @@ export interface StoredProfileUtility {
   enabled: boolean
 }
 
-export const BUILT_IN_UTILITY_KEYS = ['simhub', 'crewchief', 'tradingpaints', 'garage61', 'secondmonitor']
+export const BUILT_IN_UTILITY_KEYS = [
+  'simhub',
+  'crewchief',
+  'tradingpaints',
+  'garage61',
+  'secondmonitor'
+]
 
 export function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
   if (!value || typeof value !== 'object') {
@@ -60,15 +66,21 @@ export function resolveActiveProfile(entry: StoredProfileEntry | undefined): Sto
   return { ...(entry as StoredProfile), id: 'default', name: 'Default' }
 }
 
-export function resolveNamedProfile(entry: StoredProfileEntry | undefined, profileId: string): StoredNamedProfile {
+export function resolveNamedProfile(
+  entry: StoredProfileEntry | undefined,
+  profileId: string
+): StoredNamedProfile {
   if (isStoredProfileSet(entry)) {
     const validProfiles = entry.profiles.filter(
       (p): p is StoredNamedProfile =>
         !!p && typeof p === 'object' && typeof (p as Record<string, unknown>).id === 'string'
     )
-    return validProfiles.find((p) => p.id === profileId) || validProfiles[0] || { id: 'default', name: 'Default' }
+    return (
+      validProfiles.find((p) => p.id === profileId) ||
+      validProfiles[0] || { id: 'default', name: 'Default' }
+    )
   }
-  return { ...(entry as StoredProfile | undefined || {}), id: 'default', name: 'Default' }
+  return { ...((entry as StoredProfile | undefined) || {}), id: 'default', name: 'Default' }
 }
 
 export function getEnabledUtilityPaths(
@@ -77,7 +89,9 @@ export function getEnabledUtilityPaths(
   customSlots: unknown
 ): string[] {
   const count =
-    typeof customSlots === 'number' && Number.isFinite(customSlots) ? Math.max(1, Math.floor(customSlots)) : 1
+    typeof customSlots === 'number' && Number.isFinite(customSlots)
+      ? Math.max(1, Math.floor(customSlots))
+      : 1
   const utilityKeys = [
     ...BUILT_IN_UTILITY_KEYS,
     ...Array.from({ length: count }, (_, i) => `customapp${i + 1}`)
@@ -133,9 +147,10 @@ export function buildNamedProfileLaunchPaths(gameKey: string, profileId: string)
 }
 
 export function getUtilityKeys(customSlots: unknown) {
-  const slotCount = typeof customSlots === 'number' && Number.isFinite(customSlots)
-    ? Math.max(1, Math.floor(customSlots))
-    : 1
+  const slotCount =
+    typeof customSlots === 'number' && Number.isFinite(customSlots)
+      ? Math.max(1, Math.floor(customSlots))
+      : 1
 
   return [
     ...BUILT_IN_UTILITY_KEYS,
@@ -165,9 +180,9 @@ export function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey:
   }
 
   if (Array.isArray(profile.utilities)) {
-    return profile.utilities.some((utility) => (
-      isStoredProfileUtility(utility) && utility.id === utilityKey && utility.enabled
-    ))
+    return profile.utilities.some(
+      (utility) => isStoredProfileUtility(utility) && utility.id === utilityKey && utility.enabled
+    )
   }
 
   return profile[utilityKey] === true
@@ -179,7 +194,10 @@ export function getActiveStoredProfile(profileEntry: StoredProfileEntry | undefi
   }
 
   if (isStoredProfileSet(profileEntry)) {
-    return profileEntry.profiles.find((profile) => profile.id === profileEntry.activeProfileId) || profileEntry.profiles[0]
+    return (
+      profileEntry.profiles.find((profile) => profile.id === profileEntry.activeProfileId) ||
+      profileEntry.profiles[0]
+    )
   }
 
   return profileEntry
