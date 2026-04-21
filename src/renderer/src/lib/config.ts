@@ -28,6 +28,7 @@ export const DEFAULT_ACCENT_COLOR = '#00eaff'
 export const DEFAULT_CUSTOM_SLOTS = 1
 export const DEFAULT_PROFILE_ID = 'default'
 export const DEFAULT_PROFILE_NAME = 'Default'
+export const MAX_CUSTOM_SLOTS = 10
 
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },
@@ -66,7 +67,7 @@ export function normalizeCustomSlots(value: unknown) {
     return DEFAULT_CUSTOM_SLOTS
   }
 
-  return Math.max(1, Math.floor(value))
+  return Math.max(1, Math.min(Math.floor(value), MAX_CUSTOM_SLOTS))
 }
 
 export function getCustomUtilityKey(index: number) {
@@ -136,7 +137,7 @@ export function getHighestCustomSlot(...records: Array<Record<string, unknown> |
 }
 
 export function resolveCustomSlots(value: unknown, ...records: Array<Record<string, unknown> | undefined>) {
-  return Math.max(normalizeCustomSlots(value), getHighestCustomSlot(...records))
+  return Math.min(Math.max(normalizeCustomSlots(value), getHighestCustomSlot(...records)), MAX_CUSTOM_SLOTS)
 }
 
 export function getCustomUtilities(customSlots: unknown): Utility[] {

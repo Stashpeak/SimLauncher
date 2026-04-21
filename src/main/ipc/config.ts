@@ -5,11 +5,13 @@ import { migrateProfilesToNamedSets } from '../migrator'
 import { isStoredProfileSet, type StoredNamedProfile } from '../profiles'
 import {
   CONFIG_FILE_NAME,
+  MAX_CONFIG_IMPORT_BYTES,
+  MAX_CUSTOM_SLOTS,
   getSupportedConfigValues,
   getStoredZoomFactor,
   requireSafeZoomFactor,
+  sanitizeImportedConfig,
   store,
-  validateImportedConfig
 } from '../store'
 import { isRecord } from '../utils'
 import { applyRuntimeConfigSettings, getMainWindow } from '../window'
@@ -56,17 +58,31 @@ export function registerConfigHandlers() {
         return { success: false, canceled: true }
       }
 
-      const rawConfig = await fs.promises.readFile(result.filePaths[0], 'utf8')
-      const parsedConfig = JSON.parse(rawConfig) as unknown
-      validateImportedConfig(parsedConfig)
-      const supportedConfig = getSupportedConfigValues(parsedConfig)
+      const filePath = result.filePaths[0]
+      const stat = await fs.promises.stat(filePath)
 
-      store.clear()
-      store.set(supportedConfig)
-      migrateProfilesToNamedSets()
-      applyRuntimeConfigSettings()
+      if (stat.size > MAX_CONFIG_IMPORT_BYTES) {
+        return { success: false, error: 'Config file exceeds the 1 MB size limit.' }
+      }
 
-      return { success: true, filePath: result.filePaths[0] }
+      const rawConfig = await fs.promises.readFile(filePath, 'utf8')
+      const parsedConfig: unknown = JSON.parse(rawConfig)
+      const supportedConfig = sanitizeImportedConfig(parsedConfig)
+      const snapshot = { ...store.store }
+
+      try {
+        store.clear()
+        store.set(supportedConfig)
+        migrateProfilesToNamedSets()
+        applyRuntimeConfigSettings()
+      } catch (err) {
+        store.clear()
+        store.set(snapshot)
+        applyRuntimeConfigSettings()
+        throw err
+      }
+
+      return { success: true, filePath }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('Failed to import config:', err)
@@ -126,7 +142,7 @@ export function registerConfigHandlers() {
       } else if (STRING_KEYS.has(key) && typeof value === 'string') {
         safe[key] = value
       } else if (key === 'customSlots' && typeof value === 'number' && Number.isFinite(value) && value >= 1) {
-        safe[key] = Math.floor(value)
+        safe[key] = Math.min(Math.floor(value), MAX_CUSTOM_SLOTS)
       } else if (key === 'launchDelayMs' && typeof value === 'number' && Number.isFinite(value)) {
         safe[key] = Math.min(Math.max(Math.round(value), 0), 5000)
       }

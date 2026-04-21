@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   DEFAULT_ACCENT_COLOR,
   GAMES,
+  MAX_CUSTOM_SLOTS,
   getCustomUtilityKey,
   getUtilities,
   isGameProfileSet,
@@ -874,7 +875,8 @@ export function SettingsView({ onClose, updateInfo }: { onClose: () => void, upd
                   <button
                     type="button"
                     onClick={handleAddCustomSlot}
-                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98]"
+                    disabled={customSlots >= MAX_CUSTOM_SLOTS}
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                       <path d="M12 5v14" />
