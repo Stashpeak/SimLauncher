@@ -95,7 +95,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="flex-1 cursor-pointer bg-(--accent) hover:bg-(--purple-solid-hover) text-white font-bold py-3 px-6 rounded-xl shadow-[0_0_20px_-5px_var(--accent-glow)] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="flex-1 cursor-pointer bg-(--accent) hover:bg-(--purple-solid-hover) text-(--accent-foreground) font-bold py-3 px-6 rounded-xl shadow-[0_0_20px_-5px_var(--accent-glow)] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
               >
                 <svg
                   width="18"

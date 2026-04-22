@@ -54,7 +54,7 @@ export function AboutSection({
             <button
               onClick={onInstallUpdate}
               disabled={installingUpdate}
-              className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+              className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-(--accent-foreground) transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
             >
               {installingUpdate
                 ? updateProgress !== null

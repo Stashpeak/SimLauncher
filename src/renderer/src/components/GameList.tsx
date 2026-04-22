@@ -293,7 +293,7 @@ function GameRow({
   const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
-    : 'bg-(--accent) text-white neon-glow hover:opacity-90'
+    : 'bg-(--accent) text-(--accent-foreground) neon-glow hover:opacity-90'
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
@@ -415,7 +415,7 @@ function GameRow({
                         <button
                           type="submit"
                           disabled={newProfileName.trim().length === 0}
-                          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--accent) text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--accent) text-(--accent-foreground) transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
                           aria-label="Create profile"
                           title="Create profile"
                         >
@@ -530,7 +530,7 @@ function GameRow({
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all duration-300 active:scale-[0.98]
               ${
                 isActive
-                  ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow'
+                  ? 'bg-(--accent) text-(--accent-foreground) rotate-90 scale-110 neon-glow'
                   : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"

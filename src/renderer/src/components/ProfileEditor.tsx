@@ -34,9 +34,9 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
           onToggle()
         }
       }}
-      className="group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
+      className="group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--accent-foreground) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
     >
-      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">
+      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--accent-foreground)">
         {label}
       </span>
       <span onClick={(event) => event.stopPropagation()}>
@@ -348,7 +348,7 @@ export function ProfileEditor({
             setDropTarget(null)
           }
         }}
-        className={`group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) ${
+        className={`group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--accent-foreground) ${
           isEnabled ? '' : 'opacity-55 hover:opacity-100'
         }`}
       >
@@ -579,7 +579,7 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-2.5 text-sm text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-[0.98]"
+            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-2.5 text-sm text-(--accent-foreground) transition-all duration-300 hover:opacity-90 neon-glow active:scale-[0.98]"
           >
             Save Profile
           </button>

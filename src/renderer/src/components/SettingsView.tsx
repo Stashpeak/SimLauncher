@@ -31,6 +31,7 @@ import { GamesSection } from './settings/GamesSection'
 import { normalizeLaunchDelayMs } from './settings/settingsUtils'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
+import { applyAccentTheme } from '../lib/theme'
 
 const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
 
@@ -125,13 +126,7 @@ export function SettingsView({
   }, [])
 
   const updateAccentCSS = (hex: string) => {
-    if (!hex) return
-    document.documentElement.style.setProperty('--accent', hex)
-
-    const r = parseInt(hex.slice(1, 3), 16)
-    const g = parseInt(hex.slice(3, 5), 16)
-    const b = parseInt(hex.slice(5, 7), 16)
-    document.documentElement.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.24)`)
+    if (hex) applyAccentTheme(hex)
   }
 
   const handleAccentChange = (presetHex: string) => {
@@ -388,7 +383,7 @@ export function SettingsView({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={handleSave}
-          className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-3 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98]"
+          className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-3 text-sm font-bold text-(--accent-foreground) transition-all hover:opacity-90 active:scale-[0.98]"
         >
           Save Changes
         </button>

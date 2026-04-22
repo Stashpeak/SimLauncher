@@ -71,7 +71,7 @@ export function GamesSection({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="text-white/30"
+                        className="text-(--text-subtle)"
                       >
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                       </svg>
@@ -88,7 +88,7 @@ export function GamesSection({
 
                   <button
                     onClick={() => onBrowse(game.key)}
-                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
+                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-(--text-primary)"
                   >
                     Browse
                   </button>

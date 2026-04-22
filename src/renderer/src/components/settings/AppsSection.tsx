@@ -142,7 +142,7 @@ export function AppsSection({
 
                   <button
                     onClick={() => onBrowse(utility.key)}
-                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
+                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-(--text-primary)"
                   >
                     Browse
                   </button>
