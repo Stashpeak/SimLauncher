@@ -410,7 +410,7 @@ function GameRow({
                   }
                 }}
                 onKeyDown={handleProfileMenuTriggerKeyDown}
-                className="group flex h-9 w-[124px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-colors hover:text-(--text-primary)"
+                className="dropdown-trigger-surface group flex h-9 w-[124px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-colors hover:text-(--text-primary)"
                 aria-haspopup="menu"
                 aria-expanded={profileMenuOpen}
                 aria-label={`${game.name} profile`}
@@ -436,7 +436,7 @@ function GameRow({
                   ref={menuRef}
                   role="menu"
                   onKeyDown={handleProfileMenuKeyDown}
-                  className="absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
+                  className="dropdown-surface absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 backdrop-blur-xl animate-fade-slide"
                 >
                   {profileSet.profiles.map((profile) => {
                     const selected = profile.id === profileSet.activeProfileId
