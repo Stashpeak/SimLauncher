@@ -83,7 +83,7 @@ export function GamesSection({
                     value={gamePaths[game.key] || ''}
                     readOnly
                     placeholder="No game path set"
-                    className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                   />
 
                   <button

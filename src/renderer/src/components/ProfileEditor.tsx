@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type DragEvent } from 'react'
 import {
   getActiveGameProfile,
   getUtilities,
@@ -203,6 +203,19 @@ export function ProfileEditor({
     })
   }
 
+  const startUtilityDrag = (event: DragEvent<HTMLDivElement>, utilityKey: string) => {
+    const target = event.target instanceof HTMLElement ? event.target : null
+
+    if (target?.closest('[data-no-row-drag="true"]')) {
+      event.preventDefault()
+      return
+    }
+
+    setDragUtilityId(utilityKey)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', utilityKey)
+  }
+
   const handleAddTrackedProcess = () => {
     setTrackedProcessPaths((prev) => [...prev, ''])
   }
@@ -312,16 +325,8 @@ export function ProfileEditor({
     return (
       <div
         key={utility.key}
-        role="switch"
-        aria-checked={isEnabled ? 'true' : 'false'}
-        tabIndex={0}
-        onClick={() => handleToggleUtility(utility.key)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            handleToggleUtility(utility.key)
-          }
-        }}
+        draggable={isEnabled}
+        onDragStart={(event) => startUtilityDrag(event, utility.key)}
         onDragOver={(event) => {
           if (isEnabled && dragUtilityId && dragUtilityId !== utility.key) {
             event.preventDefault()
@@ -346,8 +351,16 @@ export function ProfileEditor({
             setDropTarget(null)
           }
         }}
-        className={`accent-subtle-hover group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 ${
-          isEnabled ? '' : 'opacity-55'
+        onDragEnd={() => {
+          setDragUtilityId(null)
+          setDropTarget(null)
+        }}
+        className={`accent-subtle-hover group relative flex select-none items-center justify-between rounded-xl bg-(--glass-bg) p-3 ${
+          isEnabled ? 'cursor-grab active:cursor-grabbing' : 'opacity-55'
+        } ${
+          dragUtilityId === utility.key
+            ? 'ring-1 ring-(--accent)/35 shadow-[0_0_18px_-14px_var(--accent)]'
+            : ''
         }`}
       >
         {dropPlacement && (
@@ -363,31 +376,12 @@ export function ProfileEditor({
               {orderIndex + 1}
             </span>
           )}
-          <button
-            type="button"
-            draggable={isEnabled}
-            disabled={!isEnabled}
-            onClick={(event) => event.stopPropagation()}
-            onDragStart={(event) => {
-              event.stopPropagation()
-              setDragUtilityId(utility.key)
-              event.dataTransfer.effectAllowed = 'move'
-              event.dataTransfer.setData('text/plain', utility.key)
-              const dragImage = document.createElement('div')
-              dragImage.style.width = '1px'
-              dragImage.style.height = '1px'
-              dragImage.style.opacity = '0'
-              document.body.appendChild(dragImage)
-              event.dataTransfer.setDragImage(dragImage, 0, 0)
-              window.setTimeout(() => dragImage.remove(), 0)
-            }}
-            onDragEnd={() => {
-              setDragUtilityId(null)
-              setDropTarget(null)
-            }}
-            className="icon-action flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded active:cursor-grabbing"
+          <div
+            className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${
+              isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''
+            }`}
             title="Drag to reorder"
-            aria-label={`Reorder ${label}`}
+            aria-hidden="true"
           >
             <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
               <circle cx="3" cy="3" r="1.2" />
@@ -397,7 +391,7 @@ export function ProfileEditor({
               <circle cx="3" cy="13" r="1.2" />
               <circle cx="9" cy="13" r="1.2" />
             </svg>
-          </button>
+          </div>
           <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
             {icon && !failedIcons[utility.key] ? (
               <img
@@ -416,7 +410,7 @@ export function ProfileEditor({
           </div>
           <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80">{label}</span>
         </div>
-        <span onClick={(event) => event.stopPropagation()}>
+        <span data-no-row-drag="true">
           <Toggle
             checked={isEnabled}
             onChange={() => handleToggleUtility(utility.key)}
@@ -452,7 +446,7 @@ export function ProfileEditor({
             type="text"
             value={profileName}
             onChange={(event) => setProfileName(event.target.value)}
-            className="w-full glass-recessed rounded-lg px-3 py-2 text-sm text-(--text-primary) outline-none transition-colors focus:ring-2 focus:ring-(--accent)"
+            className="glass-recessed w-full rounded-lg px-3 py-2 text-sm text-(--text-primary) outline-none transition-colors placeholder:text-(--text-subtle) focus:ring-2 focus:ring-(--accent)"
             aria-label="Profile name"
           />
         </div>
@@ -544,7 +538,7 @@ export function ProfileEditor({
                       value={processPath}
                       readOnly
                       placeholder="No secondary executable selected"
-                      className="min-w-0 flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                      className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                     />
                     <button
                       type="button"
