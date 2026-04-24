@@ -125,7 +125,7 @@ export function AppsSection({
                     />
                   ) : (
                     <div
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-(--accent)/30 bg-(--accent)/10 text-[10px] font-black text-(--accent) shadow-[0_0_12px_-7px_var(--accent-glow)]"
+                      className="fallback-initial-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black"
                       title={`${appNames[utility.key] || utility.name} icon fallback`}
                     >
                       {getInitials(appNames[utility.key] || utility.name)}

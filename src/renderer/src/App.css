@@ -16,6 +16,7 @@
   --text-subtle: rgba(255, 255, 255, 0.3);
   --accent: var(--purple-primary);
   --accent-foreground: #000000;
+  --accent-action-foreground: var(--text-primary);
   --accent-glow: rgba(173, 70, 255, 0.25);
   --focus-ring: rgba(173, 70, 255, 0.25);
   --danger-surface: rgba(244, 63, 94, 0.14);
@@ -126,7 +127,8 @@ textarea {
 /* 2026 Design Overhaul Utils */
 .bg-tinted {
   background:
-    radial-gradient(circle at center, var(--accent-glow) 0%, transparent 100%), var(--bg-gradient);
+    radial-gradient(ellipse at 82% 18%, var(--accent-glow) 0%, transparent 34%),
+    radial-gradient(ellipse at 18% 88%, var(--accent-glow) 0%, transparent 38%), var(--bg-gradient);
 }
 
 .neon-glow {
@@ -134,6 +136,58 @@ textarea {
     0 0 15px -3px var(--accent-glow),
     0 0 45px -10px var(--accent-glow);
   text-shadow: 0 0 5px rgba(255, 255, 255, 0.4);
+}
+
+.accent-action {
+  background: var(--accent);
+  color: var(--accent-action-foreground);
+  box-shadow:
+    0 0 12px -9px var(--accent-glow),
+    0 0 26px -22px var(--accent-glow);
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.22);
+}
+
+.accent-action:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-action-foreground) 24%, transparent),
+    0 0 18px -6px var(--accent-glow),
+    0 0 42px -16px var(--accent-glow);
+}
+
+.accent-subtle-hover:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 20px -16px var(--accent-glow);
+}
+
+.accent-surface-action {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-action-foreground);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 20px -16px var(--accent-glow);
+}
+
+.accent-surface-action:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 18px -8px var(--accent-glow),
+    0 0 42px -18px var(--accent-glow);
+}
+
+.fallback-initial-icon {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  color: var(--text-secondary);
+}
+
+.group:hover .fallback-initial-icon {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
 }
 
 .glass-recessed {

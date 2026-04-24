@@ -383,7 +383,7 @@ export function SettingsView({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={handleSave}
-          className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-3 text-sm font-bold text-(--accent-foreground) transition-all hover:opacity-90 active:scale-[0.98]"
+          className="accent-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-bold transition-all active:scale-[0.98]"
         >
           Save Changes
         </button>

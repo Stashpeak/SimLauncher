@@ -34,9 +34,9 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
           onToggle()
         }
       }}
-      className="group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--accent-foreground) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
+      className="accent-subtle-hover group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:text-(--text-primary) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
     >
-      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--accent-foreground)">
+      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">
         {label}
       </span>
       <span onClick={(event) => event.stopPropagation()}>
@@ -348,7 +348,7 @@ export function ProfileEditor({
             setDropTarget(null)
           }
         }}
-        className={`group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--accent-foreground) ${
+        className={`accent-subtle-hover group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:text-(--text-primary) ${
           isEnabled ? '' : 'opacity-55 hover:opacity-100'
         }`}
       >
@@ -411,7 +411,7 @@ export function ProfileEditor({
             ) : fetchingIcons && !failedIcons[utility.key] ? (
               <div className="h-full w-full skeleton-icon animate-pulse" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center rounded bg-(--accent)/20 text-[8px] font-black uppercase text-(--accent)">
+              <div className="fallback-initial-icon flex h-full w-full items-center justify-center rounded text-[8px] font-black uppercase transition-colors">
                 {label.slice(0, 2)}
               </div>
             )}
@@ -579,7 +579,7 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-2.5 text-sm text-(--accent-foreground) transition-all duration-300 hover:opacity-90 neon-glow active:scale-[0.98]"
+            className="accent-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm transition-all duration-300 active:scale-[0.98]"
           >
             Save Profile
           </button>

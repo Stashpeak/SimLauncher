@@ -293,7 +293,7 @@ function GameRow({
   const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
   const primaryButtonClass = canKill
     ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
-    : 'bg-(--accent) text-(--accent-foreground) neon-glow hover:opacity-90'
+    : 'accent-surface-action'
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
@@ -415,7 +415,7 @@ function GameRow({
                         <button
                           type="submit"
                           disabled={newProfileName.trim().length === 0}
-                          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--accent) text-(--accent-foreground) transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                          className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
                           aria-label="Create profile"
                           title="Create profile"
                         >
@@ -490,7 +490,7 @@ function GameRow({
                   return (
                     <div
                       key={i}
-                      className={`h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
+                      className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
                       title={app.warning || app.name}
                     >
                       {app.name
@@ -530,7 +530,7 @@ function GameRow({
             className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all duration-300 active:scale-[0.98]
               ${
                 isActive
-                  ? 'bg-(--accent) text-(--accent-foreground) rotate-90 scale-110 neon-glow'
+                  ? 'accent-surface-action rotate-90 scale-110'
                   : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
@@ -555,9 +555,9 @@ function GameRow({
       <div
         className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}
       >
-        <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
+        <div className="overflow-hidden">
           {isActive && (
-            <div className="animate-fade-slide">
+            <div className="animate-fade-slide px-2 pb-4 pt-3">
               <ProfileEditor
                 gameKey={game.key}
                 gameName={game.name}
