@@ -48,6 +48,7 @@
     inset 0 0 0 1px rgba(255, 255, 255, 0.055);
   --game-icon-filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.07))
     drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
+  --game-title-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(255, 255, 255, 0.4) 0%,
@@ -108,6 +109,7 @@
     inset 0 0 0 1px rgba(20, 20, 24, 0.065);
   --game-icon-filter: drop-shadow(0 1px 1px rgba(20, 20, 24, 0.5))
     drop-shadow(0 7px 12px rgba(20, 20, 24, 0.22));
+  --game-title-text-shadow: none;
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(20, 20, 24, 0.12) 0%,
@@ -442,6 +444,10 @@ textarea {
 
 .game-icon-image {
   filter: var(--game-icon-filter);
+}
+
+.game-title {
+  text-shadow: var(--game-title-text-shadow);
 }
 
 .group:hover .fallback-initial-icon {

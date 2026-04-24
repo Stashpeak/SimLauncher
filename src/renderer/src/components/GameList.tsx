@@ -323,7 +323,7 @@ function GameRow({
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
+              <h3 className="game-title font-semibold text-(--text-primary)">{game.name}</h3>
             </div>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
