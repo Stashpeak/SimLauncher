@@ -54,7 +54,7 @@ export function AboutSection({
             <button
               onClick={onInstallUpdate}
               disabled={installingUpdate}
-              className="accent-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
+              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
             >
               {installingUpdate
                 ? updateProgress !== null
