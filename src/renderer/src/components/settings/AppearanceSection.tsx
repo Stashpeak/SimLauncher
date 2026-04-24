@@ -64,18 +64,14 @@ export function AppearanceSection({
                 title={preset.name}
               />
             ))}
-            <div
-              className={`glass-surface relative flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-(--glass-border) transition-all duration-200 ${
-                isCustomColor ? 'selected-surface' : ''
-              }`}
-            >
+            <div className="flex h-8 shrink-0 items-center overflow-hidden rounded-xl border border-(--glass-border)">
               <button
                 type="button"
                 onClick={() => onAccentChange('custom')}
-                className={`cursor-pointer px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                className={`h-full cursor-pointer px-3 text-[10px] font-bold uppercase tracking-wide ${
                   isCustomColor
-                    ? 'text-(--text-primary)'
-                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                    ? 'selected-surface text-(--text-primary)'
+                    : 'neutral-action text-(--text-secondary)'
                 }`}
               >
                 Custom
@@ -83,7 +79,7 @@ export function AppearanceSection({
               {isCustomColor && (
                 <div className="animate-fade-slide-inline flex h-full items-center">
                   <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
-                  <label className="relative flex h-full min-w-0 items-center gap-2 pl-2 pr-2.5 cursor-pointer">
+                  <label className="selected-surface relative flex h-full min-w-0 items-center gap-2 pl-2 pr-2.5 cursor-pointer">
                     <input
                       type="color"
                       value={accentCustom || '#ad46ff'}
@@ -93,10 +89,10 @@ export function AppearanceSection({
                       title="Custom accent color"
                     />
                     <span
-                      className="h-5 w-9 shrink-0 rounded-full border border-white/10 bg-(--custom-accent)"
+                      className="h-4 w-8 shrink-0 rounded-md border border-white/10 bg-(--custom-accent)"
                       style={{ '--custom-accent': accentCustom || '#ad46ff' } as CSSProperties}
                     />
-                    <span className="min-w-0 truncate text-xs font-mono uppercase text-(--text-muted)">
+                    <span className="min-w-0 truncate text-[10px] font-bold tracking-wide text-(--text-secondary)">
                       {accentCustom}
                     </span>
                   </label>
