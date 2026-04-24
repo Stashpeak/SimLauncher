@@ -548,7 +548,7 @@ function GameRow({
                   height="21"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="#48C774"
+                  stroke="var(--launcher-play)"
                   strokeWidth="2.4"
                   strokeLinecap="round"
                   className="animate-spin"
@@ -570,7 +570,13 @@ function GameRow({
                   <path d="M17 7L7 17" />
                 </svg>
               ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="#48C774" className="ml-1">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="var(--launcher-play)"
+                  className="ml-1"
+                >
                   <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
                 </svg>
               )}

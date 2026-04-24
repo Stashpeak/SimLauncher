@@ -21,7 +21,7 @@ import {
   type GameProfileSet,
   type GameProfile
 } from './lib/config'
-import { applyAccentTheme } from './lib/theme'
+import { applyAccentTheme, applyThemeMode, normalizeThemeMode } from './lib/theme'
 
 const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
 
@@ -146,8 +146,10 @@ export default function App() {
         const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
         const custom = settings.accentCustom
         const tint = settings.accentBgTint || false
+        const themeMode = normalizeThemeMode(settings.themeMode)
 
         setBgTinted(tint)
+        applyThemeMode(themeMode)
 
         const hex = preset === 'custom' ? custom : preset
         if (hex) {

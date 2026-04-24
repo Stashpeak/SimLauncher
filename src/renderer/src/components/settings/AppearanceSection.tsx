@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
+import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
 
 const ZOOM_PRESETS = [
@@ -18,16 +19,24 @@ const ACCENT_PRESETS = [
   { name: 'Caution Yellow', hex: '#ffd600' }
 ]
 
+const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
+  { label: 'Dark', value: 'dark' },
+  { label: 'Light', value: 'light' },
+  { label: 'System', value: 'system' }
+]
+
 interface AppearanceSectionProps {
   accentPreset: string
   accentCustom: string
   accentBgTint: boolean
+  themeMode: ThemeMode
   focusActiveTitle: boolean
   zoomFactor: number
   isCustomColor: boolean
   onAccentChange: (presetHex: string) => void
   onCustomColorChange: (hex: string) => void
   onAccentBgTintChange: (checked: boolean) => void
+  onThemeModeChange: (mode: ThemeMode) => void
   onFocusActiveTitleChange: (checked: boolean) => void
   onZoomFactorChange: (factor: number) => void
 }
@@ -36,12 +45,14 @@ export function AppearanceSection({
   accentPreset,
   accentCustom,
   accentBgTint,
+  themeMode,
   focusActiveTitle,
   zoomFactor,
   isCustomColor,
   onAccentChange,
   onCustomColorChange,
   onAccentBgTintChange,
+  onThemeModeChange,
   onFocusActiveTitleChange,
   onZoomFactorChange
 }: AppearanceSectionProps) {
@@ -52,6 +63,26 @@ export function AppearanceSection({
       </h3>
       <div className="glass-surface p-5 rounded-2xl space-y-6">
         <div className="space-y-3">
+          <label className="text-sm text-(--text-secondary)">Theme</label>
+          <div className="flex flex-wrap items-center gap-2">
+            {THEME_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onThemeModeChange(option.value)}
+                className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-2 text-xs font-bold tracking-wide transition-colors ${
+                  themeMode === option.value
+                    ? 'selected-surface text-(--text-primary)'
+                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
           <label className="text-sm text-(--text-secondary)">Accent Color</label>
           <div className="flex flex-wrap items-center gap-2">
             {ACCENT_PRESETS.map((preset) => (
@@ -59,7 +90,7 @@ export function AppearanceSection({
                 key={preset.hex}
                 type="button"
                 onClick={() => onAccentChange(preset.hex)}
-                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--text-primary) scale-110' : 'border-transparent'}`}
                 style={{ '--preset-color': preset.hex } as CSSProperties}
                 title={preset.name}
               />
@@ -93,7 +124,7 @@ export function AppearanceSection({
                       title="Custom accent color"
                     />
                     <span
-                      className="h-5 w-9 shrink-0 rounded-full border border-white/10 bg-(--custom-accent)"
+                      className="h-5 w-9 shrink-0 rounded-full border border-(--glass-border) bg-(--custom-accent)"
                       style={{ '--custom-accent': accentCustom || '#ad46ff' } as CSSProperties}
                     />
                     <span className="min-w-0 truncate text-xs font-mono uppercase text-(--text-muted)">
@@ -106,7 +137,7 @@ export function AppearanceSection({
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <div className="flex items-center justify-between pt-2 border-t border-(--header-glass-border)">
           <label className="text-sm text-(--text-secondary)">Accent Glow Background</label>
           <Toggle
             checked={accentBgTint}
@@ -115,7 +146,7 @@ export function AppearanceSection({
           />
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <div className="flex items-center justify-between pt-2 border-t border-(--header-glass-border)">
           <label className="text-sm text-(--text-secondary)">Focus active title</label>
           <Toggle
             checked={focusActiveTitle}
@@ -124,7 +155,7 @@ export function AppearanceSection({
           />
         </div>
 
-        <div className="space-y-3 pt-2 border-t border-white/5">
+        <div className="space-y-3 pt-2 border-t border-(--header-glass-border)">
           <label className="text-sm text-(--text-secondary)">UI Scale</label>
           <div className="flex flex-wrap items-center gap-2">
             {ZOOM_PRESETS.map((preset) => (

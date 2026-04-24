@@ -44,7 +44,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
-                fill="#48C774"
+                fill="var(--launcher-play)"
                 className="launcher-play-mark -ml-[2px] shrink-0"
               >
                 <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />

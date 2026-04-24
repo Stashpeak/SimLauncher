@@ -14,6 +14,7 @@ const MAX_ACCENT_PRESET_LENGTH = 50
 const MAX_PROFILE_COUNT_PER_GAME = 20
 const MAX_TRACKED_PROCESS_PATHS = 50
 const ACCENT_CUSTOM_PATTERN = /^#[0-9a-fA-F]{6}$/
+const THEME_MODES = new Set(['light', 'dark', 'system'])
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const KNOWN_GAME_KEYS = new Set([
   'ac',
@@ -56,6 +57,7 @@ export const store = new Store({
     accentPreset: { type: 'string', default: '' },
     accentCustom: { type: 'string', default: '' },
     accentBgTint: { type: 'boolean', default: false },
+    themeMode: { type: 'string', default: 'dark', enum: ['light', 'dark', 'system'] },
     focusActiveTitle: { type: 'boolean', default: true },
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
     startWithWindows: { type: 'boolean', default: false },
@@ -80,6 +82,7 @@ export const EXPECTED_CONFIG_KEYS = new Set([
   'accentPreset',
   'accentCustom',
   'accentBgTint',
+  'themeMode',
   'focusActiveTitle',
   'launchDelayMs',
   'startWithWindows',
@@ -186,6 +189,10 @@ function getSafeLaunchDelayMs(value: unknown) {
   }
 
   return clamp(Math.round(value), 0, 5000)
+}
+
+function getSafeThemeMode(value: unknown) {
+  return typeof value === 'string' && THEME_MODES.has(value) ? value : undefined
 }
 
 function isImportableExePath(value: unknown): value is string {
@@ -459,6 +466,15 @@ export function getSupportedConfigValues(config: Record<string, unknown>) {
 
       if (safeAccentPreset !== undefined) {
         supportedConfig.accentPreset = safeAccentPreset
+      }
+      return
+    }
+
+    if (key === 'themeMode') {
+      const safeThemeMode = getSafeThemeMode(value)
+
+      if (safeThemeMode) {
+        supportedConfig.themeMode = safeThemeMode
       }
       return
     }

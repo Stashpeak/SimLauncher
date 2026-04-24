@@ -35,7 +35,7 @@ export function AboutSection({
           <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
         </div>
 
-        <div className="flex items-center justify-between border-t border-white/5 pt-4">
+        <div className="flex items-center justify-between border-t border-(--header-glass-border) pt-4">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-(--text-primary)">
               Automatically check for updates

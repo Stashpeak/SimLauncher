@@ -81,7 +81,7 @@ export function AppsSection({
             {utilities.map((utility) => (
               <div
                 key={utility.key}
-                className="flex flex-col gap-2 border-b border-white/5 px-5 py-3"
+                className="flex flex-col gap-2 border-b border-(--header-glass-border) px-5 py-3"
               >
                 <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
                   {utility.isCustom ? (

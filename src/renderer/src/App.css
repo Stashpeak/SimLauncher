@@ -17,7 +17,8 @@
   --accent: var(--purple-primary);
   --accent-foreground: #000000;
   --accent-action-foreground: var(--text-primary);
-  --accent-glow: rgba(173, 70, 255, 0.25);
+  --accent-glow-opacity: 0.25;
+  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
   --focus-ring: rgba(173, 70, 255, 0.25);
   --danger-surface: rgba(244, 63, 94, 0.14);
   --danger-border: rgba(251, 113, 133, 0.28);
@@ -30,6 +31,21 @@
   --status-warning: var(--warning-text);
   --status-success: var(--success-text);
   --status-running: #4ade80;
+  --launcher-play: #48c774;
+  --header-glass-bg: rgba(18, 18, 18, 0.7);
+  --header-glass-border: rgba(255, 255, 255, 0.05);
+  --surface-recessed-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.24), rgba(8, 8, 11, 0.16));
+  --surface-recessed-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -10px 24px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 28px -24px rgba(0, 0, 0, 0.7);
+  --surface-floating-bg: linear-gradient(180deg, rgba(22, 22, 27, 0.96), rgba(12, 12, 16, 0.94));
+  --surface-floating-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -14px 28px rgba(0, 0, 0, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 18px 42px -22px rgba(0, 0, 0, 0.8);
+  --surface-sunken-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.28), rgba(8, 8, 11, 0.18));
+  --surface-sunken-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -10px 22px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.055);
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(255, 255, 255, 0.4) 0%,
@@ -37,7 +53,65 @@
     rgba(255, 255, 255, 0) 57%,
     rgba(255, 255, 255, 0.1) 100%
   );
+}
+
+:root[data-theme='dark'] {
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(20, 20, 24, 0.12);
+  --bg-gradient: linear-gradient(135deg, rgb(248, 248, 251) 5.61%, rgb(240, 240, 244) 94.39%);
+  --text-primary: rgba(20, 20, 24, 0.95);
+  --text-secondary: rgba(20, 20, 24, 0.7);
+  --text-muted: rgba(20, 20, 24, 0.5);
+  --text-subtle: rgba(20, 20, 24, 0.35);
+  --accent: var(--purple-primary);
+  --accent-foreground: #000000;
+  --accent-action-foreground: var(--text-primary);
+  --accent-glow-opacity: 0.22;
+  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
+  --focus-ring: rgba(173, 70, 255, 0.45);
+  --danger-surface: rgba(244, 63, 94, 0.1);
+  --danger-border: rgba(200, 35, 60, 0.35);
+  --danger-text: rgba(145, 25, 45, 0.95);
+  --warning-surface: rgba(245, 158, 11, 0.14);
+  --warning-border: rgba(180, 110, 10, 0.35);
+  --warning-text: rgba(120, 75, 5, 0.95);
+  --success-text: rgba(20, 100, 50, 0.95);
+  --status-running: #16a34a;
+  --header-glass-bg: rgba(252, 252, 254, 0.75);
+  --header-glass-border: rgba(20, 20, 24, 0.08);
+  --surface-recessed-bg: linear-gradient(
+    180deg,
+    rgba(235, 232, 242, 0.65),
+    rgba(225, 222, 232, 0.45)
+  );
+  --surface-recessed-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -10px 22px rgba(20, 20, 24, 0.055),
+    inset 0 0 0 1px rgba(20, 20, 24, 0.07), 0 10px 28px -24px rgba(20, 20, 24, 0.35);
+  --surface-floating-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.96),
+    rgba(246, 244, 250, 0.94)
+  );
+  --surface-floating-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -14px 28px rgba(20, 20, 24, 0.045),
+    inset 0 0 0 1px rgba(20, 20, 24, 0.08), 0 18px 42px -24px rgba(20, 20, 24, 0.28);
+  --surface-sunken-bg: linear-gradient(180deg, rgba(240, 238, 246, 0.55), rgba(230, 228, 238, 0.4));
+  --surface-sunken-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -10px 22px rgba(20, 20, 24, 0.045),
+    inset 0 0 0 1px rgba(20, 20, 24, 0.065);
+  --glass-stroke-gradient: linear-gradient(
+    166deg,
+    rgba(20, 20, 24, 0.12) 0%,
+    rgba(20, 20, 24, 0) 41%,
+    rgba(20, 20, 24, 0) 57%,
+    rgba(20, 20, 24, 0.05) 100%
+  );
+  color-scheme: light;
 }
 
 html,
@@ -80,10 +154,10 @@ textarea {
 }
 
 .header-glass {
-  background: rgba(18, 18, 18, 0.7);
+  background: var(--header-glass-bg);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--header-glass-border);
 }
 
 .glass-surface,
@@ -364,34 +438,23 @@ textarea {
 
 .group:hover .fallback-initial-icon {
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--glass-bg-elevated);
   color: var(--text-primary);
 }
 
 .glass-recessed {
-  background: linear-gradient(180deg, rgba(18, 18, 22, 0.24), rgba(8, 8, 11, 0.16));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 -10px 24px rgba(0, 0, 0, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 10px 28px -24px rgba(0, 0, 0, 0.7);
+  background: var(--surface-recessed-bg);
+  box-shadow: var(--surface-recessed-shadow);
 }
 
 .dropdown-surface {
-  background: linear-gradient(180deg, rgba(22, 22, 27, 0.96), rgba(12, 12, 16, 0.94));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    inset 0 -14px 28px rgba(0, 0, 0, 0.16),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
-    0 18px 42px -22px rgba(0, 0, 0, 0.8);
+  background: var(--surface-floating-bg);
+  box-shadow: var(--surface-floating-shadow);
 }
 
 .dropdown-trigger-surface {
-  background: linear-gradient(180deg, rgba(18, 18, 22, 0.28), rgba(8, 8, 11, 0.18));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    inset 0 -10px 22px rgba(0, 0, 0, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  background: var(--surface-sunken-bg);
+  box-shadow: var(--surface-sunken-shadow);
 }
 
 .dropdown-trigger-surface:hover,

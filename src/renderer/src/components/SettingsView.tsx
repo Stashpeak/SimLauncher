@@ -31,7 +31,7 @@ import { GamesSection } from './settings/GamesSection'
 import { normalizeLaunchDelayMs } from './settings/settingsUtils'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
-import { applyAccentTheme } from '../lib/theme'
+import { applyAccentTheme, applyThemeMode, normalizeThemeMode, type ThemeMode } from '../lib/theme'
 
 const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
 
@@ -53,6 +53,7 @@ export function SettingsView({
   const [accentPreset, setAccentPreset] = useState<string>(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>('dark')
   const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
@@ -93,6 +94,7 @@ export function SettingsView({
       setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
       setAccentCustom(settings.accentCustom || '')
       setAccentBgTint(settings.accentBgTint || false)
+      setThemeMode(normalizeThemeMode(settings.themeMode))
       setFocusActiveTitle(settings.focusActiveTitle !== false)
       setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
       setStartWithWindows(settings.startWithWindows || false)
@@ -148,6 +150,11 @@ export function SettingsView({
   const handleAccentBgTintChange = (checked: boolean) => {
     setAccentBgTint(checked)
     window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
+  }
+
+  const handleThemeModeChange = (mode: ThemeMode) => {
+    setThemeMode(mode)
+    applyThemeMode(mode)
   }
 
   const handleZoomFactorChange = (factor: number) => {
@@ -288,6 +295,7 @@ export function SettingsView({
           accentPreset,
           accentCustom,
           accentBgTint,
+          themeMode,
           focusActiveTitle,
           launchDelayMs: normalizedLaunchDelayMs,
           startMinimized,
@@ -328,12 +336,14 @@ export function SettingsView({
         accentPreset={accentPreset}
         accentCustom={accentCustom}
         accentBgTint={accentBgTint}
+        themeMode={themeMode}
         focusActiveTitle={focusActiveTitle}
         zoomFactor={zoomFactor}
         isCustomColor={isCustomColor}
         onAccentChange={handleAccentChange}
         onCustomColorChange={handleCustomColorChange}
         onAccentBgTintChange={handleAccentBgTintChange}
+        onThemeModeChange={handleThemeModeChange}
         onFocusActiveTitleChange={setFocusActiveTitle}
         onZoomFactorChange={handleZoomFactorChange}
       />
