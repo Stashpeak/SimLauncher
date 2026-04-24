@@ -142,7 +142,7 @@ export function AppsSection({
 
                   <button
                     onClick={() => onBrowse(utility.key)}
-                    className="neutral-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
+                    className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse
                   </button>
@@ -181,7 +181,7 @@ export function AppsSection({
                 type="button"
                 onClick={onAddCustomSlot}
                 disabled={customSlots >= MAX_CUSTOM_SLOTS}
-                className="neutral-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold"
+                className="accent-surface-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold"
               >
                 <svg
                   width="15"

@@ -515,7 +515,7 @@ function GameRow({
               type="button"
               onClick={handleRelaunchMissing}
               disabled={isLaunchBlocked}
-              className="neutral-action cursor-pointer rounded-full px-5 py-2 text-sm font-semibold"
+              className="accent-surface-action cursor-pointer rounded-full px-5 py-2 text-sm font-semibold"
             >
               {isLaunching ? 'Launching...' : 'Relaunch'}
             </button>

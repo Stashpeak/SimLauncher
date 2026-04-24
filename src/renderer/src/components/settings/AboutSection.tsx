@@ -66,7 +66,7 @@ export function AboutSection({
             <button
               onClick={onManualCheck}
               disabled={checkingUpdate}
-              className="neutral-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
+              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
             >
               {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
             </button>

@@ -549,7 +549,7 @@ export function ProfileEditor({
                     <button
                       type="button"
                       onClick={() => handleBrowseTrackedProcess(index)}
-                      className="neutral-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
+                      className="accent-surface-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Browse
                     </button>
