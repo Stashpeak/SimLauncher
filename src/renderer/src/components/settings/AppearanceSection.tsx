@@ -53,10 +53,11 @@ export function AppearanceSection({
       <div className="glass-surface p-5 rounded-2xl space-y-6">
         <div className="space-y-3">
           <label className="text-sm text-(--text-secondary)">Accent Color</label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {ACCENT_PRESETS.map((preset) => (
               <button
                 key={preset.hex}
+                type="button"
                 onClick={() => onAccentChange(preset.hex)}
                 className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
                 style={{ '--preset-color': preset.hex } as CSSProperties}
@@ -64,27 +65,34 @@ export function AppearanceSection({
               />
             ))}
             <button
+              type="button"
               onClick={() => onAccentChange('custom')}
-              className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all active:scale-[0.98] ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
+              className={`h-8 cursor-pointer rounded-full px-3 text-[10px] font-bold uppercase tracking-wide ${
+                isCustomColor ? 'selected-surface' : 'neutral-action text-(--text-secondary)'
+              }`}
             >
               Custom
             </button>
+            {isCustomColor && (
+              <label className="glass-input-surface neutral-action relative flex h-8 min-w-0 items-center gap-2 rounded-full border border-(--glass-border) pl-1.5 pr-2.5 animate-fade-slide cursor-pointer">
+                <input
+                  type="color"
+                  value={accentCustom || '#ad46ff'}
+                  onChange={(e) => onCustomColorChange(e.target.value)}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  aria-label="Custom accent color"
+                  title="Custom accent color"
+                />
+                <span
+                  className="h-5 w-9 shrink-0 rounded-full border border-white/10 bg-(--custom-accent)"
+                  style={{ '--custom-accent': accentCustom || '#ad46ff' } as CSSProperties}
+                />
+                <span className="min-w-0 truncate text-xs font-mono uppercase text-(--text-muted)">
+                  {accentCustom}
+                </span>
+              </label>
+            )}
           </div>
-          {isCustomColor && (
-            <div className="flex items-center gap-3 pt-2 animate-fade-slide">
-              <input
-                type="color"
-                value={accentCustom || '#ad46ff'}
-                onChange={(e) => onCustomColorChange(e.target.value)}
-                className="h-10 w-20 cursor-pointer rounded bg-transparent p-0"
-                aria-label="Custom accent color"
-                title="Custom accent color"
-              />
-              <span className="text-xs font-mono text-(--text-muted) uppercase">
-                {accentCustom}
-              </span>
-            </div>
-          )}
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t border-white/5">
