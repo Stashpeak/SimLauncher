@@ -281,6 +281,11 @@ textarea {
   color: var(--text-subtle);
 }
 
+.icon-action.icon-action-active {
+  background: transparent;
+  color: var(--text-primary);
+}
+
 .icon-action:hover {
   background: var(--glass-bg);
   color: var(--text-primary);

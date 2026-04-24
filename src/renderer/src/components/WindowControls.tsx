@@ -23,12 +23,12 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
   return (
     <div className="drag-region flex h-12 w-full items-center px-4 gap-2 shrink-0">
       {/* Pill: branding + settings gear */}
-      <div className="no-drag glass-surface rounded-full flex items-center shrink-0">
+      <div className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden">
         {/* Launcher branding */}
         <button
           type="button"
           onClick={() => onNavigate('games')}
-          className="accent-subtle-hover group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
+          className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
         >
           <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
             <span className="text-(--text-primary)">Sim</span>
@@ -45,14 +45,14 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         </button>
 
         {/* Divider */}
-        <div className="w-px h-3 bg-[rgba(255,255,255,0.1)]" />
+        <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
 
         {/* Settings gear */}
         <button
           type="button"
           onClick={() => onNavigate('settings')}
           className={`icon-action cursor-pointer flex items-center rounded-r-full py-1.5 pl-2 pr-2.5 ${
-            view === 'settings' ? 'selected-surface text-(--accent)' : ''
+            view === 'settings' ? 'icon-action-active' : ''
           }`}
           title="Settings"
         >
