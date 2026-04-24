@@ -142,7 +142,7 @@ export function AppsSection({
 
                   <button
                     onClick={() => onBrowse(utility.key)}
-                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-(--text-primary)"
+                    className="neutral-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse
                   </button>
@@ -151,7 +151,7 @@ export function AppsSection({
                       type="button"
                       onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
                       disabled={customSlots <= 1}
-                      className="flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl bg-(--danger-surface) text-(--danger-text) transition-all hover:bg-(--danger-border) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+                      className="danger-action flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl"
                       title={`Remove ${appNames[utility.key] || utility.name}`}
                       aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                     >
@@ -181,7 +181,7 @@ export function AppsSection({
                 type="button"
                 onClick={onAddCustomSlot}
                 disabled={customSlots >= MAX_CUSTOM_SLOTS}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+                className="neutral-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold"
               >
                 <svg
                   width="15"

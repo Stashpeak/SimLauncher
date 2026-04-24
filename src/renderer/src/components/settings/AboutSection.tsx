@@ -54,7 +54,7 @@ export function AboutSection({
             <button
               onClick={onInstallUpdate}
               disabled={installingUpdate}
-              className="accent-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+              className="accent-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
             >
               {installingUpdate
                 ? updateProgress !== null
@@ -66,7 +66,7 @@ export function AboutSection({
             <button
               onClick={onManualCheck}
               disabled={checkingUpdate}
-              className="w-full cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:opacity-50 disabled:cursor-wait"
+              className="neutral-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
             >
               {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
             </button>

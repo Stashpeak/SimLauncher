@@ -28,7 +28,7 @@ export function ConfigSection({
             type="button"
             onClick={onExportConfig}
             disabled={exportingConfig || importingConfig}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) px-4 py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+            className="neutral-action flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold"
           >
             <svg
               width="15"
@@ -51,7 +51,7 @@ export function ConfigSection({
             type="button"
             onClick={onImportConfig}
             disabled={exportingConfig || importingConfig}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) px-4 py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+            className="neutral-action flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold"
           >
             <svg
               width="15"

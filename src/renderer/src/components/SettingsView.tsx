@@ -383,13 +383,13 @@ export function SettingsView({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={handleSave}
-          className="accent-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-bold transition-all active:scale-[0.98]"
+          className="accent-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-bold"
         >
           Save Changes
         </button>
         <button
           onClick={onClose}
-          className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-3 text-sm font-bold text-(--text-primary) transition-colors hover:bg-(--glass-border) active:scale-[0.98]"
+          className="neutral-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-bold"
         >
           Back to Games
         </button>

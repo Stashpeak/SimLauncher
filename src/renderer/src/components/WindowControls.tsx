@@ -28,7 +28,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={() => onNavigate('games')}
-          className="group cursor-pointer flex items-center py-1.5 pl-3 pr-2"
+          className="accent-subtle-hover group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
         >
           <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
             <span className="text-(--text-primary)">Sim</span>
@@ -51,10 +51,8 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={() => onNavigate('settings')}
-          className={`cursor-pointer flex items-center py-1.5 pl-2 pr-2.5 transition-colors ${
-            view === 'settings'
-              ? 'text-(--accent)'
-              : 'text-(--text-subtle) hover:text-(--text-primary)'
+          className={`icon-action cursor-pointer flex items-center rounded-r-full py-1.5 pl-2 pr-2.5 ${
+            view === 'settings' ? 'selected-surface text-(--accent)' : ''
           }`}
           title="Settings"
         >
@@ -79,7 +77,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleInstallUpdate}
-          className="no-drag glass-surface-elevated animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border-(--accent)/30 shadow-[0_0_15px_-5px_var(--accent-glow)] hover:bg-(--accent)/10 active:scale-[0.98] transition-all"
+          className="accent-surface-action no-drag animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border border-(--accent)/30"
         >
           <div className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]" />
           <span className="text-[10px] font-bold uppercase tracking-wider text-(--accent)">
@@ -96,7 +94,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleMinimize}
-          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
+          className="icon-action cursor-pointer rounded-full p-2"
           title="Minimize"
         >
           <svg
@@ -113,7 +111,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleMaximize}
-          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
+          className="icon-action cursor-pointer rounded-full p-2"
           title={isMaximized ? 'Restore' : 'Maximize'}
         >
           <svg
@@ -132,7 +130,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleClose}
-          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-[rgba(255,0,0,0.1)] hover:text-red-500"
+          className="icon-action danger-action cursor-pointer rounded-full p-2"
           title="Close"
         >
           <svg

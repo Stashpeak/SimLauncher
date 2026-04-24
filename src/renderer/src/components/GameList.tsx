@@ -291,9 +291,7 @@ function GameRow({
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
   const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
-  const primaryButtonClass = canKill
-    ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
-    : 'accent-surface-action'
+  const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
@@ -302,7 +300,7 @@ function GameRow({
       ref={rowRef}
     >
       <div
-        className={`glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)] ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}
+        className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}
       >
         <div className="flex items-center gap-5">
           <div className="relative">
@@ -339,7 +337,7 @@ function GameRow({
                     }
                   }}
                   onKeyDown={handleProfileMenuTriggerKeyDown}
-                  className="flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2.5 py-1 text-[10px] font-semibold text-(--text-primary) outline-none transition-all hover:border-(--accent) hover:bg-(--glass-bg) focus-visible:ring-2 focus-visible:ring-(--accent)"
+                  className="neutral-action flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) px-2.5 py-1 text-[10px] font-semibold"
                   aria-haspopup="menu"
                   aria-expanded={profileMenuOpen}
                   aria-label={`${game.name} profile`}
@@ -379,10 +377,8 @@ function GameRow({
                             event.stopPropagation()
                             handleProfileSelect(profile.id)
                           }}
-                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
-                            selected
-                              ? 'bg-(--accent)/20 text-(--text-primary)'
-                              : 'text-(--text-secondary) hover:bg-(--glass-bg-elevated) hover:text-(--text-primary)'
+                          className={`dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold ${
+                            selected ? 'selected-surface' : ''
                           }`}
                         >
                           <span
@@ -415,7 +411,7 @@ function GameRow({
                         <button
                           type="submit"
                           disabled={newProfileName.trim().length === 0}
-                          className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+                          className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md"
                           aria-label="Create profile"
                           title="Create profile"
                         >
@@ -441,7 +437,7 @@ function GameRow({
                           event.stopPropagation()
                           handleProfileSelect('__new__')
                         }}
-                        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
+                        className="dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
                       >
                         <svg
                           width="12"
@@ -510,7 +506,7 @@ function GameRow({
             type="button"
             onClick={primaryAction}
             disabled={isLaunchBlocked && !canKill}
-            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100 ${primaryButtonClass}`}
+            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold ${primaryButtonClass}`}
           >
             {primaryLabel}
           </button>
@@ -519,7 +515,7 @@ function GameRow({
               type="button"
               onClick={handleRelaunchMissing}
               disabled={isLaunchBlocked}
-              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+              className="neutral-action cursor-pointer rounded-full px-5 py-2 text-sm font-semibold"
             >
               {isLaunching ? 'Launching...' : 'Relaunch'}
             </button>
@@ -527,11 +523,11 @@ function GameRow({
           <button
             type="button"
             onClick={handleToggle}
-            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all duration-300 active:scale-[0.98]
+            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full
               ${
                 isActive
                   ? 'accent-surface-action rotate-90 scale-110'
-                  : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
+                  : 'icon-action rotate-0 hover:rotate-45'
               }`}
             title="Profile Settings"
           >

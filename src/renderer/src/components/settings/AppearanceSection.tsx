@@ -112,10 +112,10 @@ export function AppearanceSection({
               <button
                 key={preset.factor}
                 onClick={() => onZoomFactorChange(preset.factor)}
-                className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all active:scale-[0.98] ${
+                className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide ${
                   zoomFactor === preset.factor
-                    ? 'accent-action'
-                    : 'bg-(--glass-bg-elevated) text-(--text-secondary) hover:bg-(--glass-border) hover:text-(--text-primary)'
+                    ? 'selected-surface'
+                    : 'neutral-action text-(--text-secondary)'
                 }`}
               >
                 {preset.label}

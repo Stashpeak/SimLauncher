@@ -88,7 +88,7 @@ export function GamesSection({
 
                   <button
                     onClick={() => onBrowse(game.key)}
-                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-(--text-primary)"
+                    className="neutral-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse
                   </button>

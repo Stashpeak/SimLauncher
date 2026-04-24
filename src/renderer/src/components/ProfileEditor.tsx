@@ -34,11 +34,9 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
           onToggle()
         }
       }}
-      className="accent-subtle-hover group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:text-(--text-primary) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
+      className="accent-subtle-hover group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3"
     >
-      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">
-        {label}
-      </span>
+      <span className="text-sm font-medium text-(--text-secondary)">{label}</span>
       <span onClick={(event) => event.stopPropagation()}>
         <Toggle checked={checked} onChange={onChange} aria-label={label} />
       </span>
@@ -348,8 +346,8 @@ export function ProfileEditor({
             setDropTarget(null)
           }
         }}
-        className={`accent-subtle-hover group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:text-(--text-primary) ${
-          isEnabled ? '' : 'opacity-55 hover:opacity-100'
+        className={`accent-subtle-hover group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 ${
+          isEnabled ? '' : 'opacity-55'
         }`}
       >
         {dropPlacement && (
@@ -387,7 +385,7 @@ export function ProfileEditor({
               setDragUtilityId(null)
               setDropTarget(null)
             }}
-            className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-(--text-subtle) transition-colors hover:bg-white/10 hover:text-(--text-primary) active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-20"
+            className="icon-action flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded active:cursor-grabbing"
             title="Drag to reorder"
             aria-label={`Reorder ${label}`}
           >
@@ -416,9 +414,7 @@ export function ProfileEditor({
               </div>
             )}
           </div>
-          <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80 group-hover:opacity-100">
-            {label}
-          </span>
+          <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80">{label}</span>
         </div>
         <span onClick={(event) => event.stopPropagation()}>
           <Toggle
@@ -440,7 +436,7 @@ export function ProfileEditor({
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none text-(--text-subtle) transition-all duration-200 hover:bg-(--glass-bg) hover:text-(--text-primary) active:scale-[0.98]"
+          className="icon-action flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none"
           title="Close"
         >
           ×
@@ -533,7 +529,7 @@ export function ProfileEditor({
               <button
                 type="button"
                 onClick={handleAddTrackedProcess}
-                className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-1.5 text-xs font-semibold text-(--text-primary) transition-all duration-200 hover:bg-(--glass-border) active:scale-[0.98]"
+                className="accent-surface-action cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
               >
                 Add
               </button>
@@ -553,14 +549,14 @@ export function ProfileEditor({
                     <button
                       type="button"
                       onClick={() => handleBrowseTrackedProcess(index)}
-                      className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-2 text-xs font-semibold text-(--text-primary) transition-all duration-200 hover:bg-(--glass-border) active:scale-[0.98]"
+                      className="neutral-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Browse
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveTrackedProcess(index)}
-                      className="cursor-pointer rounded-lg bg-(--danger-surface) px-3 py-2 text-xs font-semibold text-(--danger-text) transition-all duration-200 hover:bg-(--danger-border) active:scale-[0.98]"
+                      className="danger-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Remove
                     </button>
@@ -579,14 +575,14 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="accent-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm transition-all duration-300 active:scale-[0.98]"
+            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm"
           >
             Save Profile
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-[0.98]"
+            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
           >
             Cancel
           </button>
@@ -594,7 +590,7 @@ export function ProfileEditor({
             <button
               type="button"
               onClick={handleDeleteProfile}
-              className="flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl bg-(--danger-surface) text-(--danger-text) transition-all duration-300 hover:bg-(--danger-border) active:scale-[0.98]"
+              className="danger-action flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl"
               title="Delete profile"
               aria-label="Delete profile"
             >

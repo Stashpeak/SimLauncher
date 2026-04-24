@@ -207,7 +207,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowImportWarning(false)}
-                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-(--warning-text) transition-colors hover:bg-white/10 active:scale-[0.98]"
+                className="icon-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg"
                 aria-label="Dismiss import warning"
                 title="Dismiss"
               >
