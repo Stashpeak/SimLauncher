@@ -95,7 +95,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="flex-1 cursor-pointer bg-(--accent) hover:bg-(--purple-solid-hover) text-white font-bold py-3 px-6 rounded-xl shadow-[0_0_20px_-5px_var(--accent-glow)] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="accent-action flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
               >
                 <svg
                   width="18"
@@ -116,7 +116,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleCopyError}
-                className="flex-1 cursor-pointer glass-surface hover:bg-(--glass-bg-elevated) text-(--text-secondary) hover:text-(--text-primary) font-bold py-3 px-6 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                className="accent-surface-action flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
               >
                 <svg
                   width="18"

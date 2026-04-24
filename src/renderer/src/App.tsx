@@ -21,6 +21,7 @@ import {
   type GameProfileSet,
   type GameProfile
 } from './lib/config'
+import { applyAccentTheme, applyThemeMode, normalizeThemeMode } from './lib/theme'
 
 const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
 
@@ -145,21 +146,14 @@ export default function App() {
         const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
         const custom = settings.accentCustom
         const tint = settings.accentBgTint || false
+        const themeMode = normalizeThemeMode(settings.themeMode)
 
         setBgTinted(tint)
+        applyThemeMode(themeMode)
 
         const hex = preset === 'custom' ? custom : preset
         if (hex) {
-          document.documentElement.style.setProperty('--accent', hex)
-
-          // Re-calculate glow from hex
-          const r = parseInt(hex.slice(1, 3), 16)
-          const g = parseInt(hex.slice(3, 5), 16)
-          const b = parseInt(hex.slice(5, 7), 16)
-          document.documentElement.style.setProperty(
-            '--accent-glow',
-            `rgba(${r}, ${g}, ${b}, 0.24)`
-          )
+          applyAccentTheme(hex)
         }
       } catch (err) {
         console.error('Failed to initialize theme', err)
@@ -215,7 +209,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowImportWarning(false)}
-                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-(--warning-text) transition-colors hover:bg-white/10 active:scale-[0.98]"
+                className="icon-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg"
                 aria-label="Dismiss import warning"
                 title="Dismiss"
               >

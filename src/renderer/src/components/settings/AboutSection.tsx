@@ -35,7 +35,7 @@ export function AboutSection({
           <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
         </div>
 
-        <div className="flex items-center justify-between border-t border-white/5 pt-4">
+        <div className="flex items-center justify-between border-t border-(--header-glass-border) pt-4">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-(--text-primary)">
               Automatically check for updates
@@ -54,7 +54,7 @@ export function AboutSection({
             <button
               onClick={onInstallUpdate}
               disabled={installingUpdate}
-              className="w-full cursor-pointer rounded-xl bg-(--accent) py-2.5 text-xs font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] shadow-[0_0_15px_-5px_var(--accent-glow)] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
             >
               {installingUpdate
                 ? updateProgress !== null
@@ -66,7 +66,7 @@ export function AboutSection({
             <button
               onClick={onManualCheck}
               disabled={checkingUpdate}
-              className="w-full cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:opacity-50 disabled:cursor-wait"
+              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
             >
               {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
             </button>

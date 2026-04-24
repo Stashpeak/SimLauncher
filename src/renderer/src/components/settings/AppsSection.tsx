@@ -81,7 +81,7 @@ export function AppsSection({
             {utilities.map((utility) => (
               <div
                 key={utility.key}
-                className="flex flex-col gap-2 border-b border-white/5 px-5 py-3"
+                className="flex flex-col gap-2 border-b border-(--header-glass-border) px-5 py-3"
               >
                 <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
                   {utility.isCustom ? (
@@ -125,7 +125,7 @@ export function AppsSection({
                     />
                   ) : (
                     <div
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-(--accent)/30 bg-(--accent)/10 text-[10px] font-black text-(--accent) shadow-[0_0_12px_-7px_var(--accent-glow)]"
+                      className="fallback-initial-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black"
                       title={`${appNames[utility.key] || utility.name} icon fallback`}
                     >
                       {getInitials(appNames[utility.key] || utility.name)}
@@ -137,12 +137,12 @@ export function AppsSection({
                     value={appPaths[utility.key] || ''}
                     readOnly
                     placeholder="No executable path set"
-                    className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                   />
 
                   <button
                     onClick={() => onBrowse(utility.key)}
-                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
+                    className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse
                   </button>
@@ -151,7 +151,7 @@ export function AppsSection({
                       type="button"
                       onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
                       disabled={customSlots <= 1}
-                      className="flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl bg-(--danger-surface) text-(--danger-text) transition-all hover:bg-(--danger-border) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+                      className="danger-action flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl"
                       title={`Remove ${appNames[utility.key] || utility.name}`}
                       aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                     >
@@ -181,7 +181,7 @@ export function AppsSection({
                 type="button"
                 onClick={onAddCustomSlot}
                 disabled={customSlots >= MAX_CUSTOM_SLOTS}
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--glass-bg-elevated) py-2.5 text-xs font-bold text-(--text-primary) transition-all hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+                className="accent-surface-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold"
               >
                 <svg
                   width="15"

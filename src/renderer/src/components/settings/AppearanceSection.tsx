@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
+import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
 
 const ZOOM_PRESETS = [
@@ -18,16 +19,24 @@ const ACCENT_PRESETS = [
   { name: 'Caution Yellow', hex: '#ffd600' }
 ]
 
+const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
+  { label: 'Dark', value: 'dark' },
+  { label: 'Light', value: 'light' },
+  { label: 'System', value: 'system' }
+]
+
 interface AppearanceSectionProps {
   accentPreset: string
   accentCustom: string
   accentBgTint: boolean
+  themeMode: ThemeMode
   focusActiveTitle: boolean
   zoomFactor: number
   isCustomColor: boolean
   onAccentChange: (presetHex: string) => void
   onCustomColorChange: (hex: string) => void
   onAccentBgTintChange: (checked: boolean) => void
+  onThemeModeChange: (mode: ThemeMode) => void
   onFocusActiveTitleChange: (checked: boolean) => void
   onZoomFactorChange: (factor: number) => void
 }
@@ -36,12 +45,14 @@ export function AppearanceSection({
   accentPreset,
   accentCustom,
   accentBgTint,
+  themeMode,
   focusActiveTitle,
   zoomFactor,
   isCustomColor,
   onAccentChange,
   onCustomColorChange,
   onAccentBgTintChange,
+  onThemeModeChange,
   onFocusActiveTitleChange,
   onZoomFactorChange
 }: AppearanceSectionProps) {
@@ -52,42 +63,81 @@ export function AppearanceSection({
       </h3>
       <div className="glass-surface p-5 rounded-2xl space-y-6">
         <div className="space-y-3">
+          <label className="text-sm text-(--text-secondary)">Theme</label>
+          <div className="flex flex-wrap items-center gap-2">
+            {THEME_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onThemeModeChange(option.value)}
+                className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-2 text-xs font-bold tracking-wide transition-colors ${
+                  themeMode === option.value
+                    ? 'selected-surface text-(--text-primary)'
+                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
           <label className="text-sm text-(--text-secondary)">Accent Color</label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {ACCENT_PRESETS.map((preset) => (
               <button
                 key={preset.hex}
+                type="button"
                 onClick={() => onAccentChange(preset.hex)}
-                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-white scale-110' : 'border-transparent'}`}
+                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--text-primary) scale-110' : 'border-transparent'}`}
                 style={{ '--preset-color': preset.hex } as CSSProperties}
                 title={preset.name}
               />
             ))}
-            <button
-              onClick={() => onAccentChange('custom')}
-              className={`h-8 px-3 rounded-full border-2 text-[10px] font-bold uppercase transition-all active:scale-[0.98] ${isCustomColor ? 'border-white bg-white text-black' : 'border-(--glass-border) text-(--text-secondary)'}`}
+            <div
+              className={`glass-surface relative flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-(--glass-border) transition-all duration-200 ${
+                isCustomColor ? 'selected-surface' : ''
+              }`}
             >
-              Custom
-            </button>
-          </div>
-          {isCustomColor && (
-            <div className="flex items-center gap-3 pt-2 animate-fade-slide">
-              <input
-                type="color"
-                value={accentCustom || '#ad46ff'}
-                onChange={(e) => onCustomColorChange(e.target.value)}
-                className="h-10 w-20 cursor-pointer rounded bg-transparent p-0"
-                aria-label="Custom accent color"
-                title="Custom accent color"
-              />
-              <span className="text-xs font-mono text-(--text-muted) uppercase">
-                {accentCustom}
-              </span>
+              <button
+                type="button"
+                onClick={() => onAccentChange('custom')}
+                className={`cursor-pointer px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                  isCustomColor
+                    ? 'text-(--text-primary)'
+                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                }`}
+              >
+                Custom
+              </button>
+              {isCustomColor && (
+                <div className="animate-fade-slide-inline flex h-full items-center">
+                  <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
+                  <label className="relative flex h-full min-w-0 items-center gap-2 pl-2 pr-2.5 cursor-pointer">
+                    <input
+                      type="color"
+                      value={accentCustom || '#ad46ff'}
+                      onChange={(e) => onCustomColorChange(e.target.value)}
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      aria-label="Custom accent color"
+                      title="Custom accent color"
+                    />
+                    <span
+                      className="h-5 w-9 shrink-0 rounded-full border border-(--glass-border) bg-(--custom-accent)"
+                      style={{ '--custom-accent': accentCustom || '#ad46ff' } as CSSProperties}
+                    />
+                    <span className="min-w-0 truncate text-xs font-mono uppercase text-(--text-muted)">
+                      {accentCustom}
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <div className="flex items-center justify-between pt-2 border-t border-(--header-glass-border)">
           <label className="text-sm text-(--text-secondary)">Accent Glow Background</label>
           <Toggle
             checked={accentBgTint}
@@ -96,7 +146,7 @@ export function AppearanceSection({
           />
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+        <div className="flex items-center justify-between pt-2 border-t border-(--header-glass-border)">
           <label className="text-sm text-(--text-secondary)">Focus active title</label>
           <Toggle
             checked={focusActiveTitle}
@@ -105,17 +155,17 @@ export function AppearanceSection({
           />
         </div>
 
-        <div className="space-y-3 pt-2 border-t border-white/5">
+        <div className="space-y-3 pt-2 border-t border-(--header-glass-border)">
           <label className="text-sm text-(--text-secondary)">UI Scale</label>
-          <div className="flex rounded-xl overflow-hidden border border-(--glass-border)">
+          <div className="flex flex-wrap items-center gap-2">
             {ZOOM_PRESETS.map((preset) => (
               <button
                 key={preset.factor}
                 onClick={() => onZoomFactorChange(preset.factor)}
-                className={`flex-1 cursor-pointer py-2 text-xs font-bold tracking-wide transition-all active:scale-[0.98] ${
+                className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-2 text-xs font-bold tracking-wide transition-colors ${
                   zoomFactor === preset.factor
-                    ? 'bg-(--accent) text-white shadow-[0_0_15px_-5px_var(--accent-glow)]'
-                    : 'bg-(--glass-bg-elevated) text-(--text-secondary) hover:bg-(--glass-border) hover:text-(--text-primary)'
+                    ? 'selected-surface text-(--text-primary)'
+                    : 'text-(--text-secondary) hover:text-(--text-primary)'
                 }`}
               >
                 {preset.label}

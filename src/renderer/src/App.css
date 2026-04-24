@@ -15,7 +15,10 @@
   --text-muted: rgba(255, 255, 255, 0.5);
   --text-subtle: rgba(255, 255, 255, 0.3);
   --accent: var(--purple-primary);
-  --accent-glow: rgba(173, 70, 255, 0.25);
+  --accent-foreground: #000000;
+  --accent-action-foreground: var(--text-primary);
+  --accent-glow-opacity: 0.25;
+  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
   --focus-ring: rgba(173, 70, 255, 0.25);
   --danger-surface: rgba(244, 63, 94, 0.14);
   --danger-border: rgba(251, 113, 133, 0.28);
@@ -28,6 +31,25 @@
   --status-warning: var(--warning-text);
   --status-success: var(--success-text);
   --status-running: #4ade80;
+  --launcher-play: #48c774;
+  --header-glass-bg: rgba(18, 18, 18, 0.7);
+  --header-glass-border: rgba(255, 255, 255, 0.05);
+  --surface-recessed-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.24), rgba(8, 8, 11, 0.16));
+  --surface-recessed-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -10px 24px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 28px -24px rgba(0, 0, 0, 0.7);
+  --surface-floating-bg: linear-gradient(180deg, rgba(22, 22, 27, 0.96), rgba(12, 12, 16, 0.94));
+  --surface-floating-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -14px 28px rgba(0, 0, 0, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07), 0 18px 42px -22px rgba(0, 0, 0, 0.8);
+  --surface-sunken-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.28), rgba(8, 8, 11, 0.18));
+  --surface-sunken-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -10px 22px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.055);
+  --game-icon-filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.07))
+    drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
+  --game-title-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --toggle-track-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(255, 255, 255, 0.4) 0%,
@@ -35,7 +57,69 @@
     rgba(255, 255, 255, 0) 57%,
     rgba(255, 255, 255, 0.1) 100%
   );
+}
+
+:root[data-theme='dark'] {
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --glass-bg: color-mix(in srgb, var(--accent) 10%, rgba(255, 255, 255, 0.65));
+  --glass-bg-elevated: color-mix(in srgb, var(--accent) 14%, rgba(255, 255, 255, 0.85));
+  --glass-border: rgba(20, 20, 24, 0.12);
+  --bg-gradient: linear-gradient(135deg, rgb(248, 248, 251) 5.61%, rgb(240, 240, 244) 94.39%);
+  --text-primary: rgba(20, 20, 24, 0.95);
+  --text-secondary: rgba(20, 20, 24, 0.7);
+  --text-muted: rgba(20, 20, 24, 0.5);
+  --text-subtle: rgba(20, 20, 24, 0.5);
+  --accent: var(--purple-primary);
+  --accent-foreground: #000000;
+  --accent-action-foreground: var(--text-primary);
+  --accent-glow-opacity: 0.22;
+  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
+  --focus-ring: rgba(173, 70, 255, 0.45);
+  --danger-surface: rgba(244, 63, 94, 0.1);
+  --danger-border: rgba(200, 35, 60, 0.35);
+  --danger-text: rgba(145, 25, 45, 0.95);
+  --warning-surface: rgba(245, 158, 11, 0.14);
+  --warning-border: rgba(180, 110, 10, 0.35);
+  --warning-text: rgba(120, 75, 5, 0.95);
+  --success-text: rgba(20, 100, 50, 0.95);
+  --status-running: #16a34a;
+  --header-glass-bg: rgba(252, 252, 254, 0.75);
+  --header-glass-border: rgba(20, 20, 24, 0.08);
+  --surface-recessed-bg: linear-gradient(
+    180deg,
+    rgba(235, 232, 242, 0.65),
+    rgba(225, 222, 232, 0.45)
+  );
+  --surface-recessed-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -10px 22px rgba(20, 20, 24, 0.055),
+    inset 0 0 0 1px rgba(20, 20, 24, 0.07), 0 10px 28px -24px rgba(20, 20, 24, 0.35);
+  --surface-floating-bg: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.96),
+    rgba(246, 244, 250, 0.94)
+  );
+  --surface-floating-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -14px 28px rgba(20, 20, 24, 0.045),
+    inset 0 0 0 1px rgba(20, 20, 24, 0.08), 0 18px 42px -24px rgba(20, 20, 24, 0.28);
+  --surface-sunken-bg: linear-gradient(180deg, rgba(240, 238, 246, 0.55), rgba(230, 228, 238, 0.4));
+  --surface-sunken-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -10px 22px rgba(20, 20, 24, 0.045),
+    inset 0 0 0 1px rgba(20, 20, 24, 0.065);
+  --game-icon-filter: drop-shadow(0 1px 1px rgba(20, 20, 24, 0.5))
+    drop-shadow(0 7px 12px rgba(20, 20, 24, 0.22));
+  --game-title-text-shadow: none;
+  --toggle-track-shadow: inset 0 1px 3px rgba(20, 20, 24, 0.12);
+  --glass-stroke-gradient: linear-gradient(
+    166deg,
+    rgba(20, 20, 24, 0.12) 0%,
+    rgba(20, 20, 24, 0) 41%,
+    rgba(20, 20, 24, 0) 57%,
+    rgba(20, 20, 24, 0.05) 100%
+  );
+  color-scheme: light;
 }
 
 html,
@@ -78,10 +162,10 @@ textarea {
 }
 
 .header-glass {
-  background: rgba(18, 18, 18, 0.7);
+  background: var(--header-glass-bg);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--header-glass-border);
 }
 
 .glass-surface,
@@ -122,10 +206,15 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+.launcher-play-mark {
+  transform: translateY(0.65px) skewX(-10deg);
+}
+
 /* 2026 Design Overhaul Utils */
 .bg-tinted {
   background:
-    radial-gradient(circle at center, var(--accent-glow) 0%, transparent 100%), var(--bg-gradient);
+    radial-gradient(ellipse at 82% 18%, var(--accent-glow) 0%, transparent 34%),
+    radial-gradient(ellipse at 18% 88%, var(--accent-glow) 0%, transparent 38%), var(--bg-gradient);
 }
 
 .neon-glow {
@@ -135,11 +224,265 @@ textarea {
   text-shadow: 0 0 5px rgba(255, 255, 255, 0.4);
 }
 
-.glass-recessed {
-  background: rgba(0, 0, 0, 0.2);
+.accent-action,
+.accent-surface-action,
+.accent-subtle-hover,
+.neutral-action,
+.danger-action,
+.icon-action,
+.dropdown-item,
+.selected-surface {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    filter 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.accent-action {
+  background: var(--accent);
+  color: var(--accent-foreground);
   box-shadow:
-    inset 0 2px 10px rgba(0, 0, 0, 0.5),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    0 0 12px -9px var(--accent-glow),
+    0 0 26px -22px var(--accent-glow);
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.22);
+}
+
+.accent-action:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-foreground) 24%, transparent),
+    0 0 18px -6px var(--accent-glow),
+    0 0 42px -16px var(--accent-glow);
+}
+
+.accent-action:active {
+  transform: scale(0.98);
+}
+
+.accent-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.accent-action:disabled,
+.accent-surface-action:disabled,
+.accent-subtle-hover:disabled,
+.neutral-action:disabled,
+.danger-action:disabled,
+.icon-action:disabled,
+.dropdown-item:disabled,
+.selected-surface:disabled {
+  cursor: not-allowed;
+  filter: none;
+  opacity: 0.55;
+  transform: none;
+}
+
+.accent-subtle-hover:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 20px -16px var(--accent-glow);
+}
+
+.accent-subtle-hover:active {
+  transform: scale(0.99);
+}
+
+.accent-subtle-hover:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.accent-surface-action {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-action-foreground);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 20px -16px var(--accent-glow);
+}
+
+.accent-surface-action:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 18px -8px var(--accent-glow),
+    0 0 42px -18px var(--accent-glow);
+}
+
+.accent-surface-action:active {
+  transform: scale(0.98);
+}
+
+.accent-surface-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.neutral-action {
+  background: var(--glass-bg-elevated);
+  color: var(--text-primary);
+}
+
+.neutral-action:hover {
+  background: var(--glass-border);
+  color: var(--text-primary);
+}
+
+.neutral-action:active {
+  transform: scale(0.98);
+}
+
+.neutral-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.danger-action {
+  background: var(--danger-surface);
+  color: var(--danger-text);
+  box-shadow: 0 0 15px -9px var(--danger-border);
+}
+
+.danger-action:hover {
+  background: var(--danger-border);
+  box-shadow: 0 0 18px -8px var(--danger-border);
+}
+
+.danger-action:active {
+  transform: scale(0.98);
+}
+
+.danger-action:focus-visible {
+  outline: 2px solid var(--danger-border);
+  outline-offset: 2px;
+}
+
+.icon-action {
+  background: transparent;
+  color: var(--text-subtle);
+}
+
+.icon-action.icon-action-active {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.icon-action:hover {
+  background: var(--glass-bg);
+  color: var(--text-primary);
+}
+
+.icon-action:active {
+  transform: scale(0.98);
+}
+
+.icon-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.icon-action.danger-action {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-subtle);
+}
+
+.icon-action.danger-action:hover {
+  background: var(--danger-surface);
+  color: var(--danger-text);
+}
+
+.dropdown-item {
+  color: var(--text-secondary);
+}
+
+.dropdown-item:hover {
+  background: var(--glass-bg-elevated);
+  color: var(--text-primary);
+}
+
+.dropdown-item:active {
+  transform: scale(0.99);
+}
+
+.dropdown-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.dropdown-item[aria-checked='true'],
+.selected-surface {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--text-primary);
+}
+
+.selected-surface {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.selected-surface:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.selected-surface:active {
+  transform: scale(0.99);
+}
+
+.selected-surface:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.fallback-initial-icon {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-elevated);
+  color: var(--text-secondary);
+}
+
+.game-icon-image {
+  filter: var(--game-icon-filter);
+}
+
+.game-title {
+  text-shadow: var(--game-title-text-shadow);
+}
+
+.toggle-track {
+  box-shadow: var(--toggle-track-shadow);
+}
+
+.group:hover .fallback-initial-icon {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--glass-bg-elevated);
+  color: var(--text-primary);
+}
+
+.glass-recessed {
+  background: var(--surface-recessed-bg);
+  box-shadow: var(--surface-recessed-shadow);
+}
+
+.dropdown-surface {
+  background: var(--surface-floating-bg);
+  box-shadow: var(--surface-floating-shadow);
+}
+
+.dropdown-trigger-surface {
+  background: var(--surface-sunken-bg);
+  box-shadow: var(--surface-sunken-shadow);
+}
+
+.dropdown-trigger-surface:hover,
+.dropdown-trigger-surface[aria-expanded='true'] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
 }
 
 .profile-editor-wrapper {
@@ -166,6 +509,21 @@ textarea {
 
 .animate-fade-slide {
   animation: fadeSlide 0.25s ease-out forwards;
+}
+
+@keyframes fadeSlideInline {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-slide-inline {
+  animation: fadeSlideInline 0.22s ease-out forwards;
 }
 
 @keyframes pulse {

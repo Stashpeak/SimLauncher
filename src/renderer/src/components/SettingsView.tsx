@@ -31,6 +31,7 @@ import { GamesSection } from './settings/GamesSection'
 import { normalizeLaunchDelayMs } from './settings/settingsUtils'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
+import { applyAccentTheme, applyThemeMode, normalizeThemeMode, type ThemeMode } from '../lib/theme'
 
 const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
 
@@ -52,6 +53,7 @@ export function SettingsView({
   const [accentPreset, setAccentPreset] = useState<string>(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustom] = useState<string>('')
   const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>('dark')
   const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
   const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
@@ -89,9 +91,13 @@ export function SettingsView({
           ...(Object.values(typedProfiles) as Record<string, unknown>[])
         )
       )
+      const loadedThemeMode = normalizeThemeMode(settings.themeMode)
+
       setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
       setAccentCustom(settings.accentCustom || '')
       setAccentBgTint(settings.accentBgTint || false)
+      setThemeMode(loadedThemeMode)
+      applyThemeMode(loadedThemeMode)
       setFocusActiveTitle(settings.focusActiveTitle !== false)
       setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
       setStartWithWindows(settings.startWithWindows || false)
@@ -125,13 +131,7 @@ export function SettingsView({
   }, [])
 
   const updateAccentCSS = (hex: string) => {
-    if (!hex) return
-    document.documentElement.style.setProperty('--accent', hex)
-
-    const r = parseInt(hex.slice(1, 3), 16)
-    const g = parseInt(hex.slice(3, 5), 16)
-    const b = parseInt(hex.slice(5, 7), 16)
-    document.documentElement.style.setProperty('--accent-glow', `rgba(${r}, ${g}, ${b}, 0.24)`)
+    if (hex) applyAccentTheme(hex)
   }
 
   const handleAccentChange = (presetHex: string) => {
@@ -153,6 +153,11 @@ export function SettingsView({
   const handleAccentBgTintChange = (checked: boolean) => {
     setAccentBgTint(checked)
     window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
+  }
+
+  const handleThemeModeChange = (mode: ThemeMode) => {
+    setThemeMode(mode)
+    applyThemeMode(mode)
   }
 
   const handleZoomFactorChange = (factor: number) => {
@@ -293,6 +298,7 @@ export function SettingsView({
           accentPreset,
           accentCustom,
           accentBgTint,
+          themeMode,
           focusActiveTitle,
           launchDelayMs: normalizedLaunchDelayMs,
           startMinimized,
@@ -333,12 +339,14 @@ export function SettingsView({
         accentPreset={accentPreset}
         accentCustom={accentCustom}
         accentBgTint={accentBgTint}
+        themeMode={themeMode}
         focusActiveTitle={focusActiveTitle}
         zoomFactor={zoomFactor}
         isCustomColor={isCustomColor}
         onAccentChange={handleAccentChange}
         onCustomColorChange={handleCustomColorChange}
         onAccentBgTintChange={handleAccentBgTintChange}
+        onThemeModeChange={handleThemeModeChange}
         onFocusActiveTitleChange={setFocusActiveTitle}
         onZoomFactorChange={handleZoomFactorChange}
       />
@@ -388,13 +396,13 @@ export function SettingsView({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={handleSave}
-          className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-3 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98]"
+          className="accent-surface-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-bold"
         >
           Save Changes
         </button>
         <button
           onClick={onClose}
-          className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-3 text-sm font-bold text-(--text-primary) transition-colors hover:bg-(--glass-border) active:scale-[0.98]"
+          className="accent-surface-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-bold"
         >
           Back to Games
         </button>

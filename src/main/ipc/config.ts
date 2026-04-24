@@ -119,6 +119,7 @@ export function registerConfigHandlers() {
       accentPreset: store.get('accentPreset'),
       accentCustom: store.get('accentCustom'),
       accentBgTint: store.get('accentBgTint'),
+      themeMode: store.get('themeMode'),
       focusActiveTitle: store.get('focusActiveTitle'),
       launchDelayMs: store.get('launchDelayMs'),
       startWithWindows: store.get('startWithWindows'),
@@ -140,10 +141,12 @@ export function registerConfigHandlers() {
       'autoCheckUpdates'
     ])
     const STRING_KEYS = new Set(['accentPreset', 'accentCustom'])
+    const THEME_MODES = new Set(['light', 'dark', 'system'])
     const WRITABLE_KEYS = new Set([
       ...OBJECT_KEYS,
       ...BOOLEAN_KEYS,
       ...STRING_KEYS,
+      'themeMode',
       'customSlots',
       'launchDelayMs'
     ])
@@ -157,6 +160,8 @@ export function registerConfigHandlers() {
         safe[key] = value
       } else if (STRING_KEYS.has(key) && typeof value === 'string') {
         safe[key] = value
+      } else if (key === 'themeMode' && typeof value === 'string' && THEME_MODES.has(value)) {
+        safe.themeMode = value
       } else if (
         key === 'customSlots' &&
         typeof value === 'number' &&

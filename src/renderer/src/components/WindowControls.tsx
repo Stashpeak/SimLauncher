@@ -23,38 +23,45 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
   return (
     <div className="drag-region flex h-12 w-full items-center px-4 gap-2 shrink-0">
       {/* Pill: branding + settings gear */}
-      <div className="no-drag glass-surface rounded-full flex items-center shrink-0">
+      <div className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden">
         {/* Launcher branding */}
         <button
           type="button"
           onClick={() => onNavigate('games')}
-          className="group cursor-pointer flex items-center py-1.5 pl-3 pr-2"
+          className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
         >
-          <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
-            <span className="text-(--text-primary)">Sim</span>
+          <span className="select-none font-black italic uppercase text-sm leading-none flex items-center">
+            <span className="tracking-tight text-(--text-primary)">Sim</span>
             <span
-              className={`transition-colors ${
+              className={`transition-colors flex items-center ${
                 view === 'games'
-                  ? 'text-(--accent)'
-                  : 'text-(--text-subtle) group-hover:text-(--accent)'
+                  ? 'tracking-[0.01em] text-(--accent)'
+                  : 'tracking-[0.01em] text-(--text-muted) group-hover:text-(--accent)'
               }`}
             >
-              Launcher
+              {'Launcher'}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="var(--launcher-play)"
+                className="launcher-play-mark -ml-[2px] shrink-0"
+              >
+                <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
+              </svg>
             </span>
           </span>
         </button>
 
         {/* Divider */}
-        <div className="w-px h-3 bg-[rgba(255,255,255,0.1)]" />
+        <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
 
         {/* Settings gear */}
         <button
           type="button"
           onClick={() => onNavigate('settings')}
-          className={`cursor-pointer flex items-center py-1.5 pl-2 pr-2.5 transition-colors ${
-            view === 'settings'
-              ? 'text-(--accent)'
-              : 'text-(--text-subtle) hover:text-(--text-primary)'
+          className={`icon-action cursor-pointer flex items-center rounded-r-full py-1.5 pl-2 pr-2.5 ${
+            view === 'settings' ? 'icon-action-active' : ''
           }`}
           title="Settings"
         >
@@ -79,10 +86,10 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleInstallUpdate}
-          className="no-drag glass-surface-elevated animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border-(--accent)/30 shadow-[0_0_15px_-5px_var(--accent-glow)] hover:bg-(--accent)/10 active:scale-[0.98] transition-all"
+          className="accent-surface-action no-drag animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border border-(--accent)/30"
         >
           <div className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-(--accent)">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent)">
             Update v{updateInfo.version} Available
           </span>
         </button>
@@ -96,7 +103,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleMinimize}
-          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
+          className="icon-action cursor-pointer rounded-full p-2"
           title="Minimize"
         >
           <svg
@@ -113,7 +120,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleMaximize}
-          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-(--glass-bg) hover:text-(--text-primary)"
+          className="icon-action cursor-pointer rounded-full p-2"
           title={isMaximized ? 'Restore' : 'Maximize'}
         >
           <svg
@@ -132,7 +139,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         <button
           type="button"
           onClick={handleClose}
-          className="cursor-pointer rounded-full p-2 text-(--text-subtle) transition-colors hover:bg-[rgba(255,0,0,0.1)] hover:text-red-500"
+          className="icon-action danger-action cursor-pointer rounded-full p-2"
           title="Close"
         >
           <svg

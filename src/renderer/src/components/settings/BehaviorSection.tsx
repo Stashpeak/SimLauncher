@@ -28,7 +28,7 @@ export function BehaviorSection({
         Behavior
       </h3>
       <div className="glass-surface rounded-2xl flex flex-col pt-1">
-        <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-(--header-glass-border)">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-(--text-primary)">Start with Windows</span>
             <span className="text-[10px] text-(--text-muted)">
@@ -41,7 +41,7 @@ export function BehaviorSection({
             aria-label="Start with Windows"
           />
         </div>
-        <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-(--header-glass-border)">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-(--text-primary)">Start minimized</span>
             <span className="text-[10px] text-(--text-muted)">Start hidden in the system tray</span>
@@ -52,7 +52,7 @@ export function BehaviorSection({
             aria-label="Start minimized"
           />
         </div>
-        <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-(--header-glass-border)">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-(--text-primary)">
               Minimize to tray on close
@@ -67,7 +67,7 @@ export function BehaviorSection({
             aria-label="Minimize to tray on close"
           />
         </div>
-        <div className="flex flex-col gap-3 px-4 py-4 border-b border-white/5">
+        <div className="flex flex-col gap-3 px-4 py-4 border-b border-(--header-glass-border)">
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm font-medium text-(--text-primary)">
               Launch delay between apps

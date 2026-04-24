@@ -290,10 +290,8 @@ function GameRow({
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
-  const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
-  const primaryButtonClass = canKill
-    ? 'bg-(--danger-surface) text-(--danger-text) shadow-[0_0_15px_-5px_var(--danger-border)] hover:bg-(--danger-border)'
-    : 'bg-(--accent) text-white neon-glow hover:opacity-90'
+  const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
+  const primaryTitle = isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : 'Launch'
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
@@ -302,15 +300,15 @@ function GameRow({
       ref={rowRef}
     >
       <div
-        className={`glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 transition-all duration-300 hover:bg-(--glass-bg-elevated) hover:border-[rgba(255,255,255,0.1)] ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}
+        className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}
       >
         <div className="flex items-center gap-5">
-          <div className="relative">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
             {iconUrl && !iconLoadFailed ? (
               <img
                 src={iconUrl}
                 alt={game.name}
-                className="h-12 w-12 object-contain animate-fade-slide drop-shadow-md"
+                className="game-icon-image h-12 w-12 object-contain animate-fade-slide"
                 onError={() => setIconLoadFailed(true)}
               />
             ) : !iconLoadFailed ? (
@@ -325,142 +323,7 @@ function GameRow({
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-(--text-primary) text-shadow-sm">{game.name}</h3>
-              <div ref={profileMenuRef} className="relative no-drag">
-                <button
-                  ref={triggerRef}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    if (profileMenuOpen) {
-                      closeProfileMenu(false)
-                    } else {
-                      openProfileMenu(false)
-                    }
-                  }}
-                  onKeyDown={handleProfileMenuTriggerKeyDown}
-                  className="flex max-w-40 cursor-pointer items-center gap-1.5 rounded-full border border-(--glass-border) bg-(--glass-bg-elevated) px-2.5 py-1 text-[10px] font-semibold text-(--text-primary) outline-none transition-all hover:border-(--accent) hover:bg-(--glass-bg) focus-visible:ring-2 focus-visible:ring-(--accent)"
-                  aria-haspopup="menu"
-                  aria-expanded={profileMenuOpen}
-                  aria-label={`${game.name} profile`}
-                >
-                  <span className="min-w-0 truncate">{activeProfile.name}</span>
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
-                  >
-                    <path d="M3 6l5 5 5-5" />
-                  </svg>
-                </button>
-                {profileMenuOpen && (
-                  <div
-                    ref={menuRef}
-                    role="menu"
-                    onKeyDown={handleProfileMenuKeyDown}
-                    className="absolute left-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl border border-(--glass-border) bg-[rgba(22,22,24,0.98)] p-1 shadow-2xl backdrop-blur-xl animate-fade-slide"
-                  >
-                    {profileSet.profiles.map((profile) => {
-                      const selected = profile.id === profileSet.activeProfileId
-
-                      return (
-                        <button
-                          key={profile.id}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={selected ? 'true' : 'false'}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleProfileSelect(profile.id)
-                          }}
-                          className={`flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
-                            selected
-                              ? 'bg-(--accent)/20 text-(--text-primary)'
-                              : 'text-(--text-secondary) hover:bg-(--glass-bg-elevated) hover:text-(--text-primary)'
-                          }`}
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{profile.name}</span>
-                        </button>
-                      )
-                    })}
-                    <div className="my-1 h-px bg-(--glass-border)" />
-                    {newProfileFormOpen ? (
-                      <form
-                        onSubmit={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          handleNewProfileSubmit()
-                        }}
-                        className="flex items-center gap-1.5 rounded-lg px-1.5 py-1"
-                      >
-                        <input
-                          ref={newProfileInputRef}
-                          type="text"
-                          value={newProfileName}
-                          onChange={(event) => setNewProfileName(event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
-                          placeholder="Profile name"
-                          className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
-                          aria-label="New profile name"
-                        />
-                        <button
-                          type="submit"
-                          disabled={newProfileName.trim().length === 0}
-                          className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md bg-(--accent) text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
-                          aria-label="Create profile"
-                          title="Create profile"
-                        >
-                          <svg
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M20 6 9 17l-5-5" />
-                          </svg>
-                        </button>
-                      </form>
-                    ) : (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          handleProfileSelect('__new__')
-                        }}
-                        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold text-(--accent) transition-colors hover:bg-(--accent)/15"
-                      >
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                        >
-                          <path d="M12 5v14" />
-                          <path d="M5 12h14" />
-                        </svg>
-                        New profile
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+              <h3 className="game-title font-semibold text-(--text-primary)">{game.name}</h3>
             </div>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
@@ -490,7 +353,7 @@ function GameRow({
                   return (
                     <div
                       key={i}
-                      className={`h-4 w-4 rounded text-[6px] font-black flex items-center justify-center bg-(--accent)/20 text-(--accent) shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
+                      className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
                       title={app.warning || app.name}
                     >
                       {app.name
@@ -505,59 +368,255 @@ function GameRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 no-drag">
-          <button
-            type="button"
-            onClick={primaryAction}
-            disabled={isLaunchBlocked && !canKill}
-            className={`cursor-pointer rounded-full px-6 py-2 text-sm font-semibold transition-all duration-300 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100 ${primaryButtonClass}`}
-          >
-            {primaryLabel}
-          </button>
-          {canRelaunch && (
+        <div className="grid grid-cols-[36px_260px] items-center gap-3 no-drag">
+          <div className="flex h-9 w-9 items-center justify-center">
+            {canRelaunch && (
+              <button
+                type="button"
+                onClick={handleRelaunchMissing}
+                disabled={isLaunchBlocked}
+                className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+                title="Relaunch missing apps"
+                aria-label="Relaunch missing apps"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                  <path d="M21 3v6h-6" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <div className="no-drag glass-surface flex w-[260px] shrink-0 items-center rounded-full">
+            <div ref={profileMenuRef} className="relative">
+              <button
+                ref={triggerRef}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (profileMenuOpen) {
+                    closeProfileMenu(false)
+                  } else {
+                    openProfileMenu(false)
+                  }
+                }}
+                onKeyDown={handleProfileMenuTriggerKeyDown}
+                className="dropdown-trigger-surface group flex h-9 w-[124px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-colors hover:text-(--text-primary)"
+                aria-haspopup="menu"
+                aria-expanded={profileMenuOpen}
+                aria-label={`${game.name} profile`}
+                title={activeProfile.name}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
+                >
+                  <path d="M3 6l5 5 5-5" />
+                </svg>
+                <span className="min-w-0 truncate">{activeProfile.name}</span>
+              </button>
+              {profileMenuOpen && (
+                <div
+                  ref={menuRef}
+                  role="menu"
+                  onKeyDown={handleProfileMenuKeyDown}
+                  className="dropdown-surface absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 backdrop-blur-xl animate-fade-slide"
+                >
+                  {profileSet.profiles.map((profile) => {
+                    const selected = profile.id === profileSet.activeProfileId
+
+                    return (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected ? 'true' : 'false'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleProfileSelect(profile.id)
+                        }}
+                        className={`dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold ${
+                          selected ? 'selected-surface' : ''
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{profile.name}</span>
+                      </button>
+                    )
+                  })}
+                  <div className="my-1 h-px bg-(--glass-border)" />
+                  {newProfileFormOpen ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        handleNewProfileSubmit()
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg px-1.5 py-1"
+                    >
+                      <input
+                        ref={newProfileInputRef}
+                        type="text"
+                        value={newProfileName}
+                        onChange={(event) => setNewProfileName(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        placeholder="Profile name"
+                        className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
+                        aria-label="New profile name"
+                      />
+                      <button
+                        type="submit"
+                        disabled={newProfileName.trim().length === 0}
+                        className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md"
+                        aria-label="Create profile"
+                        title="Create profile"
+                      >
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleProfileSelect('__new__')
+                      }}
+                      className="dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                      >
+                        <path d="M12 5v14" />
+                        <path d="M5 12h14" />
+                      </svg>
+                      New profile
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
+
             <button
               type="button"
-              onClick={handleRelaunchMissing}
-              disabled={isLaunchBlocked}
-              className="cursor-pointer rounded-full bg-(--glass-bg-elevated) px-5 py-2 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 disabled:active:scale-100"
+              onClick={primaryAction}
+              disabled={isLaunchBlocked && !canKill}
+              className={`cursor-pointer flex h-9 w-[92px] items-center justify-center ${primaryButtonClass}`}
+              title={primaryTitle}
+              aria-label={primaryTitle}
             >
-              {isLaunching ? 'Launching...' : 'Relaunch'}
+              {isLaunching && !canKill ? (
+                <svg
+                  width="21"
+                  height="21"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--launcher-play)"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  className="animate-spin"
+                >
+                  <path d="M12 3a9 9 0 1 1-8 4.9" />
+                </svg>
+              ) : canKill ? (
+                <svg
+                  width="21"
+                  height="21"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M7 7l10 10" />
+                  <path d="M17 7L7 17" />
+                </svg>
+              ) : (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="var(--launcher-play)"
+                  className="ml-1"
+                >
+                  <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
+                </svg>
+              )}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleToggle}
-            className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition-all duration-300 active:scale-[0.98]
-              ${
-                isActive
-                  ? 'bg-(--accent) text-white rotate-90 scale-110 neon-glow'
-                  : 'text-(--text-subtle) hover:bg-(--glass-bg) hover:text-(--text-primary) rotate-0 hover:rotate-45'
+
+            <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
+
+            <button
+              type="button"
+              onClick={handleToggle}
+              className={`group flex h-9 w-10 cursor-pointer items-center justify-center rounded-r-full ${
+                isActive ? 'icon-action-active' : 'icon-action'
               }`}
-            title="Profile Settings"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              title="Profile Settings"
             >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`transition-transform ${isActive ? 'rotate-90 scale-110' : 'group-hover:rotate-45'}`}
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
       <div
         className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}
       >
-        <div className="overflow-hidden px-4 pb-12 pt-4 -mx-4 -mb-12 -mt-4">
+        <div className="overflow-hidden">
           {isActive && (
-            <div className="animate-fade-slide">
+            <div className="animate-fade-slide px-2 pb-4 pt-3">
               <ProfileEditor
                 gameKey={game.key}
                 gameName={game.name}

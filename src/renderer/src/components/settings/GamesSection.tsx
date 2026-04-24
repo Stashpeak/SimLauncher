@@ -47,7 +47,7 @@ export function GamesSection({
             {GAMES.map((game, index) => (
               <div
                 key={game.key}
-                className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-white/5' : ''}`}
+                className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-(--header-glass-border)' : ''}`}
               >
                 <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
                   {game.name}
@@ -61,7 +61,7 @@ export function GamesSection({
                       className="w-8 h-8 object-contain drop-shadow-md shrink-0"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded shrink-0 bg-white/5 border border-white/10 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded shrink-0 bg-(--glass-bg) border border-(--glass-border) flex items-center justify-center">
                       <svg
                         width="14"
                         height="14"
@@ -71,7 +71,7 @@ export function GamesSection({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="text-white/30"
+                        className="text-(--text-subtle)"
                       >
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                       </svg>
@@ -83,12 +83,12 @@ export function GamesSection({
                     value={gamePaths[game.key] || ''}
                     readOnly
                     placeholder="No game path set"
-                    className="flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                   />
 
                   <button
                     onClick={() => onBrowse(game.key)}
-                    className="cursor-pointer shrink-0 rounded-xl bg-(--glass-bg-elevated) px-4 py-2 text-xs font-semibold text-(--text-primary) hover:bg-(--glass-border) transition-all active:scale-[0.98] hover:text-white"
+                    className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse
                   </button>

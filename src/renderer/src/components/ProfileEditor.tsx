@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type DragEvent } from 'react'
 import {
   getActiveGameProfile,
   getUtilities,
@@ -34,11 +34,9 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
           onToggle()
         }
       }}
-      className="group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) focus:outline-none focus-visible:ring-2 focus-visible:ring-(--accent)"
+      className="accent-subtle-hover group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3"
     >
-      <span className="text-sm font-medium text-(--text-secondary) group-hover:text-(--text-primary)">
-        {label}
-      </span>
+      <span className="text-sm font-medium text-(--text-secondary)">{label}</span>
       <span onClick={(event) => event.stopPropagation()}>
         <Toggle checked={checked} onChange={onChange} aria-label={label} />
       </span>
@@ -205,6 +203,19 @@ export function ProfileEditor({
     })
   }
 
+  const startUtilityDrag = (event: DragEvent<HTMLDivElement>, utilityKey: string) => {
+    const target = event.target instanceof HTMLElement ? event.target : null
+
+    if (target?.closest('[data-no-row-drag="true"]')) {
+      event.preventDefault()
+      return
+    }
+
+    setDragUtilityId(utilityKey)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', utilityKey)
+  }
+
   const handleAddTrackedProcess = () => {
     setTrackedProcessPaths((prev) => [...prev, ''])
   }
@@ -314,16 +325,8 @@ export function ProfileEditor({
     return (
       <div
         key={utility.key}
-        role="switch"
-        aria-checked={isEnabled ? 'true' : 'false'}
-        tabIndex={0}
-        onClick={() => handleToggleUtility(utility.key)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            handleToggleUtility(utility.key)
-          }
-        }}
+        draggable={isEnabled}
+        onDragStart={(event) => startUtilityDrag(event, utility.key)}
         onDragOver={(event) => {
           if (isEnabled && dragUtilityId && dragUtilityId !== utility.key) {
             event.preventDefault()
@@ -348,8 +351,16 @@ export function ProfileEditor({
             setDropTarget(null)
           }
         }}
-        className={`group relative flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-all duration-200 hover:bg-(--accent) hover:text-(--text-primary) ${
-          isEnabled ? '' : 'opacity-55 hover:opacity-100'
+        onDragEnd={() => {
+          setDragUtilityId(null)
+          setDropTarget(null)
+        }}
+        className={`accent-subtle-hover group relative flex select-none items-center justify-between rounded-xl bg-(--glass-bg) p-3 ${
+          isEnabled ? 'cursor-grab active:cursor-grabbing' : 'opacity-55'
+        } ${
+          dragUtilityId === utility.key
+            ? 'ring-1 ring-(--accent)/35 shadow-[0_0_18px_-14px_var(--accent)]'
+            : ''
         }`}
       >
         {dropPlacement && (
@@ -365,31 +376,12 @@ export function ProfileEditor({
               {orderIndex + 1}
             </span>
           )}
-          <button
-            type="button"
-            draggable={isEnabled}
-            disabled={!isEnabled}
-            onClick={(event) => event.stopPropagation()}
-            onDragStart={(event) => {
-              event.stopPropagation()
-              setDragUtilityId(utility.key)
-              event.dataTransfer.effectAllowed = 'move'
-              event.dataTransfer.setData('text/plain', utility.key)
-              const dragImage = document.createElement('div')
-              dragImage.style.width = '1px'
-              dragImage.style.height = '1px'
-              dragImage.style.opacity = '0'
-              document.body.appendChild(dragImage)
-              event.dataTransfer.setDragImage(dragImage, 0, 0)
-              window.setTimeout(() => dragImage.remove(), 0)
-            }}
-            onDragEnd={() => {
-              setDragUtilityId(null)
-              setDropTarget(null)
-            }}
-            className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center rounded text-(--text-subtle) transition-colors hover:bg-white/10 hover:text-(--text-primary) active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-20"
+          <div
+            className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${
+              isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''
+            }`}
             title="Drag to reorder"
-            aria-label={`Reorder ${label}`}
+            aria-hidden="true"
           >
             <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
               <circle cx="3" cy="3" r="1.2" />
@@ -399,7 +391,7 @@ export function ProfileEditor({
               <circle cx="3" cy="13" r="1.2" />
               <circle cx="9" cy="13" r="1.2" />
             </svg>
-          </button>
+          </div>
           <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
             {icon && !failedIcons[utility.key] ? (
               <img
@@ -411,16 +403,14 @@ export function ProfileEditor({
             ) : fetchingIcons && !failedIcons[utility.key] ? (
               <div className="h-full w-full skeleton-icon animate-pulse" />
             ) : (
-              <div className="flex h-full w-full items-center justify-center rounded bg-(--accent)/20 text-[8px] font-black uppercase text-(--accent)">
+              <div className="fallback-initial-icon flex h-full w-full items-center justify-center rounded text-[8px] font-black uppercase transition-colors">
                 {label.slice(0, 2)}
               </div>
             )}
           </div>
-          <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80 group-hover:opacity-100">
-            {label}
-          </span>
+          <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80">{label}</span>
         </div>
-        <span onClick={(event) => event.stopPropagation()}>
+        <span data-no-row-drag="true">
           <Toggle
             checked={isEnabled}
             onChange={() => handleToggleUtility(utility.key)}
@@ -440,7 +430,7 @@ export function ProfileEditor({
         <button
           type="button"
           onClick={onClose}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none text-(--text-subtle) transition-all duration-200 hover:bg-(--glass-bg) hover:text-(--text-primary) active:scale-[0.98]"
+          className="icon-action flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none"
           title="Close"
         >
           ×
@@ -456,7 +446,7 @@ export function ProfileEditor({
             type="text"
             value={profileName}
             onChange={(event) => setProfileName(event.target.value)}
-            className="w-full glass-recessed rounded-lg px-3 py-2 text-sm text-(--text-primary) outline-none transition-colors focus:ring-2 focus:ring-(--accent)"
+            className="glass-recessed w-full rounded-lg px-3 py-2 text-sm text-(--text-primary) outline-none transition-colors placeholder:text-(--text-subtle) focus:ring-2 focus:ring-(--accent)"
             aria-label="Profile name"
           />
         </div>
@@ -533,7 +523,7 @@ export function ProfileEditor({
               <button
                 type="button"
                 onClick={handleAddTrackedProcess}
-                className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-1.5 text-xs font-semibold text-(--text-primary) transition-all duration-200 hover:bg-(--glass-border) active:scale-[0.98]"
+                className="accent-surface-action cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
               >
                 Add
               </button>
@@ -548,19 +538,19 @@ export function ProfileEditor({
                       value={processPath}
                       readOnly
                       placeholder="No secondary executable selected"
-                      className="min-w-0 flex-1 glass-recessed rounded-lg px-3 py-2 text-xs text-(--text-secondary) outline-none font-mono truncate"
+                      className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                     />
                     <button
                       type="button"
                       onClick={() => handleBrowseTrackedProcess(index)}
-                      className="cursor-pointer rounded-lg bg-(--glass-bg-elevated) px-3 py-2 text-xs font-semibold text-(--text-primary) transition-all duration-200 hover:bg-(--glass-border) active:scale-[0.98]"
+                      className="accent-surface-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Browse
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveTrackedProcess(index)}
-                      className="cursor-pointer rounded-lg bg-(--danger-surface) px-3 py-2 text-xs font-semibold text-(--danger-text) transition-all duration-200 hover:bg-(--danger-border) active:scale-[0.98]"
+                      className="danger-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Remove
                     </button>
@@ -579,14 +569,14 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 cursor-pointer rounded-xl bg-(--accent) py-2.5 text-sm text-white transition-all duration-300 hover:opacity-90 neon-glow active:scale-[0.98]"
+            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm"
           >
             Save Profile
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 cursor-pointer rounded-xl bg-(--glass-bg-elevated) py-2.5 text-sm font-semibold text-(--text-primary) transition-all duration-300 hover:bg-(--glass-border) active:scale-[0.98]"
+            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
           >
             Cancel
           </button>
@@ -594,7 +584,7 @@ export function ProfileEditor({
             <button
               type="button"
               onClick={handleDeleteProfile}
-              className="flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl bg-(--danger-surface) text-(--danger-text) transition-all duration-300 hover:bg-(--danger-border) active:scale-[0.98]"
+              className="danger-action flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl"
               title="Delete profile"
               aria-label="Delete profile"
             >

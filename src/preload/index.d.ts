@@ -11,6 +11,7 @@ declare global {
     accentPreset: string
     accentCustom: string
     accentBgTint: boolean
+    themeMode: 'light' | 'dark' | 'system'
     focusActiveTitle: boolean
     launchDelayMs: number
     startWithWindows: boolean
