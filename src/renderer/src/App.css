@@ -46,9 +46,6 @@
   --surface-sunken-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -10px 22px rgba(0, 0, 0, 0.12),
     inset 0 0 0 1px rgba(255, 255, 255, 0.055);
-  --game-icon-bg: transparent;
-  --game-icon-border: transparent;
-  --game-icon-shadow: none;
   --game-icon-filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.07))
     drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
   --glass-stroke-gradient: linear-gradient(
@@ -65,8 +62,8 @@
 }
 
 :root[data-theme='light'] {
-  --glass-bg: color-mix(in srgb, var(--accent) 5%, rgba(255, 255, 255, 0.6));
-  --glass-bg-elevated: color-mix(in srgb, var(--accent) 8%, rgba(255, 255, 255, 0.8));
+  --glass-bg: color-mix(in srgb, var(--accent) 5%, rgba(255, 255, 255, 0.62));
+  --glass-bg-elevated: color-mix(in srgb, var(--accent) 7%, rgba(255, 255, 255, 0.82));
   --glass-border: rgba(20, 20, 24, 0.12);
   --bg-gradient: linear-gradient(135deg, rgb(248, 248, 251) 5.61%, rgb(240, 240, 244) 94.39%);
   --text-primary: rgba(20, 20, 24, 0.95);
@@ -109,12 +106,8 @@
   --surface-sunken-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -10px 22px rgba(20, 20, 24, 0.045),
     inset 0 0 0 1px rgba(20, 20, 24, 0.065);
-  --game-icon-bg: linear-gradient(135deg, rgba(20, 20, 24, 0.12), rgba(20, 20, 24, 0.035));
-  --game-icon-border: rgba(20, 20, 24, 0.08);
-  --game-icon-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 8px 20px -16px rgba(20, 20, 24, 0.45);
-  --game-icon-filter: drop-shadow(0 1px 1px rgba(20, 20, 24, 0.38))
-    drop-shadow(0 6px 10px rgba(20, 20, 24, 0.16));
+  --game-icon-filter: drop-shadow(0 1px 1px rgba(20, 20, 24, 0.5))
+    drop-shadow(0 7px 12px rgba(20, 20, 24, 0.22));
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(20, 20, 24, 0.12) 0%,
@@ -445,12 +438,6 @@ textarea {
   border: 1px solid var(--glass-border);
   background: var(--glass-bg-elevated);
   color: var(--text-secondary);
-}
-
-.game-icon-well {
-  border: 1px solid var(--game-icon-border);
-  background: var(--game-icon-bg);
-  box-shadow: var(--game-icon-shadow);
 }
 
 .game-icon-image {

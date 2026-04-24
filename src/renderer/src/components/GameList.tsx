@@ -303,7 +303,7 @@ function GameRow({
         className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? '!isolation-auto z-20' : 'z-0'}`}
       >
         <div className="flex items-center gap-5">
-          <div className="game-icon-well relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
             {iconUrl && !iconLoadFailed ? (
               <img
                 src={iconUrl}
