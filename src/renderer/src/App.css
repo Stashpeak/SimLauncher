@@ -397,6 +397,21 @@ textarea {
   animation: fadeSlide 0.25s ease-out forwards;
 }
 
+@keyframes fadeSlideInline {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-slide-inline {
+  animation: fadeSlideInline 0.22s ease-out forwards;
+}
+
 @keyframes pulse {
   0%,
   100% {

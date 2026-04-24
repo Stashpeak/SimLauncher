@@ -64,34 +64,45 @@ export function AppearanceSection({
                 title={preset.name}
               />
             ))}
-            <button
-              type="button"
-              onClick={() => onAccentChange('custom')}
-              className={`h-8 cursor-pointer rounded-full px-3 text-[10px] font-bold uppercase tracking-wide ${
-                isCustomColor ? 'selected-surface' : 'neutral-action text-(--text-secondary)'
+            <div
+              className={`glass-surface relative flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-(--glass-border) transition-all duration-200 ${
+                isCustomColor ? 'selected-surface' : ''
               }`}
             >
-              Custom
-            </button>
-            {isCustomColor && (
-              <label className="glass-input-surface neutral-action relative flex h-8 min-w-0 items-center gap-2 rounded-full border border-(--glass-border) pl-1.5 pr-2.5 animate-fade-slide cursor-pointer">
-                <input
-                  type="color"
-                  value={accentCustom || '#ad46ff'}
-                  onChange={(e) => onCustomColorChange(e.target.value)}
-                  className="absolute inset-0 cursor-pointer opacity-0"
-                  aria-label="Custom accent color"
-                  title="Custom accent color"
-                />
-                <span
-                  className="h-5 w-9 shrink-0 rounded-full border border-white/10 bg-(--custom-accent)"
-                  style={{ '--custom-accent': accentCustom || '#ad46ff' } as CSSProperties}
-                />
-                <span className="min-w-0 truncate text-xs font-mono uppercase text-(--text-muted)">
-                  {accentCustom}
-                </span>
-              </label>
-            )}
+              <button
+                type="button"
+                onClick={() => onAccentChange('custom')}
+                className={`cursor-pointer px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                  isCustomColor
+                    ? 'text-(--text-primary)'
+                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                }`}
+              >
+                Custom
+              </button>
+              {isCustomColor && (
+                <div className="animate-fade-slide-inline flex h-full items-center">
+                  <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
+                  <label className="relative flex h-full min-w-0 items-center gap-2 pl-2 pr-2.5 cursor-pointer">
+                    <input
+                      type="color"
+                      value={accentCustom || '#ad46ff'}
+                      onChange={(e) => onCustomColorChange(e.target.value)}
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      aria-label="Custom accent color"
+                      title="Custom accent color"
+                    />
+                    <span
+                      className="h-5 w-9 shrink-0 rounded-full border border-white/10 bg-(--custom-accent)"
+                      style={{ '--custom-accent': accentCustom || '#ad46ff' } as CSSProperties}
+                    />
+                    <span className="min-w-0 truncate text-xs font-mono uppercase text-(--text-muted)">
+                      {accentCustom}
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
