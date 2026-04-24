@@ -30,13 +30,13 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           onClick={() => onNavigate('games')}
           className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
         >
-          <span className="select-none font-black italic tracking-tighter uppercase text-sm leading-none">
-            <span className="text-(--text-primary)">Sim</span>
+          <span className="select-none font-black italic uppercase text-sm leading-none">
+            <span className="tracking-tight text-(--text-primary)">Sim</span>
             <span
               className={`transition-colors ${
                 view === 'games'
-                  ? 'text-(--accent)'
-                  : 'text-(--text-subtle) group-hover:text-(--accent)'
+                  ? 'tracking-[0.01em] text-(--accent)'
+                  : 'tracking-[0.01em] text-(--text-muted) group-hover:text-(--accent)'
               }`}
             >
               Launcher
@@ -80,7 +80,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           className="accent-surface-action no-drag animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border border-(--accent)/30"
         >
           <div className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-(--accent)">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent)">
             Update v{updateInfo.version} Available
           </span>
         </button>
