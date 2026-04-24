@@ -124,6 +124,10 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+.launcher-play-mark {
+  transform: translateY(0.65px) skewX(-10deg);
+}
+
 /* 2026 Design Overhaul Utils */
 .bg-tinted {
   background:

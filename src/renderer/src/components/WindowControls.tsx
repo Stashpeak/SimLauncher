@@ -30,16 +30,25 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           onClick={() => onNavigate('games')}
           className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
         >
-          <span className="select-none font-black italic uppercase text-sm leading-none">
+          <span className="select-none font-black italic uppercase text-sm leading-none flex items-center">
             <span className="tracking-tight text-(--text-primary)">Sim</span>
             <span
-              className={`transition-colors ${
+              className={`transition-colors flex items-center ${
                 view === 'games'
                   ? 'tracking-[0.01em] text-(--accent)'
                   : 'tracking-[0.01em] text-(--text-muted) group-hover:text-(--accent)'
               }`}
             >
-              Launcher
+              {'Launcher'}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="#48C774"
+                className="launcher-play-mark -ml-[2px] shrink-0"
+              >
+                <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
+              </svg>
             </span>
           </span>
         </button>
