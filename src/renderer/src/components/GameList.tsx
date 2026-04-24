@@ -368,8 +368,35 @@ function GameRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 no-drag">
-          <div className="no-drag glass-surface rounded-full flex items-center shrink-0">
+        <div className="grid grid-cols-[36px_260px] items-center gap-3 no-drag">
+          <div className="flex h-9 w-9 items-center justify-center">
+            {canRelaunch && (
+              <button
+                type="button"
+                onClick={handleRelaunchMissing}
+                disabled={isLaunchBlocked}
+                className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+                title="Relaunch missing apps"
+                aria-label="Relaunch missing apps"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                  <path d="M21 3v6h-6" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <div className="no-drag glass-surface flex w-[260px] shrink-0 items-center rounded-full">
             <div ref={profileMenuRef} className="relative">
               <button
                 ref={triggerRef}
@@ -383,12 +410,12 @@ function GameRow({
                   }
                 }}
                 onKeyDown={handleProfileMenuTriggerKeyDown}
-                className="group flex max-w-40 cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-colors hover:text-(--text-primary)"
+                className="group flex h-9 w-[124px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-colors hover:text-(--text-primary)"
                 aria-haspopup="menu"
                 aria-expanded={profileMenuOpen}
                 aria-label={`${game.name} profile`}
+                title={activeProfile.name}
               >
-                <span className="min-w-0 truncate">{activeProfile.name}</span>
                 <svg
                   width="10"
                   height="10"
@@ -402,6 +429,7 @@ function GameRow({
                 >
                   <path d="M3 6l5 5 5-5" />
                 </svg>
+                <span className="min-w-0 truncate">{activeProfile.name}</span>
               </button>
               {profileMenuOpen && (
                 <div
@@ -574,17 +602,6 @@ function GameRow({
               </svg>
             </button>
           </div>
-
-          {canRelaunch && (
-            <button
-              type="button"
-              onClick={handleRelaunchMissing}
-              disabled={isLaunchBlocked}
-              className="accent-surface-action cursor-pointer rounded-full px-5 py-2 text-sm font-semibold"
-            >
-              {isLaunching ? 'Launching...' : 'Relaunch'}
-            </button>
-          )}
         </div>
       </div>
 
