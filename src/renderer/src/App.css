@@ -49,6 +49,7 @@
   --game-icon-filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.07))
     drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
   --game-title-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --toggle-track-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(255, 255, 255, 0.4) 0%,
@@ -63,14 +64,14 @@
 }
 
 :root[data-theme='light'] {
-  --glass-bg: color-mix(in srgb, var(--accent) 5%, rgba(255, 255, 255, 0.62));
-  --glass-bg-elevated: color-mix(in srgb, var(--accent) 7%, rgba(255, 255, 255, 0.82));
+  --glass-bg: color-mix(in srgb, var(--accent) 10%, rgba(255, 255, 255, 0.65));
+  --glass-bg-elevated: color-mix(in srgb, var(--accent) 14%, rgba(255, 255, 255, 0.85));
   --glass-border: rgba(20, 20, 24, 0.12);
   --bg-gradient: linear-gradient(135deg, rgb(248, 248, 251) 5.61%, rgb(240, 240, 244) 94.39%);
   --text-primary: rgba(20, 20, 24, 0.95);
   --text-secondary: rgba(20, 20, 24, 0.7);
   --text-muted: rgba(20, 20, 24, 0.5);
-  --text-subtle: rgba(20, 20, 24, 0.35);
+  --text-subtle: rgba(20, 20, 24, 0.5);
   --accent: var(--purple-primary);
   --accent-foreground: #000000;
   --accent-action-foreground: var(--text-primary);
@@ -110,6 +111,7 @@
   --game-icon-filter: drop-shadow(0 1px 1px rgba(20, 20, 24, 0.5))
     drop-shadow(0 7px 12px rgba(20, 20, 24, 0.22));
   --game-title-text-shadow: none;
+  --toggle-track-shadow: inset 0 1px 3px rgba(20, 20, 24, 0.12);
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(20, 20, 24, 0.12) 0%,
@@ -448,6 +450,10 @@ textarea {
 
 .game-title {
   text-shadow: var(--game-title-text-shadow);
+}
+
+.toggle-track {
+  box-shadow: var(--toggle-track-shadow);
 }
 
 .group:hover .fallback-initial-icon {
