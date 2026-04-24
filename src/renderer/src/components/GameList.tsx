@@ -290,8 +290,8 @@ function GameRow({
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const primaryAction = canKill ? handleKill : handleLaunch
-  const primaryLabel = isLaunching && !canKill ? 'Launching...' : canKill ? 'Close Apps' : 'Launch'
   const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
+  const primaryTitle = isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : 'Launch'
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
@@ -510,9 +510,42 @@ function GameRow({
               type="button"
               onClick={primaryAction}
               disabled={isLaunchBlocked && !canKill}
-              className={`cursor-pointer px-6 py-2 text-sm font-semibold ${primaryButtonClass}`}
+              className={`cursor-pointer flex h-9 w-[92px] items-center justify-center ${primaryButtonClass}`}
+              title={primaryTitle}
+              aria-label={primaryTitle}
             >
-              {primaryLabel}
+              {isLaunching && !canKill ? (
+                <svg
+                  width="21"
+                  height="21"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#48C774"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  className="animate-spin"
+                >
+                  <path d="M12 3a9 9 0 1 1-8 4.9" />
+                </svg>
+              ) : canKill ? (
+                <svg
+                  width="21"
+                  height="21"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M7 7l10 10" />
+                  <path d="M17 7L7 17" />
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="#48C774" className="ml-1">
+                  <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
+                </svg>
+              )}
             </button>
 
             <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
