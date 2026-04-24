@@ -60,8 +60,8 @@
 }
 
 :root[data-theme='light'] {
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-elevated: rgba(255, 255, 255, 0.78);
+  --glass-bg: color-mix(in srgb, var(--accent) 5%, rgba(255, 255, 255, 0.6));
+  --glass-bg-elevated: color-mix(in srgb, var(--accent) 8%, rgba(255, 255, 255, 0.8));
   --glass-border: rgba(20, 20, 24, 0.12);
   --bg-gradient: linear-gradient(135deg, rgb(248, 248, 251) 5.61%, rgb(240, 240, 244) 94.39%);
   --text-primary: rgba(20, 20, 24, 0.95);
