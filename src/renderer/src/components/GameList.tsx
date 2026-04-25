@@ -538,7 +538,7 @@ function GameRow({
               type="button"
               onClick={primaryAction}
               disabled={isLaunchBlocked && !canKill}
-              className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-95 ${primaryButtonClass}`}
+              className={`group flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center ${primaryButtonClass}`}
               title={primaryTitle}
               aria-label={primaryTitle}
             >
@@ -551,7 +551,7 @@ function GameRow({
                   stroke="var(--launcher-play)"
                   strokeWidth="2.4"
                   strokeLinecap="round"
-                  className="animate-spin"
+                  className="animate-spin transition-transform group-hover:scale-110 group-active:scale-95"
                 >
                   <path d="M12 3a9 9 0 1 1-8 4.9" />
                 </svg>
@@ -565,6 +565,7 @@ function GameRow({
                   strokeWidth="2.4"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  className="transition-transform group-hover:scale-110 group-active:scale-95"
                 >
                   <path d="M7 7l10 10" />
                   <path d="M17 7L7 17" />
@@ -575,7 +576,7 @@ function GameRow({
                   height="24"
                   viewBox="0 0 24 24"
                   fill="var(--launcher-play)"
-                  className="ml-1"
+                  className="ml-1 transition-transform group-hover:scale-110 group-active:scale-95"
                 >
                   <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
                 </svg>
