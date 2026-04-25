@@ -420,7 +420,7 @@ export function ProfileEditor({
   }
 
   return (
-    <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5 shadow-2xl">
+    <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-(--text-primary)">Edit Profile</h2>
       </div>
