@@ -538,7 +538,7 @@ function GameRow({
               type="button"
               onClick={primaryAction}
               disabled={isLaunchBlocked && !canKill}
-              className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center ${primaryButtonClass}`}
+              className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-95 ${primaryButtonClass}`}
               title={primaryTitle}
               aria-label={primaryTitle}
             >
