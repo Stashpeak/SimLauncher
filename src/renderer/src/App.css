@@ -477,15 +477,11 @@ textarea {
 
 .dropdown-trigger-surface {
   background: var(--surface-sunken-bg);
-  box-shadow: var(--surface-sunken-shadow);
 }
 
 .dropdown-trigger-surface:hover,
 .dropdown-trigger-surface[aria-expanded='true'] {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    inset 0 -10px 22px rgba(0, 0, 0, 0.1),
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, rgba(255, 255, 255, 0.08));
+  background: var(--glass-bg-elevated);
 }
 
 .profile-editor-wrapper {
@@ -497,6 +493,10 @@ textarea {
 }
 .profile-editor-open {
   grid-template-rows: 1fr;
+}
+
+.game-row-container {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes fadeSlide {

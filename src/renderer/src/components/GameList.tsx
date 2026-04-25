@@ -296,7 +296,7 @@ function GameRow({
 
   return (
     <div
-      className={`relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
       <div
@@ -368,7 +368,7 @@ function GameRow({
           </div>
         </div>
 
-        <div className="grid grid-cols-[36px_200px] items-center gap-3 no-drag">
+        <div className="flex items-center gap-3 no-drag">
           <div className="flex h-9 w-9 items-center justify-center">
             {canRelaunch && (
               <button
@@ -396,7 +396,7 @@ function GameRow({
             )}
           </div>
 
-          <div className="no-drag glass-surface flex w-[200px] shrink-0 items-center rounded-full">
+          <div className="no-drag glass-surface flex items-center rounded-full p-0.5">
             <div ref={profileMenuRef} className="relative">
               <button
                 ref={triggerRef}
@@ -410,7 +410,7 @@ function GameRow({
                   }
                 }}
                 onKeyDown={handleProfileMenuTriggerKeyDown}
-                className="dropdown-trigger-surface group flex h-9 w-[124px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-colors hover:text-(--text-primary)"
+                className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-bold text-(--text-secondary) transition-all hover:text-(--text-primary)"
                 aria-haspopup="menu"
                 aria-expanded={profileMenuOpen}
                 aria-label={`${game.name} profile`}
@@ -532,13 +532,13 @@ function GameRow({
               )}
             </div>
 
-            <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
+            <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-15" />
 
             <button
               type="button"
               onClick={primaryAction}
               disabled={isLaunchBlocked && !canKill}
-              className={`group flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center ${primaryButtonClass}`}
+              className={`group/btn flex h-9 w-[54px] shrink-0 cursor-pointer items-center justify-center rounded-r-full transition-all ${primaryButtonClass}`}
               title={primaryTitle}
               aria-label={primaryTitle}
             >
@@ -549,9 +549,9 @@ function GameRow({
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="var(--launcher-play)"
-                  strokeWidth="2.4"
+                  strokeWidth="2.8"
                   strokeLinecap="round"
-                  className="animate-spin transition-transform group-hover:scale-110 group-active:scale-95"
+                  className="animate-spin transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
                 >
                   <path d="M12 3a9 9 0 1 1-8 4.9" />
                 </svg>
@@ -562,10 +562,10 @@ function GameRow({
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="2.4"
+                  strokeWidth="2.8"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="transition-transform group-hover:scale-110 group-active:scale-95"
+                  className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
                 >
                   <path d="M7 7l10 10" />
                   <path d="M17 7L7 17" />
@@ -576,57 +576,57 @@ function GameRow({
                   height="24"
                   viewBox="0 0 24 24"
                   fill="var(--launcher-play)"
-                  className="ml-1 transition-transform group-hover:scale-110 group-active:scale-95"
+                  className="ml-0.5 transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
                 >
                   <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
                 </svg>
               )}
             </button>
-
-            <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
-
-            <button
-              type="button"
-              onClick={handleToggle}
-              className={`group flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-r-full ${
-                isActive ? 'icon-action-active' : 'icon-action'
-              }`}
-              title={isActive ? 'Close Profile Settings' : 'Profile Settings'}
-              aria-label={isActive ? 'Close Profile Settings' : 'Profile Settings'}
-            >
-              {isActive ? (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="transition-transform group-hover:scale-110"
-                >
-                  <path d="M7 7l10 10" />
-                  <path d="M17 7L7 17" />
-                </svg>
-              ) : (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="transition-transform group-hover:rotate-45"
-                >
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-              )}
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleToggle}
+            className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 ${
+              isActive
+                ? 'icon-action-active'
+                : 'icon-action opacity-40 group-hover/row:opacity-100 group-hover/row:bg-(--glass-bg)'
+            }`}
+            title={isActive ? 'Close Profile Settings' : 'Profile Settings'}
+            aria-label={isActive ? 'Close Profile Settings' : 'Profile Settings'}
+          >
+            {isActive ? (
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="transition-transform hover:scale-110"
+              >
+                <path d="M7 7l10 10" />
+                <path d="M17 7L7 17" />
+              </svg>
+            ) : (
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="transition-transform hover:rotate-90"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
