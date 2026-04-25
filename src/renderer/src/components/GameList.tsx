@@ -296,7 +296,7 @@ function GameRow({
 
   return (
     <div
-      className={`relative flex flex-col transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
       <div
