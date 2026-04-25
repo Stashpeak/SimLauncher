@@ -46,7 +46,6 @@ function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleR
 
 interface ProfileEditorProps {
   gameKey: string
-  gameName: string
   activeProfileId: string
   onProfilesChanged: () => Promise<unknown>
   onClose: () => void
@@ -54,7 +53,6 @@ interface ProfileEditorProps {
 
 export function ProfileEditor({
   gameKey,
-  gameName,
   activeProfileId,
   onProfilesChanged,
   onClose
@@ -422,19 +420,9 @@ export function ProfileEditor({
   }
 
   return (
-    <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5 shadow-2xl">
-      <div className="mb-5 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-(--text-primary)">
-          Edit Profile: <span className="text-(--accent)">{gameName}</span>
-        </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="icon-action flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-2xl leading-none"
-          title="Close"
-        >
-          ×
-        </button>
+    <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5">
+      <div className="mb-5">
+        <h2 className="text-lg font-semibold text-(--text-primary)">Edit Profile</h2>
       </div>
 
       <div className="space-y-5">
