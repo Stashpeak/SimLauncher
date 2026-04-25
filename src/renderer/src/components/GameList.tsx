@@ -296,7 +296,7 @@ function GameRow({
 
   return (
     <div
-      className={`relative flex flex-col gap-2 transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`relative flex flex-col transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
       <div
@@ -612,11 +612,11 @@ function GameRow({
       </div>
 
       <div
-        className={`profile-editor-wrapper relative z-0 mx-2 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}
+        className={`profile-editor-wrapper relative z-0 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}
       >
         <div className="overflow-hidden">
           {isActive && (
-            <div className="animate-fade-slide px-2 pb-4 pt-3">
+            <div className="animate-fade-slide pb-4">
               <ProfileEditor
                 gameKey={game.key}
                 gameName={game.name}
