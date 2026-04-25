@@ -289,6 +289,10 @@ textarea {
     0 0 20px -16px var(--accent-glow);
 }
 
+.game-row-surface:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 .accent-subtle-hover:active {
   transform: scale(0.99);
 }
