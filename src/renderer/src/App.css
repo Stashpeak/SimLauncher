@@ -292,10 +292,6 @@ textarea {
     0 0 20px -16px var(--accent-glow);
 }
 
-.accent-subtle-hover:active {
-  transform: scale(0.99);
-}
-
 .accent-subtle-hover:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
