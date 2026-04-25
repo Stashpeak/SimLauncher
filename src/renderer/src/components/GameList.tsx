@@ -368,7 +368,7 @@ function GameRow({
           </div>
         </div>
 
-        <div className="grid grid-cols-[36px_260px] items-center gap-3 no-drag">
+        <div className="grid grid-cols-[36px_200px] items-center gap-3 no-drag">
           <div className="flex h-9 w-9 items-center justify-center">
             {canRelaunch && (
               <button
@@ -396,7 +396,7 @@ function GameRow({
             )}
           </div>
 
-          <div className="no-drag glass-surface flex w-[260px] shrink-0 items-center rounded-full">
+          <div className="no-drag glass-surface flex w-[200px] shrink-0 items-center rounded-full">
             <div ref={profileMenuRef} className="relative">
               <button
                 ref={triggerRef}
@@ -538,7 +538,7 @@ function GameRow({
               type="button"
               onClick={primaryAction}
               disabled={isLaunchBlocked && !canKill}
-              className={`cursor-pointer flex h-9 w-[92px] items-center justify-center ${primaryButtonClass}`}
+              className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center ${primaryButtonClass}`}
               title={primaryTitle}
               aria-label={primaryTitle}
             >
@@ -587,7 +587,7 @@ function GameRow({
             <button
               type="button"
               onClick={handleToggle}
-              className={`group flex h-9 w-10 cursor-pointer items-center justify-center rounded-r-full ${
+              className={`group flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-r-full ${
                 isActive ? 'icon-action-active' : 'icon-action'
               }`}
               title={isActive ? 'Close Profile Settings' : 'Profile Settings'}
