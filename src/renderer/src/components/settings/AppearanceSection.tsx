@@ -73,7 +73,7 @@ export function AppearanceSection({
                 className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-2 text-xs font-bold tracking-wide transition-colors ${
                   themeMode === option.value
                     ? 'selected-surface text-(--text-primary)'
-                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                    : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
                 }`}
               >
                 {option.label}
@@ -106,7 +106,7 @@ export function AppearanceSection({
                 className={`cursor-pointer px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${
                   isCustomColor
                     ? 'text-(--text-primary)'
-                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                    : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
                 }`}
               >
                 Custom
@@ -165,7 +165,7 @@ export function AppearanceSection({
                 className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-2 text-xs font-bold tracking-wide transition-colors ${
                   zoomFactor === preset.factor
                     ? 'selected-surface text-(--text-primary)'
-                    : 'text-(--text-secondary) hover:text-(--text-primary)'
+                    : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
                 }`}
               >
                 {preset.label}
