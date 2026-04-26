@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import { useDirtyTracking } from '../hooks/useDirtyTracking'
 import {
   DEFAULT_ACCENT_COLOR,
   GAMES,
@@ -37,10 +38,16 @@ const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
 
 export function SettingsView({
   onClose,
-  updateInfo
+  updateInfo,
+  onDirtyChange,
+  shouldSaveTrigger,
+  onSaved
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
+  onDirtyChange?: (isDirty: boolean) => void
+  shouldSaveTrigger?: boolean
+  onSaved?: () => void
 }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
@@ -129,6 +136,69 @@ export function SettingsView({
     }
     loadSettings()
   }, [])
+
+  const currentSettingsState = useMemo(
+    () => ({
+      appPaths,
+      appNames,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor
+    }),
+    [
+      appPaths,
+      appNames,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor
+    ]
+  )
+
+  const { isDirty, resetDirty } = useDirtyTracking(currentSettingsState, loading)
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+  }, [isDirty, onDirtyChange])
+
+  useEffect(() => {
+    if (shouldSaveTrigger) {
+      handleSave().then(() => {
+        onSaved?.()
+      })
+    }
+  }, [shouldSaveTrigger])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const updateAccentCSS = (hex: string) => {
     if (hex) applyAccentTheme(hex)
@@ -303,13 +373,16 @@ export function SettingsView({
           launchDelayMs: normalizedLaunchDelayMs,
           startMinimized,
           minimizeToTray,
-          autoCheckUpdates
+          autoCheckUpdates,
+          startWithWindows,
+          zoomFactor
         }),
         saveProfiles(profiles)
       ])
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
+      resetDirty()
     } catch (err) {
       notify('Failed to save settings', 'error')
       console.error(err)
@@ -396,8 +469,14 @@ export function SettingsView({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={handleSave}
-          className="accent-surface-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
+          className="accent-surface-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold relative overflow-hidden"
         >
+          {isDirty && (
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-(--accent) opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-(--accent)"></span>
+            </span>
+          )}
           Save Changes
         </button>
         <button

@@ -1,4 +1,6 @@
-import { useEffect, useState, type DragEvent } from 'react'
+import { useEffect, useState, useMemo, type DragEvent } from 'react'
+import { useDirtyTracking } from '../hooks/useDirtyTracking'
+import { ConfirmDialog } from './ConfirmDialog'
 import {
   getActiveGameProfile,
   getUtilities,
@@ -78,6 +80,7 @@ export function ProfileEditor({
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
   const [fetchingIcons, setFetchingIcons] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -135,6 +138,47 @@ export function ProfileEditor({
 
     loadData()
   }, [gameKey, activeProfileId])
+
+  const currentProfileState = useMemo(
+    () => ({
+      profileName,
+      profileUtilities: profileUtilities.map((u) => ({ id: u.id, enabled: u.enabled })),
+      launchAutomatically,
+      trackingEnabled,
+      killControlsEnabled,
+      relaunchControlsEnabled,
+      trackedProcessPaths
+    }),
+    [
+      profileName,
+      profileUtilities,
+      launchAutomatically,
+      trackingEnabled,
+      killControlsEnabled,
+      relaunchControlsEnabled,
+      trackedProcessPaths
+    ]
+  )
+
+  const { isDirty, resetDirty } = useDirtyTracking(currentProfileState, loading)
+
+  const handleCloseAttempt = () => {
+    if (isDirty) {
+      setShowConfirm(true)
+    } else {
+      onClose()
+    }
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseAttempt()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isDirty, onClose])
 
   const handleToggleUtility = (key: string) => {
     setProfileUtilities((currentUtilities) => {
@@ -265,6 +309,7 @@ export function ProfileEditor({
       )
     })
     await onProfilesChanged()
+    resetDirty()
 
     notify('Profile saved!', 'success', 2500)
     onClose()
@@ -557,13 +602,19 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm"
+            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm relative overflow-hidden"
           >
+            {isDirty && (
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-(--accent) opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-(--accent)"></span>
+              </span>
+            )}
             Save Profile
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseAttempt}
             className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
           >
             Cancel
@@ -596,6 +647,18 @@ export function ProfileEditor({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={showConfirm}
+        title="Unsaved Changes"
+        message="You have unsaved changes in this profile. Do you want to save them before leaving?"
+        onSave={handleSave}
+        onDiscard={() => {
+          setShowConfirm(false)
+          onClose()
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
     </div>
   )
 }

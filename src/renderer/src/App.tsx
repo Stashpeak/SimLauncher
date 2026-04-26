@@ -3,6 +3,7 @@ import { NotifyProvider } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import {
   getMigrationFlags,
   saveSettings,
@@ -10,7 +11,15 @@ import {
   getSettings,
   setMigrationFlags
 } from './lib/store'
-import { getUpdateInfo, onUpdateAvailable } from './lib/electron'
+import {
+  getUpdateInfo,
+  onUpdateAvailable,
+  browsePath,
+  getAssetData,
+  getFileIcon,
+  setLoginItem,
+  setZoom
+} from './lib/electron'
 import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_PROFILE_ID,
@@ -30,6 +39,9 @@ export default function App() {
   const [bgTinted, setBgTinted] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
   const [showImportWarning, setShowImportWarning] = useState(false)
+  const [settingsDirty, setSettingsDirty] = useState(false)
+  const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
+  const [saveRequested, setSaveRequested] = useState(false)
 
   useEffect(() => {
     if (window.sessionStorage.getItem(CONFIG_IMPORT_WARNING_KEY) === '1') {
@@ -138,28 +150,32 @@ export default function App() {
     migrateFromLocalStorage()
   }, [])
 
-  useEffect(() => {
-    // Restore saved theme on startup
-    async function initTheme() {
-      try {
-        const settings = await getSettings()
-        const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
-        const custom = settings.accentCustom
-        const tint = settings.accentBgTint || false
-        const themeMode = normalizeThemeMode(settings.themeMode)
+  const syncThemeFromStore = async () => {
+    try {
+      const settings = await getSettings()
+      const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
+      const custom = settings.accentCustom
+      const tint = settings.accentBgTint || false
+      const themeMode = normalizeThemeMode(settings.themeMode)
 
-        setBgTinted(tint)
-        applyThemeMode(themeMode)
+      setBgTinted(tint)
+      applyThemeMode(themeMode)
 
-        const hex = preset === 'custom' ? custom : preset
-        if (hex) {
-          applyAccentTheme(hex)
-        }
-      } catch (err) {
-        console.error('Failed to initialize theme', err)
+      const hex = preset === 'custom' ? custom : preset
+      if (hex) {
+        applyAccentTheme(hex)
       }
+
+      if (Number.isFinite(settings.zoomFactor)) {
+        setZoom(settings.zoomFactor)
+      }
+    } catch (err) {
+      console.error('Failed to sync theme', err)
     }
-    initTheme()
+  }
+
+  useEffect(() => {
+    syncThemeFromStore()
 
     // Listen for custom events to update bgTint from SettingsView without reload
     const handleTintChange = (e: CustomEvent) => setBgTinted(e.detail)
@@ -187,13 +203,41 @@ export default function App() {
     }
   }, [])
 
+  const handleNavigate = (nextView: 'games' | 'settings') => {
+    if (view === nextView) return
+
+    if (view === 'settings' && settingsDirty) {
+      setPendingView(nextView)
+      return
+    }
+    setView(nextView)
+  }
+
+  const handleConfirmDiscard = () => {
+    setSettingsDirty(false)
+    syncThemeFromStore()
+    if (pendingView) {
+      setView(pendingView)
+      setPendingView(null)
+    }
+  }
+
+  const handleConfirmCancel = () => {
+    setPendingView(null)
+    setSaveRequested(false)
+  }
+
+  const handleConfirmSave = () => {
+    setSaveRequested(true)
+  }
+
   return (
     <NotifyProvider>
       <div
         className={`h-screen overflow-hidden relative transition-colors duration-500 ${bgTinted ? 'bg-tinted' : ''}`}
       >
         <div className="absolute top-0 left-0 w-full z-20 header-glass">
-          <WindowControls view={view} onNavigate={setView} updateInfo={updateInfo} />
+          <WindowControls view={view} onNavigate={handleNavigate} updateInfo={updateInfo} />
         </div>
 
         {showImportWarning && (
@@ -255,11 +299,32 @@ export default function App() {
           {view === 'settings' && (
             <div className="absolute inset-0 z-10 h-full flex flex-col">
               <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
-                <SettingsView onClose={() => setView('games')} updateInfo={updateInfo} />
+                <SettingsView
+                  onClose={() => handleNavigate('games')}
+                  updateInfo={updateInfo}
+                  onDirtyChange={setSettingsDirty}
+                  shouldSaveTrigger={saveRequested}
+                  onSaved={() => {
+                    setSaveRequested(false)
+                    if (pendingView) {
+                      setView(pendingView)
+                      setPendingView(null)
+                    }
+                  }}
+                />
               </div>
             </div>
           )}
         </main>
+
+        <ConfirmDialog
+          isOpen={pendingView !== null}
+          title="Unsaved Changes"
+          message="You have unsaved changes in Settings. Do you want to save them before leaving?"
+          onSave={handleConfirmSave}
+          onDiscard={handleConfirmDiscard}
+          onCancel={handleConfirmCancel}
+        />
       </div>
     </NotifyProvider>
   )
