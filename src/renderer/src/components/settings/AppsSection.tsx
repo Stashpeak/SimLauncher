@@ -140,12 +140,6 @@ export function AppsSection({
                     className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                   />
 
-                  <button
-                    onClick={() => onBrowse(utility.key)}
-                    className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
-                  >
-                    Browse
-                  </button>
                   {utility.isCustom && (
                     <button
                       type="button"
@@ -173,6 +167,12 @@ export function AppsSection({
                       </svg>
                     </button>
                   )}
+                  <button
+                    onClick={() => onBrowse(utility.key)}
+                    className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
+                  >
+                    Browse
+                  </button>
                 </div>
               </div>
             ))}
