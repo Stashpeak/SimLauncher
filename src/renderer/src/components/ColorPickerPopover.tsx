@@ -36,9 +36,20 @@ export function ColorPickerPopover({ color, onChange, onClose }: ColorPickerPopo
           type="text"
           value={color.toUpperCase()}
           onChange={(e) => {
-            const val = e.target.value
+            let val = e.target.value
+            // Auto-prepend # if missing
+            if (val && !val.startsWith('#')) {
+              val = '#' + val
+            }
+            // Only update if it's a valid partial or full hex
             if (/^#[0-9A-F]{0,6}$/i.test(val)) {
               onChange(val)
+            }
+          }}
+          onBlur={() => {
+            // Ensure we don't leave it as just '#'
+            if (color === '#' || color.length < 4) {
+              onChange('#AD46FF')
             }
           }}
           className="w-full rounded-lg bg-black/20 px-2 py-1.5 text-xs font-medium text-(--text-primary) outline-none transition-colors focus:bg-black/30"
