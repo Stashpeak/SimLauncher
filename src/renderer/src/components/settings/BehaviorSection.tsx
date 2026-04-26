@@ -12,6 +12,12 @@ interface BehaviorSectionProps {
   onLaunchDelayMsChange: (delayMs: number) => void
 }
 
+const DELAY_PRESETS = [
+  { label: '1s', value: 1000 },
+  { label: '1.5s', value: 1500 },
+  { label: '2s', value: 2000 }
+]
+
 export function BehaviorSection({
   startWithWindows,
   startMinimized,
@@ -22,6 +28,8 @@ export function BehaviorSection({
   onMinimizeToTrayChange,
   onLaunchDelayMsChange
 }: BehaviorSectionProps) {
+  const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
+
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">
@@ -66,35 +74,44 @@ export function BehaviorSection({
         <div className="settings-row">
           <div className="settings-label-group">
             <span className="settings-label">Launch delay between apps</span>
-            <div className="mt-2 pr-4">
-              <input
-                type="range"
-                min="0"
-                max="5000"
-                step="100"
-                value={Number.isFinite(launchDelayMs) ? launchDelayMs : 1000}
-                onChange={(e) =>
-                  onLaunchDelayMsChange(normalizeLaunchDelayMs(Number(e.target.value)))
-                }
-                className="w-full accent-(--accent) cursor-pointer"
-                aria-label="Launch delay slider"
-              />
-            </div>
+            <span className="settings-sublabel">Wait time before starting the next app</span>
           </div>
           <div className="settings-control">
-            <input
-              type="number"
-              min="0"
-              max="5000"
-              step="100"
-              value={launchDelayMs}
-              onChange={(e) =>
-                onLaunchDelayMsChange(normalizeLaunchDelayMs(Number(e.target.value)))
-              }
-              className="glass-recessed w-16 rounded-lg px-2 py-1.5 text-right text-xs text-(--text-primary) outline-none"
-              aria-label="Launch delay in milliseconds"
-            />
-            <span className="text-[10px] font-bold text-(--text-muted) uppercase">ms</span>
+            {DELAY_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                onClick={() => onLaunchDelayMsChange(preset.value)}
+                className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-1.5 text-[11px] font-bold tracking-wide transition-colors ${
+                  launchDelayMs === preset.value
+                    ? 'selected-surface text-(--text-primary)'
+                    : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+            <div
+              className={`glass-surface flex h-[28px] items-center overflow-hidden rounded-full border border-(--glass-border) transition-all duration-200 ${
+                !isPreset ? 'selected-surface' : ''
+              }`}
+            >
+              <input
+                type="number"
+                min="0"
+                max="5"
+                step="0.1"
+                value={Number.isFinite(launchDelayMs) ? launchDelayMs / 1000 : ''}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value)
+                  if (!isNaN(val)) {
+                    onLaunchDelayMsChange(normalizeLaunchDelayMs(val * 1000))
+                  }
+                }}
+                className="w-10 bg-transparent pl-2 text-right text-[11px] font-bold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                placeholder="0.0"
+              />
+              <span className="px-2 text-[9px] font-bold text-(--text-muted) uppercase">s</span>
+            </div>
           </div>
         </div>
       </div>
