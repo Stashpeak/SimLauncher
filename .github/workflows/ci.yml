@@ -31,3 +31,6 @@ jobs:
 
       - name: Build app
         run: npm run build
+
+      - name: Audit dependencies
+        run: npm audit --omit=dev
