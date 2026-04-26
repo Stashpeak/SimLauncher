@@ -30,7 +30,7 @@ export function ConfigSection({
               type="button"
               onClick={onExportConfig}
               disabled={exportingConfig || importingConfig}
-              className="accent-surface-action flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+              className="accent-surface-action flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
             >
               <svg
                 width="14"
@@ -52,7 +52,7 @@ export function ConfigSection({
               type="button"
               onClick={onImportConfig}
               disabled={exportingConfig || importingConfig}
-              className="accent-surface-action flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+              className="accent-surface-action flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
             >
               <svg
                 width="14"

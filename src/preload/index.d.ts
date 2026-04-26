@@ -21,7 +21,7 @@ declare global {
     zoomFactor: number
   }
 
-  type WritableSettings = Omit<Settings, 'startWithWindows' | 'zoomFactor'>
+  type WritableSettings = Settings
 
   interface MigrationFlags {
     migrated: boolean
