@@ -26,6 +26,8 @@
   --warning-surface: rgba(245, 158, 11, 0.18);
   --warning-border: rgba(251, 191, 36, 0.3);
   --warning-text: rgba(253, 230, 138, 0.95);
+  --success-surface: rgba(34, 197, 94, 0.14);
+  --success-border: rgba(34, 197, 94, 0.28);
   --success-text: rgba(187, 247, 208, 0.95);
   --status-danger: var(--danger-text);
   --status-warning: var(--warning-text);
@@ -84,6 +86,8 @@
   --warning-surface: rgba(245, 158, 11, 0.14);
   --warning-border: rgba(180, 110, 10, 0.35);
   --warning-text: rgba(120, 75, 5, 0.95);
+  --success-surface: rgba(34, 197, 94, 0.08);
+  --success-border: rgba(22, 101, 52, 0.25);
   --success-text: rgba(20, 100, 50, 0.95);
   --status-running: #16a34a;
   --header-glass-bg: rgba(252, 252, 254, 0.75);
@@ -234,7 +238,8 @@ textarea {
 .danger-action,
 .icon-action,
 .dropdown-item,
-.selected-surface {
+.selected-surface,
+.action-hover-scale {
   transition:
     background-color 180ms ease,
     border-color 180ms ease,
@@ -361,6 +366,19 @@ textarea {
   outline-offset: 2px;
 }
 
+/* Revert hover scale for launcher buttons to avoid rendering artifacts and keep original feel */
+.launcher-play-btn:hover {
+  transform: none !important;
+}
+
+.action-hover-scale:hover {
+  transform: scale(1.04);
+}
+
+.action-hover-scale {
+  will-change: transform;
+}
+
 .icon-action {
   background: transparent;
   color: var(--text-subtle);
@@ -421,7 +439,9 @@ textarea {
 }
 
 .selected-surface {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 20px -16px var(--accent-glow);
 }
 
 .selected-surface:hover {

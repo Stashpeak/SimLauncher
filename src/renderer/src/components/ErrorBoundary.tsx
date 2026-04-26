@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react'
+import { Component, ErrorInfo, ReactNode } from 'react'
 
 interface Props {
   children?: ReactNode
@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-(--bg-gradient) overflow-hidden p-8">
+        <div className="fixed inset-0 z-9999 flex items-center justify-center bg-(--bg-gradient) overflow-hidden p-8">
           {/* Decorative background glow */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-(--accent-glow) rounded-full blur-[120px] pointer-events-none opacity-50" />
 
@@ -95,7 +95,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="accent-action flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
+                className="accent-action action-hover-scale flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
               >
                 <svg
                   width="18"
@@ -116,7 +116,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <button
                 type="button"
                 onClick={this.handleCopyError}
-                className="accent-surface-action flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
+                className="accent-surface-action action-hover-scale flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
               >
                 <svg
                   width="18"

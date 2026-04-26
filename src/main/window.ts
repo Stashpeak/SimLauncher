@@ -125,7 +125,11 @@ export function createWindow() {
 
     // DEV: fake update - remove this block to disable
     if (!app.isPackaged && autoCheckUpdates) {
-      setTimeout(() => sendToRenderer('update-available', { version: '99.0.0' }), 1500)
+      setTimeout(() => {
+        checkForUpdates().catch((err) => {
+          console.error('Update check failed:', err)
+        })
+      }, 1500)
     }
   })
 

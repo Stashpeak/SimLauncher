@@ -145,7 +145,7 @@ export function AppsSection({
                       type="button"
                       onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
                       disabled={customSlots <= 1}
-                      className="danger-action flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl"
+                      className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
                       title={`Remove ${appNames[utility.key] || utility.name}`}
                       aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                     >
@@ -169,7 +169,7 @@ export function AppsSection({
                   )}
                   <button
                     onClick={() => onBrowse(utility.key)}
-                    className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
+                    className="accent-surface-action action-hover-scale cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse
                   </button>
@@ -181,7 +181,7 @@ export function AppsSection({
                 type="button"
                 onClick={onAddCustomSlot}
                 disabled={customSlots >= MAX_CUSTOM_SLOTS}
-                className="accent-surface-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold"
+                className="accent-surface-action action-hover-scale flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold"
               >
                 <svg
                   width="15"

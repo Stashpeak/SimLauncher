@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import { useDirtyTracking } from '../hooks/useDirtyTracking'
 import {
   DEFAULT_ACCENT_COLOR,
   GAMES,
@@ -33,14 +34,20 @@ import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
 import { applyAccentTheme, applyThemeMode, normalizeThemeMode, type ThemeMode } from '../lib/theme'
 
-const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
-
 export function SettingsView({
   onClose,
-  updateInfo
+  updateInfo,
+  onDirtyChange,
+  shouldSaveTrigger,
+  onSaved,
+  onConfigImported
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
+  onDirtyChange?: (isDirty: boolean) => void
+  shouldSaveTrigger?: boolean
+  onSaved?: () => void
+  onConfigImported?: () => void
 }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
@@ -74,61 +81,125 @@ export function SettingsView({
 
   const updateStatus = useUpdateStatus({ updateInfo, notify })
 
-  useEffect(() => {
-    async function loadSettings() {
-      const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
-      const typedProfiles = savedProfiles as Profiles
+  const loadSettingsFromStore = async () => {
+    const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
+    const typedProfiles = savedProfiles as Profiles
 
-      setAppPaths(settings.appPaths)
-      setAppNames(settings.appNames)
-      setProfiles(typedProfiles)
-      setGamePaths(settings.gamePaths)
-      setCustomSlots(
-        resolveCustomSlots(
-          settings.customSlots,
-          settings.appPaths,
-          settings.appNames,
-          ...(Object.values(typedProfiles) as Record<string, unknown>[])
-        )
+    setAppPaths(settings.appPaths)
+    setAppNames(settings.appNames)
+    setProfiles(typedProfiles)
+    setGamePaths(settings.gamePaths)
+    setCustomSlots(
+      resolveCustomSlots(
+        settings.customSlots,
+        settings.appPaths,
+        settings.appNames,
+        ...(Object.values(typedProfiles) as Record<string, unknown>[])
       )
-      const loadedThemeMode = normalizeThemeMode(settings.themeMode)
+    )
+    const loadedThemeMode = normalizeThemeMode(settings.themeMode)
 
-      setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
-      setAccentCustom(settings.accentCustom || '')
-      setAccentBgTint(settings.accentBgTint || false)
-      setThemeMode(loadedThemeMode)
-      applyThemeMode(loadedThemeMode)
-      setFocusActiveTitle(settings.focusActiveTitle !== false)
-      setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
-      setStartWithWindows(settings.startWithWindows || false)
-      setStartMinimized(settings.startMinimized || false)
-      setMinimizeToTray(settings.minimizeToTray || false)
-      setAutoCheckUpdates(settings.autoCheckUpdates !== false)
-      setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
+    setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
+    setAccentCustom(settings.accentCustom || '')
+    setAccentBgTint(settings.accentBgTint || false)
+    setThemeMode(loadedThemeMode)
+    applyThemeMode(loadedThemeMode)
+    setFocusActiveTitle(settings.focusActiveTitle !== false)
+    setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
+    setStartWithWindows(settings.startWithWindows || false)
+    setStartMinimized(settings.startMinimized || false)
+    setMinimizeToTray(settings.minimizeToTray || false)
+    setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+    setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
 
-      setIsCustomColor(settings.accentPreset === 'custom')
+    setIsCustomColor(settings.accentPreset === 'custom')
 
-      const icons: Record<string, string> = {}
-      for (const [key, path] of Object.entries(settings.appPaths)) {
-        if (path) {
-          const icon = await getFileIcon(path)
-          if (icon) icons[key] = icon
-        }
+    const icons: Record<string, string> = {}
+    for (const [key, path] of Object.entries(settings.appPaths)) {
+      if (path) {
+        const icon = await getFileIcon(path)
+        if (icon) icons[key] = icon
       }
-      setAppIcons(icons)
-
-      const gIcons: Record<string, string> = {}
-      for (const game of GAMES) {
-        const filename = game.icon.split('/').pop() || ''
-        const data = await getAssetData(filename)
-        if (data) gIcons[game.key] = data
-      }
-      setGameIcons(gIcons)
-
-      setLoading(false)
     }
-    loadSettings()
+    setAppIcons(icons)
+
+    const gIcons: Record<string, string> = {}
+    for (const game of GAMES) {
+      const filename = game.icon.split('/').pop() || ''
+      const data = await getAssetData(filename)
+      if (data) gIcons[game.key] = data
+    }
+    setGameIcons(gIcons)
+
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadSettingsFromStore()
   }, [])
+
+  const currentSettingsState = useMemo(
+    () => ({
+      appPaths,
+      appNames,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor
+    }),
+    [
+      appPaths,
+      appNames,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor
+    ]
+  )
+
+  const { isDirty, resetDirty } = useDirtyTracking(currentSettingsState, loading)
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+  }, [isDirty, onDirtyChange])
+
+  useEffect(() => {
+    if (shouldSaveTrigger) {
+      handleSave().then(() => {
+        onSaved?.()
+      })
+    }
+  }, [shouldSaveTrigger])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const updateAccentCSS = (hex: string) => {
     if (hex) applyAccentTheme(hex)
@@ -272,8 +343,10 @@ export function SettingsView({
       const result = await importConfig()
 
       if (result.success) {
-        window.sessionStorage.setItem(CONFIG_IMPORT_WARNING_KEY, '1')
-        window.location.reload()
+        await loadSettingsFromStore()
+        resetDirty()
+        onConfigImported?.()
+        notify('Config imported', 'success', 2500)
       } else if (!result.canceled) {
         notify(result.error || 'Failed to import config', 'error')
       }
@@ -303,13 +376,16 @@ export function SettingsView({
           launchDelayMs: normalizedLaunchDelayMs,
           startMinimized,
           minimizeToTray,
-          autoCheckUpdates
+          autoCheckUpdates,
+          startWithWindows,
+          zoomFactor
         }),
         saveProfiles(profiles)
       ])
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
+      resetDirty()
     } catch (err) {
       notify('Failed to save settings', 'error')
       console.error(err)
@@ -396,13 +472,19 @@ export function SettingsView({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={handleSave}
-          className="accent-surface-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
+          className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold relative overflow-hidden"
         >
+          {isDirty && (
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-(--accent) opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-(--accent)"></span>
+            </span>
+          )}
           Save Changes
         </button>
         <button
           onClick={onClose}
-          className="accent-surface-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
+          className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
         >
           Back to Games
         </button>

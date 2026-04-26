@@ -99,14 +99,11 @@ export function registerConfigHandlers() {
   })
 
   ipcMain.handle('set-login-item', (_event, openAtLogin: boolean) => {
-    store.set('startWithWindows', openAtLogin)
     app.setLoginItemSettings({ openAtLogin })
   })
 
   ipcMain.handle('set-zoom', (_event, factor: unknown) => {
     const zoomFactor = requireSafeZoomFactor(factor)
-
-    store.set('zoomFactor', zoomFactor)
     getMainWindow()?.webContents.setZoomFactor(zoomFactor)
   })
 
@@ -138,7 +135,8 @@ export function registerConfigHandlers() {
       'focusActiveTitle',
       'startMinimized',
       'minimizeToTray',
-      'autoCheckUpdates'
+      'autoCheckUpdates',
+      'startWithWindows'
     ])
     const STRING_KEYS = new Set(['accentPreset', 'accentCustom'])
     const THEME_MODES = new Set(['light', 'dark', 'system'])
@@ -148,7 +146,8 @@ export function registerConfigHandlers() {
       ...STRING_KEYS,
       'themeMode',
       'customSlots',
-      'launchDelayMs'
+      'launchDelayMs',
+      'zoomFactor'
     ])
 
     const safe: Record<string, unknown> = {}
@@ -171,6 +170,8 @@ export function registerConfigHandlers() {
         safe[key] = Math.min(Math.floor(value), MAX_CUSTOM_SLOTS)
       } else if (key === 'launchDelayMs' && typeof value === 'number' && Number.isFinite(value)) {
         safe[key] = Math.min(Math.max(Math.round(value), 0), 5000)
+      } else if (key === 'zoomFactor' && typeof value === 'number' && Number.isFinite(value)) {
+        safe[key] = requireSafeZoomFactor(value)
       }
     }
     if (Object.keys(safe).length > 0) store.set(safe)

@@ -21,7 +21,7 @@ declare global {
     zoomFactor: number
   }
 
-  type WritableSettings = Omit<Settings, 'startWithWindows' | 'zoomFactor'>
+  type WritableSettings = Settings
 
   interface MigrationFlags {
     migrated: boolean
@@ -72,6 +72,10 @@ interface ConfigFileResult {
   filePath?: string
 }
 
+interface UpdateAvailability {
+  version: string
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -102,6 +106,7 @@ declare global {
       onUpdateError: (cb: (error: Error) => void) => Unsubscribe
       installUpdate: () => Promise<unknown>
       checkForUpdates: () => Promise<unknown>
+      getUpdateInfo: () => Promise<UpdateAvailability | null>
       getSettings: () => Promise<Settings>
       saveSettings: (patch: Partial<WritableSettings>) => Promise<void>
       getProfiles: () => Promise<Record<string, unknown>>

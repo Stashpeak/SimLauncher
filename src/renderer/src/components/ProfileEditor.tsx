@@ -1,4 +1,6 @@
-import { useEffect, useState, type DragEvent } from 'react'
+import { useEffect, useState, useMemo, type DragEvent } from 'react'
+import { useDirtyTracking } from '../hooks/useDirtyTracking'
+import { ConfirmDialog } from './ConfirmDialog'
 import {
   getActiveGameProfile,
   getUtilities,
@@ -78,6 +80,7 @@ export function ProfileEditor({
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
   const [fetchingIcons, setFetchingIcons] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -135,6 +138,47 @@ export function ProfileEditor({
 
     loadData()
   }, [gameKey, activeProfileId])
+
+  const currentProfileState = useMemo(
+    () => ({
+      profileName,
+      profileUtilities: profileUtilities.map((u) => ({ id: u.id, enabled: u.enabled })),
+      launchAutomatically,
+      trackingEnabled,
+      killControlsEnabled,
+      relaunchControlsEnabled,
+      trackedProcessPaths
+    }),
+    [
+      profileName,
+      profileUtilities,
+      launchAutomatically,
+      trackingEnabled,
+      killControlsEnabled,
+      relaunchControlsEnabled,
+      trackedProcessPaths
+    ]
+  )
+
+  const { isDirty, resetDirty } = useDirtyTracking(currentProfileState, loading)
+
+  const handleCloseAttempt = () => {
+    if (isDirty) {
+      setShowConfirm(true)
+    } else {
+      onClose()
+    }
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseAttempt()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isDirty, onClose])
 
   const handleToggleUtility = (key: string) => {
     setProfileUtilities((currentUtilities) => {
@@ -265,6 +309,7 @@ export function ProfileEditor({
       )
     })
     await onProfilesChanged()
+    resetDirty()
 
     notify('Profile saved!', 'success', 2500)
     onClose()
@@ -511,7 +556,7 @@ export function ProfileEditor({
               <button
                 type="button"
                 onClick={handleAddTrackedProcess}
-                className="accent-surface-action cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
+                className="accent-surface-action action-hover-scale cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
               >
                 Add
               </button>
@@ -531,14 +576,14 @@ export function ProfileEditor({
                     <button
                       type="button"
                       onClick={() => handleBrowseTrackedProcess(index)}
-                      className="accent-surface-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
+                      className="accent-surface-action action-hover-scale cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Browse
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveTrackedProcess(index)}
-                      className="danger-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
+                      className="danger-action action-hover-scale cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Remove
                     </button>
@@ -557,14 +602,20 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm"
+            className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-2.5 text-sm relative overflow-hidden"
           >
+            {isDirty && (
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-(--accent) opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-(--accent)"></span>
+              </span>
+            )}
             Save Profile
           </button>
           <button
             type="button"
-            onClick={onClose}
-            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
+            onClick={handleCloseAttempt}
+            className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
           >
             Cancel
           </button>
@@ -572,7 +623,7 @@ export function ProfileEditor({
             <button
               type="button"
               onClick={handleDeleteProfile}
-              className="danger-action flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl"
+              className="danger-action action-hover-scale flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
               title="Delete profile"
               aria-label="Delete profile"
             >
@@ -596,6 +647,18 @@ export function ProfileEditor({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={showConfirm}
+        title="Unsaved Changes"
+        message="You have unsaved changes in this profile. Do you want to save them before leaving?"
+        onSave={handleSave}
+        onDiscard={() => {
+          setShowConfirm(false)
+          onClose()
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
     </div>
   )
 }
