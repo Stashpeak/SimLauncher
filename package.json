@@ -14,8 +14,16 @@
     "preview": "electron-vite preview",
     "prepare": "git config core.hooksPath .githooks"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "simracing",
+    "launcher",
+    "electron",
+    "react",
+    "typescript",
+    "windows",
+    "sim-racing"
+  ],
+  "author": "Stashpeak",
   "license": "GPL-3.0-only",
   "dependencies": {
     "@tailwindcss/vite": "^4.1.0",
