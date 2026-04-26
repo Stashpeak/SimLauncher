@@ -4,6 +4,11 @@
 
 MSG=$(cat "$1")
 
+# docs: commits don't require an issue ref
+if echo "$MSG" | grep -qE '^docs(\(.+\))?:'; then
+  exit 0
+fi
+
 if ! echo "$MSG" | grep -qE '#[0-9]+'; then
   echo ""
   echo "  Commit rejected: missing issue reference."
