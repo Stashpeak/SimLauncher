@@ -81,7 +81,7 @@ export function BehaviorSection({
               <button
                 key={preset.value}
                 onClick={() => onLaunchDelayMsChange(preset.value)}
-                className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface tracking-wide transition-colors ${
+                className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${
                   launchDelayMs === preset.value
                     ? 'selected-surface text-(--text-primary)'
                     : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
@@ -91,7 +91,7 @@ export function BehaviorSection({
               </button>
             ))}
             <div
-              className={`settings-control-pill settings-control-pill-input settings-control-preset glass-surface transition-all duration-200 ${
+              className={`settings-control-pill settings-control-pill-input settings-control-preset glass-surface action-hover-scale transition-all duration-200 ${
                 !isPreset ? 'selected-surface' : ''
               }`}
             >
