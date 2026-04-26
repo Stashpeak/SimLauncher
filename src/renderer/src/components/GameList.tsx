@@ -22,6 +22,7 @@ import { useGameProfile } from '../hooks/useGameProfile'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useProfileMenu } from '../hooks/useProfileMenu'
 import { useRunningApps } from '../hooks/useRunningApps'
+import { EmptyState } from './EmptyState'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
@@ -650,7 +651,7 @@ function GameRow({
   )
 }
 
-export function GameList() {
+export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'settings') => void }) {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
@@ -722,12 +723,30 @@ export function GameList() {
 
   if (configuredGames.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center text-(--text-secondary)">
-        <p>No games configured.</p>
-        <p className="mt-1 text-sm text-(--text-muted)">
-          Configure game paths in settings to see them here.
-        </p>
-      </div>
+      <EmptyState
+        icon={
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
+            <path d="M9 10h.01" />
+            <path d="M15 10h.01" />
+          </svg>
+        }
+        title="No games configured"
+        description="Configure your simulation game paths in settings to manage their companion apps and profiles here."
+        action={{
+          label: 'Configure Games',
+          onClick: () => onNavigate('settings')
+        }}
+      />
     )
   }
 
