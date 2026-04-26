@@ -47,7 +47,11 @@ const PROFILE_BOOLEAN_KEYS = [
   'relaunchControlsEnabled'
 ]
 
-export const store = new Store({
+// Handle ESM/CJS interop for electron-store
+const StoreConstructor =
+  typeof Store === 'function' ? Store : (Store as unknown as { default: typeof Store }).default
+
+export const store = new StoreConstructor({
   schema: {
     appPaths: { type: 'object', default: {} },
     gamePaths: { type: 'object', default: {} },
