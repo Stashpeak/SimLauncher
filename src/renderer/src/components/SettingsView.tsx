@@ -34,20 +34,20 @@ import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
 import { applyAccentTheme, applyThemeMode, normalizeThemeMode, type ThemeMode } from '../lib/theme'
 
-const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
-
 export function SettingsView({
   onClose,
   updateInfo,
   onDirtyChange,
   shouldSaveTrigger,
-  onSaved
+  onSaved,
+  onConfigImported
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
   onDirtyChange?: (isDirty: boolean) => void
   shouldSaveTrigger?: boolean
   onSaved?: () => void
+  onConfigImported?: () => void
 }) {
   const { notify } = useNotify()
   const [loading, setLoading] = useState(true)
@@ -81,60 +81,61 @@ export function SettingsView({
 
   const updateStatus = useUpdateStatus({ updateInfo, notify })
 
-  useEffect(() => {
-    async function loadSettings() {
-      const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
-      const typedProfiles = savedProfiles as Profiles
+  const loadSettingsFromStore = async () => {
+    const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
+    const typedProfiles = savedProfiles as Profiles
 
-      setAppPaths(settings.appPaths)
-      setAppNames(settings.appNames)
-      setProfiles(typedProfiles)
-      setGamePaths(settings.gamePaths)
-      setCustomSlots(
-        resolveCustomSlots(
-          settings.customSlots,
-          settings.appPaths,
-          settings.appNames,
-          ...(Object.values(typedProfiles) as Record<string, unknown>[])
-        )
+    setAppPaths(settings.appPaths)
+    setAppNames(settings.appNames)
+    setProfiles(typedProfiles)
+    setGamePaths(settings.gamePaths)
+    setCustomSlots(
+      resolveCustomSlots(
+        settings.customSlots,
+        settings.appPaths,
+        settings.appNames,
+        ...(Object.values(typedProfiles) as Record<string, unknown>[])
       )
-      const loadedThemeMode = normalizeThemeMode(settings.themeMode)
+    )
+    const loadedThemeMode = normalizeThemeMode(settings.themeMode)
 
-      setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
-      setAccentCustom(settings.accentCustom || '')
-      setAccentBgTint(settings.accentBgTint || false)
-      setThemeMode(loadedThemeMode)
-      applyThemeMode(loadedThemeMode)
-      setFocusActiveTitle(settings.focusActiveTitle !== false)
-      setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
-      setStartWithWindows(settings.startWithWindows || false)
-      setStartMinimized(settings.startMinimized || false)
-      setMinimizeToTray(settings.minimizeToTray || false)
-      setAutoCheckUpdates(settings.autoCheckUpdates !== false)
-      setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
+    setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
+    setAccentCustom(settings.accentCustom || '')
+    setAccentBgTint(settings.accentBgTint || false)
+    setThemeMode(loadedThemeMode)
+    applyThemeMode(loadedThemeMode)
+    setFocusActiveTitle(settings.focusActiveTitle !== false)
+    setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
+    setStartWithWindows(settings.startWithWindows || false)
+    setStartMinimized(settings.startMinimized || false)
+    setMinimizeToTray(settings.minimizeToTray || false)
+    setAutoCheckUpdates(settings.autoCheckUpdates !== false)
+    setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
 
-      setIsCustomColor(settings.accentPreset === 'custom')
+    setIsCustomColor(settings.accentPreset === 'custom')
 
-      const icons: Record<string, string> = {}
-      for (const [key, path] of Object.entries(settings.appPaths)) {
-        if (path) {
-          const icon = await getFileIcon(path)
-          if (icon) icons[key] = icon
-        }
+    const icons: Record<string, string> = {}
+    for (const [key, path] of Object.entries(settings.appPaths)) {
+      if (path) {
+        const icon = await getFileIcon(path)
+        if (icon) icons[key] = icon
       }
-      setAppIcons(icons)
-
-      const gIcons: Record<string, string> = {}
-      for (const game of GAMES) {
-        const filename = game.icon.split('/').pop() || ''
-        const data = await getAssetData(filename)
-        if (data) gIcons[game.key] = data
-      }
-      setGameIcons(gIcons)
-
-      setLoading(false)
     }
-    loadSettings()
+    setAppIcons(icons)
+
+    const gIcons: Record<string, string> = {}
+    for (const game of GAMES) {
+      const filename = game.icon.split('/').pop() || ''
+      const data = await getAssetData(filename)
+      if (data) gIcons[game.key] = data
+    }
+    setGameIcons(gIcons)
+
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadSettingsFromStore()
   }, [])
 
   const currentSettingsState = useMemo(
@@ -342,8 +343,10 @@ export function SettingsView({
       const result = await importConfig()
 
       if (result.success) {
-        window.sessionStorage.setItem(CONFIG_IMPORT_WARNING_KEY, '1')
-        window.location.reload()
+        await loadSettingsFromStore()
+        resetDirty()
+        onConfigImported?.()
+        notify('Config imported', 'success', 2500)
       } else if (!result.canceled) {
         notify(result.error || 'Failed to import config', 'error')
       }

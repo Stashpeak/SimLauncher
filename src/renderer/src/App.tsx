@@ -32,8 +32,6 @@ import {
 } from './lib/config'
 import { applyAccentTheme, applyThemeMode, normalizeThemeMode } from './lib/theme'
 
-const CONFIG_IMPORT_WARNING_KEY = 'simlauncher-config-import-warning'
-
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
   const [bgTinted, setBgTinted] = useState(false)
@@ -42,13 +40,7 @@ export default function App() {
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
   const [saveRequested, setSaveRequested] = useState(false)
-
-  useEffect(() => {
-    if (window.sessionStorage.getItem(CONFIG_IMPORT_WARNING_KEY) === '1') {
-      window.sessionStorage.removeItem(CONFIG_IMPORT_WARNING_KEY)
-      setShowImportWarning(true)
-    }
-  }, [])
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     // One-time migration from localStorage (vanilla app) to electron-store
@@ -231,6 +223,12 @@ export default function App() {
     setSaveRequested(true)
   }
 
+  const handleConfigImported = () => {
+    syncThemeFromStore()
+    setRefreshKey((k) => k + 1)
+    setShowImportWarning(true)
+  }
+
   return (
     <NotifyProvider>
       <div
@@ -291,7 +289,7 @@ export default function App() {
             className={`h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}
           >
             <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
-              <GameList onNavigate={handleNavigate} />
+              <GameList key={refreshKey} onNavigate={handleNavigate} />
             </div>
           </div>
 
@@ -304,6 +302,7 @@ export default function App() {
                   updateInfo={updateInfo}
                   onDirtyChange={setSettingsDirty}
                   shouldSaveTrigger={saveRequested}
+                  onConfigImported={handleConfigImported}
                   onSaved={() => {
                     setSaveRequested(false)
                     if (pendingView) {
