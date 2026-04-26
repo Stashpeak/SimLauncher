@@ -96,19 +96,31 @@ export function AppearanceSection({
               />
             ))}
             <label
-              className={`relative flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] ${
-                isCustomColor ? 'border-(--text-primary) scale-110' : 'border-transparent'
+              className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
+                isCustomColor ? 'scale-110' : ''
               }`}
-              style={{
-                background: isCustomColor
-                  ? accentCustom || '#ad46ff'
-                  : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
-              }}
               title="Custom Color"
             >
+              {/* Background gradient/color */}
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: isCustomColor
+                    ? accentCustom || '#ad46ff'
+                    : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
+                }}
+              />
+
+              {/* Glass overlay for unselected state */}
               {!isCustomColor && (
-                <div className="pointer-events-none absolute inset-0 bg-white/10 mix-blend-overlay dark:bg-black/10" />
+                <div className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none" />
               )}
+
+              {/* Border to match presets */}
+              <div
+                className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--text-primary)' : 'border-transparent'}`}
+              />
+
               <input
                 type="color"
                 value={accentCustom || '#ad46ff'}
