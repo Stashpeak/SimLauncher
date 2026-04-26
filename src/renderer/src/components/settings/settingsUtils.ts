@@ -3,5 +3,5 @@ export function normalizeLaunchDelayMs(value: number) {
     return 1000
   }
 
-  return Math.min(Math.max(Math.round(value), 0), 5000)
+  return Math.min(Math.max(Math.round(value), 0), 30000)
 }

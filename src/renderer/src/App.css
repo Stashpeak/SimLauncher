@@ -615,3 +615,71 @@ textarea {
 .toast-progress-error {
   background: var(--status-danger);
 }
+
+/* Settings Unified Layout */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  min-height: 3.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--header-glass-border);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-label {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.settings-sublabel {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.settings-control-pill {
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid var(--glass-border);
+}
+
+.settings-control-pill-button {
+  padding: 0 1rem;
+  cursor: pointer;
+}
+
+.settings-control-pill-input {
+  padding: 0 0.5rem;
+  overflow: hidden;
+}
+
+.settings-control-preset {
+  width: 4.75rem;
+}

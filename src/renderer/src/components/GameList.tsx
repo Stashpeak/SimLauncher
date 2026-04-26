@@ -323,7 +323,7 @@ function GameRow({
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="game-title font-semibold text-(--text-primary)">{game.name}</h3>
+              <h3 className="game-title font-normal text-(--text-primary)">{game.name}</h3>
             </div>
             {runningAppIcons.length > 0 && (
               <div className="flex items-center gap-1">
@@ -410,7 +410,7 @@ function GameRow({
                   }
                 }}
                 onKeyDown={handleProfileMenuTriggerKeyDown}
-                className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-bold text-(--text-secondary) transition-all hover:text-(--text-primary)"
+                className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-all hover:text-(--text-primary)"
                 aria-haspopup="menu"
                 aria-expanded={profileMenuOpen}
                 aria-label={`${game.name} profile`}

@@ -49,7 +49,7 @@ export function GamesSection({
                 key={game.key}
                 className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-(--header-glass-border)' : ''}`}
               >
-                <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) opacity-80">
                   {game.name}
                 </div>
 
@@ -61,7 +61,7 @@ export function GamesSection({
                       className="w-8 h-8 object-contain drop-shadow-md shrink-0"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded shrink-0 bg-(--glass-bg) border border-(--glass-border) flex items-center justify-center">
+                    <div className="w-8 h-8 rounded shrink-0 bg-(--glass-bg) border border-(--glass-border) flex items-center justify-center text-(--text-subtle)">
                       <svg
                         width="14"
                         height="14"
@@ -71,7 +71,6 @@ export function GamesSection({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="text-(--text-subtle)"
                       >
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                       </svg>

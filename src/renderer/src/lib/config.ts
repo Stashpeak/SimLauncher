@@ -32,7 +32,7 @@ export interface GameProfileSet {
 export type StoredGameProfile = GameProfile | GameProfileSet
 export type Profiles = Record<string, StoredGameProfile>
 
-export const DEFAULT_ACCENT_COLOR = '#00eaff'
+export const DEFAULT_ACCENT_COLOR = '#008c99'
 export const DEFAULT_CUSTOM_SLOTS = 1
 export const DEFAULT_PROFILE_ID = 'default'
 export const DEFAULT_PROFILE_NAME = 'Default'

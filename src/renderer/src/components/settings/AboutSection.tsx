@@ -29,18 +29,16 @@ export function AboutSection({
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">About</h3>
-      <div className="glass-surface p-5 rounded-2xl space-y-4">
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm text-(--text-secondary)">Installed Version</span>
+      <div className="glass-surface rounded-2xl flex flex-col pt-1">
+        <div className="settings-row">
+          <span className="settings-label text-(--text-secondary)">Installed Version</span>
           <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
         </div>
 
-        <div className="flex items-center justify-between border-t border-(--header-glass-border) pt-4">
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-(--text-primary)">
-              Automatically check for updates
-            </span>
-            <span className="text-[10px] text-(--text-muted)">Check on startup when enabled</span>
+        <div className="settings-row">
+          <div className="settings-label-group">
+            <span className="settings-label">Automatically check for updates</span>
+            <span className="settings-sublabel">Check on startup when enabled</span>
           </div>
           <Toggle
             checked={autoCheckUpdates}
@@ -49,12 +47,12 @@ export function AboutSection({
           />
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 p-5 border-t border-(--header-glass-border)">
           {updateInfo ? (
             <button
               onClick={onInstallUpdate}
               disabled={installingUpdate}
-              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
+              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
             >
               {installingUpdate
                 ? updateProgress !== null
@@ -66,7 +64,7 @@ export function AboutSection({
             <button
               onClick={onManualCheck}
               disabled={checkingUpdate}
-              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-bold"
+              className="accent-surface-action w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
             >
               {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
             </button>
