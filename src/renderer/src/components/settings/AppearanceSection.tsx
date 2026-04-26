@@ -1,7 +1,8 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
+import { ColorPickerPopover } from '../ColorPickerPopover'
 
 const ZOOM_PRESETS = [
   { label: '100%', factor: 1.0 },
@@ -57,6 +58,8 @@ export function AppearanceSection({
   onFocusActiveTitleChange,
   onZoomFactorChange
 }: AppearanceSectionProps) {
+  const [showPicker, setShowPicker] = useState(false)
+
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">
@@ -96,46 +99,47 @@ export function AppearanceSection({
                 title={preset.name}
               />
             ))}
-            <label
-              className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
-                isCustomColor ? 'scale-110' : ''
-              }`}
-              title="Custom Color"
-            >
-              {/* Background gradient/color */}
-              <div
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: isCustomColor
-                    ? accentCustom || '#ad46ff'
-                    : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
-                }}
-              />
-
-              {/* Glass overlay for unselected state */}
-              {!isCustomColor && (
-                <div className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none" />
-              )}
-
-              {/* Border to match presets */}
-              <div
-                className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
-              />
-
-              <input
-                type="color"
-                value={accentCustom || '#ad46ff'}
-                onChange={(e) => {
-                  onCustomColorChange(e.target.value)
-                  if (!isCustomColor) onAccentChange('custom')
-                }}
+            <div className="relative">
+              <button
+                type="button"
                 onClick={() => {
+                  setShowPicker(!showPicker)
                   if (!isCustomColor) onAccentChange('custom')
                 }}
-                className="absolute -inset-4 h-16 w-16 cursor-pointer opacity-0"
-                aria-label="Custom accent color"
-              />
-            </label>
+                className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
+                  isCustomColor ? 'scale-110' : ''
+                }`}
+                title="Custom Color"
+              >
+                {/* Background gradient/color */}
+                <div
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    background: isCustomColor
+                      ? accentCustom || '#ad46ff'
+                      : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
+                  }}
+                />
+
+                {/* Glass overlay for unselected state */}
+                {!isCustomColor && (
+                  <div className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none" />
+                )}
+
+                {/* Border to match presets */}
+                <div
+                  className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
+                />
+              </button>
+
+              {showPicker && (
+                <ColorPickerPopover
+                  color={accentCustom || '#ad46ff'}
+                  onChange={onCustomColorChange}
+                  onClose={() => setShowPicker(false)}
+                />
+              )}
+            </div>
           </div>
         </div>
 
