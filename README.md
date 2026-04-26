@@ -79,6 +79,12 @@ The built installer will appear in `dist/`.
 
 ---
 
+## Support
+
+If SimLauncher saves you time on race day, a small tip is appreciated: [paypal.me/shieldxx](https://paypal.me/shieldxx)
+
+---
+
 ## License
 
 GNU GPL v3. See [LICENSE](LICENSE).
