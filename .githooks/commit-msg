@@ -4,8 +4,8 @@
 
 MSG=$(cat "$1")
 
-# docs: commits don't require an issue ref
-if echo "$MSG" | grep -qE '^docs(\(.+\))?:'; then
+# docs: commits don't require an issue ref (subject line only)
+if sed -n '1p' "$1" | grep -qE '^docs(\(.+\))?:'; then
   exit 0
 fi
 
