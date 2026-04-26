@@ -371,6 +371,10 @@ textarea {
   transform: none;
 }
 
+.action-hover-scale:hover {
+  transform: scale(1.02);
+}
+
 .icon-action {
   background: transparent;
   color: var(--text-subtle);

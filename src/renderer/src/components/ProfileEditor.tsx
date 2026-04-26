@@ -602,7 +602,7 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleSave}
-            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm relative overflow-hidden"
+            className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-2.5 text-sm relative overflow-hidden"
           >
             {isDirty && (
               <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
@@ -615,7 +615,7 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={handleCloseAttempt}
-            className="accent-surface-action flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
+            className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-2.5 text-sm font-semibold"
           >
             Cancel
           </button>
@@ -623,7 +623,7 @@ export function ProfileEditor({
             <button
               type="button"
               onClick={handleDeleteProfile}
-              className="danger-action flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl"
+              className="danger-action action-hover-scale flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl"
               title="Delete profile"
               aria-label="Delete profile"
             >
