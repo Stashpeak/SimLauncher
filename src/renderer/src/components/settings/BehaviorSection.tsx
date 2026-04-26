@@ -91,14 +91,14 @@ export function BehaviorSection({
               </button>
             ))}
             <div
-              className={`settings-control-pill settings-control-pill-input glass-surface transition-all duration-200 ${
+              className={`settings-control-pill settings-control-pill-input glass-surface min-w-[3.25rem] transition-all duration-200 ${
                 !isPreset ? 'selected-surface' : ''
               }`}
             >
               <input
                 type="number"
                 min="0"
-                max="5"
+                max="9.9"
                 step="0.1"
                 value={Number.isFinite(launchDelayMs) ? launchDelayMs / 1000 : ''}
                 onChange={(e) => {
@@ -107,10 +107,10 @@ export function BehaviorSection({
                     onLaunchDelayMsChange(normalizeLaunchDelayMs(val * 1000))
                   }
                 }}
-                className="w-10 bg-transparent pl-2 text-right text-[11px] font-bold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-10 bg-transparent pl-1.5 text-right text-[11px] font-bold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0.0"
               />
-              <span className="px-2 text-[9px] font-bold text-(--text-muted) uppercase">s</span>
+              <span className="px-1.5 text-[9px] font-bold text-(--text-muted) uppercase">s</span>
             </div>
           </div>
         </div>
