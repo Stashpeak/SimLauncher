@@ -96,16 +96,19 @@ export function AppearanceSection({
               />
             ))}
             <label
-              className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] ${
+              className={`relative flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] ${
                 isCustomColor ? 'border-(--text-primary) scale-110' : 'border-transparent'
               }`}
               style={{
                 background: isCustomColor
                   ? accentCustom || '#ad46ff'
-                  : 'conic-gradient(from 180deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)'
+                  : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
               }}
               title="Custom Color"
             >
+              {!isCustomColor && (
+                <div className="pointer-events-none absolute inset-0 bg-white/10 mix-blend-overlay dark:bg-black/10" />
+              )}
               <input
                 type="color"
                 value={accentCustom || '#ad46ff'}
@@ -116,7 +119,7 @@ export function AppearanceSection({
                 onClick={() => {
                   if (!isCustomColor) onAccentChange('custom')
                 }}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                className="absolute -inset-4 h-16 w-16 cursor-pointer opacity-0"
                 aria-label="Custom accent color"
               />
             </label>
