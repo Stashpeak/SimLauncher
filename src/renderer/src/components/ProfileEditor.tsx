@@ -556,7 +556,7 @@ export function ProfileEditor({
               <button
                 type="button"
                 onClick={handleAddTrackedProcess}
-                className="accent-surface-action cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
+                className="accent-surface-action action-hover-scale cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
               >
                 Add
               </button>
@@ -576,14 +576,14 @@ export function ProfileEditor({
                     <button
                       type="button"
                       onClick={() => handleBrowseTrackedProcess(index)}
-                      className="accent-surface-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
+                      className="accent-surface-action action-hover-scale cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Browse
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemoveTrackedProcess(index)}
-                      className="danger-action cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
+                      className="danger-action action-hover-scale cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                     >
                       Remove
                     </button>

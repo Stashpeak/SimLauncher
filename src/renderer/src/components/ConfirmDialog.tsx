@@ -45,7 +45,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onSave}
-            className="accent-action w-full cursor-pointer rounded-xl py-3 text-sm font-bold"
+            className="accent-action action-hover-scale w-full cursor-pointer rounded-xl py-3 text-sm font-bold"
           >
             Save Changes
           </button>
@@ -54,14 +54,14 @@ export function ConfirmDialog({
             <button
               type="button"
               onClick={onDiscard}
-              className="danger-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
+              className="danger-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
             >
               Discard
             </button>
             <button
               type="button"
               onClick={onCancel}
-              className="neutral-action flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
+              className="neutral-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
             >
               Cancel
             </button>

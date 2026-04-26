@@ -256,7 +256,6 @@ textarea {
 
 .accent-action:hover {
   filter: brightness(1.06);
-  transform: scale(1.02);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--accent-foreground) 24%, transparent),
     0 0 18px -6px var(--accent-glow),
@@ -308,7 +307,6 @@ textarea {
 
 .accent-surface-action:hover {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  transform: scale(1.02);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
     0 0 18px -8px var(--accent-glow),
@@ -332,7 +330,6 @@ textarea {
 .neutral-action:hover {
   background: var(--glass-border);
   color: var(--text-primary);
-  transform: scale(1.02);
 }
 
 .neutral-action:active {
@@ -352,7 +349,6 @@ textarea {
 
 .danger-action:hover {
   background: var(--danger-border);
-  transform: scale(1.02);
   box-shadow: 0 0 18px -8px var(--danger-border);
 }
 
@@ -366,9 +362,8 @@ textarea {
 }
 
 /* Revert hover scale for launcher buttons to avoid rendering artifacts and keep original feel */
-.group\/btn.accent-surface-action:hover,
-.group\/btn.danger-action:hover {
-  transform: none;
+.launcher-play-btn:hover {
+  transform: none !important;
 }
 
 .action-hover-scale:hover {
