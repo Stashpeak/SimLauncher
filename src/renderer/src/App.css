@@ -679,3 +679,7 @@ textarea {
   padding: 0 0.5rem;
   overflow: hidden;
 }
+
+.settings-control-preset {
+  width: 4.5rem;
+}
