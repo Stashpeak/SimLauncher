@@ -90,7 +90,7 @@ export function AppearanceSection({
                 key={preset.hex}
                 type="button"
                 onClick={() => onAccentChange(preset.hex)}
-                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--text-primary) scale-110' : 'border-transparent'}`}
+                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
                 style={{ '--preset-color': preset.hex } as CSSProperties}
                 title={preset.name}
               />
@@ -118,7 +118,7 @@ export function AppearanceSection({
 
               {/* Border to match presets */}
               <div
-                className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--text-primary)' : 'border-transparent'}`}
+                className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
               />
 
               <input
