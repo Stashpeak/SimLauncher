@@ -240,7 +240,7 @@ export default function App() {
 
         {showImportWarning && (
           <div className="absolute left-4 right-4 top-16 z-30 animate-fade-slide">
-            <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-(--warning-border) bg-(--warning-surface) px-4 py-3 text-xs font-medium text-(--warning-text) shadow-[0_12px_30px_#00000040]">
+            <div className="glass-surface mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-(--warning-border) px-4 py-3 text-xs font-medium text-(--warning-text) shadow-[0_12px_30px_#00000040] [--glass-surface-fill:var(--warning-surface)]">
               <svg
                 width="17"
                 height="17"
