@@ -234,7 +234,8 @@ textarea {
 .danger-action,
 .icon-action,
 .dropdown-item,
-.selected-surface {
+.selected-surface,
+.action-hover-scale {
   transition:
     background-color 180ms ease,
     border-color 180ms ease,
@@ -367,7 +368,11 @@ textarea {
 }
 
 .action-hover-scale:hover {
-  transform: scale(1.02);
+  transform: scale(1.04);
+}
+
+.action-hover-scale {
+  will-change: transform;
 }
 
 .icon-action {

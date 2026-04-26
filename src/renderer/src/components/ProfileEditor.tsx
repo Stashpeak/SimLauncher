@@ -623,7 +623,7 @@ export function ProfileEditor({
             <button
               type="button"
               onClick={handleDeleteProfile}
-              className="danger-action action-hover-scale flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl"
+              className="danger-action action-hover-scale flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
               title="Delete profile"
               aria-label="Delete profile"
             >

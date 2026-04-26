@@ -145,7 +145,7 @@ export function AppsSection({
                       type="button"
                       onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
                       disabled={customSlots <= 1}
-                      className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl"
+                      className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
                       title={`Remove ${appNames[utility.key] || utility.name}`}
                       aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                     >
