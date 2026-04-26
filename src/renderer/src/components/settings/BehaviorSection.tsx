@@ -28,12 +28,10 @@ export function BehaviorSection({
         Behavior
       </h3>
       <div className="glass-surface rounded-2xl flex flex-col pt-1">
-        <div className="flex items-center justify-between px-4 py-4 border-b border-(--header-glass-border)">
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-(--text-primary)">Start with Windows</span>
-            <span className="text-[10px] text-(--text-muted)">
-              Launch SimLauncher automatically at login
-            </span>
+        <div className="settings-row">
+          <div className="settings-label-group">
+            <span className="settings-label">Start with Windows</span>
+            <span className="settings-sublabel">Launch SimLauncher automatically at login</span>
           </div>
           <Toggle
             checked={startWithWindows}
@@ -41,10 +39,10 @@ export function BehaviorSection({
             aria-label="Start with Windows"
           />
         </div>
-        <div className="flex items-center justify-between px-4 py-4 border-b border-(--header-glass-border)">
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-(--text-primary)">Start minimized</span>
-            <span className="text-[10px] text-(--text-muted)">Start hidden in the system tray</span>
+        <div className="settings-row">
+          <div className="settings-label-group">
+            <span className="settings-label">Start minimized</span>
+            <span className="settings-sublabel">Start hidden in the system tray</span>
           </div>
           <Toggle
             checked={startMinimized}
@@ -52,12 +50,10 @@ export function BehaviorSection({
             aria-label="Start minimized"
           />
         </div>
-        <div className="flex items-center justify-between px-4 py-4 border-b border-(--header-glass-border)">
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-(--text-primary)">
-              Minimize to tray on close
-            </span>
-            <span className="text-[10px] text-(--text-muted)">
+        <div className="settings-row">
+          <div className="settings-label-group">
+            <span className="settings-label">Minimize to tray on close</span>
+            <span className="settings-sublabel">
               Keep SimLauncher running when the window is closed
             </span>
           </div>
@@ -67,37 +63,39 @@ export function BehaviorSection({
             aria-label="Minimize to tray on close"
           />
         </div>
-        <div className="flex flex-col gap-3 px-4 py-4 border-b border-(--header-glass-border)">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-sm font-medium text-(--text-primary)">
-              Launch delay between apps
-            </span>
-            <div className="flex items-center gap-2">
+        <div className="settings-row">
+          <div className="settings-label-group">
+            <span className="settings-label">Launch delay between apps</span>
+            <div className="mt-2 pr-4">
               <input
-                type="number"
+                type="range"
                 min="0"
                 max="5000"
                 step="100"
-                value={launchDelayMs}
+                value={Number.isFinite(launchDelayMs) ? launchDelayMs : 1000}
                 onChange={(e) =>
                   onLaunchDelayMsChange(normalizeLaunchDelayMs(Number(e.target.value)))
                 }
-                className="glass-recessed w-20 rounded-lg px-2 py-1 text-right text-xs text-(--text-primary) outline-none"
-                aria-label="Launch delay in milliseconds"
+                className="w-full accent-(--accent) cursor-pointer"
+                aria-label="Launch delay slider"
               />
-              <span className="text-xs text-(--text-muted)">ms</span>
             </div>
           </div>
-          <input
-            type="range"
-            min="0"
-            max="5000"
-            step="100"
-            value={Number.isFinite(launchDelayMs) ? launchDelayMs : 1000}
-            onChange={(e) => onLaunchDelayMsChange(normalizeLaunchDelayMs(Number(e.target.value)))}
-            className="w-full accent-(--accent)"
-            aria-label="Launch delay slider"
-          />
+          <div className="settings-control">
+            <input
+              type="number"
+              min="0"
+              max="5000"
+              step="100"
+              value={launchDelayMs}
+              onChange={(e) =>
+                onLaunchDelayMsChange(normalizeLaunchDelayMs(Number(e.target.value)))
+              }
+              className="glass-recessed w-16 rounded-lg px-2 py-1.5 text-right text-xs text-(--text-primary) outline-none"
+              aria-label="Launch delay in milliseconds"
+            />
+            <span className="text-[10px] font-bold text-(--text-muted) uppercase">ms</span>
+          </div>
         </div>
       </div>
     </section>
