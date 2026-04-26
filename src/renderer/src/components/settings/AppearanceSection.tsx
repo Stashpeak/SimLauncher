@@ -11,12 +11,13 @@ const ZOOM_PRESETS = [
 ]
 
 const ACCENT_PRESETS = [
-  { name: 'Electric Aqua', hex: DEFAULT_ACCENT_COLOR },
-  { name: 'Sky Blue', hex: '#4d9fff' },
-  { name: 'Racing Green', hex: '#00c853' },
-  { name: 'Sunset Orange', hex: '#ff6b35' },
-  { name: 'Cyber Purple', hex: '#c850c0' },
-  { name: 'Caution Yellow', hex: '#ffd600' }
+  { name: 'Pit Lane Teal', hex: DEFAULT_ACCENT_COLOR },
+  { name: 'Horizon Blue', hex: '#3080d8' },
+  { name: 'Racing Green', hex: '#008a38' },
+  { name: 'Paddock Orange', hex: '#d84e1c' },
+  { name: 'Pit Night', hex: '#9147ff' },
+  { name: 'Safety Car Gold', hex: '#a88000' },
+  { name: 'Milano Red', hex: '#d50000' }
 ]
 
 const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
