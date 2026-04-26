@@ -658,3 +658,24 @@ textarea {
   gap: 0.5rem;
   flex-shrink: 0;
 }
+
+.settings-control-pill {
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border: 1px solid var(--glass-border);
+}
+
+.settings-control-pill-button {
+  padding: 0 1rem;
+  cursor: pointer;
+}
+
+.settings-control-pill-input {
+  padding: 0 0.5rem;
+  overflow: hidden;
+}

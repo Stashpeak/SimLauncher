@@ -70,7 +70,7 @@ export function AppearanceSection({
                 key={option.value}
                 type="button"
                 onClick={() => onThemeModeChange(option.value)}
-                className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-1.5 text-[11px] font-bold tracking-wide transition-colors ${
+                className={`settings-control-pill settings-control-pill-button glass-surface tracking-wide transition-colors ${
                   themeMode === option.value
                     ? 'selected-surface text-(--text-primary)'
                     : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
@@ -90,13 +90,13 @@ export function AppearanceSection({
                 key={preset.hex}
                 type="button"
                 onClick={() => onAccentChange(preset.hex)}
-                className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--text-primary) scale-110' : 'border-transparent'}`}
+                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--text-primary) scale-110' : 'border-transparent'}`}
                 style={{ '--preset-color': preset.hex } as CSSProperties}
                 title={preset.name}
               />
             ))}
             <div
-              className={`glass-surface relative flex h-7 shrink-0 items-center overflow-hidden rounded-full border border-(--glass-border) transition-all duration-200 ${
+              className={`settings-control-pill settings-control-pill-input glass-surface relative shrink-0 transition-all duration-200 ${
                 isCustomColor ? 'selected-surface' : ''
               }`}
             >
@@ -162,7 +162,7 @@ export function AppearanceSection({
               <button
                 key={preset.factor}
                 onClick={() => onZoomFactorChange(preset.factor)}
-                className={`glass-surface cursor-pointer rounded-full border border-(--glass-border) px-4 py-1.5 text-[11px] font-bold tracking-wide transition-colors ${
+                className={`settings-control-pill settings-control-pill-button glass-surface tracking-wide transition-colors ${
                   zoomFactor === preset.factor
                     ? 'selected-surface text-(--text-primary)'
                     : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
