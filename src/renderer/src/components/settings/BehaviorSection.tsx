@@ -81,7 +81,7 @@ export function BehaviorSection({
               <button
                 key={preset.value}
                 onClick={() => onLaunchDelayMsChange(preset.value)}
-                className={`settings-control-pill settings-control-pill-button glass-surface min-w-[3.25rem] tracking-wide transition-colors ${
+                className={`settings-control-pill settings-control-pill-button glass-surface w-[3.5rem] tracking-wide transition-colors ${
                   launchDelayMs === preset.value
                     ? 'selected-surface text-(--text-primary)'
                     : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
@@ -91,7 +91,7 @@ export function BehaviorSection({
               </button>
             ))}
             <div
-              className={`settings-control-pill settings-control-pill-input glass-surface min-w-[3.25rem] transition-all duration-200 ${
+              className={`settings-control-pill settings-control-pill-input glass-surface w-[3.5rem] transition-all duration-200 ${
                 !isPreset ? 'selected-surface' : ''
               }`}
             >
@@ -107,10 +107,13 @@ export function BehaviorSection({
                     onLaunchDelayMsChange(normalizeLaunchDelayMs(val * 1000))
                   }
                 }}
-                className="w-10 bg-transparent pl-1.5 text-right text-[11px] font-bold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full bg-transparent pl-2 pr-1 text-right text-[11px] font-bold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0.0"
               />
-              <span className="px-1.5 text-[9px] font-bold text-(--text-muted) uppercase">s</span>
+              <div className="h-4 w-px bg-(--glass-border) opacity-35" />
+              <span className="pl-1.5 pr-1 text-[9px] font-bold text-(--text-muted) uppercase">
+                s
+              </span>
             </div>
           </div>
         </div>
