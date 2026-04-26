@@ -36,6 +36,7 @@ export const onUpdateError: typeof window.electronAPI.onUpdateError = (cb) =>
   window.electronAPI.onUpdateError(cb)
 export const installUpdate = () => window.electronAPI.installUpdate()
 export const checkForUpdates = () => window.electronAPI.checkForUpdates()
+export const getUpdateInfo = () => window.electronAPI.getUpdateInfo()
 export const setLoginItem: typeof window.electronAPI.setLoginItem = (openAtLogin) =>
   window.electronAPI.setLoginItem(openAtLogin)
 export const setZoom: typeof window.electronAPI.setZoom = (factor) =>

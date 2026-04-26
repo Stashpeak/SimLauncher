@@ -4,10 +4,12 @@ import { autoUpdater } from 'electron-updater'
 import { setIsQuitting } from './app-state'
 
 type SendToRenderer = (channel: string, payload: unknown) => void
+type UpdateAvailability = { version: string }
 
 let sendToRenderer: SendToRenderer = () => {}
 let installAfterDownload = false
 let updateDownloaded = false
+let availableUpdate: UpdateAvailability | null = null
 
 autoUpdater.autoDownload = false
 
@@ -16,11 +18,13 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer) {
 
   autoUpdater.on('update-available', (info) => {
     updateDownloaded = false
+    availableUpdate = { version: info.version }
     sendToRenderer('update-available', info)
   })
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
+    availableUpdate = { version: info.version }
     sendToRenderer('update-downloaded', info)
 
     if (installAfterDownload) {
@@ -29,6 +33,8 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer) {
   })
 
   autoUpdater.on('update-not-available', (info) => {
+    updateDownloaded = false
+    availableUpdate = null
     sendToRenderer('update-not-available', info)
   })
 
@@ -49,11 +55,16 @@ function quitAndInstallUpdate() {
 
 export async function checkForUpdates() {
   if (!app.isPackaged) {
-    sendToRenderer('update-available', { version: '99.0.0' })
+    availableUpdate = { version: '99.0.0' }
+    sendToRenderer('update-available', availableUpdate)
     return null
   }
 
   return await autoUpdater.checkForUpdates()
+}
+
+export function getAvailableUpdate() {
+  return availableUpdate
 }
 
 export function registerUpdaterHandlers(rendererSender: SendToRenderer) {
@@ -83,5 +94,9 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer) {
 
   ipcMain.handle('check-for-updates', async () => {
     return await checkForUpdates()
+  })
+
+  ipcMain.handle('get-update-info', async () => {
+    return getAvailableUpdate()
   })
 }

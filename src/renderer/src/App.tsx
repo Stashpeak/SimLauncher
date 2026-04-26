@@ -10,7 +10,7 @@ import {
   getSettings,
   setMigrationFlags
 } from './lib/store'
-import { onUpdateAvailable } from './lib/electron'
+import { getUpdateInfo, onUpdateAvailable } from './lib/electron'
 import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_PROFILE_ID,
@@ -165,12 +165,23 @@ export default function App() {
     const handleTintChange = (e: CustomEvent) => setBgTinted(e.detail)
     window.addEventListener('bg-tint-change', handleTintChange as EventListener)
 
-    // Listen for auto-updates
-    const unsubscribe = onUpdateAvailable((info) => {
+    const applyUpdateInfo = (info: { version?: string } | null) => {
       if (info?.version) setUpdateInfo({ version: info.version })
-    })
+    }
+
+    // Listen for auto-updates, then hydrate any update result that arrived before React mounted.
+    const unsubscribe = onUpdateAvailable(applyUpdateInfo)
+    let cancelled = false
+    getUpdateInfo()
+      .then((info) => {
+        if (!cancelled) applyUpdateInfo(info)
+      })
+      .catch((err) => {
+        console.error('Failed to load update info', err)
+      })
 
     return () => {
+      cancelled = true
       window.removeEventListener('bg-tint-change', handleTintChange as EventListener)
       unsubscribe()
     }
