@@ -70,7 +70,7 @@ export function AppearanceSection({
                 key={option.value}
                 type="button"
                 onClick={() => onThemeModeChange(option.value)}
-                className={`settings-control-pill settings-control-pill-button glass-surface tracking-wide transition-colors ${
+                className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface tracking-wide transition-colors ${
                   themeMode === option.value
                     ? 'selected-surface text-(--text-primary)'
                     : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
