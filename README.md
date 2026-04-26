@@ -13,10 +13,15 @@ A Windows desktop app for simracing enthusiasts that launches sim games together
 ## Features
 
 - One-click launch of a sim game plus selected utilities
-- Per-game profiles for choosing which apps open with each title
+- Per-game profiles with drag-to-reorder launch order
 - Optional auto-launch of the game itself
-- 5 custom app slots with editable names
-- Accent color presets and a custom color picker
+- 1–10 configurable custom app slots with editable names
+- Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 30s)
+- Automotive-themed accent color presets and a custom color picker
+- Light, dark, and system theme modes
+- Kill and relaunch controls for running companion apps
+- Config export and import
+- Start with Windows, start minimized, and minimize to tray options
 - Toast notifications for launch status and errors
 
 ## Supported Games
