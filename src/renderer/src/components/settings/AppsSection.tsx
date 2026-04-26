@@ -83,7 +83,7 @@ export function AppsSection({
                 key={utility.key}
                 className="flex flex-col gap-2.5 border-b border-(--header-glass-border) px-5 py-4"
               >
-                <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) opacity-80">
                   {utility.isCustom ? (
                     <div className="flex items-center gap-2">
                       <svg
@@ -104,7 +104,7 @@ export function AppsSection({
                         type="text"
                         value={appNames[utility.key] || utility.name}
                         onChange={(e) => onAppNameChange(utility.key, e.target.value)}
-                        className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
+                        className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
                         placeholder="App Name"
                         aria-label={`${utility.name} name`}
                         title="Editable app name"
@@ -181,7 +181,7 @@ export function AppsSection({
                 type="button"
                 onClick={onAddCustomSlot}
                 disabled={customSlots >= MAX_CUSTOM_SLOTS}
-                className="accent-surface-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold"
+                className="accent-surface-action flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold"
               >
                 <svg
                   width="15"

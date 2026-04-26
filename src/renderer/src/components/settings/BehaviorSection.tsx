@@ -95,6 +95,19 @@ export function BehaviorSection({
                 !isPreset ? 'selected-surface' : ''
               }`}
             >
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="ml-1 shrink-0 text-(--text-subtle) opacity-50"
+              >
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              </svg>
               <input
                 type="number"
                 min="0"
@@ -107,11 +120,11 @@ export function BehaviorSection({
                     onLaunchDelayMsChange(normalizeLaunchDelayMs(val * 1000))
                   }
                 }}
-                className="w-full bg-transparent pl-1 text-right text-[11px] font-bold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full bg-transparent pl-1 text-right text-[11px] font-semibold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0.0"
               />
               <div className="mx-1 h-4 w-px bg-(--glass-border) opacity-35" />
-              <span className="pr-1 text-[9px] font-bold text-(--text-muted) uppercase">s</span>
+              <span className="pr-1 text-[9px] font-semibold text-(--text-muted) uppercase">s</span>
             </div>
           </div>
         </div>

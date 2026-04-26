@@ -49,7 +49,7 @@ export function GamesSection({
                 key={game.key}
                 className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-(--header-glass-border)' : ''}`}
               >
-                <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) opacity-80">
                   {game.name}
                 </div>
 
