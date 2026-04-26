@@ -111,7 +111,7 @@ export function BehaviorSection({
               <input
                 type="number"
                 min="0"
-                max="9.9"
+                max="30"
                 step="0.1"
                 value={Number.isFinite(launchDelayMs) ? launchDelayMs / 1000 : ''}
                 onChange={(e) => {
