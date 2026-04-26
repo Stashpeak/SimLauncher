@@ -10,6 +10,7 @@
     "dist:win": "npm run build && electron-builder --win",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "typecheck": "tsc",
     "preview": "electron-vite preview",
     "prepare": "git config core.hooksPath .githooks"
   },
