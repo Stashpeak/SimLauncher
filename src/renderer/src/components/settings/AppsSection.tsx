@@ -79,68 +79,67 @@ export function AppsSection({
         <div className="overflow-hidden">
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
             {utilities.map((utility) => (
-              <div key={utility.key} className="settings-row">
-                <div className="settings-label-group">
-                  <div className="settings-label uppercase tracking-widest opacity-80">
-                    {utility.isCustom ? (
-                      <div className="flex items-center gap-2">
-                        <svg
-                          width="11"
-                          height="11"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="shrink-0 text-(--accent)"
-                        >
-                          <path d="M12 20h9" />
-                          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                        </svg>
-                        <input
-                          type="text"
-                          value={appNames[utility.key] || utility.name}
-                          onChange={(e) => onAppNameChange(utility.key, e.target.value)}
-                          className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
-                          placeholder="App Name"
-                          aria-label={`${utility.name} name`}
-                          title="Editable app name"
-                        />
-                      </div>
-                    ) : (
-                      utility.name
-                    )}
-                  </div>
-
-                  <div className="mt-2 flex items-center gap-3">
-                    {appIcons[utility.key] && !iconLoadErrors.has(utility.key) ? (
-                      <img
-                        src={appIcons[utility.key]}
-                        alt="Icon"
-                        className="h-6 w-6 object-contain drop-shadow-md shrink-0"
-                        onError={() => onIconLoadError(utility.key)}
-                      />
-                    ) : (
-                      <div
-                        className="fallback-initial-icon flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[9px] font-black"
-                        title={`${appNames[utility.key] || utility.name} icon fallback`}
+              <div
+                key={utility.key}
+                className="flex flex-col gap-2.5 border-b border-(--header-glass-border) px-5 py-4"
+              >
+                <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
+                  {utility.isCustom ? (
+                    <div className="flex items-center gap-2">
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0 text-(--accent)"
                       >
-                        {getInitials(appNames[utility.key] || utility.name)}
-                      </div>
-                    )}
-
-                    <input
-                      type="text"
-                      value={appPaths[utility.key] || ''}
-                      readOnly
-                      placeholder="No executable path set"
-                      className="glass-recessed flex-1 truncate rounded-lg px-2.5 py-1.5 font-mono text-[10px] text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
-                    />
-                  </div>
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                      <input
+                        type="text"
+                        value={appNames[utility.key] || utility.name}
+                        onChange={(e) => onAppNameChange(utility.key, e.target.value)}
+                        className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
+                        placeholder="App Name"
+                        aria-label={`${utility.name} name`}
+                        title="Editable app name"
+                      />
+                    </div>
+                  ) : (
+                    utility.name
+                  )}
                 </div>
 
-                <div className="settings-control">
+                <div className="flex items-center gap-4">
+                  {appIcons[utility.key] && !iconLoadErrors.has(utility.key) ? (
+                    <img
+                      src={appIcons[utility.key]}
+                      alt="Icon"
+                      className="h-8 w-8 object-contain drop-shadow-md shrink-0"
+                      onError={() => onIconLoadError(utility.key)}
+                    />
+                  ) : (
+                    <div
+                      className="fallback-initial-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black"
+                      title={`${appNames[utility.key] || utility.name} icon fallback`}
+                    >
+                      {getInitials(appNames[utility.key] || utility.name)}
+                    </div>
+                  )}
+
+                  <input
+                    type="text"
+                    value={appPaths[utility.key] || ''}
+                    readOnly
+                    placeholder="No executable path set"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
+                  />
+
                   <button
                     onClick={() => onBrowse(utility.key)}
                     className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
@@ -152,13 +151,13 @@ export function AppsSection({
                       type="button"
                       onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
                       disabled={customSlots <= 1}
-                      className="danger-action flex h-8 w-8 cursor-pointer shrink-0 items-center justify-center rounded-xl"
+                      className="danger-action flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl"
                       title={`Remove ${appNames[utility.key] || utility.name}`}
                       aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                     >
                       <svg
-                        width="14"
-                        height="14"
+                        width="15"
+                        height="15"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"

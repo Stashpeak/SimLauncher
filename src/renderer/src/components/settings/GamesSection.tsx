@@ -44,47 +44,47 @@ export function GamesSection({
       >
         <div className="overflow-hidden">
           <div className="glass-surface rounded-2xl flex flex-col pt-1">
-            {GAMES.map((game) => (
-              <div key={game.key} className="settings-row">
-                <div className="settings-label-group">
-                  <span className="settings-label uppercase tracking-widest opacity-80">
-                    {game.name}
-                  </span>
-                  <div className="mt-2 flex items-center gap-3">
-                    {gameIcons[game.key] ? (
-                      <img
-                        src={gameIcons[game.key]}
-                        alt={game.name}
-                        className="h-6 w-6 object-contain drop-shadow-md shrink-0"
-                      />
-                    ) : (
-                      <div className="w-6 h-6 rounded shrink-0 bg-(--glass-bg) border border-(--glass-border) flex items-center justify-center">
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="text-(--text-subtle)"
-                        >
-                          <rect x="3" y="3" width="18" height="18" rx="2" />
-                        </svg>
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      value={gamePaths[game.key] || ''}
-                      readOnly
-                      placeholder="No game path set"
-                      className="glass-recessed flex-1 truncate rounded-lg px-2.5 py-1.5 font-mono text-[10px] text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
-                    />
-                  </div>
+            {GAMES.map((game, index) => (
+              <div
+                key={game.key}
+                className={`flex flex-col gap-2 px-5 py-3 ${index !== GAMES.length - 1 ? 'border-b border-(--header-glass-border)' : ''}`}
+              >
+                <div className="text-[10px] font-bold uppercase tracking-widest text-(--text-secondary) opacity-80">
+                  {game.name}
                 </div>
 
-                <div className="settings-control">
+                <div className="flex items-center gap-4">
+                  {gameIcons[game.key] ? (
+                    <img
+                      src={gameIcons[game.key]}
+                      alt={game.name}
+                      className="w-8 h-8 object-contain drop-shadow-md shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded shrink-0 bg-(--glass-bg) border border-(--glass-border) flex items-center justify-center text-(--text-subtle)">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                      </svg>
+                    </div>
+                  )}
+
+                  <input
+                    type="text"
+                    value={gamePaths[game.key] || ''}
+                    readOnly
+                    placeholder="No game path set"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
+                  />
+
                   <button
                     onClick={() => onBrowse(game.key)}
                     className="accent-surface-action cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
