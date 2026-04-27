@@ -8,13 +8,17 @@ export function useRunningApps(configuredGames: Game[]) {
   const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
 
+  const clearRunningState = useCallback(() => {
+    setRunningApps((current) => (current.length === 0 ? current : []))
+    setRunningStatus((current) => (Object.keys(current).length === 0 ? current : {}))
+  }, [])
+
   const refreshRunningState = useCallback(
     async (isMounted: () => boolean = () => true) => {
       try {
         if (configuredGames.length === 0) {
           if (isMounted()) {
-            setRunningApps([])
-            setRunningStatus({})
+            clearRunningState()
           }
           return
         }
@@ -34,12 +38,19 @@ export function useRunningApps(configuredGames: Game[]) {
         console.error('Consolidated polling error:', err)
       }
     },
-    [configuredGames]
+    [clearRunningState, configuredGames]
   )
 
   useEffect(() => {
     let mounted = true
     const isMounted = () => mounted
+
+    if (configuredGames.length === 0) {
+      clearRunningState()
+      return () => {
+        mounted = false
+      }
+    }
 
     refreshRunningState(isMounted)
     const intervalId = window.setInterval(() => refreshRunningState(isMounted), 2000)
@@ -48,7 +59,7 @@ export function useRunningApps(configuredGames: Game[]) {
       mounted = false
       window.clearInterval(intervalId)
     }
-  }, [refreshRunningState])
+  }, [clearRunningState, configuredGames.length, refreshRunningState])
 
   return { runningApps, runningStatus, refreshRunningState }
 }
