@@ -2,17 +2,43 @@
 
 A Windows desktop app for simracing enthusiasts that launches sim games together with companion utilities such as SimHub, Crew Chief, and Trading Paints in a single click.
 
-<img alt="Launcher Tab" src="docs/screenshots/Launcher Tab.png" />
+<table>
+  <tr>
+    <td><img alt="Launcher Tab" src="docs/screenshots/Launcher Tab.png" /></td>
+    <td><img alt="Profile Editor" src="docs/screenshots/Launcher Tab - Profile Editor.png" /></td>
+  </tr>
+  <tr>
+    <td><img alt="Settings - Appearance" src="docs/screenshots/Settings - Appearance.png" /></td>
+    <td><img alt="Settings - Games" src="docs/screenshots/Settings - Games.png" /></td>
+  </tr>
+  <tr>
+    <td><img alt="Settings - Apps" src="docs/screenshots/Settings - Apps.png" /></td>
+    <td><img alt="No Games Configured" src="docs/screenshots/Launcher Tab - No Games Configured.png" /></td>
+  </tr>
+</table>
 
-<img alt="No Games Configured" src="docs/screenshots/Launcher Tab - No Games Configured.png" />
+---
 
-<img alt="Profile Editor" src="docs/screenshots/Launcher Tab - Profile Editor.png" />
+## Who is this for?
 
-<img alt="Settings - Appearance" src="docs/screenshots/Settings - Appearance.png" />
+SimLauncher is built for people who run non-trivial sim setups and are tired of manual prep every time they want to drive.
 
-<img alt="Settings - Games" src="docs/screenshots/Settings - Games.png" />
+You'll likely benefit from this if you:
 
-<img alt="Settings - Apps" src="docs/screenshots/Settings - Apps.png" />
+- Run multiple sims (iRacing, AC, ACC, AMS2, etc.)
+- Switch between different setups (VR vs triples, motion on/off, etc.)
+- Use multiple companion apps (SimHub, CrewChief, overlays, telemetry, wheelbase software...)
+- Care about launch order, delays, and reliability
+- Want a single click to go from desktop to fully ready rig
+
+**This app is probably unnecessary for you if:**
+
+- You run one sim and one or two apps
+- You're fine with everything starting with Windows
+- You don't need different setups (e.g. always same screens, same config)
+- You don't care about launch order or coordination between apps
+
+In that case, your current setup is already simple enough.
 
 ---
 
