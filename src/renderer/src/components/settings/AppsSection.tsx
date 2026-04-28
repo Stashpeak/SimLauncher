@@ -28,6 +28,7 @@ interface AppsSectionProps {
   customSlots: number
   onOpenChange: (open: boolean) => void
   onAppNameChange: (key: string, name: string) => void
+  onAppPathChange: (key: string, path: string) => void
   onIconLoadError: (key: string) => void
   onBrowse: (key: string) => void
   onAddCustomSlot: () => void
@@ -44,6 +45,7 @@ export function AppsSection({
   customSlots,
   onOpenChange,
   onAppNameChange,
+  onAppPathChange,
   onIconLoadError,
   onBrowse,
   onAddCustomSlot,
@@ -135,9 +137,9 @@ export function AppsSection({
                   <input
                     type="text"
                     value={appPaths[utility.key] || ''}
-                    readOnly
+                    onChange={(e) => onAppPathChange(utility.key, e.target.value)}
                     placeholder="No executable path set"
-                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus:text-(--text-primary)"
                   />
 
                   {utility.isCustom && (
