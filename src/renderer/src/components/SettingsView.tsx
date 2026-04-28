@@ -84,6 +84,8 @@ export function SettingsView({
   const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
   const appPathEditVersion = useRef(0)
   const gamePathEditVersion = useRef(0)
+  const latestAppPaths = useRef(appPaths)
+  const latestGamePaths = useRef(gamePaths)
 
   const updateStatus = useUpdateStatus({ updateInfo, notify })
 
@@ -143,6 +145,14 @@ export function SettingsView({
   useEffect(() => {
     loadSettingsFromStore()
   }, [])
+
+  useEffect(() => {
+    latestAppPaths.current = appPaths
+  }, [appPaths])
+
+  useEffect(() => {
+    latestGamePaths.current = gamePaths
+  }, [gamePaths])
 
   const currentSettingsState = useMemo(
     () => ({
@@ -426,14 +436,12 @@ export function SettingsView({
 
       notify('Settings saved!', 'success', 2500)
 
-      if (!appPathsChangedDuringSave && !gamePathsChangedDuringSave) {
-        resetDirty({
-          ...currentSettingsState,
-          appPaths: trimmedAppPaths,
-          gamePaths: trimmedGamePaths,
-          launchDelayMs: normalizedLaunchDelayMs
-        })
-      }
+      resetDirty({
+        ...currentSettingsState,
+        appPaths: appPathsChangedDuringSave ? latestAppPaths.current : trimmedAppPaths,
+        gamePaths: gamePathsChangedDuringSave ? latestGamePaths.current : trimmedGamePaths,
+        launchDelayMs: normalizedLaunchDelayMs
+      })
     } catch (err) {
       notify('Failed to save settings', 'error')
       console.error(err)
