@@ -301,6 +301,21 @@ export function SettingsView({
     setCustomSlots((current) => Math.max(1, current - 1))
   }
 
+  const handleGamePathChange = (key: string, path: string) => {
+    setGamePaths((prev) => ({ ...prev, [key]: path }))
+  }
+
+  const handleAppPathChange = (key: string, path: string) => {
+    setAppPaths((prev) => ({ ...prev, [key]: path }))
+    if (!path) {
+      setAppIcons((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
   const handleAppNameChange = (key: string, name: string) => {
     setAppNames((prev) => ({ ...prev, [key]: name }))
   }
@@ -451,6 +466,7 @@ export function SettingsView({
         gameIcons={gameIcons}
         onOpenChange={setGamesOpen}
         onBrowse={(key) => handleBrowse(key, true)}
+        onGamePathChange={handleGamePathChange}
       />
 
       <AppsSection
@@ -463,6 +479,7 @@ export function SettingsView({
         customSlots={customSlots}
         onOpenChange={setAppsOpen}
         onAppNameChange={handleAppNameChange}
+        onAppPathChange={handleAppPathChange}
         onIconLoadError={handleIconLoadError}
         onBrowse={(key) => handleBrowse(key, false)}
         onAddCustomSlot={handleAddCustomSlot}

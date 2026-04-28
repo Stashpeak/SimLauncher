@@ -305,6 +305,7 @@ export default function App() {
                   onConfigImported={handleConfigImported}
                   onSaved={() => {
                     setSaveRequested(false)
+                    setRefreshKey((k) => k + 1)
                     if (pendingView) {
                       setView(pendingView)
                       setPendingView(null)

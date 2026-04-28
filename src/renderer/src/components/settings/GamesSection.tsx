@@ -6,6 +6,7 @@ interface GamesSectionProps {
   gameIcons: Record<string, string>
   onOpenChange: (open: boolean) => void
   onBrowse: (key: string) => void
+  onGamePathChange: (key: string, path: string) => void
 }
 
 export function GamesSection({
@@ -13,7 +14,8 @@ export function GamesSection({
   gamePaths,
   gameIcons,
   onOpenChange,
-  onBrowse
+  onBrowse,
+  onGamePathChange
 }: GamesSectionProps) {
   return (
     <section className="space-y-4">
@@ -80,9 +82,9 @@ export function GamesSection({
                   <input
                     type="text"
                     value={gamePaths[game.key] || ''}
-                    readOnly
+                    onChange={(e) => onGamePathChange(game.key, e.target.value)}
                     placeholder="No game path set"
-                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
+                    className="glass-recessed flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus:text-(--text-primary)"
                   />
 
                   <button
