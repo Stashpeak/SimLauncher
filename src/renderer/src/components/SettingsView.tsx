@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDirtyTracking } from '../hooks/useDirtyTracking'
 import {
   DEFAULT_ACCENT_COLOR,
@@ -82,6 +82,8 @@ export function SettingsView({
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
   const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
   const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
+  const appPathEditVersion = useRef(0)
+  const gamePathEditVersion = useRef(0)
 
   const updateStatus = useUpdateStatus({ updateInfo, notify })
 
@@ -252,8 +254,10 @@ export function SettingsView({
     }
     if (result && result.filePath) {
       if (isGame) {
+        gamePathEditVersion.current += 1
         setGamePaths((prev) => ({ ...prev, [key]: result.filePath }))
       } else {
+        appPathEditVersion.current += 1
         setAppPaths((prev) => ({ ...prev, [key]: result.filePath }))
         const icon = await getFileIcon(result.filePath)
         if (icon) {
@@ -306,10 +310,12 @@ export function SettingsView({
   }
 
   const handleGamePathChange = (key: string, path: string) => {
+    gamePathEditVersion.current += 1
     setGamePaths((prev) => ({ ...prev, [key]: path }))
   }
 
   const handleAppPathChange = (key: string, path: string) => {
+    appPathEditVersion.current += 1
     setAppPaths((prev) => ({ ...prev, [key]: path }))
     if (!path) {
       setAppIcons((prev) => {
@@ -382,6 +388,8 @@ export function SettingsView({
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
       const trimmedAppPaths = trimPathRecord(appPaths)
       const trimmedGamePaths = trimPathRecord(gamePaths)
+      const appPathEditVersionAtSave = appPathEditVersion.current
+      const gamePathEditVersionAtSave = gamePathEditVersion.current
 
       await Promise.all([
         saveSettings({
@@ -403,17 +411,29 @@ export function SettingsView({
         }),
         saveProfiles(profiles)
       ])
-      setAppPaths(trimmedAppPaths)
-      setGamePaths(trimmedGamePaths)
+      const appPathsChangedDuringSave = appPathEditVersion.current !== appPathEditVersionAtSave
+      const gamePathsChangedDuringSave = gamePathEditVersion.current !== gamePathEditVersionAtSave
+
+      if (!appPathsChangedDuringSave) {
+        setAppPaths(trimmedAppPaths)
+      }
+
+      if (!gamePathsChangedDuringSave) {
+        setGamePaths(trimmedGamePaths)
+      }
+
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
-      resetDirty({
-        ...currentSettingsState,
-        appPaths: trimmedAppPaths,
-        gamePaths: trimmedGamePaths,
-        launchDelayMs: normalizedLaunchDelayMs
-      })
+
+      if (!appPathsChangedDuringSave && !gamePathsChangedDuringSave) {
+        resetDirty({
+          ...currentSettingsState,
+          appPaths: trimmedAppPaths,
+          gamePaths: trimmedGamePaths,
+          launchDelayMs: normalizedLaunchDelayMs
+        })
+      }
     } catch (err) {
       notify('Failed to save settings', 'error')
       console.error(err)
