@@ -96,6 +96,7 @@ declare global {
       minimize: () => Promise<void>
       maximize: () => Promise<void>
       close: () => Promise<void>
+      restartApp: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
       killLaunchedApps: (gameKey?: string) => Promise<KillResult>
       killProfileApps: (gameKey: string, appPaths: string[]) => Promise<KillResult>

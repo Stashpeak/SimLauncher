@@ -19,6 +19,7 @@ export const onAppLaunchError: typeof window.electronAPI.onAppLaunchError = (cb)
 export const minimize = () => window.electronAPI.minimize()
 export const maximize = () => window.electronAPI.maximize()
 export const close = () => window.electronAPI.close()
+export const restartApp = () => window.electronAPI.restartApp()
 export const getRunningApps = () => window.electronAPI.getRunningApps()
 export const killLaunchedApps: typeof window.electronAPI.killLaunchedApps = (gameKey) =>
   window.electronAPI.killLaunchedApps(gameKey)
