@@ -5,7 +5,7 @@ import { clamp, isRecord } from './utils'
 export const DEFAULT_ZOOM_FACTOR = 1.0
 export const MIN_ZOOM_FACTOR = 0.5
 export const MAX_ZOOM_FACTOR = 3.0
-export const MAX_CUSTOM_SLOTS = 10
+export const MAX_CUSTOM_SLOTS = 20
 export const MAX_CONFIG_IMPORT_BYTES = 1_000_000
 
 const MAX_IMPORT_PATH_LENGTH = 300
