@@ -36,7 +36,7 @@ export const DEFAULT_ACCENT_COLOR = '#008c99'
 export const DEFAULT_CUSTOM_SLOTS = 1
 export const DEFAULT_PROFILE_ID = 'default'
 export const DEFAULT_PROFILE_NAME = 'Default'
-export const MAX_CUSTOM_SLOTS = 10
+export const MAX_CUSTOM_SLOTS = 20
 
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },

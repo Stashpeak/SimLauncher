@@ -47,7 +47,7 @@ In that case, your current setup is already simple enough.
 - One-click launch of a sim game plus selected utilities
 - Per-game profiles with drag-to-reorder launch order
 - Optional auto-launch of the game itself
-- 1–10 configurable custom app slots with editable names
+- 1–20 configurable custom app slots with editable names
 - Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 30s)
 - Automotive-themed accent color presets and a custom color picker
 - Light, dark, and system theme modes
@@ -62,7 +62,7 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ## Supported Utilities
 
-SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus 5 custom app slots
+SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus 20 custom app slots
 
 ---
 
