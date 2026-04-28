@@ -146,6 +146,60 @@ export function isRunningExePath(processNames: Set<string>, appPath: string) {
   return processNames.has(getExeName(appPath))
 }
 
+function parseCommandLineArgs(input: string) {
+  const args: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index]
+    const nextChar = input[index + 1]
+
+    if (char === '\\' && nextChar === '"') {
+      current += nextChar
+      index += 1
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes
+      continue
+    }
+
+    if (/\s/.test(char) && !inQuotes) {
+      if (current.length > 0) {
+        args.push(current)
+        current = ''
+      }
+      continue
+    }
+
+    current += char
+  }
+
+  if (current.length > 0) {
+    args.push(current)
+  }
+
+  return args
+}
+
+function getCustomAppArgs(appPath: string) {
+  const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
+  const appArgs = (store.get('appArgs') as Record<string, string> | undefined) || {}
+  const normalizedAppPath = appPath.trim().toLowerCase()
+  const customAppEntry = Object.entries(appPaths).find(
+    ([key, value]) => /^customapp\d+$/.test(key) && value.trim().toLowerCase() === normalizedAppPath
+  )
+
+  if (!customAppEntry) {
+    return []
+  }
+
+  const args = appArgs[customAppEntry[0]]
+  return typeof args === 'string' && args.trim().length > 0 ? parseCommandLineArgs(args) : []
+}
+
 function sendLaunchError(sender: WebContents, appPath: string, error: string) {
   if (!sender.isDestroyed()) {
     sender.send('app-launch-error', { app: appPath, error })
@@ -156,9 +210,11 @@ function isElevatedLaunchError(err: unknown) {
   return process.platform === 'win32' && getErrorCode(err) === 'EACCES'
 }
 
-function launchElevated(appPath: string) {
+function launchElevated(appPath: string, args: string[] = []) {
   return new Promise<AppLaunchResult>((resolve) => {
     const escapedAppPath = appPath.replace(/'/g, "''")
+    const escapedArgs = args.map((arg) => `'${arg.replace(/'/g, "''")}'`).join(', ')
+    const argumentList = escapedArgs ? ` -ArgumentList @(${escapedArgs})` : ''
 
     execFile(
       'powershell.exe',
@@ -166,7 +222,7 @@ function launchElevated(appPath: string) {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        `Start-Process -FilePath '${escapedAppPath}' -Verb RunAs`
+        `Start-Process -FilePath '${escapedAppPath}'${argumentList} -Verb RunAs`
       ],
       { windowsHide: true },
       (error) => {
@@ -208,7 +264,8 @@ function spawnDetachedApp(
     }
 
     try {
-      const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
+      const args = getCustomAppArgs(appPath)
+      const child = spawn(appPath, args, { detached: true, stdio: 'ignore' })
       runningProcesses.set(appPath, {
         process: child,
         name: path.basename(appPath),
@@ -235,7 +292,7 @@ function spawnDetachedApp(
         }
 
         if (isElevatedLaunchError(err)) {
-          resolveOnce(await launchElevated(appPath))
+          resolveOnce(await launchElevated(appPath, args))
           return
         }
 
@@ -252,7 +309,7 @@ function spawnDetachedApp(
       console.error(`Error launching ${appPath}: ${message}`)
 
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath).then(resolveOnce)
+        launchElevated(appPath, getCustomAppArgs(appPath)).then(resolveOnce)
         return
       }
 
