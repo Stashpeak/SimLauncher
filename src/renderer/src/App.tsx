@@ -4,33 +4,11 @@ import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import {
-  getMigrationFlags,
-  saveSettings,
-  saveProfiles,
-  getSettings,
-  setMigrationFlags
-} from './lib/store'
-import {
-  getUpdateInfo,
-  onUpdateAvailable,
-  browsePath,
-  getAssetData,
-  getFileIcon,
-  setLoginItem,
-  setZoom
-} from './lib/electron'
-import {
-  DEFAULT_ACCENT_COLOR,
-  DEFAULT_PROFILE_ID,
-  createDefaultProfile,
-  getHighestCustomSlot,
-  getUtilities,
-  migrateProfileToUtilityOrder,
-  type GameProfileSet,
-  type GameProfile
-} from './lib/config'
+import { getSettings } from './lib/store'
+import { getUpdateInfo, onUpdateAvailable, setZoom } from './lib/electron'
+import { DEFAULT_ACCENT_COLOR } from './lib/config'
 import { applyAccentTheme, applyThemeMode, normalizeThemeMode } from './lib/theme'
+import { runStartupMigrations } from './lib/migrations'
 
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
@@ -43,103 +21,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
-    // One-time migration from localStorage (vanilla app) to electron-store
-    async function migrateFromLocalStorage() {
-      try {
-        const flags = await getMigrationFlags()
-        if (flags.migrated) return
-
-        const patch: Partial<WritableSettings> = {}
-
-        const appPathsRaw = localStorage.getItem('simLauncherAppPaths')
-        const gamePathsRaw = localStorage.getItem('simLauncherGamePaths')
-        let appPaths: Record<string, unknown> = {}
-        if (appPathsRaw) {
-          appPaths = JSON.parse(appPathsRaw)
-          patch.appPaths = appPaths as Record<string, string>
-        }
-        if (gamePathsRaw) patch.gamePaths = JSON.parse(gamePathsRaw)
-
-        const accentPreset = localStorage.getItem('simLauncherAccentPreset')
-        const accentCustom = localStorage.getItem('simLauncherAccentCustom')
-        if (accentPreset) patch.accentPreset = accentPreset
-        if (accentCustom) patch.accentCustom = accentCustom
-
-        const utilityKeys = [
-          'simhub',
-          'crewchief',
-          'tradingpaints',
-          'garage61',
-          'secondmonitor',
-          'customapp1',
-          'customapp2',
-          'customapp3',
-          'customapp4',
-          'customapp5'
-        ]
-        const appNames: Record<string, string> = {}
-        for (const key of utilityKeys) {
-          const name = localStorage.getItem(`simLauncherAppName_${key}`)
-          if (name) appNames[key] = name
-        }
-        if (Object.keys(appNames).length > 0) patch.appNames = appNames
-
-        const gameKeys = [
-          'ac',
-          'acc',
-          'acevo',
-          'acrally',
-          'ams',
-          'ams2',
-          'beamng',
-          'dcsw',
-          'dirtrally',
-          'dirtrally2',
-          'eawrc',
-          'f124',
-          'f125',
-          'iracing',
-          'lmu',
-          'pmr',
-          'raceroom',
-          'rbr',
-          'rennsport',
-          'rf1',
-          'rf2'
-        ]
-        const profiles: Record<string, GameProfile> = {}
-        for (const key of gameKeys) {
-          const raw = localStorage.getItem(`profile_${key}`)
-          if (raw) profiles[key] = JSON.parse(raw)
-        }
-        const migratedCustomSlots = getHighestCustomSlot(
-          appPaths,
-          appNames,
-          ...Object.values(profiles)
-        )
-        const utilities = getUtilities(migratedCustomSlots)
-        const migratedProfiles: Record<string, GameProfileSet> = Object.fromEntries(
-          Object.entries(profiles).map(([gameKey, profile]) => [
-            gameKey,
-            {
-              activeProfileId: DEFAULT_PROFILE_ID,
-              profiles: [createDefaultProfile(migrateProfileToUtilityOrder(profile, utilities))]
-            }
-          ])
-        ) as Record<string, GameProfileSet>
-
-        if (migratedCustomSlots > 1) patch.customSlots = migratedCustomSlots
-        if (Object.keys(patch).length > 0) await saveSettings(patch)
-        if (Object.keys(migratedProfiles).length > 0) await saveProfiles(migratedProfiles)
-        await setMigrationFlags({
-          profileUtilityOrderMigrated: true,
-          migrated: true
-        })
-      } catch (err) {
-        console.error('Failed to migrate from localStorage', err)
-      }
-    }
-    migrateFromLocalStorage()
+    runStartupMigrations()
   }, [])
 
   const syncThemeFromStore = async () => {

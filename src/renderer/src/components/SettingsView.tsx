@@ -38,6 +38,14 @@ function trimPathRecord(paths: Record<string, string>) {
   return Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, value.trim()]))
 }
 
+function trimStringRecord(values: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(values)
+      .map(([key, value]) => [key, value.trim()])
+      .filter(([_key, value]) => value.length > 0)
+  )
+}
+
 export function SettingsView({
   onClose,
   updateInfo,
@@ -58,6 +66,7 @@ export function SettingsView({
 
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
+  const [appArgs, setAppArgs] = useState<Record<string, string>>({})
   const [profiles, setProfiles] = useState<Profiles>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [customSlots, setCustomSlots] = useState(1)
@@ -95,6 +104,7 @@ export function SettingsView({
 
     setAppPaths(settings.appPaths)
     setAppNames(settings.appNames)
+    setAppArgs(settings.appArgs)
     setProfiles(typedProfiles)
     setGamePaths(settings.gamePaths)
     setCustomSlots(
@@ -158,6 +168,7 @@ export function SettingsView({
     () => ({
       appPaths,
       appNames,
+      appArgs,
       profiles,
       gamePaths,
       customSlots,
@@ -176,6 +187,7 @@ export function SettingsView({
     [
       appPaths,
       appNames,
+      appArgs,
       profiles,
       gamePaths,
       customSlots,
@@ -305,6 +317,7 @@ export function SettingsView({
 
     setAppPaths((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
     setAppNames((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+    setAppArgs((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
     setAppIcons((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
     setIconLoadErrors((current) => shiftCustomSlotSet(current, slotNumber, customSlots))
     setProfiles((current) => {
@@ -338,6 +351,10 @@ export function SettingsView({
 
   const handleAppNameChange = (key: string, name: string) => {
     setAppNames((prev) => ({ ...prev, [key]: name }))
+  }
+
+  const handleAppArgsChange = (key: string, args: string) => {
+    setAppArgs((prev) => ({ ...prev, [key]: args }))
   }
 
   const handleIconLoadError = (key: string) => {
@@ -398,6 +415,7 @@ export function SettingsView({
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
       const trimmedAppPaths = trimPathRecord(appPaths)
       const trimmedGamePaths = trimPathRecord(gamePaths)
+      const trimmedAppArgs = trimStringRecord(appArgs)
       const appPathEditVersionAtSave = appPathEditVersion.current
       const gamePathEditVersionAtSave = gamePathEditVersion.current
 
@@ -405,6 +423,7 @@ export function SettingsView({
         saveSettings({
           appPaths: trimmedAppPaths,
           appNames,
+          appArgs: trimmedAppArgs,
           gamePaths: trimmedGamePaths,
           customSlots,
           accentPreset,
@@ -432,6 +451,7 @@ export function SettingsView({
         setGamePaths(trimmedGamePaths)
       }
 
+      setAppArgs(trimmedAppArgs)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
@@ -439,6 +459,7 @@ export function SettingsView({
       resetDirty({
         ...currentSettingsState,
         appPaths: appPathsChangedDuringSave ? latestAppPaths.current : trimmedAppPaths,
+        appArgs: trimmedAppArgs,
         gamePaths: gamePathsChangedDuringSave ? latestGamePaths.current : trimmedGamePaths,
         launchDelayMs: normalizedLaunchDelayMs
       })
@@ -515,12 +536,14 @@ export function SettingsView({
         utilities={utilities}
         appPaths={appPaths}
         appNames={appNames}
+        appArgs={appArgs}
         appIcons={appIcons}
         iconLoadErrors={iconLoadErrors}
         customSlots={customSlots}
         onOpenChange={setAppsOpen}
         onAppNameChange={handleAppNameChange}
         onAppPathChange={handleAppPathChange}
+        onAppArgsChange={handleAppArgsChange}
         onIconLoadError={handleIconLoadError}
         onBrowse={(key) => handleBrowse(key, false)}
         onAddCustomSlot={handleAddCustomSlot}

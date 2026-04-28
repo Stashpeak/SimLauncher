@@ -23,12 +23,14 @@ interface AppsSectionProps {
   utilities: Utility[]
   appPaths: Record<string, string>
   appNames: Record<string, string>
+  appArgs: Record<string, string>
   appIcons: Record<string, string>
   iconLoadErrors: Set<string>
   customSlots: number
   onOpenChange: (open: boolean) => void
   onAppNameChange: (key: string, name: string) => void
   onAppPathChange: (key: string, path: string) => void
+  onAppArgsChange: (key: string, args: string) => void
   onIconLoadError: (key: string) => void
   onBrowse: (key: string) => void
   onAddCustomSlot: () => void
@@ -40,12 +42,14 @@ export function AppsSection({
   utilities,
   appPaths,
   appNames,
+  appArgs,
   appIcons,
   iconLoadErrors,
   customSlots,
   onOpenChange,
   onAppNameChange,
   onAppPathChange,
+  onAppArgsChange,
   onIconLoadError,
   onBrowse,
   onAddCustomSlot,
@@ -176,6 +180,17 @@ export function AppsSection({
                     Browse
                   </button>
                 </div>
+
+                {utility.isCustom && (
+                  <input
+                    type="text"
+                    value={appArgs[utility.key] || ''}
+                    onChange={(e) => onAppArgsChange(utility.key, e.target.value)}
+                    placeholder="Optional command line arguments"
+                    className="glass-recessed rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus:text-(--text-primary)"
+                    aria-label={`${appNames[utility.key] || utility.name} command line arguments`}
+                  />
+                )}
               </div>
             ))}
             <div className="px-5 py-3">

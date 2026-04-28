@@ -112,6 +112,7 @@ export function registerConfigHandlers() {
       appPaths: store.get('appPaths'),
       gamePaths: store.get('gamePaths'),
       appNames: store.get('appNames'),
+      appArgs: store.get('appArgs'),
       customSlots: store.get('customSlots'),
       accentPreset: store.get('accentPreset'),
       accentCustom: store.get('accentCustom'),
@@ -129,7 +130,7 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('save-settings', (_event, patch: unknown) => {
     if (!isRecord(patch)) return
-    const OBJECT_KEYS = new Set(['appPaths', 'gamePaths', 'appNames'])
+    const OBJECT_KEYS = new Set(['appPaths', 'gamePaths', 'appNames', 'appArgs'])
     const BOOLEAN_KEYS = new Set([
       'accentBgTint',
       'focusActiveTitle',

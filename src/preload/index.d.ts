@@ -7,6 +7,7 @@ declare global {
     appPaths: Record<string, string>
     gamePaths: Record<string, string>
     appNames: Record<string, string>
+    appArgs: Record<string, string>
     customSlots: number
     accentPreset: string
     accentCustom: string

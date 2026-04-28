@@ -10,6 +10,7 @@ export const MAX_CONFIG_IMPORT_BYTES = 1_000_000
 
 const MAX_IMPORT_PATH_LENGTH = 300
 const MAX_CONFIG_STRING_LENGTH = 100
+const MAX_CONFIG_ARGS_LENGTH = 500
 const MAX_ACCENT_PRESET_LENGTH = 50
 const MAX_PROFILE_COUNT_PER_GAME = 20
 const MAX_TRACKED_PROCESS_PATHS = 50
@@ -57,6 +58,7 @@ export const store = new StoreConstructor({
     gamePaths: { type: 'object', default: {} },
     profiles: { type: 'object', default: {} },
     appNames: { type: 'object', default: {} },
+    appArgs: { type: 'object', default: {} },
     customSlots: { type: 'number', default: 1, minimum: 1, maximum: MAX_CUSTOM_SLOTS },
     accentPreset: { type: 'string', default: '' },
     accentCustom: { type: 'string', default: '' },
@@ -82,6 +84,7 @@ export const EXPECTED_CONFIG_KEYS = new Set([
   'gamePaths',
   'profiles',
   'appNames',
+  'appArgs',
   'customSlots',
   'accentPreset',
   'accentCustom',
@@ -254,6 +257,24 @@ function sanitizeNameRecord(value: unknown, allowedKeys: Set<string>) {
 
     if (allowedKeys.has(key) && safeName) {
       safeRecord[key] = safeName
+    }
+  })
+
+  return safeRecord
+}
+
+function sanitizeArgsRecord(value: unknown, allowedKeys: Set<string>) {
+  if (!isRecord(value)) {
+    return undefined
+  }
+
+  const safeRecord: Record<string, string> = {}
+
+  getSafeObjectEntries(value).forEach(([key, entry]) => {
+    const safeArgs = getSafeString(entry, MAX_CONFIG_ARGS_LENGTH)
+
+    if (allowedKeys.has(key) && safeArgs) {
+      safeRecord[key] = safeArgs
     }
   })
 
@@ -527,6 +548,18 @@ export function getSupportedConfigValues(config: Record<string, unknown>) {
 
       if (appNames) {
         supportedConfig.appNames = appNames
+      }
+      return
+    }
+
+    if (key === 'appArgs') {
+      const customUtilityKeys = new Set(
+        [...utilityKeys].filter((utilityKey) => /^customapp\d+$/.test(utilityKey))
+      )
+      const appArgs = sanitizeArgsRecord(value, customUtilityKeys)
+
+      if (appArgs) {
+        supportedConfig.appArgs = appArgs
       }
       return
     }
