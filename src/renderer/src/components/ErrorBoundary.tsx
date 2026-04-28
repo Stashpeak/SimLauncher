@@ -1,4 +1,5 @@
-import { Component, ErrorInfo, ReactNode } from 'react'
+﻿import { Component, ErrorInfo, ReactNode } from 'react'
+import { restartApp } from '../lib/electron'
 import { WindowControls } from './WindowControls'
 
 interface Props {
@@ -24,8 +25,13 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('Uncaught error:', error, errorInfo)
   }
 
-  private handleReload = () => {
-    window.location.reload()
+  private handleReload = async () => {
+    try {
+      await restartApp()
+    } catch (err) {
+      console.error('Failed to restart app:', err)
+      window.location.reload()
+    }
   }
 
   private handleCopyError = () => {

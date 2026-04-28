@@ -189,4 +189,10 @@ export function registerWindowHandlers() {
 
     mainWindow?.close()
   })
+
+  ipcMain.handle('restart-app', () => {
+    setIsQuitting(true)
+    app.relaunch()
+    app.exit(0)
+  })
 }

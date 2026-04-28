@@ -30,7 +30,7 @@ const UTILITY_COMPANION_PROCESS_NAMES: Record<string, string[]> = {
 }
 
 function isAccessDeniedMessage(message: string) {
-  return /access is denied/i.test(message)
+  return /(access is denied|permission denied|administrator|elevat)/i.test(message)
 }
 
 function isNotFoundMessage(message: string) {
@@ -150,7 +150,7 @@ function registerUnclosedProcess(attempt: KillAttemptResult) {
   const error =
     attempt.error ||
     (attempt.accessDenied
-      ? 'Windows denied permission to close this app.'
+      ? 'Windows denied SimLauncher permission to close this app. It may be running as administrator.'
       : 'The app is still running after the close request.')
 
   unclosedProcesses.set(getUnclosedProcessKey(gameKey, appPath, attempt.processName), {
@@ -195,8 +195,12 @@ function formatKillWarning(failedAttempts: KillAttemptResult[]) {
 
   if (failedAttempts.length === 1) {
     return first.accessDenied
-      ? `${appName} is still running because Windows denied permission to close it.`
+      ? `${appName} is still running because Windows denied SimLauncher permission to close it. If it is running as administrator, close it manually or run SimLauncher as administrator.`
       : `${appName} could not be closed and is still running.`
+  }
+
+  if (failedAttempts.some((attempt) => attempt.accessDenied)) {
+    return `${failedAttempts.length} apps could not be closed because Windows denied SimLauncher permission. Elevated apps may need to be closed manually or by running SimLauncher as administrator.`
   }
 
   return `${failedAttempts.length} apps could not be closed and are still running.`
@@ -219,7 +223,9 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
   }))
 
   finalizedAttempts.forEach((attempt) => {
-    if (attempt.stillRunning) {
+    const failedToClose = attempt.stillRunning || (!attempt.success && !attempt.notFound)
+
+    if (failedToClose) {
       registerUnclosedProcess(attempt)
       return
     }
@@ -235,7 +241,9 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
     })
   })
 
-  const failedAttempts = finalizedAttempts.filter((attempt) => attempt.stillRunning)
+  const failedAttempts = finalizedAttempts.filter(
+    (attempt) => attempt.stillRunning || (!attempt.success && !attempt.notFound)
+  )
   const closedCount = finalizedAttempts.length - failedAttempts.length
   const warning = formatKillWarning(failedAttempts)
 

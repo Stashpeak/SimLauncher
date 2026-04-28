@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
+  restartApp: () => ipcRenderer.invoke('restart-app'),
 
   // process monitoring
   getRunningApps: () => ipcRenderer.invoke('get-running-apps'),
