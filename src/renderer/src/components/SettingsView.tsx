@@ -34,6 +34,10 @@ import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
 import { applyAccentTheme, applyThemeMode, normalizeThemeMode, type ThemeMode } from '../lib/theme'
 
+function trimPathRecord(paths: Record<string, string>) {
+  return Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, value.trim()]))
+}
+
 export function SettingsView({
   onClose,
   updateInfo,
@@ -376,12 +380,14 @@ export function SettingsView({
   const handleSave = async () => {
     try {
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
+      const trimmedAppPaths = trimPathRecord(appPaths)
+      const trimmedGamePaths = trimPathRecord(gamePaths)
 
       await Promise.all([
         saveSettings({
-          appPaths,
+          appPaths: trimmedAppPaths,
           appNames,
-          gamePaths,
+          gamePaths: trimmedGamePaths,
           customSlots,
           accentPreset,
           accentCustom,
@@ -397,10 +403,17 @@ export function SettingsView({
         }),
         saveProfiles(profiles)
       ])
+      setAppPaths(trimmedAppPaths)
+      setGamePaths(trimmedGamePaths)
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
-      resetDirty()
+      resetDirty({
+        ...currentSettingsState,
+        appPaths: trimmedAppPaths,
+        gamePaths: trimmedGamePaths,
+        launchDelayMs: normalizedLaunchDelayMs
+      })
     } catch (err) {
       notify('Failed to save settings', 'error')
       console.error(err)
