@@ -662,45 +662,17 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
 
   useEffect(() => {
-    async function loadGames() {
-      try {
-        const settings = await getSettings()
-        setGamePaths(settings.gamePaths)
-        const available = GAMES.filter((game) => !!settings.gamePaths[game.key])
-        setConfiguredGames(available)
-      } catch (err) {
-        console.error('Failed to load game paths', err)
-      }
-    }
-
-    loadGames()
-  }, [])
-
-  useEffect(() => {
     let mounted = true
 
-    async function loadFocusActiveTitle() {
-      const settings = await getSettings()
-
-      if (mounted) {
-        setFocusActiveTitle(settings.focusActiveTitle !== false)
-      }
-    }
-
-    loadFocusActiveTitle()
-    window.addEventListener('focus', loadFocusActiveTitle)
-
-    return () => {
-      mounted = false
-      window.removeEventListener('focus', loadFocusActiveTitle)
-    }
-  }, [])
-
-  // Load app icons once at mount
-  useEffect(() => {
-    async function loadAppIcons() {
+    async function loadInitialSettings() {
       try {
         const settings = await getSettings()
+        if (!mounted) return
+
+        setGamePaths(settings.gamePaths)
+        setFocusActiveTitle(settings.focusActiveTitle !== false)
+        setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
+
         const cache: Record<string, string> = {}
         await Promise.all(
           Object.values(settings.appPaths)
@@ -710,15 +682,24 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
               if (icon) cache[p.toLowerCase()] = icon
             })
         )
+
+        if (!mounted) return
+
         setAppIconCache(cache)
         setCacheInitialized(true)
       } catch (err) {
-        console.error('Failed to load app icons', err)
-        setCacheInitialized(true)
+        console.error('Failed to load game settings', err)
+        if (mounted) {
+          setCacheInitialized(true)
+        }
       }
     }
 
-    loadAppIcons()
+    loadInitialSettings()
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   if (configuredGames.length === 0) {
