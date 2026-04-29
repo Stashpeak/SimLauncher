@@ -1,16 +1,6 @@
 import { Toggle } from '../Toggle'
+import { useSettings } from './SettingsContext'
 import { normalizeLaunchDelayMs } from './settingsUtils'
-
-interface BehaviorSectionProps {
-  startWithWindows: boolean
-  startMinimized: boolean
-  minimizeToTray: boolean
-  launchDelayMs: number
-  onStartWithWindowsChange: (checked: boolean) => void
-  onStartMinimizedChange: (checked: boolean) => void
-  onMinimizeToTrayChange: (checked: boolean) => void
-  onLaunchDelayMsChange: (delayMs: number) => void
-}
 
 const DELAY_PRESETS = [
   { label: '1s', value: 1000 },
@@ -18,16 +8,17 @@ const DELAY_PRESETS = [
   { label: '2s', value: 2000 }
 ]
 
-export function BehaviorSection({
-  startWithWindows,
-  startMinimized,
-  minimizeToTray,
-  launchDelayMs,
-  onStartWithWindowsChange,
-  onStartMinimizedChange,
-  onMinimizeToTrayChange,
-  onLaunchDelayMsChange
-}: BehaviorSectionProps) {
+export function BehaviorSection() {
+  const {
+    startWithWindows,
+    startMinimized,
+    minimizeToTray,
+    launchDelayMs,
+    onStartWithWindowsChange,
+    onStartMinimizedChange,
+    onMinimizeToTrayChange,
+    onLaunchDelayMsChange
+  } = useSettings()
   const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
 
   return (

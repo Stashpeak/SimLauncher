@@ -1,31 +1,30 @@
 import { Toggle } from '../Toggle'
+import { useSettings } from './SettingsContext'
 import type { UpdateInfo, UpdateStatus } from './types'
 
 interface AboutSectionProps {
   appVersion: string
-  autoCheckUpdates: boolean
   updateInfo: UpdateInfo
   checkingUpdate: boolean
   installingUpdate: boolean
   updateProgress: number | null
   updateStatus: UpdateStatus
-  onAutoCheckUpdatesChange: (checked: boolean) => void
   onManualCheck: () => void
   onInstallUpdate: () => void
 }
 
 export function AboutSection({
   appVersion,
-  autoCheckUpdates,
   updateInfo,
   checkingUpdate,
   installingUpdate,
   updateProgress,
   updateStatus,
-  onAutoCheckUpdatesChange,
   onManualCheck,
   onInstallUpdate
 }: AboutSectionProps) {
+  const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettings()
+
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">About</h3>
