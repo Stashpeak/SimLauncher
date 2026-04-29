@@ -1,4 +1,5 @@
-import { MAX_CUSTOM_SLOTS, type Utility } from '../../lib/config'
+import { MAX_CUSTOM_SLOTS } from '../../lib/config'
+import { useSettings } from './SettingsContext'
 
 function getInitials(label: string) {
   const words = label.trim().split(/\s+/).filter(Boolean)
@@ -20,41 +21,27 @@ function getCustomSlotNumber(key: string) {
 
 interface AppsSectionProps {
   open: boolean
-  utilities: Utility[]
-  appPaths: Record<string, string>
-  appNames: Record<string, string>
-  appArgs: Record<string, string>
-  appIcons: Record<string, string>
-  iconLoadErrors: Set<string>
-  customSlots: number
   onOpenChange: (open: boolean) => void
-  onAppNameChange: (key: string, name: string) => void
-  onAppPathChange: (key: string, path: string) => void
-  onAppArgsChange: (key: string, args: string) => void
-  onIconLoadError: (key: string) => void
-  onBrowse: (key: string) => void
-  onAddCustomSlot: () => void
-  onRemoveCustomSlot: (slotNumber: number) => void
 }
 
-export function AppsSection({
-  open,
-  utilities,
-  appPaths,
-  appNames,
-  appArgs,
-  appIcons,
-  iconLoadErrors,
-  customSlots,
-  onOpenChange,
-  onAppNameChange,
-  onAppPathChange,
-  onAppArgsChange,
-  onIconLoadError,
-  onBrowse,
-  onAddCustomSlot,
-  onRemoveCustomSlot
-}: AppsSectionProps) {
+export function AppsSection({ open, onOpenChange }: AppsSectionProps) {
+  const {
+    utilities,
+    appPaths,
+    appNames,
+    appArgs,
+    appIcons,
+    iconLoadErrors,
+    customSlots,
+    onAppNameChange,
+    onAppPathChange,
+    onAppArgsChange,
+    onIconLoadError,
+    onBrowse,
+    onAddCustomSlot,
+    onRemoveCustomSlot
+  } = useSettings()
+
   return (
     <section className="space-y-4">
       <button
@@ -174,7 +161,7 @@ export function AppsSection({
                     </button>
                   )}
                   <button
-                    onClick={() => onBrowse(utility.key)}
+                    onClick={() => onBrowse(utility.key, false)}
                     className="accent-surface-action action-hover-scale cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
                   >
                     Browse

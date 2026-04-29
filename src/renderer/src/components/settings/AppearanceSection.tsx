@@ -3,6 +3,7 @@ import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
 import { ColorPickerPopover } from '../ColorPickerPopover'
+import { useSettings } from './SettingsContext'
 
 const ZOOM_PRESETS = [
   { label: '100%', factor: 1.0 },
@@ -27,38 +28,23 @@ const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
   { label: 'System', value: 'system' }
 ]
 
-interface AppearanceSectionProps {
-  accentPreset: string
-  accentCustom: string
-  accentBgTint: boolean
-  themeMode: ThemeMode
-  focusActiveTitle: boolean
-  zoomFactor: number
-  isCustomColor: boolean
-  onAccentChange: (presetHex: string) => void
-  onCustomColorChange: (hex: string) => void
-  onAccentBgTintChange: (checked: boolean) => void
-  onThemeModeChange: (mode: ThemeMode) => void
-  onFocusActiveTitleChange: (checked: boolean) => void
-  onZoomFactorChange: (factor: number) => void
-}
-
-export function AppearanceSection({
-  accentPreset,
-  accentCustom,
-  accentBgTint,
-  themeMode,
-  focusActiveTitle,
-  zoomFactor,
-  isCustomColor,
-  onAccentChange,
-  onCustomColorChange,
-  onAccentBgTintChange,
-  onThemeModeChange,
-  onFocusActiveTitleChange,
-  onZoomFactorChange
-}: AppearanceSectionProps) {
+export function AppearanceSection() {
   const [showPicker, setShowPicker] = useState(false)
+  const {
+    accentPreset,
+    accentCustom,
+    accentBgTint,
+    themeMode,
+    focusActiveTitle,
+    zoomFactor,
+    isCustomColor,
+    onAccentChange,
+    onCustomColorChange,
+    onAccentBgTintChange,
+    onThemeModeChange,
+    onFocusActiveTitleChange,
+    onZoomFactorChange
+  } = useSettings()
 
   return (
     <section className="space-y-4">

@@ -1,16 +1,8 @@
-interface ConfigSectionProps {
-  exportingConfig: boolean
-  importingConfig: boolean
-  onExportConfig: () => void
-  onImportConfig: () => void
-}
+import { useSettings } from './SettingsContext'
 
-export function ConfigSection({
-  exportingConfig,
-  importingConfig,
-  onExportConfig,
-  onImportConfig
-}: ConfigSectionProps) {
+export function ConfigSection() {
+  const { exportingConfig, importingConfig, onExportConfig, onImportConfig } = useSettings()
+
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-(--accent) px-1">
