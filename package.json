@@ -5,8 +5,9 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "test": "npm run test:unit",
-    "test:unit": "node scripts/run-node-tests.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run",
     "build": "electron-vite build",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
@@ -44,9 +45,11 @@
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^29.1.0",
     "prettier": "^3.8.3",
     "typescript": "^5.9.0",
-    "vite": "^7.3.2"
+    "vite": "^7.3.2",
+    "vitest": "^4.1.5"
   },
   "overrides": {
     "@electron/asar": "4.2.0",
