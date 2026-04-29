@@ -5,6 +5,8 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "test": "npm run test:unit",
+    "test:unit": "node scripts/run-node-tests.mjs",
     "build": "electron-vite build",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",

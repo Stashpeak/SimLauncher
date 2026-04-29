@@ -29,6 +29,13 @@ import {
   shiftProfileCustomSlots
 } from './settings/customSlots'
 import { GamesSection } from './settings/GamesSection'
+import {
+  createSettingsObjectVersions,
+  getSettingsObjectChangesDuringSave,
+  resolveSettingsObjectsAfterSave,
+  type SettingsObjectField,
+  type SettingsObjectRecords
+} from './settings/saveRace'
 import { normalizeLaunchDelayMs } from './settings/settingsUtils'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
@@ -91,16 +98,26 @@ export function SettingsView({
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
   const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
   const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
-  const appPathEditVersion = useRef(0)
-  const gamePathEditVersion = useRef(0)
-  const latestAppPaths = useRef(appPaths)
-  const latestGamePaths = useRef(gamePaths)
+  const settingsObjectEditVersions = useRef(createSettingsObjectVersions())
+  const latestSettingsObjects = useRef<SettingsObjectRecords>({
+    appPaths,
+    appNames,
+    appArgs,
+    gamePaths
+  })
 
   const updateStatus = useUpdateStatus({ updateInfo, notify })
 
   const loadSettingsFromStore = async () => {
     const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
     const typedProfiles = savedProfiles as Profiles
+
+    latestSettingsObjects.current = {
+      appPaths: settings.appPaths,
+      appNames: settings.appNames,
+      appArgs: settings.appArgs,
+      gamePaths: settings.gamePaths
+    }
 
     setAppPaths(settings.appPaths)
     setAppNames(settings.appNames)
@@ -157,12 +174,29 @@ export function SettingsView({
   }, [])
 
   useEffect(() => {
-    latestAppPaths.current = appPaths
-  }, [appPaths])
+    latestSettingsObjects.current = {
+      appPaths,
+      appNames,
+      appArgs,
+      gamePaths
+    }
+  }, [appPaths, appNames, appArgs, gamePaths])
 
-  useEffect(() => {
-    latestGamePaths.current = gamePaths
-  }, [gamePaths])
+  const updateSettingsObject = (
+    field: SettingsObjectField,
+    setter: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+    updater: (current: Record<string, string>) => Record<string, string>
+  ) => {
+    settingsObjectEditVersions.current[field] += 1
+    setter((current) => {
+      const next = updater(current)
+      latestSettingsObjects.current = {
+        ...latestSettingsObjects.current,
+        [field]: next
+      }
+      return next
+    })
+  }
 
   const currentSettingsState = useMemo(
     () => ({
@@ -276,11 +310,15 @@ export function SettingsView({
     }
     if (result && result.filePath) {
       if (isGame) {
-        gamePathEditVersion.current += 1
-        setGamePaths((prev) => ({ ...prev, [key]: result.filePath }))
+        updateSettingsObject('gamePaths', setGamePaths, (prev) => ({
+          ...prev,
+          [key]: result.filePath
+        }))
       } else {
-        appPathEditVersion.current += 1
-        setAppPaths((prev) => ({ ...prev, [key]: result.filePath }))
+        updateSettingsObject('appPaths', setAppPaths, (prev) => ({
+          ...prev,
+          [key]: result.filePath
+        }))
         const icon = await getFileIcon(result.filePath)
         if (icon) {
           setAppIcons((prev) => ({ ...prev, [key]: icon }))
@@ -315,9 +353,15 @@ export function SettingsView({
       }
     }
 
-    setAppPaths((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
-    setAppNames((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
-    setAppArgs((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+    updateSettingsObject('appPaths', setAppPaths, (current) =>
+      shiftCustomSlotRecord(current, slotNumber, customSlots)
+    )
+    updateSettingsObject('appNames', setAppNames, (current) =>
+      shiftCustomSlotRecord(current, slotNumber, customSlots)
+    )
+    updateSettingsObject('appArgs', setAppArgs, (current) =>
+      shiftCustomSlotRecord(current, slotNumber, customSlots)
+    )
     setAppIcons((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
     setIconLoadErrors((current) => shiftCustomSlotSet(current, slotNumber, customSlots))
     setProfiles((current) => {
@@ -333,13 +377,11 @@ export function SettingsView({
   }
 
   const handleGamePathChange = (key: string, path: string) => {
-    gamePathEditVersion.current += 1
-    setGamePaths((prev) => ({ ...prev, [key]: path }))
+    updateSettingsObject('gamePaths', setGamePaths, (prev) => ({ ...prev, [key]: path }))
   }
 
   const handleAppPathChange = (key: string, path: string) => {
-    appPathEditVersion.current += 1
-    setAppPaths((prev) => ({ ...prev, [key]: path }))
+    updateSettingsObject('appPaths', setAppPaths, (prev) => ({ ...prev, [key]: path }))
     if (!path) {
       setAppIcons((prev) => {
         const next = { ...prev }
@@ -350,11 +392,11 @@ export function SettingsView({
   }
 
   const handleAppNameChange = (key: string, name: string) => {
-    setAppNames((prev) => ({ ...prev, [key]: name }))
+    updateSettingsObject('appNames', setAppNames, (prev) => ({ ...prev, [key]: name }))
   }
 
   const handleAppArgsChange = (key: string, args: string) => {
-    setAppArgs((prev) => ({ ...prev, [key]: args }))
+    updateSettingsObject('appArgs', setAppArgs, (prev) => ({ ...prev, [key]: args }))
   }
 
   const handleIconLoadError = (key: string) => {
@@ -416,15 +458,20 @@ export function SettingsView({
       const trimmedAppPaths = trimPathRecord(appPaths)
       const trimmedGamePaths = trimPathRecord(gamePaths)
       const trimmedAppArgs = trimStringRecord(appArgs)
-      const appPathEditVersionAtSave = appPathEditVersion.current
-      const gamePathEditVersionAtSave = gamePathEditVersion.current
+      const settingsObjectEditVersionsAtSave = { ...settingsObjectEditVersions.current }
+      const savedSettingsObjects = {
+        appPaths: trimmedAppPaths,
+        appNames,
+        appArgs: trimmedAppArgs,
+        gamePaths: trimmedGamePaths
+      }
 
       await Promise.all([
         saveSettings({
-          appPaths: trimmedAppPaths,
-          appNames,
-          appArgs: trimmedAppArgs,
-          gamePaths: trimmedGamePaths,
+          appPaths: savedSettingsObjects.appPaths,
+          appNames: savedSettingsObjects.appNames,
+          appArgs: savedSettingsObjects.appArgs,
+          gamePaths: savedSettingsObjects.gamePaths,
           customSlots,
           accentPreset,
           accentCustom,
@@ -440,27 +487,35 @@ export function SettingsView({
         }),
         saveProfiles(profiles)
       ])
-      const appPathsChangedDuringSave = appPathEditVersion.current !== appPathEditVersionAtSave
-      const gamePathsChangedDuringSave = gamePathEditVersion.current !== gamePathEditVersionAtSave
+      const changedDuringSave = getSettingsObjectChangesDuringSave(
+        settingsObjectEditVersionsAtSave,
+        settingsObjectEditVersions.current
+      )
+      const resetSettingsObjects = resolveSettingsObjectsAfterSave({
+        savedObjects: savedSettingsObjects,
+        latestObjects: latestSettingsObjects.current,
+        changedDuringSave
+      })
 
-      if (!appPathsChangedDuringSave) {
-        setAppPaths(trimmedAppPaths)
+      if (!changedDuringSave.appPaths) {
+        setAppPaths(savedSettingsObjects.appPaths)
       }
 
-      if (!gamePathsChangedDuringSave) {
-        setGamePaths(trimmedGamePaths)
+      if (!changedDuringSave.gamePaths) {
+        setGamePaths(savedSettingsObjects.gamePaths)
       }
 
-      setAppArgs(trimmedAppArgs)
+      if (!changedDuringSave.appArgs) {
+        setAppArgs(savedSettingsObjects.appArgs)
+      }
+
       setLaunchDelayMs(normalizedLaunchDelayMs)
 
       notify('Settings saved!', 'success', 2500)
 
       resetDirty({
         ...currentSettingsState,
-        appPaths: appPathsChangedDuringSave ? latestAppPaths.current : trimmedAppPaths,
-        appArgs: trimmedAppArgs,
-        gamePaths: gamePathsChangedDuringSave ? latestGamePaths.current : trimmedGamePaths,
+        ...resetSettingsObjects,
         launchDelayMs: normalizedLaunchDelayMs
       })
     } catch (err) {
