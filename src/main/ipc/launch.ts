@@ -127,8 +127,4 @@ export function registerLaunchHandlers() {
   ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
     return killLaunchedApps(gameKey)
   })
-
-  ipcMain.handle('kill-profile-apps', (_event, gameKey: string, appPathsToKill: string[]) => {
-    return killProfileApps(gameKey, Array.isArray(appPathsToKill) ? appPathsToKill : [])
-  })
 }

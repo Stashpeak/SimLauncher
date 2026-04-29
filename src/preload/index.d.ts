@@ -100,7 +100,6 @@ declare global {
       restartApp: () => Promise<void>
       getRunningApps: () => Promise<RunningApp[]>
       killLaunchedApps: (gameKey?: string) => Promise<KillResult>
-      killProfileApps: (gameKey: string, appPaths: string[]) => Promise<KillResult>
       onUpdateAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
       onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => Unsubscribe
       onUpdateNotAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe

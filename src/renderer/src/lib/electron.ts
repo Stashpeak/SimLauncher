@@ -23,8 +23,6 @@ export const restartApp = () => window.electronAPI.restartApp()
 export const getRunningApps = () => window.electronAPI.getRunningApps()
 export const killLaunchedApps: typeof window.electronAPI.killLaunchedApps = (gameKey) =>
   window.electronAPI.killLaunchedApps(gameKey)
-export const killProfileApps: typeof window.electronAPI.killProfileApps = (gameKey, appPaths) =>
-  window.electronAPI.killProfileApps(gameKey, appPaths)
 export const onUpdateAvailable: typeof window.electronAPI.onUpdateAvailable = (cb) =>
   window.electronAPI.onUpdateAvailable(cb)
 export const onUpdateDownloaded: typeof window.electronAPI.onUpdateDownloaded = (cb) =>
