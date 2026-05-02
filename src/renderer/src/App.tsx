@@ -4,15 +4,13 @@ import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import { getSettings } from './lib/store'
-import { getUpdateInfo, onUpdateAvailable, setZoom } from './lib/electron'
-import { DEFAULT_ACCENT_COLOR } from './lib/config'
-import { applyAccentTheme, applyThemeMode, normalizeThemeMode } from './lib/theme'
+import { getUpdateInfo, onUpdateAvailable } from './lib/electron'
 import { runStartupMigrations } from './lib/migrations'
+import { useTheme } from './contexts/ThemeContext'
 
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
-  const [bgTinted, setBgTinted] = useState(false)
+  const { accentBgTint, syncThemeFromStore } = useTheme()
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
   const [showImportWarning, setShowImportWarning] = useState(false)
   const [settingsDirty, setSettingsDirty] = useState(false)
@@ -24,36 +22,10 @@ export default function App() {
     runStartupMigrations()
   }, [])
 
-  const syncThemeFromStore = async () => {
-    try {
-      const settings = await getSettings()
-      const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
-      const custom = settings.accentCustom
-      const tint = settings.accentBgTint || false
-      const themeMode = normalizeThemeMode(settings.themeMode)
-
-      setBgTinted(tint)
-      applyThemeMode(themeMode)
-
-      const hex = preset === 'custom' ? custom : preset
-      if (hex) {
-        applyAccentTheme(hex)
-      }
-
-      if (Number.isFinite(settings.zoomFactor)) {
-        setZoom(settings.zoomFactor)
-      }
-    } catch (err) {
-      console.error('Failed to sync theme', err)
-    }
-  }
-
   useEffect(() => {
-    syncThemeFromStore()
-
-    // Listen for custom events to update bgTint from SettingsView without reload
-    const handleTintChange = (e: CustomEvent) => setBgTinted(e.detail)
-    window.addEventListener('bg-tint-change', handleTintChange as EventListener)
+    syncThemeFromStore().catch((err) => {
+      console.error('Failed to sync theme', err)
+    })
 
     const applyUpdateInfo = (info: { version?: string } | null) => {
       if (info?.version) setUpdateInfo({ version: info.version })
@@ -63,19 +35,18 @@ export default function App() {
     const unsubscribe = onUpdateAvailable(applyUpdateInfo)
     let cancelled = false
     getUpdateInfo()
-      .then((info) => {
+      .then((info: { version?: string } | null) => {
         if (!cancelled) applyUpdateInfo(info)
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('Failed to load update info', err)
       })
 
     return () => {
       cancelled = true
-      window.removeEventListener('bg-tint-change', handleTintChange as EventListener)
       unsubscribe()
     }
-  }, [])
+  }, [syncThemeFromStore])
 
   const handleNavigate = (nextView: 'games' | 'settings') => {
     if (view === nextView) return
@@ -114,7 +85,7 @@ export default function App() {
   return (
     <NotifyProvider>
       <div
-        className={`h-screen overflow-hidden relative transition-colors duration-500 ${bgTinted ? 'bg-tinted' : ''}`}
+        className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
       >
         <div className="absolute top-0 left-0 w-full z-20 header-glass">
           <WindowControls view={view} onNavigate={handleNavigate} updateInfo={updateInfo} />
