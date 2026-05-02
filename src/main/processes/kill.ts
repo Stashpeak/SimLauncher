@@ -12,7 +12,7 @@ import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
 import { runningProcesses, unclosedProcesses } from './state'
 import { readRunningProcessNames } from './tasklist'
-import type { KillResult } from './types'
+import type { KillFailure, KillFailureReason, KillResult } from './types'
 
 interface KillAttemptResult {
   processName: string
@@ -144,12 +144,19 @@ function clearUnclosedProcess(
   unclosedProcesses.delete(getUnclosedProcessKey(gameKey, appPath || processName, processName))
 }
 
+function getKillFailureReason(attempt: KillAttemptResult): KillFailureReason {
+  if (attempt.accessDenied) return 'access_denied'
+  if (attempt.stillRunning) return 'still_running'
+  return 'unknown'
+}
+
 function registerUnclosedProcess(attempt: KillAttemptResult) {
   const appPath = attempt.appPath || attempt.processName
   const gameKey = attempt.gameKey || ''
+  const reason = getKillFailureReason(attempt)
   const error =
     attempt.error ||
-    (attempt.accessDenied
+    (reason === 'access_denied'
       ? 'Windows denied SimLauncher permission to close this app. It may be running as administrator.'
       : 'The app is still running after the close request.')
 
@@ -157,7 +164,8 @@ function registerUnclosedProcess(attempt: KillAttemptResult) {
     path: appPath,
     name: path.basename(appPath),
     gameKey,
-    error
+    error,
+    reason
   })
 }
 
@@ -185,34 +193,14 @@ function getStoredAppPathTargets() {
   )
 }
 
-function formatKillWarning(failedAttempts: KillAttemptResult[]) {
-  if (failedAttempts.length === 0) {
-    return undefined
-  }
-
-  const first = failedAttempts[0]
-  const appName = path.basename(first.appPath || first.processName)
-
-  if (failedAttempts.length === 1) {
-    return first.accessDenied
-      ? `${appName} is still running because Windows denied SimLauncher permission to close it. If it is running as administrator, close it manually or run SimLauncher as administrator.`
-      : `${appName} could not be closed and is still running.`
-  }
-
-  if (failedAttempts.some((attempt) => attempt.accessDenied)) {
-    return `${failedAttempts.length} apps could not be closed because Windows denied SimLauncher permission. Elevated apps may need to be closed manually or by running SimLauncher as administrator.`
-  }
-
-  return `${failedAttempts.length} apps could not be closed and are still running.`
-}
-
 async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<KillResult> {
   if (attempts.length === 0) {
     return {
       success: true,
       message: 'No running companion apps to close.',
       closedCount: 0,
-      failedCount: 0
+      failedCount: 0,
+      failures: []
     }
   }
 
@@ -245,7 +233,14 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
     (attempt) => attempt.stillRunning || (!attempt.success && !attempt.notFound)
   )
   const closedCount = finalizedAttempts.length - failedAttempts.length
-  const warning = formatKillWarning(failedAttempts)
+  const failures: KillFailure[] = failedAttempts.map((attempt) => {
+    const appPath = attempt.appPath || attempt.processName
+    return {
+      appName: path.basename(appPath),
+      appPath,
+      reason: getKillFailureReason(attempt)
+    }
+  })
 
   return {
     success: failedAttempts.length === 0,
@@ -253,10 +248,9 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
       closedCount > 0
         ? `Closed ${closedCount} companion app${closedCount === 1 ? '' : 's'}.`
         : undefined,
-    warning,
-    error: warning,
     closedCount,
-    failedCount: failedAttempts.length
+    failedCount: failedAttempts.length,
+    failures
   }
 }
 
@@ -360,7 +354,8 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
         success: false,
         error: 'Kill request includes an app path that is not configured.',
         closedCount: 0,
-        failedCount: 0
+        failedCount: 0,
+        failures: []
       }
     }
 

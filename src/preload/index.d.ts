@@ -46,6 +46,14 @@ interface BrowsePathResult {
   inputId: string
 }
 
+type KillFailureReason = 'access_denied' | 'still_running' | 'unknown'
+
+interface KillFailure {
+  appName: string
+  appPath: string
+  reason: KillFailureReason
+}
+
 interface LaunchResult {
   success: boolean
   message?: string
@@ -55,15 +63,16 @@ interface LaunchResult {
   skippedCount?: number
   elevatedCount?: number
   failedCount?: number
+  killFailures?: KillFailure[]
 }
 
 interface KillResult {
   success: boolean
   message?: string
-  warning?: string
   error?: string
   closedCount: number
   failedCount: number
+  failures: KillFailure[]
 }
 
 interface ConfigFileResult {

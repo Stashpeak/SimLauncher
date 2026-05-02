@@ -115,7 +115,8 @@ test('killLaunchedApps returns a no-op kill result when no companion apps are ru
     success: true,
     message: 'No running companion apps to close.',
     closedCount: 0,
-    failedCount: 0
+    failedCount: 0,
+    failures: []
   })
 })
 
@@ -129,6 +130,7 @@ test('killProfileApps rejects paths that are not configured app paths', async ()
     success: false,
     error: 'Kill request includes an app path that is not configured.',
     closedCount: 0,
-    failedCount: 0
+    failedCount: 0,
+    failures: []
   })
 })

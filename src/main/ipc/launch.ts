@@ -102,20 +102,19 @@ export function registerLaunchHandlers() {
         return {
           success: true,
           message: killResult?.message,
-          warning: killResult?.warning,
           launchedCount: 0,
           skippedCount: 0,
-          failedCount: killResult?.failedCount
+          failedCount: killResult?.failedCount,
+          killFailures: killResult?.failures
         }
       }
 
       const launchResult = await launchProfileApps(event.sender, gameKey, pathsToStart)
-      const warnings = [killResult?.warning, launchResult.warning].filter(Boolean)
 
       return {
         ...launchResult,
-        warning: warnings.length > 0 ? warnings.join(' ') : undefined,
-        failedCount: (launchResult.failedCount || 0) + (killResult?.failedCount || 0)
+        failedCount: (launchResult.failedCount || 0) + (killResult?.failedCount || 0),
+        killFailures: killResult?.failures
       }
     }
   )
