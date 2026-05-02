@@ -12,7 +12,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
   if (editor.loading) return null
 
   return (
-    <div className="glass-surface-elevated animate-fade-slide overflow-hidden rounded-[20px] p-5">
+    <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-(--text-primary)">Edit Profile</h2>
       </div>

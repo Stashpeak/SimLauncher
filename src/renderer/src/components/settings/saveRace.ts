@@ -24,18 +24,11 @@ export function getSettingsObjectChangesDuringSave(
 }
 
 export function resolveSettingsObjectsAfterSave({
-  savedObjects,
-  latestObjects,
-  changedDuringSave
+  savedObjects
 }: {
   savedObjects: SettingsObjectRecords
   latestObjects: SettingsObjectRecords
   changedDuringSave: SettingsObjectChangeMap
 }): SettingsObjectRecords {
-  return Object.fromEntries(
-    SETTINGS_OBJECT_FIELDS.map((field) => [
-      field,
-      changedDuringSave[field] ? latestObjects[field] : savedObjects[field]
-    ])
-  ) as SettingsObjectRecords
+  return savedObjects
 }

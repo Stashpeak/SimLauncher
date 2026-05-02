@@ -73,27 +73,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const syncThemeFromStore = useCallback(async () => {
-    const settings = await getSettings()
-    const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
-    const custom = settings.accentCustom || ''
-    const loadedThemeMode = normalizeThemeMode(settings.themeMode)
+    try {
+      const settings = await getSettings()
+      const preset = settings.accentPreset || DEFAULT_ACCENT_COLOR
+      const custom = settings.accentCustom || ''
+      const loadedThemeMode = normalizeThemeMode(settings.themeMode)
 
-    setAccentPresetState(preset)
-    setAccentCustomState(custom)
-    setAccentBgTintState(settings.accentBgTint || false)
-    setThemeModeState(loadedThemeMode)
-    applyThemeMode(loadedThemeMode)
-    applyAccent(preset, custom)
+      setAccentPresetState(preset)
+      setAccentCustomState(custom)
+      setAccentBgTintState(settings.accentBgTint || false)
+      setThemeModeState(loadedThemeMode)
+      applyThemeMode(loadedThemeMode)
+      applyAccent(preset, custom)
 
-    if (Number.isFinite(settings.zoomFactor)) {
-      setZoom(settings.zoomFactor)
+      if (Number.isFinite(settings.zoomFactor)) {
+        setZoom(settings.zoomFactor)
+      }
+    } catch (err) {
+      console.error('Failed to sync theme from store', err)
     }
   }, [applyAccent])
 
   useEffect(() => {
-    syncThemeFromStore().catch((err) => {
-      console.error('Failed to sync theme', err)
-    })
+    syncThemeFromStore()
   }, [syncThemeFromStore])
 
   const value = useMemo(
