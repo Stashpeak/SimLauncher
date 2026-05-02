@@ -7,19 +7,9 @@ export default defineConfig({
   test: {
     projects: [
       {
-        test: {
-          name: 'renderer',
-          environment: 'jsdom',
-          include: rendererTests
-        }
+        test: { name: 'renderer', environment: 'jsdom', include: rendererTests, pool: 'vmThreads' }
       },
-      {
-        test: {
-          name: 'main',
-          environment: 'node',
-          include: mainProcessTests
-        }
-      }
+      { test: { name: 'main', environment: 'node', include: mainProcessTests, pool: 'vmThreads' } }
     ]
   }
 })

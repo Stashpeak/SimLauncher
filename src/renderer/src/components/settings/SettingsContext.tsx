@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -168,7 +169,7 @@ export function SettingsProvider({
     gamePaths
   })
 
-  const loadSettingsFromStore = async () => {
+  const loadSettingsFromStore = useCallback(async () => {
     const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
     const typedProfiles = savedProfiles as Profiles
 
@@ -227,7 +228,7 @@ export function SettingsProvider({
     setGameIcons(gIcons)
 
     setLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
     loadSettingsFromStore()
@@ -242,21 +243,24 @@ export function SettingsProvider({
     }
   }, [appPaths, appNames, appArgs, gamePaths])
 
-  const updateSettingsObject = (
-    field: SettingsObjectField,
-    setter: Dispatch<SetStateAction<Record<string, string>>>,
-    updater: (current: Record<string, string>) => Record<string, string>
-  ) => {
-    settingsObjectEditVersions.current[field] += 1
-    setter((current) => {
-      const next = updater(current)
-      latestSettingsObjects.current = {
-        ...latestSettingsObjects.current,
-        [field]: next
-      }
-      return next
-    })
-  }
+  const updateSettingsObject = useCallback(
+    (
+      field: SettingsObjectField,
+      setter: Dispatch<SetStateAction<Record<string, string>>>,
+      updater: (current: Record<string, string>) => Record<string, string>
+    ) => {
+      settingsObjectEditVersions.current[field] += 1
+      setter((current) => {
+        const next = updater(current)
+        latestSettingsObjects.current = {
+          ...latestSettingsObjects.current,
+          [field]: next
+        }
+        return next
+      })
+    },
+    []
+  )
 
   const currentSettingsState = useMemo(
     () => ({
@@ -305,147 +309,171 @@ export function SettingsProvider({
     onDirtyChange?.(isDirty)
   }, [isDirty, onDirtyChange])
 
-  const updateAccentCSS = (hex: string) => {
+  const updateAccentCSS = useCallback((hex: string) => {
     if (hex) applyAccentTheme(hex)
-  }
+  }, [])
 
-  const handleAccentChange = (presetHex: string) => {
-    setAccentPreset(presetHex)
-    if (presetHex !== 'custom') {
-      setIsCustomColor(false)
-      updateAccentCSS(presetHex)
-    } else {
-      setIsCustomColor(true)
-      if (accentCustom) updateAccentCSS(accentCustom)
-    }
-  }
+  const handleAccentChange = useCallback(
+    (presetHex: string) => {
+      setAccentPreset(presetHex)
+      if (presetHex !== 'custom') {
+        setIsCustomColor(false)
+        updateAccentCSS(presetHex)
+      } else {
+        setIsCustomColor(true)
+        if (accentCustom) updateAccentCSS(accentCustom)
+      }
+    },
+    [accentCustom, updateAccentCSS]
+  )
 
-  const handleCustomColorChange = (hex: string) => {
-    setAccentCustom(hex)
-    updateAccentCSS(hex)
-  }
+  const handleCustomColorChange = useCallback(
+    (hex: string) => {
+      setAccentCustom(hex)
+      updateAccentCSS(hex)
+    },
+    [updateAccentCSS]
+  )
 
-  const handleAccentBgTintChange = (checked: boolean) => {
+  const handleAccentBgTintChange = useCallback((checked: boolean) => {
     setAccentBgTint(checked)
     window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
-  }
+  }, [])
 
-  const handleThemeModeChange = (mode: ThemeMode) => {
+  const handleThemeModeChange = useCallback((mode: ThemeMode) => {
     setThemeMode(mode)
     applyThemeMode(mode)
-  }
+  }, [])
 
-  const handleZoomFactorChange = (factor: number) => {
+  const handleZoomFactorChange = useCallback((factor: number) => {
     setZoomFactor(factor)
     setZoom(factor)
-  }
+  }, [])
 
-  const handleStartWithWindowsChange = (checked: boolean) => {
+  const handleStartWithWindowsChange = useCallback((checked: boolean) => {
     setStartWithWindows(checked)
     setLoginItem(checked)
-  }
+  }, [])
 
-  const handleBrowse = async (key: string, isGame: boolean) => {
-    const result = (await browsePath(key)) as {
-      filePath: string
-      inputId: string
-    }
-    if (result && result.filePath) {
-      if (isGame) {
-        updateSettingsObject('gamePaths', setGamePaths, (prev) => ({
-          ...prev,
-          [key]: result.filePath
-        }))
-      } else {
-        updateSettingsObject('appPaths', setAppPaths, (prev) => ({
-          ...prev,
-          [key]: result.filePath
-        }))
-        const icon = await getFileIcon(result.filePath)
-        if (icon) {
-          setAppIcons((prev) => ({ ...prev, [key]: icon }))
-          setIconLoadErrors((prev) => {
-            const next = new Set(prev)
-            next.delete(key)
-            return next
-          })
+  const handleBrowse = useCallback(
+    async (key: string, isGame: boolean) => {
+      const result = (await browsePath(key)) as {
+        filePath: string
+        inputId: string
+      }
+      if (result && result.filePath) {
+        if (isGame) {
+          updateSettingsObject('gamePaths', setGamePaths, (prev) => ({
+            ...prev,
+            [key]: result.filePath
+          }))
+        } else {
+          updateSettingsObject('appPaths', setAppPaths, (prev) => ({
+            ...prev,
+            [key]: result.filePath
+          }))
+          const icon = await getFileIcon(result.filePath)
+          if (icon) {
+            setAppIcons((prev) => ({ ...prev, [key]: icon }))
+            setIconLoadErrors((prev) => {
+              const next = new Set(prev)
+              next.delete(key)
+              return next
+            })
+          }
         }
       }
-    }
-  }
+    },
+    [updateSettingsObject]
+  )
 
-  const handleAddCustomSlot = () => {
+  const handleAddCustomSlot = useCallback(() => {
     setCustomSlots((current) => current + 1)
-  }
+  }, [])
 
-  const handleRemoveCustomSlot = (slotNumber: number) => {
-    if (customSlots <= 1) {
-      notify('At least one custom app slot is required', 'warn')
-      return
-    }
-
-    const slotKey = getCustomUtilityKey(slotNumber)
-    const slotName = appNames[slotKey] || `Custom App ${slotNumber}`
-
-    if (appPaths[slotKey]) {
-      const confirmed = window.confirm(`Remove ${slotName} and its executable path?`)
-
-      if (!confirmed) {
+  const handleRemoveCustomSlot = useCallback(
+    (slotNumber: number) => {
+      if (customSlots <= 1) {
+        notify('At least one custom app slot is required', 'warn')
         return
       }
-    }
 
-    updateSettingsObject('appPaths', setAppPaths, (current) =>
-      shiftCustomSlotRecord(current, slotNumber, customSlots)
-    )
-    updateSettingsObject('appNames', setAppNames, (current) =>
-      shiftCustomSlotRecord(current, slotNumber, customSlots)
-    )
-    updateSettingsObject('appArgs', setAppArgs, (current) =>
-      shiftCustomSlotRecord(current, slotNumber, customSlots)
-    )
-    setAppIcons((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
-    setIconLoadErrors((current) => shiftCustomSlotSet(current, slotNumber, customSlots))
-    setProfiles((current) => {
-      const nextProfiles: Profiles = {}
+      const slotKey = getCustomUtilityKey(slotNumber)
+      const slotName = appNames[slotKey] || `Custom App ${slotNumber}`
 
-      Object.entries(current).forEach(([gameKey, profile]) => {
-        nextProfiles[gameKey] = shiftProfileCustomSlots(profile, slotNumber, customSlots)
+      if (appPaths[slotKey]) {
+        const confirmed = window.confirm(`Remove ${slotName} and its executable path?`)
+
+        if (!confirmed) {
+          return
+        }
+      }
+
+      updateSettingsObject('appPaths', setAppPaths, (current) =>
+        shiftCustomSlotRecord(current, slotNumber, customSlots)
+      )
+      updateSettingsObject('appNames', setAppNames, (current) =>
+        shiftCustomSlotRecord(current, slotNumber, customSlots)
+      )
+      updateSettingsObject('appArgs', setAppArgs, (current) =>
+        shiftCustomSlotRecord(current, slotNumber, customSlots)
+      )
+      setAppIcons((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+      setIconLoadErrors((current) => shiftCustomSlotSet(current, slotNumber, customSlots))
+      setProfiles((current) => {
+        const nextProfiles: Profiles = {}
+
+        Object.entries(current).forEach(([gameKey, profile]) => {
+          nextProfiles[gameKey] = shiftProfileCustomSlots(profile, slotNumber, customSlots)
+        })
+
+        return nextProfiles
       })
+      setCustomSlots((current) => Math.max(1, current - 1))
+    },
+    [appNames, appPaths, customSlots, notify, updateSettingsObject]
+  )
 
-      return nextProfiles
-    })
-    setCustomSlots((current) => Math.max(1, current - 1))
-  }
+  const handleGamePathChange = useCallback(
+    (key: string, path: string) => {
+      updateSettingsObject('gamePaths', setGamePaths, (prev) => ({ ...prev, [key]: path }))
+    },
+    [updateSettingsObject]
+  )
 
-  const handleGamePathChange = (key: string, path: string) => {
-    updateSettingsObject('gamePaths', setGamePaths, (prev) => ({ ...prev, [key]: path }))
-  }
+  const handleAppPathChange = useCallback(
+    (key: string, path: string) => {
+      updateSettingsObject('appPaths', setAppPaths, (prev) => ({ ...prev, [key]: path }))
+      if (!path) {
+        setAppIcons((prev) => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }
+    },
+    [updateSettingsObject]
+  )
 
-  const handleAppPathChange = (key: string, path: string) => {
-    updateSettingsObject('appPaths', setAppPaths, (prev) => ({ ...prev, [key]: path }))
-    if (!path) {
-      setAppIcons((prev) => {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      })
-    }
-  }
+  const handleAppNameChange = useCallback(
+    (key: string, name: string) => {
+      updateSettingsObject('appNames', setAppNames, (prev) => ({ ...prev, [key]: name }))
+    },
+    [updateSettingsObject]
+  )
 
-  const handleAppNameChange = (key: string, name: string) => {
-    updateSettingsObject('appNames', setAppNames, (prev) => ({ ...prev, [key]: name }))
-  }
+  const handleAppArgsChange = useCallback(
+    (key: string, args: string) => {
+      updateSettingsObject('appArgs', setAppArgs, (prev) => ({ ...prev, [key]: args }))
+    },
+    [updateSettingsObject]
+  )
 
-  const handleAppArgsChange = (key: string, args: string) => {
-    updateSettingsObject('appArgs', setAppArgs, (prev) => ({ ...prev, [key]: args }))
-  }
-
-  const handleIconLoadError = (key: string) => {
+  const handleIconLoadError = useCallback((key: string) => {
     setIconLoadErrors((prev) => new Set([...prev, key]))
-  }
+  }, [])
 
-  const handleExportConfig = async () => {
+  const handleExportConfig = useCallback(async () => {
     setExportingConfig(true)
 
     try {
@@ -462,9 +490,9 @@ export function SettingsProvider({
     } finally {
       setExportingConfig(false)
     }
-  }
+  }, [notify])
 
-  const handleImportConfig = async () => {
+  const handleImportConfig = useCallback(async () => {
     const confirmed = window.confirm(
       'Importing a config file will replace your current SimLauncher settings. Continue?'
     )
@@ -492,9 +520,9 @@ export function SettingsProvider({
     } finally {
       setImportingConfig(false)
     }
-  }
+  }, [loadSettingsFromStore, notify, onConfigImported, resetDirty])
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     try {
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
       const trimmedAppPaths = trimPathRecord(appPaths)
@@ -564,7 +592,28 @@ export function SettingsProvider({
       notify('Failed to save settings', 'error')
       console.error(err)
     }
-  }
+  }, [
+    appArgs,
+    appNames,
+    appPaths,
+    accentBgTint,
+    accentCustom,
+    accentPreset,
+    autoCheckUpdates,
+    currentSettingsState,
+    customSlots,
+    focusActiveTitle,
+    gamePaths,
+    launchDelayMs,
+    minimizeToTray,
+    notify,
+    profiles,
+    resetDirty,
+    startMinimized,
+    startWithWindows,
+    themeMode,
+    zoomFactor
+  ])
 
   useEffect(() => {
     if (shouldSaveTrigger) {
@@ -576,56 +625,103 @@ export function SettingsProvider({
 
   const utilities = useMemo(() => getUtilities(customSlots), [customSlots])
 
-  const value: SettingsContextValue = {
-    loading,
-    isDirty,
-    appPaths,
-    appNames,
-    appArgs,
-    profiles,
-    gamePaths,
-    customSlots,
-    accentPreset,
-    accentCustom,
-    accentBgTint,
-    themeMode,
-    focusActiveTitle,
-    launchDelayMs,
-    startWithWindows,
-    startMinimized,
-    minimizeToTray,
-    autoCheckUpdates,
-    zoomFactor,
-    exportingConfig,
-    importingConfig,
-    isCustomColor,
-    appIcons,
-    gameIcons,
-    iconLoadErrors,
-    utilities,
-    onAutoCheckUpdatesChange: setAutoCheckUpdates,
-    onAccentChange: handleAccentChange,
-    onCustomColorChange: handleCustomColorChange,
-    onAccentBgTintChange: handleAccentBgTintChange,
-    onThemeModeChange: handleThemeModeChange,
-    onFocusActiveTitleChange: setFocusActiveTitle,
-    onZoomFactorChange: handleZoomFactorChange,
-    onStartWithWindowsChange: handleStartWithWindowsChange,
-    onStartMinimizedChange: setStartMinimized,
-    onMinimizeToTrayChange: setMinimizeToTray,
-    onLaunchDelayMsChange: setLaunchDelayMs,
-    onExportConfig: handleExportConfig,
-    onImportConfig: handleImportConfig,
-    onBrowse: handleBrowse,
-    onGamePathChange: handleGamePathChange,
-    onAppNameChange: handleAppNameChange,
-    onAppPathChange: handleAppPathChange,
-    onAppArgsChange: handleAppArgsChange,
-    onIconLoadError: handleIconLoadError,
-    onAddCustomSlot: handleAddCustomSlot,
-    onRemoveCustomSlot: handleRemoveCustomSlot,
-    saveSettings: handleSave
-  }
+  const value: SettingsContextValue = useMemo(
+    () => ({
+      loading,
+      isDirty,
+      appPaths,
+      appNames,
+      appArgs,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor,
+      exportingConfig,
+      importingConfig,
+      isCustomColor,
+      appIcons,
+      gameIcons,
+      iconLoadErrors,
+      utilities,
+      onAutoCheckUpdatesChange: setAutoCheckUpdates,
+      onAccentChange: handleAccentChange,
+      onCustomColorChange: handleCustomColorChange,
+      onAccentBgTintChange: handleAccentBgTintChange,
+      onThemeModeChange: handleThemeModeChange,
+      onFocusActiveTitleChange: setFocusActiveTitle,
+      onZoomFactorChange: handleZoomFactorChange,
+      onStartWithWindowsChange: handleStartWithWindowsChange,
+      onStartMinimizedChange: setStartMinimized,
+      onMinimizeToTrayChange: setMinimizeToTray,
+      onLaunchDelayMsChange: setLaunchDelayMs,
+      onExportConfig: handleExportConfig,
+      onImportConfig: handleImportConfig,
+      onBrowse: handleBrowse,
+      onGamePathChange: handleGamePathChange,
+      onAppNameChange: handleAppNameChange,
+      onAppPathChange: handleAppPathChange,
+      onAppArgsChange: handleAppArgsChange,
+      onIconLoadError: handleIconLoadError,
+      onAddCustomSlot: handleAddCustomSlot,
+      onRemoveCustomSlot: handleRemoveCustomSlot,
+      saveSettings: handleSave
+    }),
+    [
+      loading,
+      isDirty,
+      appPaths,
+      appNames,
+      appArgs,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor,
+      exportingConfig,
+      importingConfig,
+      isCustomColor,
+      appIcons,
+      gameIcons,
+      iconLoadErrors,
+      utilities,
+      handleAccentChange,
+      handleCustomColorChange,
+      handleAccentBgTintChange,
+      handleThemeModeChange,
+      handleZoomFactorChange,
+      handleStartWithWindowsChange,
+      handleExportConfig,
+      handleImportConfig,
+      handleBrowse,
+      handleGamePathChange,
+      handleAppNameChange,
+      handleAppPathChange,
+      handleAppArgsChange,
+      handleIconLoadError,
+      handleAddCustomSlot,
+      handleRemoveCustomSlot,
+      handleSave
+    ]
+  )
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
 }
