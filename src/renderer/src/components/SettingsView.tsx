@@ -6,6 +6,7 @@ import { AppsSection } from './settings/AppsSection'
 import { BehaviorSection } from './settings/BehaviorSection'
 import { ConfigSection } from './settings/ConfigSection'
 import { GamesSection } from './settings/GamesSection'
+import { SettingsSection } from './settings/SettingsSection'
 import { SettingsProvider, useSettings } from './settings/SettingsContext'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
@@ -46,9 +47,19 @@ function SettingsViewContent({
 }) {
   const { notify } = useNotify()
   const { loading, isDirty, saveSettings } = useSettings()
-  const [appsOpen, setAppsOpen] = useState(false)
-  const [gamesOpen, setGamesOpen] = useState(false)
+  const [expandedSections, setExpandedSections] = useState({
+    about: true,
+    appearance: true,
+    behavior: true,
+    config: true,
+    games: false,
+    apps: false
+  })
   const updateStatus = useUpdateStatus({ updateInfo, notify })
+
+  const setSectionOpen = (section: keyof typeof expandedSections, open: boolean) => {
+    setExpandedSections((current) => ({ ...current, [section]: open }))
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -64,26 +75,62 @@ function SettingsViewContent({
 
   return (
     <div className="animate-fade-slide space-y-8 pb-10">
-      <AboutSection
-        appVersion={updateStatus.appVersion}
-        updateInfo={updateInfo}
-        checkingUpdate={updateStatus.checkingUpdate}
-        installingUpdate={updateStatus.installingUpdate}
-        updateProgress={updateStatus.updateProgress}
-        updateStatus={updateStatus.updateStatus}
-        onManualCheck={updateStatus.handleManualCheck}
-        onInstallUpdate={updateStatus.handleInstallUpdate}
-      />
+      <SettingsSection
+        title="About"
+        open={expandedSections.about}
+        onOpenChange={(open) => setSectionOpen('about', open)}
+      >
+        <AboutSection
+          appVersion={updateStatus.appVersion}
+          updateInfo={updateInfo}
+          checkingUpdate={updateStatus.checkingUpdate}
+          installingUpdate={updateStatus.installingUpdate}
+          updateProgress={updateStatus.updateProgress}
+          updateStatus={updateStatus.updateStatus}
+          onManualCheck={updateStatus.handleManualCheck}
+          onInstallUpdate={updateStatus.handleInstallUpdate}
+        />
+      </SettingsSection>
 
-      <AppearanceSection />
+      <SettingsSection
+        title="Appearance"
+        open={expandedSections.appearance}
+        onOpenChange={(open) => setSectionOpen('appearance', open)}
+      >
+        <AppearanceSection />
+      </SettingsSection>
 
-      <BehaviorSection />
+      <SettingsSection
+        title="Behavior"
+        open={expandedSections.behavior}
+        onOpenChange={(open) => setSectionOpen('behavior', open)}
+      >
+        <BehaviorSection />
+      </SettingsSection>
 
-      <ConfigSection />
+      <SettingsSection
+        title="Config"
+        open={expandedSections.config}
+        onOpenChange={(open) => setSectionOpen('config', open)}
+      >
+        <ConfigSection />
+      </SettingsSection>
 
-      <GamesSection open={gamesOpen} onOpenChange={setGamesOpen} />
+      <SettingsSection
+        title="Games"
+        open={expandedSections.games}
+        onOpenChange={(open) => setSectionOpen('games', open)}
+      >
+        <GamesSection />
+      </SettingsSection>
 
-      <AppsSection open={appsOpen} onOpenChange={setAppsOpen} />
+      <SettingsSection
+        title="Utility Apps"
+        open={expandedSections.apps}
+        onOpenChange={(open) => setSectionOpen('apps', open)}
+      >
+        <AppsSection />
+      </SettingsSection>
 
       <div className="flex gap-4 pt-4 px-1">
         <button
