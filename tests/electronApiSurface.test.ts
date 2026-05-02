@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { test } from 'vitest'
 
 const root = process.cwd()
 
