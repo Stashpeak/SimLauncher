@@ -14,6 +14,7 @@ import {
   killLaunchedApps,
   relaunchMissingProfile
 } from '../../lib/electron'
+import { formatKillFailures } from '../../lib/killFailures'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
 import { GameIcon } from './GameIcon'
@@ -145,7 +146,15 @@ export function GameRow({
             return
           }
           onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
-          switchWarning = result.warning
+
+          const switchWarnings: string[] = []
+          if (result.killFailures && result.killFailures.length > 0) {
+            switchWarnings.push(formatKillFailures(result.killFailures))
+          }
+          if (result.warning) {
+            switchWarnings.push(result.warning)
+          }
+          switchWarning = switchWarnings.length > 0 ? switchWarnings.join(' ') : undefined
         }
 
         await onRunningStateRefresh()
@@ -214,11 +223,8 @@ export function GameRow({
       await onRunningStateRefresh()
 
       if (!result.success) {
-        notify(
-          result.warning || result.error || 'Some companion apps could not be closed',
-          'warn',
-          6000
-        )
+        const message = result.error || formatKillFailures(result.failures)
+        notify(message, 'warn', 6000)
         return
       }
 
