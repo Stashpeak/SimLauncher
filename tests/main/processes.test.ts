@@ -1,56 +1,58 @@
+import { beforeEach, expect, test, vi } from 'vitest'
+
 type StoreData = Record<string, unknown>
 
 const storeData: StoreData = {}
 const existingPaths = new Set<string>()
 const processNames = new Set<string>()
 
-vi.mock('electron-store', () => ({
-  default: class MockStore {
-    store = storeData
-
-    get(key: string) {
-      return storeData[key]
-    }
-
-    set(key: string, value: unknown) {
-      storeData[key] = value
-    }
-  }
-}))
-
-vi.mock('fs', () => ({
-  default: {
-    existsSync: (filePath: string) => existingPaths.has(filePath.replace(/\\/g, '/').trim())
-  }
-}))
-
-vi.mock('child_process', () => ({
-  execFile: vi.fn((_command, _args, _options, callback) => callback(null, '', '')),
-  spawn: vi.fn((appPath: string) => {
-    const handlers = new Map<string, (...args: unknown[]) => void>()
-    const child = {
-      pid: 1234,
-      once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        handlers.set(event, handler)
-        if (event === 'spawn') {
-          queueMicrotask(handler)
-        }
-        return child
-      }),
-      unref: vi.fn(),
-      kill: vi.fn()
-    }
-
-    processNames.add(appPath.split(/[\\/]/).pop()!.toLowerCase())
-    return child
-  })
-}))
-
-vi.mock('../../src/main/processes/tasklist', () => ({
-  readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
-}))
-
 async function loadProcessModules() {
+  vi.doMock('electron-store', () => ({
+    default: class MockStore {
+      store = storeData
+
+      get(key: string) {
+        return storeData[key]
+      }
+
+      set(key: string, value: unknown) {
+        storeData[key] = value
+      }
+    }
+  }))
+
+  vi.doMock('fs', () => ({
+    default: {
+      existsSync: (filePath: string) => existingPaths.has(filePath.replace(/\\/g, '/').trim())
+    }
+  }))
+
+  vi.doMock('child_process', () => ({
+    execFile: vi.fn((_command, _args, _options, callback) => callback(null, '', '')),
+    spawn: vi.fn((appPath: string) => {
+      const handlers = new Map<string, (...args: unknown[]) => void>()
+      const child = {
+        pid: 1234,
+        once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+          handlers.set(event, handler)
+          if (event === 'spawn') {
+            queueMicrotask(handler)
+          }
+          return child
+        }),
+        unref: vi.fn(),
+        kill: vi.fn()
+      }
+
+      processNames.add(appPath.split(/[\\/]/).pop()!.toLowerCase())
+      return child
+    })
+  }))
+
+  vi.doMock('../../src/main/processes/tasklist', () => ({
+    readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
+  }))
+
   const spawnModule = await import('../../src/main/processes/spawn')
   const killModule = await import('../../src/main/processes/kill')
   const stateModule = await import('../../src/main/processes/state')

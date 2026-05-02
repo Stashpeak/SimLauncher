@@ -1,18 +1,20 @@
-vi.mock('electron-store', () => ({
-  default: class MockStore {
-    store: Record<string, unknown> = {}
-
-    get(key: string) {
-      return this.store[key]
-    }
-
-    set(key: string, value: unknown) {
-      this.store[key] = value
-    }
-  }
-}))
+import { expect, test, vi } from 'vitest'
 
 async function loadStoreModule() {
+  vi.doMock('electron-store', () => ({
+    default: class MockStore {
+      store: Record<string, unknown> = {}
+
+      get(key: string) {
+        return this.store[key]
+      }
+
+      set(key: string, value: unknown) {
+        this.store[key] = value
+      }
+    }
+  }))
+
   const storeModule = await import('../../src/main/store')
   return {
     MAX_CUSTOM_SLOTS: storeModule.MAX_CUSTOM_SLOTS,
