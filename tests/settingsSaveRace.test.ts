@@ -22,7 +22,23 @@ const latestObjects: SettingsObjectRecords = {
   gamePaths: { ams2: 'D:\\Games\\AMS2.exe' }
 }
 
-test('settings save race resolution keeps app path edits made while save is in flight', () => {
+test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when nothing changed during save', () => {
+  const versionsAtSave = createSettingsObjectVersions()
+  const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, versionsAtSave)
+
+  const resolved = resolveSettingsObjectsAfterSave({
+    savedObjects,
+    latestObjects,
+    changedDuringSave
+  })
+
+  assert.deepEqual(resolved.appPaths, savedObjects.appPaths)
+  assert.deepEqual(resolved.appNames, savedObjects.appNames)
+  assert.deepEqual(resolved.appArgs, savedObjects.appArgs)
+  assert.deepEqual(resolved.gamePaths, savedObjects.gamePaths)
+})
+
+test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when app paths changed during save', () => {
   const versionsAtSave = createSettingsObjectVersions()
   const currentVersions = { ...versionsAtSave, appPaths: versionsAtSave.appPaths + 1 }
   const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
@@ -33,13 +49,13 @@ test('settings save race resolution keeps app path edits made while save is in f
     changedDuringSave
   })
 
-  assert.deepEqual(resolved.appPaths, latestObjects.appPaths)
+  assert.deepEqual(resolved.appPaths, savedObjects.appPaths)
   assert.deepEqual(resolved.appNames, savedObjects.appNames)
   assert.deepEqual(resolved.appArgs, savedObjects.appArgs)
   assert.deepEqual(resolved.gamePaths, savedObjects.gamePaths)
 })
 
-test('settings save race resolution keeps game path edits made while save is in flight', () => {
+test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when game paths changed during save', () => {
   const versionsAtSave = createSettingsObjectVersions()
   const currentVersions = { ...versionsAtSave, gamePaths: versionsAtSave.gamePaths + 1 }
   const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
@@ -50,13 +66,18 @@ test('settings save race resolution keeps game path edits made while save is in 
     changedDuringSave
   })
 
-  assert.deepEqual(resolved.gamePaths, latestObjects.gamePaths)
+  assert.deepEqual(resolved.gamePaths, savedObjects.gamePaths)
   assert.deepEqual(resolved.appPaths, savedObjects.appPaths)
 })
 
-test('settings save race resolution keeps app name edits made while save is in flight', () => {
+test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when all fields changed during save', () => {
   const versionsAtSave = createSettingsObjectVersions()
-  const currentVersions = { ...versionsAtSave, appNames: versionsAtSave.appNames + 1 }
+  const currentVersions = {
+    appPaths: versionsAtSave.appPaths + 1,
+    appNames: versionsAtSave.appNames + 1,
+    appArgs: versionsAtSave.appArgs + 1,
+    gamePaths: versionsAtSave.gamePaths + 1
+  }
   const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
 
   const resolved = resolveSettingsObjectsAfterSave({
@@ -65,21 +86,5 @@ test('settings save race resolution keeps app name edits made while save is in f
     changedDuringSave
   })
 
-  assert.deepEqual(resolved.appNames, latestObjects.appNames)
-  assert.deepEqual(resolved.appArgs, savedObjects.appArgs)
-})
-
-test('settings save race resolution keeps app argument edits made while save is in flight', () => {
-  const versionsAtSave = createSettingsObjectVersions()
-  const currentVersions = { ...versionsAtSave, appArgs: versionsAtSave.appArgs + 1 }
-  const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
-
-  const resolved = resolveSettingsObjectsAfterSave({
-    savedObjects,
-    latestObjects,
-    changedDuringSave
-  })
-
-  assert.deepEqual(resolved.appArgs, latestObjects.appArgs)
-  assert.deepEqual(resolved.appNames, savedObjects.appNames)
+  assert.deepEqual(resolved, savedObjects)
 })
