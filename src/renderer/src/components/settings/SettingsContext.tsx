@@ -29,12 +29,8 @@ import {
   saveProfiles,
   saveSettings as persistSettings
 } from '../../lib/store'
-import {
-  applyAccentTheme,
-  applyThemeMode,
-  normalizeThemeMode,
-  type ThemeMode
-} from '../../lib/theme'
+import { normalizeThemeMode, type ThemeMode } from '../../lib/theme'
+import { useTheme } from '../../contexts/ThemeContext'
 import { useNotify } from '../Notify'
 import { shiftCustomSlotRecord, shiftCustomSlotSet, shiftProfileCustomSlots } from './customSlots'
 import {
@@ -135,6 +131,7 @@ export function SettingsProvider({
   onConfigImported?: () => void
 }) {
   const { notify } = useNotify()
+  const theme = useTheme()
   const [loading, setLoading] = useState(true)
 
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
@@ -199,7 +196,7 @@ export function SettingsProvider({
     setAccentCustom(settings.accentCustom || '')
     setAccentBgTint(settings.accentBgTint || false)
     setThemeMode(loadedThemeMode)
-    applyThemeMode(loadedThemeMode)
+    theme.setThemeMode(loadedThemeMode)
     setFocusActiveTitle(settings.focusActiveTitle !== false)
     setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
     setStartWithWindows(settings.startWithWindows || false)
@@ -228,7 +225,7 @@ export function SettingsProvider({
     setGameIcons(gIcons)
 
     setLoading(false)
-  }, [])
+  }, [theme])
 
   useEffect(() => {
     loadSettingsFromStore()
@@ -309,41 +306,43 @@ export function SettingsProvider({
     onDirtyChange?.(isDirty)
   }, [isDirty, onDirtyChange])
 
-  const updateAccentCSS = useCallback((hex: string) => {
-    if (hex) applyAccentTheme(hex)
-  }, [])
-
   const handleAccentChange = useCallback(
     (presetHex: string) => {
       setAccentPreset(presetHex)
       if (presetHex !== 'custom') {
         setIsCustomColor(false)
-        updateAccentCSS(presetHex)
+        theme.setAccentPreset(presetHex)
       } else {
         setIsCustomColor(true)
-        if (accentCustom) updateAccentCSS(accentCustom)
+        theme.setAccentPreset(presetHex)
       }
     },
-    [accentCustom, updateAccentCSS]
+    [theme]
   )
 
   const handleCustomColorChange = useCallback(
     (hex: string) => {
       setAccentCustom(hex)
-      updateAccentCSS(hex)
+      theme.setAccentCustom(hex)
     },
-    [updateAccentCSS]
+    [theme]
   )
 
-  const handleAccentBgTintChange = useCallback((checked: boolean) => {
-    setAccentBgTint(checked)
-    window.dispatchEvent(new CustomEvent('bg-tint-change', { detail: checked }))
-  }, [])
+  const handleAccentBgTintChange = useCallback(
+    (checked: boolean) => {
+      setAccentBgTint(checked)
+      theme.setAccentBgTint(checked)
+    },
+    [theme]
+  )
 
-  const handleThemeModeChange = useCallback((mode: ThemeMode) => {
-    setThemeMode(mode)
-    applyThemeMode(mode)
-  }, [])
+  const handleThemeModeChange = useCallback(
+    (mode: ThemeMode) => {
+      setThemeMode(mode)
+      theme.setThemeMode(mode)
+    },
+    [theme]
+  )
 
   const handleZoomFactorChange = useCallback((factor: number) => {
     setZoomFactor(factor)
