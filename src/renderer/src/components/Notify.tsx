@@ -103,10 +103,10 @@ const TOAST_ICONS: Record<ToastType, ReactNode> = {
 
 const TOAST_STYLES: Record<ToastType, string> = {
   success:
-    'border-(--success-border) text-(--success-text) [--glass-surface-fill:var(--success-surface)]',
-  warn: 'border-(--warning-border) text-(--warning-text) [--glass-surface-fill:var(--warning-surface)]',
+    'border-(--success-border) text-(--success-text) [--glass-surface-fill:color-mix(in_srgb,var(--success-surface),var(--glass-bg-elevated))]',
+  warn: 'border-(--warning-border) text-(--warning-text) [--glass-surface-fill:color-mix(in_srgb,var(--warning-surface),var(--glass-bg-elevated))]',
   error:
-    'border-(--danger-border) text-(--danger-text) [--glass-surface-fill:var(--danger-surface)]'
+    'border-(--danger-border) text-(--danger-text) [--glass-surface-fill:color-mix(in_srgb,var(--danger-surface),var(--glass-bg-elevated))]'
 }
 
 function ToastCard({
@@ -217,7 +217,7 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    return onAppLaunchError((data) => {
+    return onAppLaunchError((data: unknown) => {
       notify(formatLaunchErrorToast(data), 'error', 5000)
     })
   }, [notify])
