@@ -81,6 +81,19 @@ export function ProfileEditor(props: ProfileEditorProps) {
         }}
         onCancel={() => editor.setShowConfirm(false)}
       />
+
+      <ConfirmDialog
+        isOpen={editor.profileDeleteConfirm !== null}
+        title="Delete Profile"
+        message={`Delete profile "${editor.profileDeleteConfirm?.profileName || ''}"?`}
+        saveLabel="Delete Profile"
+        discardLabel="Keep Profile"
+        saveClassName="danger-action"
+        discardClassName="neutral-action"
+        onSave={editor.confirmDeleteProfile}
+        onDiscard={() => editor.setProfileDeleteConfirm(null)}
+        onCancel={() => editor.setProfileDeleteConfirm(null)}
+      />
     </div>
   )
 }
