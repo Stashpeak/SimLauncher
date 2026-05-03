@@ -32,7 +32,7 @@ export function useRunningApps(configuredGames: Game[]) {
         const apps = await getRunningApps()
         if (!isMounted()) return
 
-        const nextApps = apps || []
+        const nextApps: RunningApp[] = apps || []
         setRunningApps(nextApps)
 
         const newStatus: Record<string, boolean> = {}

@@ -1,15 +1,10 @@
 export const getSettings = () => window.electronAPI.getSettings()
-export const saveSettings: typeof window.electronAPI.saveSettings = (patch) =>
-  window.electronAPI.saveSettings(patch)
+export const saveSettings = window.electronAPI.saveSettings
 export const getProfiles = () => window.electronAPI.getProfiles()
-export const saveProfile: typeof window.electronAPI.saveProfile = (key, profile) =>
-  window.electronAPI.saveProfile(key, profile)
-export const saveProfiles: typeof window.electronAPI.saveProfiles = (profiles) =>
-  window.electronAPI.saveProfiles(profiles)
+export const saveProfile = window.electronAPI.saveProfile
+export const saveProfiles = window.electronAPI.saveProfiles
 export const getMigrationFlags = () => window.electronAPI.getMigrationFlags()
-export const setMigrationFlags: typeof window.electronAPI.setMigrationFlags = (patch) =>
-  window.electronAPI.setMigrationFlags(patch)
-export const onStoreConfigChanged: typeof window.electronAPI.onStoreConfigChanged = (cb) =>
-  window.electronAPI.onStoreConfigChanged(cb)
+export const setMigrationFlags = window.electronAPI.setMigrationFlags
+export const onStoreConfigChanged = window.electronAPI.onStoreConfigChanged
 export const exportConfig = () => window.electronAPI.exportConfig()
 export const importConfig = () => window.electronAPI.importConfig()

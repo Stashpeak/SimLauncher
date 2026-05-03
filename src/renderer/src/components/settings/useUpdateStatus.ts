@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ProgressInfo } from 'electron-updater'
 import {
   checkForUpdates,
   getVersion,
@@ -48,7 +49,7 @@ export function useUpdateStatus({
       setUpdateStatus('up-to-date')
       clearStatusLater(3000)
     })
-    const unsubscribeProgress = onUpdateDownloadProgress((progress) => {
+    const unsubscribeProgress = onUpdateDownloadProgress((progress: ProgressInfo) => {
       if (typeof progress?.percent === 'number') {
         setUpdateProgress(progress.percent)
       }
@@ -59,7 +60,7 @@ export function useUpdateStatus({
       setUpdateProgress(null)
       setUpdateStatus('downloaded')
     })
-    const unsubscribeError = onUpdateError((error) => {
+    const unsubscribeError = onUpdateError((error: Error) => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
       setUpdateProgress(null)

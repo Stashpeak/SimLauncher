@@ -12,6 +12,8 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "lint": "eslint .",
+    "preload:types": "node scripts/generate-preload-types.mjs",
+    "preload:types:check": "node scripts/generate-preload-types.mjs --check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc",

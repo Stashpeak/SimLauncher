@@ -1,47 +1,25 @@
-export const launchProfile: typeof window.electronAPI.launchProfile = (gameKey) =>
-  window.electronAPI.launchProfile(gameKey)
-export const relaunchMissingProfile: typeof window.electronAPI.relaunchMissingProfile = (gameKey) =>
-  window.electronAPI.relaunchMissingProfile(gameKey)
-export const getProfileSwitchDiff: typeof window.electronAPI.getProfileSwitchDiff = (
-  gameKey,
-  fromProfileId,
-  toProfileId
-) => window.electronAPI.getProfileSwitchDiff(gameKey, fromProfileId, toProfileId)
-export const switchProfileApps: typeof window.electronAPI.switchProfileApps = (
-  gameKey,
-  fromProfileId,
-  toProfileId
-) => window.electronAPI.switchProfileApps(gameKey, fromProfileId, toProfileId)
-export const browsePath: typeof window.electronAPI.browsePath = (inputId) =>
-  window.electronAPI.browsePath(inputId)
-export const onAppLaunchError: typeof window.electronAPI.onAppLaunchError = (cb) =>
-  window.electronAPI.onAppLaunchError(cb)
+export const launchProfile = window.electronAPI.launchProfile
+export const relaunchMissingProfile = window.electronAPI.relaunchMissingProfile
+export const getProfileSwitchDiff = window.electronAPI.getProfileSwitchDiff
+export const switchProfileApps = window.electronAPI.switchProfileApps
+export const browsePath = window.electronAPI.browsePath
+export const onAppLaunchError = window.electronAPI.onAppLaunchError
 export const minimize = () => window.electronAPI.minimize()
 export const maximize = () => window.electronAPI.maximize()
 export const close = () => window.electronAPI.close()
 export const restartApp = () => window.electronAPI.restartApp()
 export const getRunningApps = () => window.electronAPI.getRunningApps()
-export const killLaunchedApps: typeof window.electronAPI.killLaunchedApps = (gameKey) =>
-  window.electronAPI.killLaunchedApps(gameKey)
-export const onUpdateAvailable: typeof window.electronAPI.onUpdateAvailable = (cb) =>
-  window.electronAPI.onUpdateAvailable(cb)
-export const onUpdateDownloaded: typeof window.electronAPI.onUpdateDownloaded = (cb) =>
-  window.electronAPI.onUpdateDownloaded(cb)
-export const onUpdateNotAvailable: typeof window.electronAPI.onUpdateNotAvailable = (cb) =>
-  window.electronAPI.onUpdateNotAvailable(cb)
-export const onUpdateDownloadProgress: typeof window.electronAPI.onUpdateDownloadProgress = (cb) =>
-  window.electronAPI.onUpdateDownloadProgress(cb)
-export const onUpdateError: typeof window.electronAPI.onUpdateError = (cb) =>
-  window.electronAPI.onUpdateError(cb)
+export const killLaunchedApps = window.electronAPI.killLaunchedApps
+export const onUpdateAvailable = window.electronAPI.onUpdateAvailable
+export const onUpdateDownloaded = window.electronAPI.onUpdateDownloaded
+export const onUpdateNotAvailable = window.electronAPI.onUpdateNotAvailable
+export const onUpdateDownloadProgress = window.electronAPI.onUpdateDownloadProgress
+export const onUpdateError = window.electronAPI.onUpdateError
 export const installUpdate = () => window.electronAPI.installUpdate()
 export const checkForUpdates = () => window.electronAPI.checkForUpdates()
 export const getUpdateInfo = () => window.electronAPI.getUpdateInfo()
-export const setLoginItem: typeof window.electronAPI.setLoginItem = (openAtLogin) =>
-  window.electronAPI.setLoginItem(openAtLogin)
-export const setZoom: typeof window.electronAPI.setZoom = (factor) =>
-  window.electronAPI.setZoom(factor)
-export const getAssetData: typeof window.electronAPI.getAssetData = (filename) =>
-  window.electronAPI.getAssetData(filename)
-export const getFileIcon: typeof window.electronAPI.getFileIcon = (filePath) =>
-  window.electronAPI.getFileIcon(filePath)
+export const setLoginItem = window.electronAPI.setLoginItem
+export const setZoom = window.electronAPI.setZoom
+export const getAssetData = window.electronAPI.getAssetData
+export const getFileIcon = window.electronAPI.getFileIcon
 export const getVersion = () => window.electronAPI.getVersion()
