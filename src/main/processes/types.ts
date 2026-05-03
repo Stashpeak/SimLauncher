@@ -1,5 +1,13 @@
 import type { ChildProcess } from 'child_process'
 
+export type KillFailureReason = 'access_denied' | 'still_running' | 'unknown'
+
+export interface KillFailure {
+  appName: string
+  appPath: string
+  reason: KillFailureReason
+}
+
 export interface LaunchResult {
   success: boolean
   message?: string
@@ -9,15 +17,16 @@ export interface LaunchResult {
   skippedCount?: number
   elevatedCount?: number
   failedCount?: number
+  killFailures?: KillFailure[]
 }
 
 export interface KillResult {
   success: boolean
   message?: string
-  warning?: string
   error?: string
   closedCount: number
   failedCount: number
+  failures: KillFailure[]
 }
 
 export type AppLaunchResult =
@@ -37,4 +46,5 @@ export interface UnclosedProcessEntry {
   name: string
   gameKey: string
   error: string
+  reason: KillFailureReason
 }

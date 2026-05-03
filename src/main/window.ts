@@ -123,7 +123,7 @@ export function createWindow() {
       })
     }
 
-    // DEV: fake update - remove this block to disable
+    // In development, simulate update availability so the updater UI can be tested.
     if (!app.isPackaged && autoCheckUpdates) {
       setTimeout(() => {
         checkForUpdates().catch((err) => {
