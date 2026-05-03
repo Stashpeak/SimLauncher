@@ -9,5 +9,7 @@ export const saveProfiles: typeof window.electronAPI.saveProfiles = (profiles) =
 export const getMigrationFlags = () => window.electronAPI.getMigrationFlags()
 export const setMigrationFlags: typeof window.electronAPI.setMigrationFlags = (patch) =>
   window.electronAPI.setMigrationFlags(patch)
+export const onStoreConfigChanged: typeof window.electronAPI.onStoreConfigChanged = (cb) =>
+  window.electronAPI.onStoreConfigChanged(cb)
 export const exportConfig = () => window.electronAPI.exportConfig()
 export const importConfig = () => window.electronAPI.importConfig()

@@ -29,6 +29,18 @@ declare global {
     profileUtilityOrderMigrated: boolean
     profileSetsMigrated: boolean
   }
+
+  type StoreConfigChangeReason =
+    | 'import-config'
+    | 'save-settings'
+    | 'save-profile'
+    | 'save-profiles'
+    | 'set-migration-flags'
+
+  interface StoreConfigChangePayload {
+    reason: StoreConfigChangeReason
+    keys: string[]
+  }
 }
 
 type Unsubscribe = () => void
@@ -124,6 +136,7 @@ declare global {
       saveProfiles: (profiles: unknown) => Promise<void>
       getMigrationFlags: () => Promise<MigrationFlags>
       setMigrationFlags: (patch: Partial<MigrationFlags>) => Promise<void>
+      onStoreConfigChanged: (cb: (payload: StoreConfigChangePayload) => void) => Unsubscribe
       exportConfig: () => Promise<ConfigFileResult>
       importConfig: () => Promise<ConfigFileResult>
       setLoginItem: (openAtLogin: boolean) => Promise<void>

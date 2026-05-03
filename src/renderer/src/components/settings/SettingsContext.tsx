@@ -26,6 +26,7 @@ import {
   getProfiles,
   getSettings,
   importConfig,
+  onStoreConfigChanged,
   saveProfiles,
   saveSettings as persistSettings
 } from '../../lib/store'
@@ -303,6 +304,13 @@ export function SettingsProvider({
   const { isDirty, resetDirty } = useDirtyTracking(currentSettingsState, loading)
 
   useEffect(() => {
+    return onStoreConfigChanged((payload: StoreConfigChangePayload) => {
+      if (payload.reason === 'save-settings' || payload.reason === 'save-profiles') return
+      void loadSettingsFromStore().then(() => resetDirty())
+    })
+  }, [loadSettingsFromStore, resetDirty])
+
+  useEffect(() => {
     onDirtyChange?.(isDirty)
   }, [isDirty, onDirtyChange])
 
@@ -506,8 +514,6 @@ export function SettingsProvider({
       const result = await importConfig()
 
       if (result.success) {
-        await loadSettingsFromStore()
-        resetDirty()
         onConfigImported?.()
         notify('Config imported', 'success', 2500)
       } else if (!result.canceled) {
@@ -519,7 +525,7 @@ export function SettingsProvider({
     } finally {
       setImportingConfig(false)
     }
-  }, [loadSettingsFromStore, notify, onConfigImported, resetDirty])
+  }, [notify, onConfigImported])
 
   const handleSave = useCallback(async () => {
     try {

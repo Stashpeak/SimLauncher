@@ -70,6 +70,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveProfiles: (profiles: unknown) => ipcRenderer.invoke('save-profiles', profiles),
   getMigrationFlags: () => ipcRenderer.invoke('get-migration-flags'),
   setMigrationFlags: (patch: unknown) => ipcRenderer.invoke('set-migration-flags', patch),
+  onStoreConfigChanged: (cb: (payload: unknown) => void) => {
+    const handler = (_: unknown, payload: unknown) => cb(payload)
+    ipcRenderer.on('store-config-changed', handler)
+    return () => ipcRenderer.removeListener('store-config-changed', handler)
+  },
   exportConfig: () => ipcRenderer.invoke('export-config'),
   importConfig: () => ipcRenderer.invoke('import-config'),
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),

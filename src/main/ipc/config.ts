@@ -14,7 +14,25 @@ import {
   store
 } from '../store'
 import { isRecord } from '../utils'
-import { applyRuntimeConfigSettings, getMainWindow } from '../window'
+import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
+
+const STORE_CONFIG_CHANGED_CHANNEL = 'store-config-changed'
+
+type StoreConfigChangeReason =
+  | 'import-config'
+  | 'save-settings'
+  | 'save-profile'
+  | 'save-profiles'
+  | 'set-migration-flags'
+
+interface StoreConfigChangePayload {
+  reason: StoreConfigChangeReason
+  keys: string[]
+}
+
+function notifyStoreConfigChanged(payload: StoreConfigChangePayload) {
+  sendToRenderer(STORE_CONFIG_CHANGED_CHANNEL, payload)
+}
 
 export function registerConfigHandlers() {
   ipcMain.handle('export-config', async () => {
@@ -79,6 +97,7 @@ export function registerConfigHandlers() {
         store.set(supportedConfig)
         migrateProfilesToNamedSets()
         applyRuntimeConfigSettings()
+        notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
       } catch (err) {
         store.clear()
         store.set(snapshot)
@@ -175,7 +194,11 @@ export function registerConfigHandlers() {
         safe[key] = requireSafeZoomFactor(value)
       }
     }
-    if (Object.keys(safe).length > 0) store.set(safe)
+    const changedKeys = Object.keys(safe)
+    if (changedKeys.length > 0) {
+      store.set(safe)
+      notifyStoreConfigChanged({ reason: 'save-settings', keys: changedKeys })
+    }
   })
 
   ipcMain.handle('get-profiles', () => {
@@ -196,11 +219,13 @@ export function registerConfigHandlers() {
     const profiles = (store.get('profiles') as Record<string, unknown> | undefined) || {}
     profiles[gameKey] = { activeProfileId: profileSet.activeProfileId, profiles: validProfiles }
     store.set('profiles', profiles)
+    notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {
     if (!isRecord(profiles)) return
     store.set('profiles', profiles)
+    notifyStoreConfigChanged({ reason: 'save-profiles', keys: ['profiles'] })
   })
 
   ipcMain.handle('get-migration-flags', () => {
@@ -222,6 +247,10 @@ export function registerConfigHandlers() {
     for (const key of MIGRATION_KEYS) {
       if (key in patch && typeof patch[key] === 'boolean') safe[key] = patch[key] as boolean
     }
-    if (Object.keys(safe).length > 0) store.set(safe)
+    const changedKeys = Object.keys(safe)
+    if (changedKeys.length > 0) {
+      store.set(safe)
+      notifyStoreConfigChanged({ reason: 'set-migration-flags', keys: changedKeys })
+    }
   })
 }
