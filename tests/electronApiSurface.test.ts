@@ -47,9 +47,11 @@ test('every invoked IPC channel has a main-process handler and no stale handler 
 
 test('preload declarations stay aligned with exposed Electron APIs', () => {
   const preload = read('src/preload/index.ts')
-  const declarations = read('src/preload/index.d.ts')
+  const declarations = read('src/preload/api.ts')
   const exposedApiNames = new Set(matches(preload, /^\s{2}([A-Za-z]\w*):/gm))
-  const declaredApiNames = new Set(matches(declarations, /^\s{6}([A-Za-z]\w*):/gm))
+  const electronApiBody =
+    declarations.match(/export interface ElectronAPI \{([\s\S]*)\n\}/)?.[1] ?? ''
+  const declaredApiNames = new Set(matches(electronApiBody, /^\s{2}([A-Za-z]\w*):/gm))
 
   assert.deepEqual(
     [...exposedApiNames].filter((apiName) => !declaredApiNames.has(apiName)).sort(),

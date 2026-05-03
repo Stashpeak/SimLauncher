@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ProgressInfo, UpdateInfo } from 'electron-updater'
+import type { ElectronAPI } from './api'
 
-contextBridge.exposeInMainWorld('electronAPI', {
+const electronAPI: ElectronAPI = {
   // launch
   launchProfile: (gameKey: string) => ipcRenderer.invoke('launch-profile', gameKey),
   relaunchMissingProfile: (gameKey: string) =>
@@ -80,4 +81,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),
   getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath),
   getVersion: () => ipcRenderer.invoke('get-version')
-})
+}
+
+contextBridge.exposeInMainWorld('electronAPI', electronAPI)
