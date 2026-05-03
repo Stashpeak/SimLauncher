@@ -49,6 +49,10 @@ export function useProfileEditor({
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
   const [fetchingIcons, setFetchingIcons] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [profileDeleteConfirm, setProfileDeleteConfirm] = useState<{
+    profileId: string
+    profileName: string
+  } | null>(null)
 
   useEffect(() => {
     async function loadData() {
@@ -295,7 +299,22 @@ export function useProfileEditor({
       return
     }
 
-    if (!window.confirm(`Delete profile "${activeProfile.name}"?`)) {
+    setProfileDeleteConfirm({ profileId: activeProfile.id, profileName: activeProfile.name })
+  }
+
+  const confirmDeleteProfile = async () => {
+    if (!profileDeleteConfirm) {
+      return
+    }
+
+    const allProfiles = await getProfiles()
+    const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
+    const activeProfile = profileSet.profiles.find(
+      (profile) => profile.id === profileDeleteConfirm.profileId
+    )
+
+    if (!activeProfile || profileSet.profiles.length <= 1) {
+      setProfileDeleteConfirm(null)
       return
     }
 
@@ -305,6 +324,7 @@ export function useProfileEditor({
       activeProfileId: nextProfiles[0].id,
       profiles: nextProfiles
     })
+    setProfileDeleteConfirm(null)
     await onProfilesChanged()
     notify('Profile deleted', 'warn', 2500)
     onClose()
@@ -342,6 +362,8 @@ export function useProfileEditor({
     fetchingIcons,
     showConfirm,
     setShowConfirm,
+    profileDeleteConfirm,
+    setProfileDeleteConfirm,
     setDragUtilityId,
     setDropTarget,
     isDirty,
@@ -356,6 +378,7 @@ export function useProfileEditor({
       setFailedIcons((prev) => ({ ...prev, [utilityKey]: true })),
     handleSave,
     handleDeleteProfile,
+    confirmDeleteProfile,
     utilityByKey,
     availableUtilities,
     enabledUtilityEntries,

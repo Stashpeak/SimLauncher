@@ -33,6 +33,7 @@ import {
 import { normalizeThemeMode, type ThemeMode } from '../../lib/theme'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useNotify } from '../Notify'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { shiftCustomSlotRecord, shiftCustomSlotSet, shiftProfileCustomSlots } from './customSlots'
 import {
   createSettingsObjectVersions,
@@ -159,6 +160,11 @@ export function SettingsProvider({
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
   const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
   const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
+  const [customSlotRemoveConfirm, setCustomSlotRemoveConfirm] = useState<{
+    slotNumber: number
+    slotName: string
+  } | null>(null)
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false)
   const settingsObjectEditVersions = useRef(createSettingsObjectVersions())
   const latestSettingsObjects = useRef<SettingsObjectRecords>({
     appPaths,
@@ -398,7 +404,7 @@ export function SettingsProvider({
     setCustomSlots((current) => current + 1)
   }, [])
 
-  const handleRemoveCustomSlot = useCallback(
+  const removeCustomSlot = useCallback(
     (slotNumber: number) => {
       if (customSlots <= 1) {
         notify('At least one custom app slot is required', 'warn')
@@ -409,12 +415,11 @@ export function SettingsProvider({
       const slotName = appNames[slotKey] || `Custom App ${slotNumber}`
 
       if (appPaths[slotKey]) {
-        const confirmed = window.confirm(`Remove ${slotName} and its executable path?`)
-
-        if (!confirmed) {
-          return
-        }
+        setCustomSlotRemoveConfirm({ slotNumber, slotName })
+        return
       }
+
+      setCustomSlotRemoveConfirm(null)
 
       updateSettingsObject('appPaths', setAppPaths, (current) =>
         shiftCustomSlotRecord(current, slotNumber, customSlots)
@@ -440,6 +445,42 @@ export function SettingsProvider({
     },
     [appNames, appPaths, customSlots, notify, updateSettingsObject]
   )
+
+  const handleRemoveCustomSlot = useCallback(
+    (slotNumber: number) => {
+      removeCustomSlot(slotNumber)
+    },
+    [removeCustomSlot]
+  )
+
+  const handleConfirmRemoveCustomSlot = useCallback(() => {
+    if (!customSlotRemoveConfirm) return
+
+    const slotNumber = customSlotRemoveConfirm.slotNumber
+    setCustomSlotRemoveConfirm(null)
+
+    updateSettingsObject('appPaths', setAppPaths, (current) =>
+      shiftCustomSlotRecord(current, slotNumber, customSlots)
+    )
+    updateSettingsObject('appNames', setAppNames, (current) =>
+      shiftCustomSlotRecord(current, slotNumber, customSlots)
+    )
+    updateSettingsObject('appArgs', setAppArgs, (current) =>
+      shiftCustomSlotRecord(current, slotNumber, customSlots)
+    )
+    setAppIcons((current) => shiftCustomSlotRecord(current, slotNumber, customSlots))
+    setIconLoadErrors((current) => shiftCustomSlotSet(current, slotNumber, customSlots))
+    setProfiles((current) => {
+      const nextProfiles: Profiles = {}
+
+      Object.entries(current).forEach(([gameKey, profile]) => {
+        nextProfiles[gameKey] = shiftProfileCustomSlots(profile, slotNumber, customSlots)
+      })
+
+      return nextProfiles
+    })
+    setCustomSlots((current) => Math.max(1, current - 1))
+  }, [customSlotRemoveConfirm, customSlots, updateSettingsObject])
 
   const handleGamePathChange = useCallback(
     (key: string, path: string) => {
@@ -500,13 +541,11 @@ export function SettingsProvider({
   }, [notify])
 
   const handleImportConfig = useCallback(async () => {
-    const confirmed = window.confirm(
-      'Importing a config file will replace your current SimLauncher settings. Continue?'
-    )
+    setImportConfirmOpen(true)
+  }, [])
 
-    if (!confirmed) {
-      return
-    }
+  const handleConfirmImportConfig = useCallback(async () => {
+    setImportConfirmOpen(false)
 
     setImportingConfig(true)
 
@@ -728,5 +767,35 @@ export function SettingsProvider({
     ]
   )
 
-  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
+  return (
+    <SettingsContext.Provider value={value}>
+      {children}
+
+      <ConfirmDialog
+        isOpen={customSlotRemoveConfirm !== null}
+        title="Remove Custom App"
+        message={`Remove ${customSlotRemoveConfirm?.slotName || 'this custom app'} and its executable path?`}
+        saveLabel="Remove App"
+        discardLabel="Keep App"
+        saveClassName="danger-action"
+        discardClassName="neutral-action"
+        onSave={handleConfirmRemoveCustomSlot}
+        onDiscard={() => setCustomSlotRemoveConfirm(null)}
+        onCancel={() => setCustomSlotRemoveConfirm(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={importConfirmOpen}
+        title="Import Config"
+        message="Importing a config file will replace your current SimLauncher settings. Continue?"
+        saveLabel="Import Config"
+        discardLabel="Cancel Import"
+        saveClassName="danger-action"
+        discardClassName="neutral-action"
+        onSave={handleConfirmImportConfig}
+        onDiscard={() => setImportConfirmOpen(false)}
+        onCancel={() => setImportConfirmOpen(false)}
+      />
+    </SettingsContext.Provider>
+  )
 }

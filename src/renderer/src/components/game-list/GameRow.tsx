@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -28,6 +28,7 @@ import {
   PlayMarkIcon,
   SettingsIcon
 } from '../icons'
+import { ConfirmDialog } from '../ConfirmDialog'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
@@ -59,6 +60,11 @@ export function GameRow({
   cacheInitialized: boolean
 }) {
   const { notify } = useNotify()
+  const [profileSwitchConfirm, setProfileSwitchConfirm] = useState<{
+    nextProfileId: string
+    nextProfileName: string
+    message: string
+  } | null>(null)
   const {
     profileMenuOpen,
     openProfileMenu,
@@ -100,7 +106,7 @@ export function GameRow({
     notify(`Created profile ${newProfile.name}`, 'success')
   }
 
-  const handleProfileSelect = async (nextProfileId: string) => {
+  const switchToProfile = async (nextProfileId: string, skipRunningConfirm = false) => {
     if (nextProfileId === '__new__') {
       setNewProfileFormOpen(true)
       return
@@ -139,11 +145,14 @@ export function GameRow({
           const parts: string[] = []
           if (diff.toStopCount > 0) parts.push(`stop ${diff.toStopCount} app(s)`)
           if (diff.toStartCount > 0) parts.push(`start ${diff.toStartCount} app(s)`)
-          if (
-            !window.confirm(
-              `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
-            )
-          ) {
+          const message = `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
+
+          if (!skipRunningConfirm) {
+            setProfileSwitchConfirm({
+              nextProfileId: nextProfile.id,
+              nextProfileName: nextProfile.name,
+              message
+            })
             return
           }
 
@@ -181,6 +190,18 @@ export function GameRow({
       notify('Failed to switch profile', 'error')
       console.error(err)
     }
+  }
+
+  const handleProfileSelect = (nextProfileId: string) => {
+    void switchToProfile(nextProfileId)
+  }
+
+  const handleConfirmProfileSwitch = () => {
+    if (!profileSwitchConfirm) return
+
+    const nextProfileId = profileSwitchConfirm.nextProfileId
+    setProfileSwitchConfirm(null)
+    void switchToProfile(nextProfileId, true)
   }
 
   const handleNewProfileSubmit = async () => {
@@ -514,6 +535,17 @@ export function GameRow({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={profileSwitchConfirm !== null}
+        title="Switch Running Profile"
+        message={profileSwitchConfirm?.message || ''}
+        saveLabel="Switch Profile"
+        discardLabel="Keep Current"
+        onSave={handleConfirmProfileSwitch}
+        onDiscard={() => setProfileSwitchConfirm(null)}
+        onCancel={() => setProfileSwitchConfirm(null)}
+      />
     </div>
   )
 }
