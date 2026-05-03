@@ -5,6 +5,7 @@ type StoreData = Record<string, unknown>
 const storeData: StoreData = {}
 const existingPaths = new Set<string>()
 const processNames = new Set<string>()
+const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 
 async function loadProcessModules() {
   vi.doMock('electron-store', () => ({
@@ -28,7 +29,17 @@ async function loadProcessModules() {
   }))
 
   vi.doMock('child_process', () => ({
-    execFile: vi.fn((_command, _args, _options, callback) => callback(null, '', '')),
+    execFile: vi.fn((command, args, options, callback) => {
+      execFileCalls.push({ command, args, options })
+      if (command === 'powershell.exe') {
+        callback(null, '4321', '')
+        return
+      }
+      if (command === 'taskkill' && args.includes('/PID')) {
+        processNames.delete('simhub.exe')
+      }
+      callback(null, '', '')
+    }),
     spawn: vi.fn((appPath: string) => {
       const handlers = new Map<string, (...args: unknown[]) => void>()
       const child = {
@@ -77,6 +88,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   existingPaths.clear()
   processNames.clear()
+  execFileCalls.length = 0
   runningProcesses.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
@@ -133,4 +145,36 @@ test('killProfileApps rejects paths that are not configured app paths', async ()
     failedCount: 0,
     failures: []
   })
+})
+
+test('killProfileApps targets configured untracked Windows apps by resolved PID instead of image name', async () => {
+  const { killProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+
+  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'powershell.exe',
+        args: expect.arrayContaining([expect.stringContaining('Get-CimInstance Win32_Process')])
+      }),
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/PID', '4321', '/T', '/F']
+      })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/IM', 'simhub.exe', '/T', '/F'] })
+    ])
+  )
 })
