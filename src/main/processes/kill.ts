@@ -165,7 +165,8 @@ function registerUnclosedProcess(attempt: KillAttemptResult) {
     name: path.basename(appPath),
     gameKey,
     error,
-    reason
+    reason,
+    elevated: reason === 'access_denied'
   })
 }
 

@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Game } from '../lib/config'
 import { getRunningApps } from '../lib/electron'
 
-export type RunningApp = { path: string; name: string; gameKey: string; warning?: string }
+export type RunningApp = {
+  path: string
+  name: string
+  gameKey: string
+  warning?: string
+  elevated?: boolean
+}
 
 export function useRunningApps(configuredGames: Game[]) {
   const [runningApps, setRunningApps] = useState<RunningApp[]>([])

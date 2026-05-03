@@ -115,7 +115,8 @@ export async function getRunningApps() {
       name: appProcess.name,
       gameKey: appProcess.gameKey,
       tracked: true,
-      warning: appProcess.error
+      warning: appProcess.error,
+      elevated: appProcess.elevated ?? appProcess.reason === 'access_denied'
     }))
   const surfacedApps = [...launchedApps, ...unclosedApps]
   const launchedKeys = new Set(
