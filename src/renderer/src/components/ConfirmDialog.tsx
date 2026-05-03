@@ -7,6 +7,11 @@ interface ConfirmDialogProps {
   onSave: () => void
   onDiscard: () => void
   onCancel: () => void
+  saveLabel?: string
+  discardLabel?: string
+  cancelLabel?: string
+  saveClassName?: string
+  discardClassName?: string
 }
 
 export function ConfirmDialog({
@@ -15,7 +20,12 @@ export function ConfirmDialog({
   message,
   onSave,
   onDiscard,
-  onCancel
+  onCancel,
+  saveLabel = 'Save Changes',
+  discardLabel = 'Discard',
+  cancelLabel = 'Cancel',
+  saveClassName = 'accent-action',
+  discardClassName = 'danger-action'
 }: ConfirmDialogProps) {
   useEffect(() => {
     if (!isOpen) return
@@ -45,25 +55,25 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onSave}
-            className="accent-action action-hover-scale w-full cursor-pointer rounded-xl py-3 text-sm font-bold"
+            className={`${saveClassName} action-hover-scale w-full cursor-pointer rounded-xl py-3 text-sm font-bold`}
           >
-            Save Changes
+            {saveLabel}
           </button>
 
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onDiscard}
-              className="danger-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
+              className={`${discardClassName} action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold`}
             >
-              Discard
+              {discardLabel}
             </button>
             <button
               type="button"
               onClick={onCancel}
               className="neutral-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold"
             >
-              Cancel
+              {cancelLabel}
             </button>
           </div>
         </div>
