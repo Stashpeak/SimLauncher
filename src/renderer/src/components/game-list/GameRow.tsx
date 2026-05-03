@@ -571,7 +571,7 @@ export function GameRow({
       >
         <div className="overflow-hidden">
           {isActive && (
-            <div className="animate-fade-slide pb-4">
+            <div className="pb-4">
               <ProfileEditor
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}

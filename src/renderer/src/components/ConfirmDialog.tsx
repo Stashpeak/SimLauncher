@@ -32,12 +32,12 @@ export function ConfirmDialog({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md animate-fade-slide">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
       {/* Backdrop overlay */}
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
       {/* Dialog container */}
-      <div className="glass-surface-elevated relative w-full max-w-sm rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto">
+      <div className="glass-surface-elevated animate-fade-slide relative w-full max-w-sm rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto">
         <h2 className="text-lg font-bold text-(--text-primary) mb-2">{title}</h2>
         <p className="text-sm text-(--text-secondary) mb-8 leading-relaxed">{message}</p>
 

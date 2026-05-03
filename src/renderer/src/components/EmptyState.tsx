@@ -12,8 +12,8 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="relative flex flex-col items-center justify-center py-20 px-8 text-center animate-fade-slide">
-      <div className="relative glass-surface-elevated max-w-md w-full rounded-3xl p-10 flex flex-col items-center gap-6 shadow-2xl">
+    <div className="relative flex flex-col items-center justify-center py-20 px-8 text-center">
+      <div className="relative glass-surface-elevated animate-fade-slide max-w-md w-full rounded-3xl p-10 flex flex-col items-center gap-6 shadow-2xl">
         {/* Icon Container */}
         <div className="relative">
           <div className="absolute inset-0 bg-(--accent) opacity-20 rounded-full blur-2xl animate-pulse" />
