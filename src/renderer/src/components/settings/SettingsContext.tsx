@@ -52,7 +52,7 @@ function trimStringRecord(values: Record<string, string>) {
   return Object.fromEntries(
     Object.entries(values)
       .map(([key, value]) => [key, value.trim()])
-      .filter(([_key, value]) => value.length > 0)
+      .filter(([, value]) => value.length > 0)
   )
 }
 
@@ -236,7 +236,7 @@ export function SettingsProvider({
 
   useEffect(() => {
     loadSettingsFromStore()
-  }, [])
+  }, [loadSettingsFromStore])
 
   useEffect(() => {
     latestSettingsObjects.current = {
@@ -665,7 +665,7 @@ export function SettingsProvider({
         onSaved?.()
       })
     }
-  }, [shouldSaveTrigger])
+  }, [handleSave, onSaved, shouldSaveTrigger])
 
   const utilities = useMemo(() => getUtilities(customSlots), [customSlots])
 

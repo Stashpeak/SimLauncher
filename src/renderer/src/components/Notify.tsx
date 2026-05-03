@@ -156,9 +156,11 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   )
 
   useEffect(() => {
+    const dismissTimers = dismissTimersRef.current
+
     return () => {
-      dismissTimersRef.current.forEach((timer) => window.clearTimeout(timer))
-      dismissTimersRef.current.clear()
+      dismissTimers.forEach((timer) => window.clearTimeout(timer))
+      dismissTimers.clear()
     }
   }, [])
 

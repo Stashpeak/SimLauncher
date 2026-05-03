@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, type DragEvent } from 'react'
+import { useCallback, useEffect, useState, useMemo, type DragEvent } from 'react'
 import { useDirtyTracking } from './useDirtyTracking'
 import {
   getActiveGameProfile,
@@ -134,13 +134,13 @@ export function useProfileEditor({
 
   const { isDirty, resetDirty } = useDirtyTracking(currentProfileState, loading)
 
-  const handleCloseAttempt = () => {
+  const handleCloseAttempt = useCallback(() => {
     if (isDirty) {
       setShowConfirm(true)
     } else {
       onClose()
     }
-  }
+  }, [isDirty, onClose])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -150,7 +150,7 @@ export function useProfileEditor({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isDirty, onClose])
+  }, [handleCloseAttempt])
 
   const handleToggleUtility = (key: string) => {
     setProfileUtilities((currentUtilities) => {
