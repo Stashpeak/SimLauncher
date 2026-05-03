@@ -6,6 +6,7 @@ import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
+import { GamepadIcon } from './icons'
 export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'settings') => void }) {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
@@ -60,22 +61,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
   if (configuredGames.length === 0) {
     return (
       <EmptyState
-        icon={
-          <svg
-            width="40"
-            height="40"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
-            <path d="M9 10h.01" />
-            <path d="M15 10h.01" />
-          </svg>
-        }
+        icon={<GamepadIcon width={40} height={40} />}
         title="No games configured"
         description="Configure your simulation game paths in settings to manage their companion apps and profiles here."
         action={{

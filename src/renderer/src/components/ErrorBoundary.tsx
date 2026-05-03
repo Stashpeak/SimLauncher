@@ -1,6 +1,7 @@
 ﻿import { Component, ErrorInfo, ReactNode } from 'react'
 import { restartApp } from '../lib/electron'
 import { WindowControls } from './WindowControls'
+import { WarningTriangleIcon, RefreshIcon, CopyIcon } from './icons'
 
 interface Props {
   children?: ReactNode
@@ -60,20 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <div className="relative">
                 <div className="absolute inset-0 bg-red-500/20 rounded-full blur-2xl animate-pulse" />
                 <div className="relative h-20 w-20 flex items-center justify-center bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400">
-                  <svg
-                    width="40"
-                    height="40"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
+                  <WarningTriangleIcon width={40} height={40} strokeWidth="1.5" />
                 </div>
               </div>
 
@@ -109,19 +97,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   onClick={this.handleReload}
                   className="accent-action action-hover-scale flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
                 >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M23 4v6h-6" />
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                  </svg>
+                  <RefreshIcon width={18} height={18} />
                   Reload Application
                 </button>
 
@@ -130,19 +106,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   onClick={this.handleCopyError}
                   className="accent-surface-action action-hover-scale flex-1 cursor-pointer font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2"
                 >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
+                  <CopyIcon width={18} height={18} />
                   Copy Details
                 </button>
               </div>
