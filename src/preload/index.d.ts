@@ -51,6 +51,7 @@ interface RunningApp {
   gameKey: string
   tracked?: boolean
   warning?: string
+  elevated?: boolean
 }
 
 interface BrowsePathResult {

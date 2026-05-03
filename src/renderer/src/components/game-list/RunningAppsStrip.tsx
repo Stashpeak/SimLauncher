@@ -4,6 +4,7 @@ export interface RunningAppIcon {
   icon: string | null
   name: string
   warning?: string
+  elevated?: boolean
 }
 
 interface RunningAppsStripProps {
@@ -15,6 +16,8 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
 
   if (runningAppIcons.length === 0) return null
+
+  const hasElevated = runningAppIcons.some((app) => app.elevated)
 
   return (
     <div className="flex items-center gap-1">
@@ -54,6 +57,27 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
           </div>
         )
       })}
+
+      {hasElevated && (
+        <div
+          title="SimLauncher cannot close elevated companion apps."
+          className="flex items-center"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-(--warning-text) opacity-80 shrink-0 w-3.5 h-3.5"
+          >
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>
+        </div>
+      )}
     </div>
   )
 }

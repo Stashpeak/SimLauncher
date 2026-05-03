@@ -109,7 +109,8 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
           const runningAppIcons = appsForGame.map((a) => ({
             icon: appIconCache[a.path.toLowerCase()] ?? null,
             name: a.name,
-            warning: a.warning
+            warning: a.warning,
+            elevated: a.elevated
           }))
 
           return (

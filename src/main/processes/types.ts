@@ -47,4 +47,5 @@ export interface UnclosedProcessEntry {
   gameKey: string
   error: string
   reason: KillFailureReason
+  elevated?: boolean
 }
