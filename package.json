@@ -48,6 +48,7 @@
     "electron-vite": "^5.0.0",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
     "jsdom": "^29.1.0",
     "prettier": "^3.8.3",
