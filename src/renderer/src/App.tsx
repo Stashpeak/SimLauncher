@@ -4,6 +4,7 @@ import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import { getUpdateInfo, onUpdateAvailable } from './lib/electron'
 import { runStartupMigrations } from './lib/migrations'
 import { useTheme } from './contexts/ThemeContext'
@@ -93,21 +94,7 @@ export default function App() {
 
         {showImportWarning && (
           <div className="glass-surface !absolute left-4 right-4 top-16 z-30 mx-auto flex max-w-3xl animate-fade-slide items-center gap-3 rounded-2xl border border-(--warning-border) px-4 py-3 text-xs font-medium text-(--warning-text) shadow-[0_12px_30px_#00000040] ![--glass-surface-fill:color-mix(in_srgb,var(--warning-surface),var(--glass-bg-elevated))]">
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="shrink-0"
-            >
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-              <path d="M12 9v4" />
-              <path d="M12 17h.01" />
-            </svg>
+            <WarningTriangleIcon width={17} height={17} className="shrink-0" />
             <span className="min-w-0 flex-1">
               Config imported. Executable paths from your previous device may need to be updated.
             </span>
@@ -118,18 +105,7 @@ export default function App() {
               aria-label="Dismiss import warning"
               title="Dismiss"
             >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              >
-                <path d="M18 6 6 18" />
-                <path d="m6 6 12 12" />
-              </svg>
+              <CloseIcon width={13} height={13} />
             </button>
           </div>
         )}

@@ -19,6 +19,15 @@ import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
 import { GameIcon } from './GameIcon'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
+import {
+  ChevronDownIcon,
+  CheckIcon,
+  PlusIcon,
+  RefreshIcon,
+  KillIcon,
+  PlayMarkIcon,
+  SettingsIcon
+} from '../icons'
 import { ConfirmDialog } from '../ConfirmDialog'
 
 const POST_LAUNCH_BLOCK_MS = 10000
@@ -336,19 +345,12 @@ export function GameRow({
                 title="Relaunch missing apps"
                 aria-label="Relaunch missing apps"
               >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
+                <RefreshIcon
+                  width={18}
+                  height={18}
                   strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                  <path d="M21 3v6h-6" />
-                </svg>
+                  className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
+                />
               </button>
             )}
           </div>
@@ -373,19 +375,11 @@ export function GameRow({
                 aria-label={`${game.name} profile`}
                 title={activeProfile.name}
               >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                <ChevronDownIcon
+                  width={10}
+                  height={10}
                   className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
-                >
-                  <path d="M3 6l5 5 5-5" />
-                </svg>
+                />
                 <span className="min-w-0 truncate">{activeProfile.name}</span>
               </button>
               {profileMenuOpen && (
@@ -446,18 +440,7 @@ export function GameRow({
                         aria-label="Create profile"
                         title="Create profile"
                       >
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.4"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M20 6 9 17l-5-5" />
-                        </svg>
+                        <CheckIcon width={13} height={13} />
                       </button>
                     </form>
                   ) : (
@@ -470,18 +453,7 @@ export function GameRow({
                       }}
                       className="dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
                     >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                      >
-                        <path d="M12 5v14" />
-                        <path d="M5 12h14" />
-                      </svg>
+                      <PlusIcon width={12} height={12} />
                       New profile
                     </button>
                   )}
@@ -500,43 +472,25 @@ export function GameRow({
               aria-label={primaryTitle}
             >
               {isLaunching && !canKill ? (
-                <svg
-                  width="21"
-                  height="21"
-                  viewBox="0 0 24 24"
-                  fill="none"
+                <RefreshIcon
+                  width={21}
+                  height={21}
                   stroke="var(--launcher-play)"
                   strokeWidth="2.8"
-                  strokeLinecap="round"
                   className="animate-spin transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                >
-                  <path d="M12 3a9 9 0 1 1-8 4.9" />
-                </svg>
+                />
               ) : canKill ? (
-                <svg
-                  width="21"
-                  height="21"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                <KillIcon
+                  width={21}
+                  height={21}
                   className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                >
-                  <path d="M7 7l10 10" />
-                  <path d="M17 7L7 17" />
-                </svg>
+                />
               ) : (
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="var(--launcher-play)"
+                <PlayMarkIcon
+                  width={24}
+                  height={24}
                   className="ml-0.5 transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                >
-                  <path d="M7.4 4.5A1.5 1.5 0 0 0 5 5.8v12.4a1.5 1.5 0 0 0 2.4 1.3l9.8-6.2a1.5 1.5 0 0 0 0-2.6L7.4 4.5z" />
-                </svg>
+                />
               )}
             </button>
           </div>
@@ -553,35 +507,13 @@ export function GameRow({
             aria-label={isActive ? 'Close Profile Settings' : 'Profile Settings'}
           >
             {isActive ? (
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="transition-transform hover:scale-110"
-              >
-                <path d="M7 7l10 10" />
-                <path d="M17 7L7 17" />
-              </svg>
+              <KillIcon width={18} height={18} className="transition-transform hover:scale-110" />
             ) : (
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <SettingsIcon
+                width={18}
+                height={18}
                 className="transition-transform hover:rotate-90"
-              >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
+              />
             )}
           </button>
         </div>

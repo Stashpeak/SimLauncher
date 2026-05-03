@@ -1,5 +1,6 @@
 import type { RefObject } from 'react'
 import type { NamedGameProfile } from '../../lib/config'
+import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
 
 interface ProfileMenuProps {
   gameName: string
@@ -59,19 +60,11 @@ export function ProfileMenu({
         aria-label={`${gameName} profile`}
         title={activeProfileName}
       >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <ChevronDownIcon
+          width={10}
+          height={10}
           className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
-        >
-          <path d="M3 6l5 5 5-5" />
-        </svg>
+        />
         <span className="min-w-0 truncate">{activeProfileName}</span>
       </button>
       {profileMenuOpen && (
@@ -129,18 +122,7 @@ export function ProfileMenu({
                 aria-label="Create profile"
                 title="Create profile"
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
+                <CheckIcon width={13} height={13} />
               </button>
             </form>
           ) : (
@@ -153,18 +135,7 @@ export function ProfileMenu({
               }}
               className="dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              >
-                <path d="M12 5v14" />
-                <path d="M5 12h14" />
-              </svg>
+              <PlusIcon width={12} height={12} />
               New profile
             </button>
           )}
