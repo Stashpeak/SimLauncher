@@ -12,6 +12,7 @@ const storeData: StoreData = {}
 const existingPaths = new Set<string>()
 const processNames = new Set<string>()
 const accessDeniedPids = new Set<string>()
+const nullExecutablePathPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 
 async function loadProcessModules() {
@@ -39,7 +40,11 @@ async function loadProcessModules() {
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })
       if (command === 'powershell.exe') {
-        callback(null, processNames.has('simhub.exe') ? '[4321]' : '', '')
+        const pids = [
+          ...(processNames.has('simhub.exe') ? ['4321'] : []),
+          ...Array.from(nullExecutablePathPids)
+        ]
+        callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
         return
       }
       if (command === 'taskkill' && args.includes('/PID')) {
@@ -51,6 +56,7 @@ async function loadProcessModules() {
         if (pid === '4321') {
           processNames.delete('simhub.exe')
         }
+        nullExecutablePathPids.delete(pid)
       }
       callback(null, '', '')
     }),
@@ -141,6 +147,7 @@ beforeEach(async () => {
   existingPaths.clear()
   processNames.clear()
   accessDeniedPids.clear()
+  nullExecutablePathPids.clear()
   execFileCalls.length = 0
   runningProcesses.clear()
   unclosedProcesses.clear()
@@ -222,6 +229,39 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
       expect.objectContaining({
         command: 'taskkill',
         args: ['/PID', '4321', '/T', '/F']
+      })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/IM', 'simhub.exe', '/T', '/F'] })
+    ])
+  )
+})
+
+test('killProfileApps includes processes with null executable paths when resolving PIDs', async () => {
+  const { killProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  nullExecutablePathPids.add('9876')
+  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+
+  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'powershell.exe',
+        args: expect.arrayContaining([expect.stringContaining('(-not $_.ExecutablePath) -or')])
+      }),
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/PID', '9876', '/T', '/F']
       })
     ])
   )
