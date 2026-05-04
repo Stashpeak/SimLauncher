@@ -8,7 +8,6 @@ import {
   killLaunchedApps,
   killProfileApps,
   launchProfileApps,
-  publishRunningApps,
   readRunningProcessNames,
   subscribeRunningApps,
   unsubscribeRunningApps
@@ -24,9 +23,7 @@ export function registerLaunchHandlers() {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
-    const result = await launchProfileApps(event.sender, gameKey, profileApps)
-    await publishRunningApps('launch')
-    return result
+    return launchProfileApps(event.sender, gameKey, profileApps)
   })
 
   ipcMain.handle('relaunch-missing-profile', async (event, gameKey: string) => {
@@ -48,9 +45,7 @@ export function registerLaunchHandlers() {
       }
     }
 
-    const result = await launchProfileApps(event.sender, gameKey, missingPaths)
-    await publishRunningApps('launch')
-    return result
+    return launchProfileApps(event.sender, gameKey, missingPaths)
   })
 
   ipcMain.handle(
@@ -100,7 +95,6 @@ export function registerLaunchHandlers() {
 
       if (pathsToStop.length > 0) {
         killResult = await killProfileApps(gameKey, pathsToStop)
-        await publishRunningApps('kill')
       }
 
       const processNamesAfterStop = await readRunningProcessNames()
@@ -118,7 +112,6 @@ export function registerLaunchHandlers() {
       }
 
       const launchResult = await launchProfileApps(event.sender, gameKey, pathsToStart)
-      await publishRunningApps('launch')
 
       return {
         ...launchResult,
@@ -141,8 +134,6 @@ export function registerLaunchHandlers() {
   })
 
   ipcMain.handle('kill-launched-apps', async (_event, gameKey?: string) => {
-    const result = await killLaunchedApps(gameKey)
-    await publishRunningApps('kill')
-    return result
+    return killLaunchedApps(gameKey)
   })
 }
