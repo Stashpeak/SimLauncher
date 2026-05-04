@@ -50,7 +50,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
       new Set(
         runningApps
           .map((app) => app.path)
-          .filter((path) => path && !appIconCache[normalizePath(path)])
+          .filter((path) => path && appIconCache[normalizePath(path)] === undefined)
       )
     )
 
@@ -66,7 +66,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
       await Promise.all(
         pathsToLoad.map(async (path) => {
           const icon = await getFileIcon(path)
-          if (icon) icons[normalizePath(path)] = icon
+          icons[normalizePath(path)] = icon ?? ''
         })
       )
 
