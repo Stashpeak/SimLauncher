@@ -12,6 +12,7 @@ const normalizePath = (path: string) => path.toLowerCase()
 
 export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'settings') => void }) {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
@@ -30,6 +31,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
         setGamePaths(settings.gamePaths)
         setFocusActiveTitle(settings.focusActiveTitle !== false)
         setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
+        setSettingsLoaded(true)
       } catch (err) {
         console.error('Failed to load game settings', err)
       }
@@ -81,6 +83,10 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
       mounted = false
     }
   }, [appIconCache, runningApps])
+
+  if (!settingsLoaded) {
+    return null
+  }
 
   if (configuredGames.length === 0) {
     return (
