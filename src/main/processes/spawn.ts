@@ -211,19 +211,33 @@ function isElevatedLaunchError(err: unknown) {
   return process.platform === 'win32' && getErrorCode(err) === 'EACCES'
 }
 
+function encodePowerShellCommand(command: string) {
+  return Buffer.from(command, 'utf16le').toString('base64')
+}
+
+function createElevatedLaunchCommand(appPath: string, args: string[]) {
+  const payload = JSON.stringify({ filePath: appPath, args })
+
+  return encodePowerShellCommand(
+    [
+      "$ErrorActionPreference = 'Stop'",
+      "$payload = ConvertFrom-Json @'",
+      payload,
+      "'@",
+      'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
+    ].join('\n')
+  )
+}
+
 function launchElevated(appPath: string, args: string[] = []) {
   return new Promise<AppLaunchResult>((resolve) => {
-    const escapedAppPath = appPath.replace(/'/g, "''")
-    const escapedArgs = args.map((arg) => `'${arg.replace(/'/g, "''")}'`).join(', ')
-    const argumentList = escapedArgs ? ` -ArgumentList @(${escapedArgs})` : ''
-
     execFile(
       'powershell.exe',
       [
         '-NoProfile',
         '-NonInteractive',
-        '-Command',
-        `Start-Process -FilePath '${escapedAppPath}'${argumentList} -Verb RunAs`
+        '-EncodedCommand',
+        createElevatedLaunchCommand(appPath, args)
       ],
       { windowsHide: true },
       (error) => {
