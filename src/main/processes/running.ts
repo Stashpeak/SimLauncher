@@ -232,13 +232,16 @@ async function publishRunningAppsInternal(
 }
 
 export function publishRunningApps(reason: RunningAppsChangeReason = 'scan') {
-  publishRunningAppsPromise = (publishRunningAppsPromise || Promise.resolve(null))
+  const next = (publishRunningAppsPromise || Promise.resolve(null))
     .catch(() => null)
     .then(() => publishRunningAppsInternal(reason))
     .finally(() => {
-      publishRunningAppsPromise = undefined
+      if (publishRunningAppsPromise === next) {
+        publishRunningAppsPromise = undefined
+      }
     })
 
+  publishRunningAppsPromise = next
   return publishRunningAppsPromise
 }
 

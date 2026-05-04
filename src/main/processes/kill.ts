@@ -11,6 +11,7 @@ import { store } from '../store'
 import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
 import { runningProcesses, unclosedProcesses } from './state'
+import { publishRunningApps } from './running'
 import { readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
 
@@ -111,10 +112,10 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
       `$name = '${escapeWmiString(processName)}'`,
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
       'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
-      '  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
+      '  Where-Object { (-not $_.ExecutablePath) -or ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
       '  Select-Object -ExpandProperty ProcessId |',
       '  ConvertTo-Json -Compress'
-    ].join('; ')
+    ].join('\n')
 
     execFile(
       'powershell.exe',
@@ -457,7 +458,9 @@ export async function killLaunchedApps(gameKey?: string) {
     }
   })
 
-  return finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  await publishRunningApps('kill')
+  return result
 }
 
 export async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
@@ -522,5 +525,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
     }
   })
 
-  return finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  await publishRunningApps('kill')
+  return result
 }
