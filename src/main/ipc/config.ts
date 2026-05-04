@@ -1,4 +1,5 @@
-import { app, dialog, ipcMain } from 'electron'
+import { app, dialog, ipcMain, type OpenDialogOptions } from 'electron'
+import crypto from 'crypto'
 import fs from 'fs'
 
 import { migrateProfilesToNamedSets } from '../migrator'
@@ -17,6 +18,31 @@ import { isRecord } from '../utils'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
 const STORE_CONFIG_CHANGED_CHANNEL = 'store-config-changed'
+const IMPORT_PREVIEW_TOKEN_BYTES = 24
+const IMPORT_PREVIEW_TTL_MS = 5 * 60 * 1000
+
+interface ConfigImportPreviewEntry {
+  key: string
+  path?: string
+  args?: string
+}
+
+interface ConfigImportPreviewSummary {
+  changedKeys: string[]
+  gamePaths: ConfigImportPreviewEntry[]
+  appPaths: ConfigImportPreviewEntry[]
+  trackedProcessPaths: ConfigImportPreviewEntry[]
+  customAppArgs: ConfigImportPreviewEntry[]
+  droppedCount: number
+  warnings: string[]
+}
+
+let pendingImport: {
+  token: string
+  filePath: string
+  config: Record<string, unknown>
+  expiresAt: number
+} | null = null
 
 type StoreConfigChangeReason =
   | 'import-config'
@@ -32,6 +58,143 @@ interface StoreConfigChangePayload {
 
 function notifyStoreConfigChanged(payload: StoreConfigChangePayload) {
   sendToRenderer(STORE_CONFIG_CHANGED_CHANNEL, payload)
+}
+
+function clearPendingImport() {
+  pendingImport = null
+}
+
+function countImportedPreviewItems(config: Record<string, unknown>) {
+  let count = 0
+  const countRecordItems = (value: unknown) => {
+    if (isRecord(value)) count += Object.keys(value).length
+  }
+
+  countRecordItems(config.gamePaths)
+  countRecordItems(config.appPaths)
+  countRecordItems(config.appArgs)
+
+  if (isRecord(config.profiles)) {
+    Object.values(config.profiles).forEach((profileEntry) => {
+      if (!isRecord(profileEntry)) return
+
+      if (Array.isArray(profileEntry.trackedProcessPaths)) {
+        count += profileEntry.trackedProcessPaths.length
+      }
+
+      if (Array.isArray(profileEntry.profiles)) {
+        profileEntry.profiles.forEach((profile) => {
+          if (isRecord(profile) && Array.isArray(profile.trackedProcessPaths)) {
+            count += profile.trackedProcessPaths.length
+          }
+        })
+      }
+    })
+  }
+
+  return count
+}
+
+function collectTrackedProcessPathPreviews(profiles: unknown): ConfigImportPreviewEntry[] {
+  if (!isRecord(profiles)) return []
+
+  const entries: ConfigImportPreviewEntry[] = []
+  Object.entries(profiles).forEach(([gameKey, profileEntry]) => {
+    if (!isRecord(profileEntry)) return
+
+    const addPaths = (paths: unknown, suffix = '') => {
+      if (!Array.isArray(paths)) return
+      paths.forEach((path) => {
+        if (typeof path === 'string') entries.push({ key: `${gameKey}${suffix}`, path })
+      })
+    }
+
+    addPaths(profileEntry.trackedProcessPaths)
+
+    if (Array.isArray(profileEntry.profiles)) {
+      profileEntry.profiles.forEach((profile) => {
+        if (!isRecord(profile)) return
+        const profileName = typeof profile.name === 'string' ? `/${profile.name}` : ''
+        addPaths(profile.trackedProcessPaths, profileName)
+      })
+    }
+  })
+
+  return entries
+}
+
+export function buildImportPreviewSummary(
+  rawConfig: Record<string, unknown>,
+  supportedConfig: Record<string, unknown>
+): ConfigImportPreviewSummary {
+  const gamePaths = isRecord(supportedConfig.gamePaths)
+    ? Object.entries(supportedConfig.gamePaths).flatMap(([key, path]) =>
+        typeof path === 'string' ? [{ key, path }] : []
+      )
+    : []
+  const appPaths = isRecord(supportedConfig.appPaths)
+    ? Object.entries(supportedConfig.appPaths).flatMap(([key, path]) =>
+        typeof path === 'string' ? [{ key, path }] : []
+      )
+    : []
+  const customAppArgs = isRecord(supportedConfig.appArgs)
+    ? Object.entries(supportedConfig.appArgs).flatMap(([key, args]) =>
+        typeof args === 'string' ? [{ key, args }] : []
+      )
+    : []
+  const trackedProcessPaths = collectTrackedProcessPathPreviews(supportedConfig.profiles)
+  const previewItemCount =
+    gamePaths.length + appPaths.length + customAppArgs.length + trackedProcessPaths.length
+  const droppedCount = Math.max(0, countImportedPreviewItems(rawConfig) - previewItemCount)
+  const warnings =
+    droppedCount > 0
+      ? [`${droppedCount} unsupported or invalid path/argument entries were dropped.`]
+      : []
+
+  return {
+    changedKeys: Object.keys(supportedConfig).sort(),
+    gamePaths,
+    appPaths,
+    trackedProcessPaths,
+    customAppArgs,
+    droppedCount,
+    warnings
+  }
+}
+
+async function readAndSanitizeConfig(filePath: string) {
+  const stat = await fs.promises.stat(filePath)
+
+  if (stat.size > MAX_CONFIG_IMPORT_BYTES) {
+    throw new Error('Config file exceeds the 1 MB size limit.')
+  }
+
+  const rawConfig = await fs.promises.readFile(filePath, 'utf8')
+  const parsedConfig: unknown = JSON.parse(rawConfig)
+  const supportedConfig = sanitizeImportedConfig(parsedConfig)
+  const summary = buildImportPreviewSummary(
+    parsedConfig as Record<string, unknown>,
+    supportedConfig
+  )
+
+  return { supportedConfig, summary }
+}
+
+function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
+  const snapshot = { ...store.store }
+
+  try {
+    store.clear()
+    store.set(supportedConfig)
+    migrateProfilesToNamedSets()
+    applyRuntimeConfigSettings()
+    notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
+  } catch (err) {
+    store.clear()
+    store.set(snapshot as Record<string, unknown>)
+    applyRuntimeConfigSettings()
+    throw err
+  }
 }
 
 export function registerConfigHandlers() {
@@ -66,9 +229,9 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('import-config', async () => {
     try {
-      const options = {
+      const options: OpenDialogOptions = {
         title: 'Import SimLauncher Config',
-        properties: ['openFile'] as const,
+        properties: ['openFile'],
         filters: [{ name: 'JSON Files', extensions: ['json'] }]
       }
       const mainWindow = getMainWindow()
@@ -81,29 +244,8 @@ export function registerConfigHandlers() {
       }
 
       const filePath = result.filePaths[0]
-      const stat = await fs.promises.stat(filePath)
-
-      if (stat.size > MAX_CONFIG_IMPORT_BYTES) {
-        return { success: false, error: 'Config file exceeds the 1 MB size limit.' }
-      }
-
-      const rawConfig = await fs.promises.readFile(filePath, 'utf8')
-      const parsedConfig: unknown = JSON.parse(rawConfig)
-      const supportedConfig = sanitizeImportedConfig(parsedConfig)
-      const snapshot = { ...store.store }
-
-      try {
-        store.clear()
-        store.set(supportedConfig)
-        migrateProfilesToNamedSets()
-        applyRuntimeConfigSettings()
-        notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
-      } catch (err) {
-        store.clear()
-        store.set(snapshot)
-        applyRuntimeConfigSettings()
-        throw err
-      }
+      const { supportedConfig } = await readAndSanitizeConfig(filePath)
+      applySanitizedConfig(supportedConfig)
 
       return { success: true, filePath }
     } catch (err) {
@@ -111,6 +253,74 @@ export function registerConfigHandlers() {
       console.error('Failed to import config:', err)
       return { success: false, error: message }
     }
+  })
+
+  ipcMain.handle('preview-import-config', async () => {
+    try {
+      clearPendingImport()
+      const options: OpenDialogOptions = {
+        title: 'Import SimLauncher Config',
+        properties: ['openFile'],
+        filters: [{ name: 'JSON Files', extensions: ['json'] }]
+      }
+      const mainWindow = getMainWindow()
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options)
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, canceled: true }
+      }
+
+      const filePath = result.filePaths[0]
+      const { supportedConfig, summary } = await readAndSanitizeConfig(filePath)
+      const token = crypto.randomBytes(IMPORT_PREVIEW_TOKEN_BYTES).toString('base64url')
+      pendingImport = {
+        token,
+        filePath,
+        config: supportedConfig,
+        expiresAt: Date.now() + IMPORT_PREVIEW_TTL_MS
+      }
+
+      return { success: true, token, filePath, summary }
+    } catch (err) {
+      clearPendingImport()
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Failed to preview config import:', err)
+      return { success: false, error: message }
+    }
+  })
+
+  ipcMain.handle('apply-import-config', async (_event, token: unknown) => {
+    try {
+      if (typeof token !== 'string' || !pendingImport || pendingImport.token !== token) {
+        return { success: false, error: 'Import preview expired or is no longer valid.' }
+      }
+
+      if (Date.now() > pendingImport.expiresAt) {
+        clearPendingImport()
+        return { success: false, error: 'Import preview expired. Please choose the config again.' }
+      }
+
+      const { filePath, config } = pendingImport
+      clearPendingImport()
+      applySanitizedConfig(config)
+
+      return { success: true, filePath }
+    } catch (err) {
+      clearPendingImport()
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Failed to apply config import:', err)
+      return { success: false, error: message }
+    }
+  })
+
+  ipcMain.handle('cancel-import-config', async (_event, token: unknown) => {
+    if (typeof token === 'string' && pendingImport?.token === token) {
+      clearPendingImport()
+    }
+
+    return { success: true }
   })
 
   ipcMain.handle('get-version', () => {

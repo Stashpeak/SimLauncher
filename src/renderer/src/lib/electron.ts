@@ -9,6 +9,9 @@ export const maximize = () => window.electronAPI.maximize()
 export const close = () => window.electronAPI.close()
 export const restartApp = () => window.electronAPI.restartApp()
 export const getRunningApps = () => window.electronAPI.getRunningApps()
+export const subscribeRunningApps = () => window.electronAPI.subscribeRunningApps()
+export const unsubscribeRunningApps = () => window.electronAPI.unsubscribeRunningApps()
+export const onRunningAppsChanged = window.electronAPI.onRunningAppsChanged
 export const killLaunchedApps = window.electronAPI.killLaunchedApps
 export const onUpdateAvailable = window.electronAPI.onUpdateAvailable
 export const onUpdateDownloaded = window.electronAPI.onUpdateDownloaded

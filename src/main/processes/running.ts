@@ -1,4 +1,5 @@
 import path from 'path'
+import type { WebContents } from 'electron'
 
 import { StoredProfileEntry, getActiveStoredProfile, getProfileTrackablePaths } from '../profiles'
 import { store } from '../store'
@@ -7,6 +8,29 @@ import { getExeName, isValidExePath } from '../utils'
 import { pruneUnclosedProcesses } from './kill'
 import { pruneStoppedRunningProcesses, runningProcesses, unclosedProcesses } from './state'
 import { readRunningProcessNames } from './tasklist'
+
+export interface RunningApp {
+  path: string
+  name: string
+  gameKey: string
+  tracked: boolean
+  warning?: string
+  elevated?: boolean
+}
+export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | 'config' | 'scan'
+
+export interface RunningAppsChangedPayload {
+  apps: RunningApp[]
+  reason: RunningAppsChangeReason
+  updatedAt: number
+}
+
+const RUNNING_APPS_CHANGED_CHANNEL = 'running-apps-changed'
+const RUNNING_APPS_SCAN_INTERVAL_MS = 2000
+const runningAppsSubscribers = new Set<WebContents>()
+let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
+let lastRunningAppsSnapshot = ''
+let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
 
 function getExternallyAdoptableGameKeys(
   processNames: Set<string>,
@@ -97,7 +121,7 @@ async function getTrackedRunningApps(
   return trackedApps
 }
 
-export async function getRunningApps() {
+export async function getRunningApps(): Promise<RunningApp[]> {
   const processNames = await readRunningProcessNames()
   pruneStoppedRunningProcesses(processNames)
   pruneUnclosedProcesses(processNames)
@@ -151,4 +175,98 @@ export async function getRunningApps() {
   )
 
   return [...surfacedApps, ...trackedApps]
+}
+
+function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
+  return JSON.stringify(
+    apps.map((app) => ({
+      elevated: app.elevated ?? false,
+      gameKey: app.gameKey,
+      name: app.name,
+      path: app.path,
+      tracked: app.tracked ?? false,
+      warning: app.warning ?? ''
+    }))
+  )
+}
+
+function removeRunningAppsSubscriber(webContents: WebContents) {
+  runningAppsSubscribers.delete(webContents)
+
+  if (runningAppsSubscribers.size === 0 && runningAppsMonitor) {
+    clearInterval(runningAppsMonitor)
+    runningAppsMonitor = undefined
+    lastRunningAppsSnapshot = ''
+  }
+}
+
+function emitRunningAppsChanged(payload: RunningAppsChangedPayload) {
+  runningAppsSubscribers.forEach((webContents) => {
+    if (webContents.isDestroyed()) {
+      removeRunningAppsSubscriber(webContents)
+      return
+    }
+
+    webContents.send(RUNNING_APPS_CHANGED_CHANNEL, payload)
+  })
+}
+
+async function publishRunningAppsInternal(
+  reason: RunningAppsChangeReason
+): Promise<RunningAppsChangedPayload | null> {
+  if (runningAppsSubscribers.size === 0) {
+    return null
+  }
+
+  const apps = await getRunningApps()
+  const snapshot = normalizeRunningAppsSnapshot(apps)
+
+  if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
+    return null
+  }
+
+  lastRunningAppsSnapshot = snapshot
+  const payload = { apps, reason, updatedAt: Date.now() }
+  emitRunningAppsChanged(payload)
+  return payload
+}
+
+export function publishRunningApps(reason: RunningAppsChangeReason = 'scan') {
+  const next = (publishRunningAppsPromise || Promise.resolve(null))
+    .catch(() => null)
+    .then(() => publishRunningAppsInternal(reason))
+    .finally(() => {
+      if (publishRunningAppsPromise === next) {
+        publishRunningAppsPromise = undefined
+      }
+    })
+
+  publishRunningAppsPromise = next
+  return publishRunningAppsPromise
+}
+
+function startRunningAppsMonitor() {
+  if (runningAppsMonitor) {
+    return
+  }
+
+  runningAppsMonitor = setInterval(() => {
+    publishRunningApps('scan').catch((err) => {
+      console.error('Running apps monitor error:', err)
+    })
+  }, RUNNING_APPS_SCAN_INTERVAL_MS)
+}
+
+export async function subscribeRunningApps(webContents: WebContents) {
+  runningAppsSubscribers.add(webContents)
+  webContents.once('destroyed', () => removeRunningAppsSubscriber(webContents))
+  startRunningAppsMonitor()
+
+  const apps = await getRunningApps()
+  lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
+  return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
+}
+
+export function unsubscribeRunningApps(webContents: WebContents) {
+  removeRunningAppsSubscriber(webContents)
 }
