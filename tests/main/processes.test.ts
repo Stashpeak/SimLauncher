@@ -11,6 +11,7 @@ type MockWebContents = {
 const storeData: StoreData = {}
 const existingPaths = new Set<string>()
 const processNames = new Set<string>()
+const accessDeniedPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 
 async function loadProcessModules() {
@@ -43,6 +44,10 @@ async function loadProcessModules() {
       }
       if (command === 'taskkill' && args.includes('/PID')) {
         const pid = args[args.indexOf('/PID') + 1]
+        if (accessDeniedPids.has(pid)) {
+          callback(new Error('Access is denied.'), '', 'Access is denied.')
+          return
+        }
         if (pid === '4321') {
           processNames.delete('simhub.exe')
         }
@@ -135,6 +140,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   existingPaths.clear()
   processNames.clear()
+  accessDeniedPids.clear()
   execFileCalls.length = 0
   runningProcesses.clear()
   unclosedProcesses.clear()
@@ -223,6 +229,47 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
     expect.arrayContaining([
       expect.objectContaining({ command: 'taskkill', args: ['/IM', 'simhub.exe', '/T', '/F'] })
     ])
+  )
+})
+
+test('killProfileApps publishes promptly when untracked app remains elevated after kill failure', async () => {
+  const { killProfileApps, subscribeRunningApps } = await loadProcessModules()
+  const webContents = createMockWebContents()
+
+  storeData.profiles = {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  }
+  storeData.gamePaths = { ac: 'C:/Games/AssettoCorsa.exe' }
+  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+  existingPaths.add('C:/Games/AssettoCorsa.exe')
+  existingPaths.add('C:/Tools/SimHub.exe')
+  processNames.add('assettocorsa.exe')
+  processNames.add('simhub.exe')
+  accessDeniedPids.add('4321')
+
+  await subscribeRunningApps(asWebContents(webContents))
+  webContents.send.mockClear()
+
+  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: false,
+    closedCount: 0,
+    failedCount: 1,
+    failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'access_denied' })]
+  })
+
+  expect(webContents.send).toHaveBeenCalledWith(
+    'running-apps-changed',
+    expect.objectContaining({
+      reason: 'kill',
+      apps: expect.arrayContaining([
+        expect.objectContaining({
+          path: 'C:/Tools/SimHub.exe',
+          gameKey: 'ac',
+          tracked: true,
+          elevated: true
+        })
+      ])
+    })
   )
 })
 
