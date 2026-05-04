@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ProgressInfo, UpdateInfo } from 'electron-updater'
-import type { ElectronAPI } from './api'
+import type { ElectronAPI, RunningAppsChangedPayload, StoreConfigChangePayload } from './api'
 
 const electronAPI: ElectronAPI = {
   // launch
@@ -26,6 +26,13 @@ const electronAPI: ElectronAPI = {
 
   // process monitoring
   getRunningApps: () => ipcRenderer.invoke('get-running-apps'),
+  subscribeRunningApps: () => ipcRenderer.invoke('subscribe-running-apps'),
+  unsubscribeRunningApps: () => ipcRenderer.invoke('unsubscribe-running-apps'),
+  onRunningAppsChanged: (cb: (payload: RunningAppsChangedPayload) => void) => {
+    const handler = (_: unknown, payload: RunningAppsChangedPayload) => cb(payload)
+    ipcRenderer.on('running-apps-changed', handler)
+    return () => ipcRenderer.removeListener('running-apps-changed', handler)
+  },
   killLaunchedApps: (gameKey?: string) => ipcRenderer.invoke('kill-launched-apps', gameKey),
 
   // updater
@@ -71,13 +78,16 @@ const electronAPI: ElectronAPI = {
   saveProfiles: (profiles: unknown) => ipcRenderer.invoke('save-profiles', profiles),
   getMigrationFlags: () => ipcRenderer.invoke('get-migration-flags'),
   setMigrationFlags: (patch: unknown) => ipcRenderer.invoke('set-migration-flags', patch),
-  onStoreConfigChanged: (cb: (payload: unknown) => void) => {
-    const handler = (_: unknown, payload: unknown) => cb(payload)
+  onStoreConfigChanged: (cb: (payload: StoreConfigChangePayload) => void) => {
+    const handler = (_: unknown, payload: StoreConfigChangePayload) => cb(payload)
     ipcRenderer.on('store-config-changed', handler)
     return () => ipcRenderer.removeListener('store-config-changed', handler)
   },
   exportConfig: () => ipcRenderer.invoke('export-config'),
   importConfig: () => ipcRenderer.invoke('import-config'),
+  previewImportConfig: () => ipcRenderer.invoke('preview-import-config'),
+  applyImportConfig: (token: string) => ipcRenderer.invoke('apply-import-config', token),
+  cancelImportConfig: (token: string) => ipcRenderer.invoke('cancel-import-config', token),
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),
   getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath),
   getVersion: () => ipcRenderer.invoke('get-version')

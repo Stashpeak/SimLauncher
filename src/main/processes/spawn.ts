@@ -9,6 +9,7 @@ import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from 
 import { runningProcesses } from './state'
 import { readRunningProcessNames } from './tasklist'
 import type { AppLaunchResult, LaunchResult } from './types'
+import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
@@ -275,6 +276,9 @@ function spawnDetachedApp(
 
       child.once('spawn', () => {
         child.unref()
+        publishRunningApps('launch').catch((err) => {
+          console.error('Failed to publish running apps after launch:', err)
+        })
         resolveOnce({ status: 'launched', appPath })
       })
 
@@ -301,6 +305,9 @@ function spawnDetachedApp(
 
       child.once('exit', () => {
         runningProcesses.delete(appPath)
+        publishRunningApps('exit').catch((err) => {
+          console.error('Failed to publish running apps after exit:', err)
+        })
       })
 
       fallbackTimer = setTimeout(() => resolveOnce({ status: 'launched', appPath }), 500)
