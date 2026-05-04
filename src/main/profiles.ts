@@ -170,7 +170,7 @@ export function getEnabledUtilityKeys(profile: StoredProfile | undefined) {
   }
 
   return Object.entries(profile)
-    .filter(([_key, value]) => value === true)
+    .filter(([, value]) => value === true)
     .map(([key]) => key)
 }
 

@@ -502,7 +502,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
     )
 
     if (runningAppEntry) {
-      const [_runningPath, runningApp] = runningAppEntry
+      const [, runningApp] = runningAppEntry
       killTasks.push(killProcessTree(runningApp.process, appPath, runningApp.gameKey))
       killedExeNames.add(getExeName(appPath))
       return

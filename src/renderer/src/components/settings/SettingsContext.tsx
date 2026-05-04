@@ -52,7 +52,7 @@ function trimStringRecord(values: Record<string, string>) {
   return Object.fromEntries(
     Object.entries(values)
       .map(([key, value]) => [key, value.trim()])
-      .filter(([_key, value]) => value.length > 0)
+      .filter(([, value]) => value.length > 0)
   )
 }
 
@@ -134,6 +134,8 @@ export function SettingsProvider({
 }) {
   const { notify } = useNotify()
   const theme = useTheme()
+  const themeRef = useRef(theme)
+  themeRef.current = theme
   const [loading, setLoading] = useState(true)
 
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
@@ -203,7 +205,7 @@ export function SettingsProvider({
     setAccentCustom(settings.accentCustom || '')
     setAccentBgTint(settings.accentBgTint || false)
     setThemeMode(loadedThemeMode)
-    theme.setThemeMode(loadedThemeMode)
+    themeRef.current.setThemeMode(loadedThemeMode)
     setFocusActiveTitle(settings.focusActiveTitle !== false)
     setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
     setStartWithWindows(settings.startWithWindows || false)
@@ -232,11 +234,11 @@ export function SettingsProvider({
     setGameIcons(gIcons)
 
     setLoading(false)
-  }, [theme])
+  }, [])
 
   useEffect(() => {
     loadSettingsFromStore()
-  }, [])
+  }, [loadSettingsFromStore])
 
   useEffect(() => {
     latestSettingsObjects.current = {
@@ -665,7 +667,7 @@ export function SettingsProvider({
         onSaved?.()
       })
     }
-  }, [shouldSaveTrigger])
+  }, [handleSave, onSaved, shouldSaveTrigger])
 
   const utilities = useMemo(() => getUtilities(customSlots), [customSlots])
 
