@@ -134,6 +134,8 @@ export function SettingsProvider({
 }) {
   const { notify } = useNotify()
   const theme = useTheme()
+  const themeRef = useRef(theme)
+  themeRef.current = theme
   const [loading, setLoading] = useState(true)
 
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
@@ -203,7 +205,7 @@ export function SettingsProvider({
     setAccentCustom(settings.accentCustom || '')
     setAccentBgTint(settings.accentBgTint || false)
     setThemeMode(loadedThemeMode)
-    theme.setThemeMode(loadedThemeMode)
+    themeRef.current.setThemeMode(loadedThemeMode)
     setFocusActiveTitle(settings.focusActiveTitle !== false)
     setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
     setStartWithWindows(settings.startWithWindows || false)
@@ -232,7 +234,7 @@ export function SettingsProvider({
     setGameIcons(gIcons)
 
     setLoading(false)
-  }, [theme])
+  }, [])
 
   useEffect(() => {
     loadSettingsFromStore()
