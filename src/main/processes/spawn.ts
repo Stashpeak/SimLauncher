@@ -7,7 +7,7 @@ import { store } from '../store'
 import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from '../utils'
 
 import { runningProcesses } from './state'
-import { readRunningProcessNames } from './tasklist'
+import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { AppLaunchResult, LaunchResult } from './types'
 import { publishRunningApps } from './running'
 
@@ -294,6 +294,7 @@ function spawnDetachedApp(
 
       child.once('spawn', () => {
         child.unref()
+        invalidateProcessNameCache()
         publishRunningApps('launch').catch((err) => {
           console.error('Failed to publish running apps after launch:', err)
         })
@@ -323,6 +324,7 @@ function spawnDetachedApp(
 
       child.once('exit', () => {
         runningProcesses.delete(appPath)
+        invalidateProcessNameCache()
         publishRunningApps('exit').catch((err) => {
           console.error('Failed to publish running apps after exit:', err)
         })

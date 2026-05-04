@@ -12,7 +12,7 @@ import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
 import { runningProcesses, unclosedProcesses } from './state'
 import { publishRunningApps } from './running'
-import { readRunningProcessNames } from './tasklist'
+import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
 
 interface KillAttemptResult {
@@ -318,6 +318,7 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
     }
   }
 
+  invalidateProcessNameCache()
   const processNamesAfterKill = await readRunningProcessNames()
   const finalizedAttempts = await Promise.all(
     attempts.map(async (attempt) => {
