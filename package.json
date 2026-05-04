@@ -16,7 +16,8 @@
     "preload:types:check": "node scripts/generate-preload-types.mjs --check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc",
+    "typecheck": "npm run typecheck:tsc && npm run preload:types:check",
+    "typecheck:tsc": "tsc",
     "preview": "electron-vite preview",
     "prepare": "git config core.hooksPath .githooks"
   },
