@@ -16,6 +16,7 @@ const nullExecutablePathPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
+const invalidateProcessNameCacheMock = vi.fn()
 
 function makeAccessDeniedError() {
   const error = new Error('Access is denied.') as NodeJS.ErrnoException
@@ -96,6 +97,7 @@ async function loadProcessModules() {
   }))
 
   vi.doMock('../../src/main/processes/tasklist', () => ({
+    invalidateProcessNameCache: invalidateProcessNameCacheMock,
     readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
   }))
 
@@ -166,6 +168,7 @@ beforeEach(async () => {
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
+  invalidateProcessNameCacheMock.mockClear()
   runningProcesses.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
@@ -217,6 +220,7 @@ test('launchProfileApps parses custom app arguments with quoted paths and escape
     appPath: 'C:/Tools/Custom Tool.exe',
     args: ['--config', 'C:/Users/Driver/Sim Configs/main profile.json', '--label', 'Crew "Chief"']
   })
+  expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
 })
 
 test('launchProfileApps treats PowerShell-sensitive custom argument characters as literal spawn args', async () => {
@@ -378,6 +382,7 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
       expect.objectContaining({ command: 'taskkill', args: ['/IM', 'simhub.exe', '/T', '/F'] })
     ])
   )
+  expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
 })
 
 test('killProfileApps includes processes with null executable paths when resolving PIDs', async () => {
