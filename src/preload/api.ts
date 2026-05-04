@@ -50,6 +50,14 @@ export interface RunningApp {
   elevated?: boolean
 }
 
+export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | 'config' | 'scan'
+
+export interface RunningAppsChangedPayload {
+  apps: RunningApp[]
+  reason: RunningAppsChangeReason
+  updatedAt: number
+}
+
 export interface BrowsePathResult {
   filePath: string | null
   inputId: string
@@ -91,6 +99,27 @@ export interface ConfigFileResult {
   filePath?: string
 }
 
+export interface ConfigImportPreviewEntry {
+  key: string
+  path?: string
+  args?: string
+}
+
+export interface ConfigImportPreviewSummary {
+  changedKeys: string[]
+  gamePaths: ConfigImportPreviewEntry[]
+  appPaths: ConfigImportPreviewEntry[]
+  trackedProcessPaths: ConfigImportPreviewEntry[]
+  customAppArgs: ConfigImportPreviewEntry[]
+  droppedCount: number
+  warnings: string[]
+}
+
+export interface ConfigImportPreviewResult extends ConfigFileResult {
+  token?: string
+  summary?: ConfigImportPreviewSummary
+}
+
 export interface UpdateAvailability {
   version: string
 }
@@ -115,6 +144,9 @@ export interface ElectronAPI {
   close: () => Promise<void>
   restartApp: () => Promise<void>
   getRunningApps: () => Promise<RunningApp[]>
+  subscribeRunningApps: () => Promise<RunningAppsChangedPayload>
+  unsubscribeRunningApps: () => Promise<void>
+  onRunningAppsChanged: (cb: (payload: RunningAppsChangedPayload) => void) => Unsubscribe
   killLaunchedApps: (gameKey?: string) => Promise<KillResult>
   onUpdateAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
   onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => Unsubscribe
@@ -134,6 +166,9 @@ export interface ElectronAPI {
   onStoreConfigChanged: (cb: (payload: StoreConfigChangePayload) => void) => Unsubscribe
   exportConfig: () => Promise<ConfigFileResult>
   importConfig: () => Promise<ConfigFileResult>
+  previewImportConfig: () => Promise<ConfigImportPreviewResult>
+  applyImportConfig: (token: string) => Promise<ConfigFileResult>
+  cancelImportConfig: (token: string) => Promise<ConfigFileResult>
   setLoginItem: (openAtLogin: boolean) => Promise<void>
   setZoom: (factor: number) => Promise<void>
   getAssetData: (filename: string) => Promise<string | null>

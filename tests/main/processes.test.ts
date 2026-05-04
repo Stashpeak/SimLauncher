@@ -1,6 +1,12 @@
+import type { WebContents } from 'electron'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 type StoreData = Record<string, unknown>
+type MockWebContents = {
+  isDestroyed: () => boolean
+  send: ReturnType<typeof vi.fn>
+  once: ReturnType<typeof vi.fn>
+}
 
 const storeData: StoreData = {}
 const existingPaths = new Set<string>()
@@ -32,11 +38,14 @@ async function loadProcessModules() {
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })
       if (command === 'powershell.exe') {
-        callback(null, '4321', '')
+        callback(null, processNames.has('simhub.exe') ? '[4321]' : '', '')
         return
       }
       if (command === 'taskkill' && args.includes('/PID')) {
-        processNames.delete('simhub.exe')
+        const pid = args[args.indexOf('/PID') + 1]
+        if (pid === '4321') {
+          processNames.delete('simhub.exe')
+        }
       }
       callback(null, '', '')
     }),
@@ -64,6 +73,29 @@ async function loadProcessModules() {
     readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
   }))
 
+  vi.doMock('../../src/main/store', () => ({
+    store: {
+      get: vi.fn((key: string) => storeData[key]),
+      set: vi.fn((key: string, value: unknown) => {
+        storeData[key] = value
+      })
+    }
+  }))
+
+  vi.doMock('../../src/main/profiles', () => ({
+    getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
+      p.profiles.find((i) => i.id === p.activeProfileId)
+    ),
+    getProfileTrackablePaths: vi.fn(
+      (
+        gameKey: string,
+        _profile: unknown,
+        appPaths: Record<string, string> | undefined,
+        gamePaths: Record<string, string> | undefined
+      ) => [...(gamePaths?.[gameKey] ? [gamePaths[gameKey]] : []), ...Object.values(appPaths || {})]
+    )
+  }))
+
   const spawnModule = await import('../../src/main/processes/spawn')
   const killModule = await import('../../src/main/processes/kill')
   const stateModule = await import('../../src/main/processes/state')
@@ -73,8 +105,23 @@ async function loadProcessModules() {
     killLaunchedApps: killModule.killLaunchedApps,
     killProfileApps: killModule.killProfileApps,
     runningProcesses: stateModule.runningProcesses,
-    unclosedProcesses: stateModule.unclosedProcesses
+    unclosedProcesses: stateModule.unclosedProcesses,
+    getRunningApps: (await import('../../src/main/processes/running')).getRunningApps,
+    subscribeRunningApps: (await import('../../src/main/processes/running')).subscribeRunningApps,
+    publishRunningApps: (await import('../../src/main/processes/running')).publishRunningApps
   }
+}
+
+function createMockWebContents(): MockWebContents {
+  return {
+    isDestroyed: () => false,
+    send: vi.fn(),
+    once: vi.fn()
+  }
+}
+
+function asWebContents(webContents: MockWebContents) {
+  return webContents as unknown as WebContents
 }
 
 const sender = {
@@ -177,4 +224,54 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
       expect.objectContaining({ command: 'taskkill', args: ['/IM', 'simhub.exe', '/T', '/F'] })
     ])
   )
+})
+
+test('subscribeRunningApps returns initial snapshot and tracks subscriber', async () => {
+  const { subscribeRunningApps } = await loadProcessModules()
+  const webContents = createMockWebContents()
+
+  const snapshot = await subscribeRunningApps(asWebContents(webContents))
+  expect(snapshot.reason).toBe('initial')
+  expect(snapshot.apps).toEqual([])
+  expect(webContents.once).toHaveBeenCalledWith('destroyed', expect.any(Function))
+})
+
+test('publishRunningApps emits changed event to subscribers when state changes', async () => {
+  const { subscribeRunningApps, publishRunningApps } = await loadProcessModules()
+  const webContents = createMockWebContents()
+
+  storeData.profiles = {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  }
+  storeData.gamePaths = { ac: 'C:/Games/AssettoCorsa.exe' }
+  existingPaths.add('C:/Games/AssettoCorsa.exe')
+  await subscribeRunningApps(asWebContents(webContents))
+
+  // Change state: add a process
+  processNames.add('assettocorsa.exe')
+
+  await publishRunningApps('scan')
+
+  expect(webContents.send).toHaveBeenCalledWith(
+    'running-apps-changed',
+    expect.objectContaining({
+      reason: 'scan',
+      apps: expect.arrayContaining([
+        expect.objectContaining({ name: 'AssettoCorsa.exe', gameKey: 'ac', tracked: true })
+      ])
+    })
+  )
+})
+
+test('publishRunningApps deduplicates emissions if snapshot is identical', async () => {
+  const { subscribeRunningApps, publishRunningApps } = await loadProcessModules()
+  const webContents = createMockWebContents()
+
+  await subscribeRunningApps(asWebContents(webContents))
+  webContents.send.mockClear()
+
+  // No state change
+  await publishRunningApps('scan')
+
+  expect(webContents.send).not.toHaveBeenCalled()
 })

@@ -8,7 +8,10 @@ import {
   killLaunchedApps,
   killProfileApps,
   launchProfileApps,
-  readRunningProcessNames
+  publishRunningApps,
+  readRunningProcessNames,
+  subscribeRunningApps,
+  unsubscribeRunningApps
 } from '../processes'
 import { store } from '../store'
 import { getExeName } from '../utils'
@@ -21,7 +24,9 @@ export function registerLaunchHandlers() {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
-    return launchProfileApps(event.sender, gameKey, profileApps)
+    const result = await launchProfileApps(event.sender, gameKey, profileApps)
+    await publishRunningApps('launch')
+    return result
   })
 
   ipcMain.handle('relaunch-missing-profile', async (event, gameKey: string) => {
@@ -43,7 +48,9 @@ export function registerLaunchHandlers() {
       }
     }
 
-    return launchProfileApps(event.sender, gameKey, missingPaths)
+    const result = await launchProfileApps(event.sender, gameKey, missingPaths)
+    await publishRunningApps('launch')
+    return result
   })
 
   ipcMain.handle(
@@ -93,6 +100,7 @@ export function registerLaunchHandlers() {
 
       if (pathsToStop.length > 0) {
         killResult = await killProfileApps(gameKey, pathsToStop)
+        await publishRunningApps('kill')
       }
 
       const processNamesAfterStop = await readRunningProcessNames()
@@ -110,6 +118,7 @@ export function registerLaunchHandlers() {
       }
 
       const launchResult = await launchProfileApps(event.sender, gameKey, pathsToStart)
+      await publishRunningApps('launch')
 
       return {
         ...launchResult,
@@ -123,7 +132,17 @@ export function registerLaunchHandlers() {
     return getRunningApps()
   })
 
-  ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
-    return killLaunchedApps(gameKey)
+  ipcMain.handle('subscribe-running-apps', async (event) => {
+    return subscribeRunningApps(event.sender)
+  })
+
+  ipcMain.handle('unsubscribe-running-apps', (event) => {
+    unsubscribeRunningApps(event.sender)
+  })
+
+  ipcMain.handle('kill-launched-apps', async (_event, gameKey?: string) => {
+    const result = await killLaunchedApps(gameKey)
+    await publishRunningApps('kill')
+    return result
   })
 }
