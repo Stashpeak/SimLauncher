@@ -14,8 +14,19 @@ const processNames = new Set<string>()
 const accessDeniedPids = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
+const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
+const spawnErrors = new Map<string, NodeJS.ErrnoException>()
+
+function makeAccessDeniedError() {
+  const error = new Error('Access is denied.') as NodeJS.ErrnoException
+
+  error.code = 'EACCES'
+  return error
+}
 
 async function loadProcessModules() {
+  vi.resetModules()
+
   vi.doMock('electron-store', () => ({
     default: class MockStore {
       store = storeData
@@ -60,13 +71,17 @@ async function loadProcessModules() {
       }
       callback(null, '', '')
     }),
-    spawn: vi.fn((appPath: string) => {
+    spawn: vi.fn((appPath: string, args: string[] = [], options: Record<string, unknown> = {}) => {
+      spawnCalls.push({ appPath, args, options })
       const handlers = new Map<string, (...args: unknown[]) => void>()
       const child = {
         pid: 1234,
         once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
           handlers.set(event, handler)
-          if (event === 'spawn') {
+          if (event === 'error' && spawnErrors.has(appPath)) {
+            queueMicrotask(() => handler(spawnErrors.get(appPath)!))
+          }
+          if (event === 'spawn' && !spawnErrors.has(appPath)) {
             queueMicrotask(handler)
           }
           return child
@@ -149,6 +164,8 @@ beforeEach(async () => {
   accessDeniedPids.clear()
   nullExecutablePathPids.clear()
   execFileCalls.length = 0
+  spawnCalls.length = 0
+  spawnErrors.clear()
   runningProcesses.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
@@ -177,6 +194,130 @@ test('launchProfileApps skips profile apps that are already running', async () =
     launchedCount: 0,
     skippedCount: 1,
     message: 'All profile applications are already running.'
+  })
+})
+
+test('launchProfileApps parses custom app arguments with quoted paths and escaped quotes', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/Custom Tool.exe')
+  storeData.appPaths = { customapp1: 'C:/Tools/Custom Tool.exe' }
+  storeData.appArgs = {
+    customapp1: String.raw`--config "C:/Users/Driver/Sim Configs/main profile.json" --label "Crew \"Chief\""`
+  }
+
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Tools/Custom Tool.exe'])
+  ).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Tools/Custom Tool.exe',
+    args: ['--config', 'C:/Users/Driver/Sim Configs/main profile.json', '--label', 'Crew "Chief"']
+  })
+})
+
+test('launchProfileApps treats PowerShell-sensitive custom argument characters as literal spawn args', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/Custom Tool.exe')
+  existingPaths.add('C:/Tools/Custom Tool.exe --flag ^caret')
+  storeData.appPaths = { customapp1: 'C:/Tools/Custom Tool.exe' }
+  storeData.appArgs = {
+    customapp1:
+      '--name "literal & value" --pattern "$(Get-Process); | %{rm} `whoami`" --flag "^caret"'
+  }
+
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Tools/Custom Tool.exe'])
+  ).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Tools/Custom Tool.exe',
+    args: [
+      '--name',
+      'literal & value',
+      '--pattern',
+      '$(Get-Process); | %{rm} `whoami`',
+      '--flag',
+      '^caret'
+    ]
+  })
+})
+
+test('launchProfileApps uses encoded PowerShell command for elevated launches with literal custom args', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/Admin Tool.exe')
+  existingPaths.add(`C:/Tools/Admin Tool.exe --literal "$(Start-Process calc); 'single' & value"`)
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+  storeData.appPaths = { customapp1: 'C:/Tools/Admin Tool.exe' }
+  storeData.appArgs = {
+    customapp1: `--path "C:/Users/Driver/Sim Configs" --literal "$(Start-Process calc); 'single' & value"`
+  }
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])).resolves.toMatchObject(
+    {
+      success: true,
+      launchedCount: 1,
+      elevatedCount: 1
+    }
+  )
+
+  const elevatedCall = execFileCalls.find((call) => call.command === 'powershell.exe')
+  expect(elevatedCall).toMatchObject({
+    args: ['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)],
+    options: { windowsHide: true }
+  })
+  expect(elevatedCall?.args.join(' ')).not.toContain('Start-Process -FilePath')
+
+  const decodedCommand = Buffer.from(elevatedCall!.args[3], 'base64').toString('utf16le')
+  expect(decodedCommand).toContain("$payload = ConvertFrom-Json @'")
+  expect(decodedCommand).toContain(
+    'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
+  )
+  expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toEqual({
+    filePath: 'C:/Tools/Admin Tool.exe',
+    args: [
+      '--path',
+      'C:/Users/Driver/Sim Configs',
+      '--literal',
+      "$(Start-Process calc); 'single' & value"
+    ]
+  })
+})
+
+test('launchProfileApps omits PowerShell ArgumentList for elevated launches without custom args', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/Admin Tool.exe')
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])).resolves.toMatchObject(
+    {
+      success: true,
+      launchedCount: 1,
+      elevatedCount: 1
+    }
+  )
+
+  const elevatedCall = execFileCalls.find((call) => call.command === 'powershell.exe')
+  expect(elevatedCall).toMatchObject({
+    args: ['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)],
+    options: { windowsHide: true }
+  })
+
+  const decodedCommand = Buffer.from(elevatedCall!.args[3], 'base64').toString('utf16le')
+  expect(decodedCommand).toContain('Start-Process -FilePath $payload.filePath -Verb RunAs')
+  expect(decodedCommand).not.toContain('-ArgumentList')
+  expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toEqual({
+    filePath: 'C:/Tools/Admin Tool.exe',
+    args: []
   })
 })
 
