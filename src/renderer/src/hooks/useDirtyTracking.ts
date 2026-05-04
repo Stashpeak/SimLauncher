@@ -6,26 +6,23 @@ import { useEffect, useRef, useState } from 'react'
  */
 export function useDirtyTracking<T>(currentState: T, loading: boolean = false) {
   const [isDirty, setIsDirty] = useState(false)
-  const initialState = useRef<T | null>(null)
+  const initialSnapshot = useRef<string | null>(null)
 
   useEffect(() => {
     // Capture initial state once loading is finished
-    if (!loading && initialState.current === null) {
-      initialState.current = JSON.parse(JSON.stringify(currentState))
+    if (!loading && initialSnapshot.current === null) {
+      initialSnapshot.current = JSON.stringify(currentState)
     }
   }, [loading, currentState])
 
   useEffect(() => {
-    if (initialState.current === null) return
+    if (initialSnapshot.current === null) return
 
-    const currentStr = JSON.stringify(currentState)
-    const initialStr = JSON.stringify(initialState.current)
-
-    setIsDirty(currentStr !== initialStr)
+    setIsDirty(JSON.stringify(currentState) !== initialSnapshot.current)
   }, [currentState])
 
   const resetDirty = (newState?: T) => {
-    initialState.current = JSON.parse(JSON.stringify(newState ?? currentState))
+    initialSnapshot.current = JSON.stringify(newState ?? currentState)
     setIsDirty(false)
   }
 

@@ -12,6 +12,26 @@ type ProfileState = {
   relaunchControlsEnabled: boolean
 }
 
+const FOCUS_DEBOUNCE_MS = 300
+const PROFILE_FOCUS_EVENT = 'simlauncher:profile-focus-reload'
+
+let focusListenerActive = false
+let focusDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
+function ensureFocusListener() {
+  if (focusListenerActive) {
+    return
+  }
+
+  focusListenerActive = true
+  window.addEventListener('focus', () => {
+    clearTimeout(focusDebounceTimer)
+    focusDebounceTimer = setTimeout(() => {
+      window.dispatchEvent(new Event(PROFILE_FOCUS_EVENT))
+    }, FOCUS_DEBOUNCE_MS)
+  })
+}
+
 const getProfileState = (profileSet: GameProfileSet): ProfileState => {
   const profile = getActiveGameProfile(profileSet)
 
@@ -60,11 +80,12 @@ export function useGameProfile(gameKey: string, isActive: boolean, activeProfile
     }
 
     load()
-    window.addEventListener('focus', load)
+    ensureFocusListener()
+    window.addEventListener(PROFILE_FOCUS_EVENT, load)
 
     return () => {
       mounted = false
-      window.removeEventListener('focus', load)
+      window.removeEventListener(PROFILE_FOCUS_EVENT, load)
     }
   }, [activeProfileId, applyProfileSet, isActive, readProfileSet])
 
