@@ -7,11 +7,14 @@ import { useRunningApps } from '../hooks/useRunningApps'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
+
+const normalizePath = (path: string) => path.toLowerCase()
+
 export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'settings') => void }) {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
-  const [cacheInitialized, setCacheInitialized] = useState(false)
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock()
@@ -28,26 +31,9 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
         setGamePaths(settings.gamePaths)
         setFocusActiveTitle(settings.focusActiveTitle !== false)
         setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
-
-        const cache: Record<string, string> = {}
-        await Promise.all(
-          Object.values(settings.appPaths)
-            .filter((p): p is string => Boolean(p))
-            .map(async (p) => {
-              const icon = await getFileIcon(p)
-              if (icon) cache[p.toLowerCase()] = icon
-            })
-        )
-
-        if (!mounted) return
-
-        setAppIconCache(cache)
-        setCacheInitialized(true)
+        setSettingsLoaded(true)
       } catch (err) {
         console.error('Failed to load game settings', err)
-        if (mounted) {
-          setCacheInitialized(true)
-        }
       }
     }
 
@@ -57,6 +43,50 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
       mounted = false
     }
   }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const pathsToLoad = Array.from(
+      new Set(
+        runningApps
+          .map((app) => app.path)
+          .filter((path) => path && appIconCache[normalizePath(path)] === undefined)
+      )
+    )
+
+    if (pathsToLoad.length === 0) {
+      return () => {
+        mounted = false
+      }
+    }
+
+    async function loadRunningAppIcons() {
+      const icons: Record<string, string> = {}
+
+      await Promise.all(
+        pathsToLoad.map(async (path) => {
+          const icon = await getFileIcon(path)
+          icons[normalizePath(path)] = icon ?? ''
+        })
+      )
+
+      if (!mounted || Object.keys(icons).length === 0) return
+
+      setAppIconCache((current) => ({ ...current, ...icons }))
+    }
+
+    loadRunningAppIcons().catch((err) => {
+      console.error('Failed to load running app icons', err)
+    })
+
+    return () => {
+      mounted = false
+    }
+  }, [appIconCache, runningApps])
+
+  if (!settingsLoaded) {
+    return null
+  }
 
   if (configuredGames.length === 0) {
     return (
@@ -88,12 +118,12 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
         })
         .map(({ game }) => {
           const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
-          const gamePathLower = gamePaths[game.key]?.toLowerCase()
+          const gamePathLower = gamePaths[game.key] ? normalizePath(gamePaths[game.key]) : undefined
           const appsForGame = runningApps.filter(
-            (a) => a.gameKey === game.key && a.path.toLowerCase() !== gamePathLower
+            (a) => a.gameKey === game.key && normalizePath(a.path) !== gamePathLower
           )
           const runningAppIcons = appsForGame.map((a) => ({
-            icon: appIconCache[a.path.toLowerCase()] ?? null,
+            icon: appIconCache[normalizePath(a.path)] ?? null,
             name: a.name,
             warning: a.warning,
             elevated: a.elevated
@@ -115,7 +145,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
               onToggleEditor={() =>
                 setActiveEditorKey(activeEditorKey === game.key ? null : game.key)
               }
-              cacheInitialized={cacheInitialized}
+              cacheInitialized={true}
             />
           )
         })}

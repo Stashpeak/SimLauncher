@@ -22,11 +22,13 @@ import {
 } from '../../lib/config'
 import { browsePath, getAssetData, getFileIcon, setLoginItem, setZoom } from '../../lib/electron'
 import {
+  applyImportConfig,
+  cancelImportConfig,
   exportConfig,
   getProfiles,
   getSettings,
-  importConfig,
   onStoreConfigChanged,
+  previewImportConfig,
   saveProfiles,
   saveSettings as persistSettings
 } from '../../lib/store'
@@ -43,6 +45,13 @@ import {
   type SettingsObjectRecords
 } from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
+import { ImportPreviewDialog, type ConfigImportPreviewSummary } from './ImportPreviewDialog'
+
+type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] extends (
+  payload: infer Payload
+) => void
+  ? Payload
+  : never
 
 function trimPathRecord(paths: Record<string, string>) {
   return Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, value.trim()]))
@@ -167,6 +176,11 @@ export function SettingsProvider({
     slotName: string
   } | null>(null)
   const [importConfirmOpen, setImportConfirmOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<{
+    token: string
+    filePath?: string
+    summary: ConfigImportPreviewSummary
+  } | null>(null)
   const settingsObjectEditVersions = useRef(createSettingsObjectVersions())
   const latestSettingsObjects = useRef<SettingsObjectRecords>({
     appPaths,
@@ -552,12 +566,38 @@ export function SettingsProvider({
     setImportingConfig(true)
 
     try {
-      const result = await importConfig()
+      const result = await previewImportConfig()
+
+      if (result.success && result.token && result.summary) {
+        setImportPreview({
+          token: result.token,
+          filePath: result.filePath,
+          summary: result.summary
+        })
+      } else if (!result.canceled) {
+        notify(result.error || 'Failed to preview config import', 'error')
+      }
+    } catch (err) {
+      notify('Failed to preview config import', 'error')
+      console.error(err)
+    } finally {
+      setImportingConfig(false)
+    }
+  }, [notify])
+
+  const handleApplyImportConfig = useCallback(async () => {
+    if (!importPreview) return
+
+    setImportingConfig(true)
+
+    try {
+      const result = await applyImportConfig(importPreview.token)
 
       if (result.success) {
+        setImportPreview(null)
         onConfigImported?.()
         notify('Config imported', 'success', 2500)
-      } else if (!result.canceled) {
+      } else {
         notify(result.error || 'Failed to import config', 'error')
       }
     } catch (err) {
@@ -566,7 +606,15 @@ export function SettingsProvider({
     } finally {
       setImportingConfig(false)
     }
-  }, [notify, onConfigImported])
+  }, [importPreview, notify, onConfigImported])
+
+  const handleCancelImportConfig = useCallback(() => {
+    if (importPreview) {
+      void cancelImportConfig(importPreview.token)
+    }
+
+    setImportPreview(null)
+  }, [importPreview])
 
   const handleSave = useCallback(async () => {
     try {
@@ -797,6 +845,14 @@ export function SettingsProvider({
         onSave={handleConfirmImportConfig}
         onDiscard={() => setImportConfirmOpen(false)}
         onCancel={() => setImportConfirmOpen(false)}
+      />
+
+      <ImportPreviewDialog
+        isOpen={importPreview !== null}
+        filePath={importPreview?.filePath}
+        summary={importPreview?.summary}
+        onImport={handleApplyImportConfig}
+        onCancel={handleCancelImportConfig}
       />
     </SettingsContext.Provider>
   )

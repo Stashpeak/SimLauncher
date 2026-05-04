@@ -9,6 +9,7 @@ import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from 
 import { runningProcesses } from './state'
 import { readRunningProcessNames } from './tasklist'
 import type { AppLaunchResult, LaunchResult } from './types'
+import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
@@ -210,19 +211,37 @@ function isElevatedLaunchError(err: unknown) {
   return process.platform === 'win32' && getErrorCode(err) === 'EACCES'
 }
 
+function encodePowerShellCommand(command: string) {
+  return Buffer.from(command, 'utf16le').toString('base64')
+}
+
+function createElevatedLaunchCommand(appPath: string, args: string[]) {
+  const payload = JSON.stringify({ filePath: appPath, args })
+  const startProcessCommand =
+    args.length > 0
+      ? 'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
+      : 'Start-Process -FilePath $payload.filePath -Verb RunAs'
+
+  return encodePowerShellCommand(
+    [
+      "$ErrorActionPreference = 'Stop'",
+      "$payload = ConvertFrom-Json @'",
+      payload,
+      "'@",
+      startProcessCommand
+    ].join('\n')
+  )
+}
+
 function launchElevated(appPath: string, args: string[] = []) {
   return new Promise<AppLaunchResult>((resolve) => {
-    const escapedAppPath = appPath.replace(/'/g, "''")
-    const escapedArgs = args.map((arg) => `'${arg.replace(/'/g, "''")}'`).join(', ')
-    const argumentList = escapedArgs ? ` -ArgumentList @(${escapedArgs})` : ''
-
     execFile(
       'powershell.exe',
       [
         '-NoProfile',
         '-NonInteractive',
-        '-Command',
-        `Start-Process -FilePath '${escapedAppPath}'${argumentList} -Verb RunAs`
+        '-EncodedCommand',
+        createElevatedLaunchCommand(appPath, args)
       ],
       { windowsHide: true },
       (error) => {
@@ -275,6 +294,9 @@ function spawnDetachedApp(
 
       child.once('spawn', () => {
         child.unref()
+        publishRunningApps('launch').catch((err) => {
+          console.error('Failed to publish running apps after launch:', err)
+        })
         resolveOnce({ status: 'launched', appPath })
       })
 
@@ -301,6 +323,9 @@ function spawnDetachedApp(
 
       child.once('exit', () => {
         runningProcesses.delete(appPath)
+        publishRunningApps('exit').catch((err) => {
+          console.error('Failed to publish running apps after exit:', err)
+        })
       })
 
       fallbackTimer = setTimeout(() => resolveOnce({ status: 'launched', appPath }), 500)

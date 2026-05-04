@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Game } from '../lib/config'
-import { getRunningApps } from '../lib/electron'
+import {
+  getRunningApps,
+  onRunningAppsChanged,
+  subscribeRunningApps,
+  unsubscribeRunningApps
+} from '../lib/electron'
 
 export type RunningApp = {
   path: string
@@ -8,6 +13,14 @@ export type RunningApp = {
   gameKey: string
   warning?: string
   elevated?: boolean
+}
+
+export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | 'config' | 'scan'
+
+export interface RunningAppsChangedPayload {
+  apps: RunningApp[]
+  reason: RunningAppsChangeReason
+  updatedAt: number
 }
 
 export function useRunningApps(configuredGames: Game[]) {
@@ -18,6 +31,20 @@ export function useRunningApps(configuredGames: Game[]) {
     setRunningApps((current) => (current.length === 0 ? current : []))
     setRunningStatus((current) => (Object.keys(current).length === 0 ? current : {}))
   }, [])
+
+  const applyRunningApps = useCallback(
+    (apps: RunningApp[] | undefined) => {
+      const nextApps: RunningApp[] = apps || []
+      setRunningApps(nextApps)
+
+      const newStatus: Record<string, boolean> = {}
+      configuredGames.forEach((game) => {
+        newStatus[game.key] = nextApps.some((app) => app.gameKey === game.key)
+      })
+      setRunningStatus(newStatus)
+    },
+    [configuredGames]
+  )
 
   const refreshRunningState = useCallback(
     async (isMounted: () => boolean = () => true) => {
@@ -32,19 +59,12 @@ export function useRunningApps(configuredGames: Game[]) {
         const apps = await getRunningApps()
         if (!isMounted()) return
 
-        const nextApps: RunningApp[] = apps || []
-        setRunningApps(nextApps)
-
-        const newStatus: Record<string, boolean> = {}
-        configuredGames.forEach((game) => {
-          newStatus[game.key] = nextApps.some((app) => app.gameKey === game.key)
-        })
-        setRunningStatus(newStatus)
+        applyRunningApps(apps)
       } catch (err) {
-        console.error('Consolidated polling error:', err)
+        console.error('Running apps refresh error:', err)
       }
     },
-    [clearRunningState, configuredGames]
+    [applyRunningApps, clearRunningState, configuredGames.length]
   )
 
   useEffect(() => {
@@ -58,14 +78,31 @@ export function useRunningApps(configuredGames: Game[]) {
       }
     }
 
-    refreshRunningState(isMounted)
-    const intervalId = window.setInterval(() => refreshRunningState(isMounted), 2000)
+    const unsubscribe = onRunningAppsChanged((payload: RunningAppsChangedPayload) => {
+      if (isMounted()) {
+        applyRunningApps(payload.apps)
+      }
+    })
+
+    subscribeRunningApps()
+      .then((payload: RunningAppsChangedPayload) => {
+        if (isMounted()) {
+          applyRunningApps(payload.apps)
+        }
+      })
+      .catch((err: unknown) => {
+        console.error('Running apps subscription error:', err)
+        refreshRunningState(isMounted)
+      })
 
     return () => {
       mounted = false
-      window.clearInterval(intervalId)
+      unsubscribe()
+      unsubscribeRunningApps().catch((err: unknown) => {
+        console.error('Running apps unsubscribe error:', err)
+      })
     }
-  }, [clearRunningState, configuredGames.length, refreshRunningState])
+  }, [applyRunningApps, clearRunningState, configuredGames.length, refreshRunningState])
 
   return { runningApps, runningStatus, refreshRunningState }
 }

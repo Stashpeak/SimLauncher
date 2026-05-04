@@ -8,7 +8,9 @@ import {
   killLaunchedApps,
   killProfileApps,
   launchProfileApps,
-  readRunningProcessNames
+  readRunningProcessNames,
+  subscribeRunningApps,
+  unsubscribeRunningApps
 } from '../processes'
 import { store } from '../store'
 import { getExeName } from '../utils'
@@ -123,7 +125,15 @@ export function registerLaunchHandlers() {
     return getRunningApps()
   })
 
-  ipcMain.handle('kill-launched-apps', (_event, gameKey?: string) => {
+  ipcMain.handle('subscribe-running-apps', async (event) => {
+    return subscribeRunningApps(event.sender)
+  })
+
+  ipcMain.handle('unsubscribe-running-apps', (event) => {
+    unsubscribeRunningApps(event.sender)
+  })
+
+  ipcMain.handle('kill-launched-apps', async (_event, gameKey?: string) => {
     return killLaunchedApps(gameKey)
   })
 }

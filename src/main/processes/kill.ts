@@ -11,6 +11,7 @@ import { store } from '../store'
 import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
 import { runningProcesses, unclosedProcesses } from './state'
+import { publishRunningApps } from './running'
 import { readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
 
@@ -68,6 +69,75 @@ function runTaskkill(args: string[], description: string) {
   })
 }
 
+function isFullExePath(appPath: string | undefined) {
+  return (
+    typeof appPath === 'string' && path.basename(appPath) !== appPath && isValidExePath(appPath)
+  )
+}
+
+function escapeWmiString(value: string) {
+  return value.replace(/'/g, "''")
+}
+
+function parseProcessIds(output: string) {
+  const trimmedOutput = output.trim()
+
+  if (!trimmedOutput) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(trimmedOutput) as unknown
+    const values = Array.isArray(parsed) ? parsed : [parsed]
+
+    return values
+      .map((value) => (typeof value === 'number' ? value : Number(value)))
+      .filter((value) => Number.isSafeInteger(value) && value > 0)
+  } catch {
+    return trimmedOutput
+      .split(/\r?\n/)
+      .map((line) => Number(line.trim()))
+      .filter((value) => Number.isSafeInteger(value) && value > 0)
+  }
+}
+
+function findProcessIdsByExecutablePath(processName: string, appPath: string) {
+  return new Promise<{
+    processIds: number[]
+    detail?: string
+    accessDenied?: boolean
+  }>((resolve) => {
+    const script = [
+      '$target = $env:SIMLAUNCHER_TARGET_PROCESS_PATH',
+      `$name = '${escapeWmiString(processName)}'`,
+      '$targetPath = [System.IO.Path]::GetFullPath($target)',
+      'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
+      '  Where-Object { (-not $_.ExecutablePath) -or ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
+      '  Select-Object -ExpandProperty ProcessId |',
+      '  ConvertTo-Json -Compress'
+    ].join('\n')
+
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      {
+        windowsHide: true,
+        env: { ...process.env, SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath) }
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = stderr.trim() || stdout.trim() || error.message
+          console.error(`Failed to find process IDs for ${appPath}: ${detail}`)
+          resolve({ processIds: [], detail, accessDenied: isAccessDeniedMessage(detail) })
+          return
+        }
+
+        resolve({ processIds: parseProcessIds(stdout) })
+      }
+    )
+  })
+}
+
 async function killProcessTree(
   child: ChildProcess,
   appPath: string,
@@ -115,6 +185,49 @@ async function killProcessByImageName(
 ): Promise<KillAttemptResult> {
   if (process.platform !== 'win32') {
     return { processName, appPath, gameKey, success: true }
+  }
+
+  if (isFullExePath(appPath)) {
+    const targetAppPath = appPath as string
+    const { processIds, detail, accessDenied } = await findProcessIdsByExecutablePath(
+      processName,
+      targetAppPath
+    )
+
+    if (detail) {
+      return {
+        processName,
+        appPath: targetAppPath,
+        gameKey,
+        success: false,
+        error: detail,
+        accessDenied
+      }
+    }
+
+    if (processIds.length === 0) {
+      return { processName, appPath: targetAppPath, gameKey, success: true, notFound: true }
+    }
+
+    const results = await Promise.all(
+      processIds.map((processId) =>
+        runTaskkill(
+          ['/PID', String(processId), '/T', '/F'],
+          `kill companion process ${targetAppPath}`
+        )
+      )
+    )
+    const failedResult = results.find((result) => !result.success && !result.notFound)
+
+    return {
+      processName,
+      appPath: targetAppPath,
+      gameKey,
+      success: !failedResult,
+      error: failedResult?.detail,
+      accessDenied: failedResult?.accessDenied,
+      notFound: results.every((result) => result.notFound)
+    }
   }
 
   const result = await runTaskkill(
@@ -206,10 +319,21 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
   }
 
   const processNamesAfterKill = await readRunningProcessNames()
-  const finalizedAttempts = attempts.map((attempt) => ({
-    ...attempt,
-    stillRunning: processNamesAfterKill.has(attempt.processName)
-  }))
+  const finalizedAttempts = await Promise.all(
+    attempts.map(async (attempt) => {
+      let stillRunning: boolean
+      if (isFullExePath(attempt.appPath)) {
+        const { processIds } = await findProcessIdsByExecutablePath(
+          attempt.processName,
+          attempt.appPath
+        )
+        stillRunning = processIds.length > 0
+      } else {
+        stillRunning = processNamesAfterKill.has(attempt.processName)
+      }
+      return { ...attempt, stillRunning }
+    })
+  )
 
   finalizedAttempts.forEach((attempt) => {
     const failedToClose = attempt.stillRunning || (!attempt.success && !attempt.notFound)
@@ -334,7 +458,9 @@ export async function killLaunchedApps(gameKey?: string) {
     }
   })
 
-  return finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  await publishRunningApps('kill')
+  return result
 }
 
 export async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
@@ -399,5 +525,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
     }
   })
 
-  return finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  await publishRunningApps('kill')
+  return result
 }

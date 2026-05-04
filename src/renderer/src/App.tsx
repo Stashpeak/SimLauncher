@@ -113,7 +113,11 @@ export default function App() {
         <main className="h-full relative overflow-hidden">
           {/* Games View */}
           <div
-            className={`h-full flex flex-col transition-all duration-300 ${view === 'games' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none absolute inset-0'}`}
+            className={`h-full flex flex-col transition-all duration-300 ${
+              view === 'games'
+                ? 'opacity-100 scale-100 pointer-events-auto'
+                : 'opacity-0 scale-95 pointer-events-none'
+            }`}
           >
             <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
               <GameList key={refreshKey} onNavigate={handleNavigate} />
@@ -121,27 +125,31 @@ export default function App() {
           </div>
 
           {/* Settings View */}
-          {view === 'settings' && (
-            <div className="absolute inset-0 z-10 h-full flex flex-col">
-              <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
-                <SettingsView
-                  onClose={() => handleNavigate('games')}
-                  updateInfo={updateInfo}
-                  onDirtyChange={setSettingsDirty}
-                  shouldSaveTrigger={saveRequested}
-                  onConfigImported={handleConfigImported}
-                  onSaved={() => {
-                    setSaveRequested(false)
-                    setRefreshKey((k) => k + 1)
-                    if (pendingView) {
-                      setView(pendingView)
-                      setPendingView(null)
-                    }
-                  }}
-                />
-              </div>
+          <div
+            className={`absolute inset-0 z-10 h-full flex flex-col transition-all duration-300 ${
+              view === 'settings'
+                ? 'opacity-100 scale-100 pointer-events-auto'
+                : 'opacity-0 scale-95 pointer-events-none'
+            }`}
+          >
+            <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
+              <SettingsView
+                onClose={() => handleNavigate('games')}
+                updateInfo={updateInfo}
+                onDirtyChange={setSettingsDirty}
+                shouldSaveTrigger={saveRequested}
+                onConfigImported={handleConfigImported}
+                onSaved={() => {
+                  setSaveRequested(false)
+                  setRefreshKey((k) => k + 1)
+                  if (pendingView) {
+                    setView(pendingView)
+                    setPendingView(null)
+                  }
+                }}
+              />
             </div>
-          )}
+          </div>
         </main>
 
         <ConfirmDialog
