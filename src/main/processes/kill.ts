@@ -318,10 +318,21 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
   }
 
   const processNamesAfterKill = await readRunningProcessNames()
-  const finalizedAttempts = attempts.map((attempt) => ({
-    ...attempt,
-    stillRunning: processNamesAfterKill.has(attempt.processName)
-  }))
+  const finalizedAttempts = await Promise.all(
+    attempts.map(async (attempt) => {
+      let stillRunning: boolean
+      if (isFullExePath(attempt.appPath)) {
+        const { processIds } = await findProcessIdsByExecutablePath(
+          attempt.processName,
+          attempt.appPath
+        )
+        stillRunning = processIds.length > 0
+      } else {
+        stillRunning = processNamesAfterKill.has(attempt.processName)
+      }
+      return { ...attempt, stillRunning }
+    })
+  )
 
   finalizedAttempts.forEach((attempt) => {
     const failedToClose = attempt.stillRunning || (!attempt.success && !attempt.notFound)
