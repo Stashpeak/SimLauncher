@@ -217,6 +217,10 @@ function encodePowerShellCommand(command: string) {
 
 function createElevatedLaunchCommand(appPath: string, args: string[]) {
   const payload = JSON.stringify({ filePath: appPath, args })
+  const startProcessCommand =
+    args.length > 0
+      ? 'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
+      : 'Start-Process -FilePath $payload.filePath -Verb RunAs'
 
   return encodePowerShellCommand(
     [
@@ -224,7 +228,7 @@ function createElevatedLaunchCommand(appPath: string, args: string[]) {
       "$payload = ConvertFrom-Json @'",
       payload,
       "'@",
-      'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
+      startProcessCommand
     ].join('\n')
   )
 }

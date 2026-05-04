@@ -292,6 +292,35 @@ test('launchProfileApps uses encoded PowerShell command for elevated launches wi
   })
 })
 
+test('launchProfileApps omits PowerShell ArgumentList for elevated launches without custom args', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  existingPaths.add('C:/Tools/Admin Tool.exe')
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])).resolves.toMatchObject(
+    {
+      success: true,
+      launchedCount: 1,
+      elevatedCount: 1
+    }
+  )
+
+  const elevatedCall = execFileCalls.find((call) => call.command === 'powershell.exe')
+  expect(elevatedCall).toMatchObject({
+    args: ['-NoProfile', '-NonInteractive', '-EncodedCommand', expect.any(String)],
+    options: { windowsHide: true }
+  })
+
+  const decodedCommand = Buffer.from(elevatedCall!.args[3], 'base64').toString('utf16le')
+  expect(decodedCommand).toContain('Start-Process -FilePath $payload.filePath -Verb RunAs')
+  expect(decodedCommand).not.toContain('-ArgumentList')
+  expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toEqual({
+    filePath: 'C:/Tools/Admin Tool.exe',
+    args: []
+  })
+})
+
 test('killLaunchedApps returns a no-op kill result when no companion apps are running', async () => {
   const { killLaunchedApps } = await loadProcessModules()
 
