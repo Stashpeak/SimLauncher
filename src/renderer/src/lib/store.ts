@@ -7,4 +7,6 @@ export const getMigrationFlags = () => window.electronAPI.getMigrationFlags()
 export const setMigrationFlags = window.electronAPI.setMigrationFlags
 export const onStoreConfigChanged = window.electronAPI.onStoreConfigChanged
 export const exportConfig = () => window.electronAPI.exportConfig()
-export const importConfig = () => window.electronAPI.importConfig()
+export const previewImportConfig = () => window.electronAPI.previewImportConfig()
+export const applyImportConfig = window.electronAPI.applyImportConfig
+export const cancelImportConfig = window.electronAPI.cancelImportConfig
