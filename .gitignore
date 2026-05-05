@@ -138,4 +138,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# AI agent context (local only)
 AGENTS.md
+CLAUDE.md
