@@ -112,7 +112,7 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
       `$name = '${escapeWmiString(processName)}'`,
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
       'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
-      '  Where-Object { (-not $_.ExecutablePath) -or ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
+      '  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
       '  Select-Object -ExpandProperty ProcessId |',
       '  ConvertTo-Json -Compress'
     ].join('\n')
