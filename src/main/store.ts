@@ -53,6 +53,7 @@ const StoreConstructor =
   typeof Store === 'function' ? Store : (Store as unknown as { default: typeof Store }).default
 
 export const store = new StoreConstructor({
+  projectName: 'SimLauncher',
   schema: {
     appPaths: { type: 'object', default: {} },
     gamePaths: { type: 'object', default: {} },
@@ -76,7 +77,7 @@ export const store = new StoreConstructor({
     profileSetsMigrated: { type: 'boolean', default: false },
     migrated: { type: 'boolean', default: false }
   }
-})
+} as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string })
 
 export const CONFIG_FILE_NAME = 'simlauncher-config.json'
 export const EXPECTED_CONFIG_KEYS = new Set([

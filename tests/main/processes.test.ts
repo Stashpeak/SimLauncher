@@ -52,10 +52,10 @@ async function loadProcessModules() {
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })
       if (command === 'powershell.exe') {
-        const pids = [
-          ...(processNames.has('simhub.exe') ? ['4321'] : []),
-          ...Array.from(nullExecutablePathPids)
-        ]
+        const pids = []
+        if (processNames.has('simhub.exe')) {
+          pids.push('4321')
+        }
         callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
         return
       }
@@ -385,7 +385,7 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
   expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
 })
 
-test('killProfileApps includes processes with null executable paths when resolving PIDs', async () => {
+test('killProfileApps excludes processes with null executable paths when resolving PIDs', async () => {
   const { killProfileApps } = await loadProcessModules()
 
   existingPaths.add('C:/Tools/SimHub.exe')
@@ -403,17 +403,20 @@ test('killProfileApps includes processes with null executable paths when resolvi
     expect.arrayContaining([
       expect.objectContaining({
         command: 'powershell.exe',
-        args: expect.arrayContaining([expect.stringContaining('(-not $_.ExecutablePath) -or')])
+        args: expect.arrayContaining([expect.stringContaining('$_.ExecutablePath -and')])
       }),
       expect.objectContaining({
         command: 'taskkill',
-        args: ['/PID', '9876', '/T', '/F']
+        args: ['/PID', '4321', '/T', '/F']
       })
     ])
   )
   expect(execFileCalls).not.toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ command: 'taskkill', args: ['/IM', 'simhub.exe', '/T', '/F'] })
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/PID', '9876', '/T', '/F']
+      })
     ])
   )
 })
