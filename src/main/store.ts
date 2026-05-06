@@ -17,7 +17,7 @@ const MAX_TRACKED_PROCESS_PATHS = 50
 const ACCENT_CUSTOM_PATTERN = /^#[0-9a-fA-F]{6}$/
 const THEME_MODES = new Set(['light', 'dark', 'system'])
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
-const KNOWN_GAME_KEYS = new Set([
+export const KNOWN_GAME_KEYS = new Set([
   'ac',
   'acc',
   'acevo',
