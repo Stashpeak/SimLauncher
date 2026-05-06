@@ -39,18 +39,37 @@ async function loadProcessModules() {
       set(key: string, value: unknown) {
         storeData[key] = value
       }
+
+      clear() {
+        Object.keys(storeData).forEach((key) => delete storeData[key])
+      }
     }
   }))
 
   vi.doMock('fs', () => ({
     default: {
-      existsSync: (filePath: string) => existingPaths.has(filePath.replace(/\\/g, '/').trim())
+      existsSync: (filePath: string) => {
+        const normalizedPath = filePath.replace(/\\/g, '/').trim()
+        const drivePath = normalizedPath.match(/[A-Z]:\/.*$/i)?.[0] || normalizedPath
+
+        return existingPaths.has(drivePath)
+      }
     }
   }))
 
   vi.doMock('child_process', () => ({
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })
+      if (command === 'tasklist') {
+        callback(
+          null,
+          Array.from(processNames)
+            .map((processName) => `"${processName}","1234","Console","1","1,024 K"`)
+            .join('\n'),
+          ''
+        )
+        return
+      }
       if (command === 'powershell.exe') {
         const pids = []
         if (processNames.has('simhub.exe')) {
@@ -96,19 +115,27 @@ async function loadProcessModules() {
     })
   }))
 
-  vi.doMock('../../src/main/processes/tasklist', () => ({
+  const tasklistMock = {
     invalidateProcessNameCache: invalidateProcessNameCacheMock,
     readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
-  }))
+  }
+  vi.doMock('../../src/main/processes/tasklist', () => tasklistMock)
+  vi.doMock('../../src/main/processes/tasklist.ts', () => tasklistMock)
 
-  vi.doMock('../../src/main/store', () => ({
+  const storeMock = {
     store: {
+      store: storeData,
       get: vi.fn((key: string) => storeData[key]),
       set: vi.fn((key: string, value: unknown) => {
         storeData[key] = value
+      }),
+      clear: vi.fn(() => {
+        Object.keys(storeData).forEach((key) => delete storeData[key])
       })
     }
-  }))
+  }
+  vi.doMock('../../src/main/store', () => storeMock)
+  vi.doMock('../../src/main/store.ts', () => storeMock)
 
   vi.doMock('../../src/main/profiles', () => ({
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>

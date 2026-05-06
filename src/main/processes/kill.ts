@@ -69,7 +69,7 @@ function runTaskkill(args: string[], description: string) {
   })
 }
 
-function isFullExePath(appPath: string | undefined) {
+function isFullExePath(appPath: string | undefined): appPath is string {
   return (
     typeof appPath === 'string' && path.basename(appPath) !== appPath && isValidExePath(appPath)
   )
@@ -188,7 +188,7 @@ async function killProcessByImageName(
   }
 
   if (isFullExePath(appPath)) {
-    const targetAppPath = appPath as string
+    const targetAppPath = appPath
     const { processIds, detail, accessDenied } = await findProcessIdsByExecutablePath(
       processName,
       targetAppPath
