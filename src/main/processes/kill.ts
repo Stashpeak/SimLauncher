@@ -330,7 +330,10 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
           attempt.processName,
           attempt.appPath
         )
-        stillRunning = processIds.length > 0 || (attempt.accessDenied === true && !attempt.notFound)
+        const nameStillRunning = processNamesAfterKill.has(attempt.processName)
+        stillRunning =
+          processIds.length > 0 ||
+          (attempt.accessDenied === true && !attempt.notFound && nameStillRunning)
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
       }
