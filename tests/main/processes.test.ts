@@ -12,7 +12,9 @@ type MockWebContents = {
 const storeData: StoreData = {}
 const existingPaths = new Set<string>()
 const processNames = new Set<string>()
+const processExistsNames = new Set<string>()
 const accessDeniedPids = new Set<string>()
+const accessDeniedImageNames = new Set<string>()
 const inaccessibleExecutablePathProcesses = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
@@ -77,6 +79,15 @@ async function loadProcessModules() {
           return
         }
 
+        const script = args[args.indexOf('-Command') + 1]
+        const processName = script.match(/\$name = '([^']+)'/)?.[1]?.toLowerCase()
+
+        if (!options.env?.SIMLAUNCHER_TARGET_PROCESS_PATH) {
+          const exists = processName ? processExistsNames.has(processName) : false
+          callback(null, exists ? JSON.stringify(1234) : '', '')
+          return
+        }
+
         const pids = []
         if (
           processNames.has('simhub.exe') &&
@@ -93,10 +104,18 @@ async function loadProcessModules() {
           callback(new Error('Access is denied.'), '', 'Access is denied.')
           return
         }
-        if (pid === '4321') {
+        if (pid === '4321' || pid === '1234') {
           processNames.delete('simhub.exe')
         }
         nullExecutablePathPids.delete(pid)
+      }
+      if (command === 'taskkill' && args.includes('/IM')) {
+        const imageName = args[args.indexOf('/IM') + 1].toLowerCase()
+        if (accessDeniedImageNames.has(imageName)) {
+          callback(new Error('Access is denied.'), '', 'Access is denied.')
+          return
+        }
+        processNames.delete(imageName)
       }
       callback(null, '', '')
     }),
@@ -192,6 +211,7 @@ async function loadProcessModules() {
     launchProfileApps: spawnModule.launchProfileApps,
     killLaunchedApps: killModule.killLaunchedApps,
     killProfileApps: killModule.killProfileApps,
+    pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
     runningProcesses: stateModule.runningProcesses,
     unclosedProcesses: stateModule.unclosedProcesses,
     getRunningApps: (await import('../../src/main/processes/running')).getRunningApps,
@@ -227,7 +247,9 @@ beforeEach(async () => {
 
   existingPaths.clear()
   processNames.clear()
+  processExistsNames.clear()
   accessDeniedPids.clear()
+  accessDeniedImageNames.clear()
   inaccessibleExecutablePathProcesses.clear()
   nullExecutablePathPids.clear()
   execFileCalls.length = 0
@@ -570,6 +592,221 @@ test('killLaunchedApps keeps elevated access-denied app unclosed when path reche
       })
     ])
   )
+})
+
+test('killLaunchedApps marks not-found full-path app as elevated when image still exists', async () => {
+  const { killLaunchedApps, runningProcesses, unclosedProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  processExistsNames.add('simhub.exe')
+  inaccessibleExecutablePathProcesses.add('simhub.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: false,
+    closedCount: 0,
+    failedCount: 1,
+    failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'access_denied' })]
+  })
+
+  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+    path: 'C:/Tools/SimHub.exe',
+    reason: 'access_denied',
+    elevated: true
+  })
+  expect(runningProcesses.has('C:/Tools/SimHub.exe')).toBe(false)
+})
+
+test('killLaunchedApps treats not-found full-path app as closed when image no longer exists', async () => {
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  inaccessibleExecutablePathProcesses.add('simhub.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0,
+    failures: []
+  })
+
+  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+})
+
+test('killLaunchedApps uses image-name fallback for utility companion apps', async () => {
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/IM', 'garage61 telemetry agent.exe', '/T', '/F']
+      })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ command: 'powershell.exe' })])
+  )
+})
+
+test('killLaunchedApps registers elevated utility companion when image-name fallback is denied', async () => {
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: false,
+    closedCount: 0,
+    failedCount: 1,
+    failures: [
+      expect.objectContaining({ appPath: 'Garage61 telemetry agent.exe', reason: 'access_denied' })
+    ]
+  })
+
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    path: 'Garage61 telemetry agent.exe',
+    reason: 'access_denied',
+    elevated: true
+  })
+})
+
+test('pruneUnclosedProcesses removes stale entries and keeps running entries', async () => {
+  const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
+  unclosedProcesses.set('ac:c:/tools/stale.exe', {
+    path: 'C:/Tools/Stale.exe',
+    name: 'Stale.exe',
+    gameKey: 'ac',
+    error: 'still running',
+    reason: 'still_running',
+    elevated: false
+  })
+  unclosedProcesses.set('ac:c:/tools/simhub.exe', {
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    error: 'access denied',
+    reason: 'access_denied',
+    elevated: true
+  })
+
+  pruneUnclosedProcesses(new Set(['simhub.exe']))
+
+  expect(unclosedProcesses.has('ac:c:/tools/stale.exe')).toBe(false)
+  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+    path: 'C:/Tools/SimHub.exe',
+    elevated: true
+  })
+})
+
+test('killProfileApps skips game executable paths without issuing kill commands', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { acgame: 'C:/Games/AssettoCorsa.exe' }
+  })
+  processNames.add('assettocorsa.exe')
+
+  await expect(killProfileApps('ac', ['C:/Games/AssettoCorsa.exe'])).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill' }),
+      expect.objectContaining({ command: 'powershell.exe' })
+    ])
+  )
+})
+
+test('killProfileApps clears previous unclosed and running state after successful kill', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  const { killProfileApps, runningProcesses, unclosedProcesses } =
+    await loadProcessModulesWithStore({
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+  runningProcesses.set('C:/Tools/SimHub.exe', {
+    process: { pid: 1234 } as never,
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  unclosedProcesses.set('ac:c:/tools/simhub.exe', {
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    error: 'access denied',
+    reason: 'access_denied',
+    elevated: true
+  })
+
+  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '1234', '/T', '/F'] })
+    ])
+  )
+  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  expect(runningProcesses.has('C:/Tools/SimHub.exe')).toBe(false)
+})
+
+test('killLaunchedApps uses plural message for multiple successful companion kills', async () => {
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe', overlay: 'C:/Tools/Overlay.exe' }
+  })
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/Overlay.exe')
+  processNames.add('simhub.exe')
+  processNames.add('overlay.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    message: 'Closed 2 companion apps.',
+    closedCount: 2,
+    failedCount: 0
+  })
 })
 
 test('subscribeRunningApps returns initial snapshot and tracks subscriber', async () => {
