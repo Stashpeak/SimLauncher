@@ -205,18 +205,22 @@ async function killProcessByImageName(
       }
     }
 
-    if (processIds.length === 0) {
-      return { processName, appPath: targetAppPath, gameKey, success: true, notFound: true }
-    }
-
-    const results = await Promise.all(
-      processIds.map((processId) =>
-        runTaskkill(
-          ['/PID', String(processId), '/T', '/F'],
-          `kill companion process ${targetAppPath}`
-        )
-      )
-    )
+    const results =
+      processIds.length > 0
+        ? await Promise.all(
+            processIds.map((processId) =>
+              runTaskkill(
+                ['/PID', String(processId), '/T', '/F'],
+                `kill companion process ${targetAppPath}`
+              )
+            )
+          )
+        : [
+            await runTaskkill(
+              ['/IM', processName, '/T', '/F'],
+              `kill companion process ${processName}`
+            )
+          ]
     const failedResult = results.find((result) => !result.success && !result.notFound)
 
     return {
