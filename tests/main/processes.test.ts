@@ -12,6 +12,7 @@ const storeData: StoreData = {}
 const existingPaths = new Set<string>()
 const processNames = new Set<string>()
 const accessDeniedPids = new Set<string>()
+const inaccessibleExecutablePathProcesses = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
@@ -71,8 +72,16 @@ async function loadProcessModules() {
         return
       }
       if (command === 'powershell.exe') {
+        if (!args.includes('-Command')) {
+          callback(null, '', '')
+          return
+        }
+
         const pids = []
-        if (processNames.has('simhub.exe')) {
+        if (
+          processNames.has('simhub.exe') &&
+          !inaccessibleExecutablePathProcesses.has('simhub.exe')
+        ) {
           pids.push('4321')
         }
         callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
@@ -191,6 +200,7 @@ beforeEach(async () => {
   existingPaths.clear()
   processNames.clear()
   accessDeniedPids.clear()
+  inaccessibleExecutablePathProcesses.clear()
   nullExecutablePathPids.clear()
   execFileCalls.length = 0
   spawnCalls.length = 0
@@ -486,6 +496,52 @@ test('killProfileApps publishes promptly when untracked app remains elevated aft
         })
       ])
     })
+  )
+})
+
+test('killLaunchedApps keeps elevated access-denied app unclosed when path recheck is inconclusive', async () => {
+  const { killLaunchedApps, getRunningApps, runningProcesses, unclosedProcesses } =
+    await loadProcessModules()
+
+  storeData.profiles = {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  }
+  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+  existingPaths.add('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  accessDeniedPids.add('1234')
+  inaccessibleExecutablePathProcesses.add('simhub.exe')
+  runningProcesses.set('C:/Tools/SimHub.exe', {
+    process: { pid: 1234 } as never,
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: false,
+    closedCount: 0,
+    failedCount: 1,
+    failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'access_denied' })]
+  })
+
+  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+    path: 'C:/Tools/SimHub.exe',
+    gameKey: 'ac',
+    reason: 'access_denied',
+    elevated: true,
+    error: expect.stringContaining('Access is denied')
+  })
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Tools/SimHub.exe',
+        gameKey: 'ac',
+        tracked: true,
+        elevated: true,
+        warning: expect.stringContaining('Access is denied')
+      })
+    ])
   )
 })
 

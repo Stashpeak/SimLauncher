@@ -328,7 +328,7 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
           attempt.processName,
           attempt.appPath
         )
-        stillRunning = processIds.length > 0
+        stillRunning = processIds.length > 0 || (attempt.accessDenied === true && !attempt.notFound)
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
       }
