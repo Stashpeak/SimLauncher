@@ -185,16 +185,22 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
 
   try {
     store.clear()
-    store.set(supportedConfig)
+    setStoreEntries(supportedConfig)
     migrateProfilesToNamedSets()
     applyRuntimeConfigSettings()
     notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
   } catch (err) {
     store.clear()
-    store.set(snapshot as Record<string, unknown>)
+    setStoreEntries(snapshot)
     applyRuntimeConfigSettings()
     throw err
   }
+}
+
+function setStoreEntries(values: Record<string, unknown>) {
+  Object.entries(values).forEach(([key, value]) => {
+    store.set(key, value)
+  })
 }
 
 export function registerConfigHandlers() {
@@ -406,7 +412,7 @@ export function registerConfigHandlers() {
     }
     const changedKeys = Object.keys(safe)
     if (changedKeys.length > 0) {
-      store.set(safe)
+      setStoreEntries(safe)
       notifyStoreConfigChanged({ reason: 'save-settings', keys: changedKeys })
     }
   })
@@ -459,7 +465,7 @@ export function registerConfigHandlers() {
     }
     const changedKeys = Object.keys(safe)
     if (changedKeys.length > 0) {
-      store.set(safe)
+      setStoreEntries(safe)
       notifyStoreConfigChanged({ reason: 'set-migration-flags', keys: changedKeys })
     }
   })
