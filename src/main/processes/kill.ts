@@ -206,9 +206,7 @@ async function killProcessByImageName(
     }
 
     if (processIds.length === 0) {
-      // WMI silently returns 0 PIDs for elevated processes (ExecutablePath filtered out).
-      // Treat as inconclusive — do not issue unscoped /IM kill.
-      return { processName, appPath: targetAppPath, gameKey, success: false, accessDenied: true }
+      return { processName, appPath: targetAppPath, gameKey, success: true, notFound: true }
     }
 
     const results = await Promise.all(
@@ -333,6 +331,7 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
         const nameStillRunning = processNamesAfterKill.has(attempt.processName)
         stillRunning =
           processIds.length > 0 ||
+          (attempt.notFound && nameStillRunning) ||
           (attempt.accessDenied === true && !attempt.notFound && nameStillRunning)
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
