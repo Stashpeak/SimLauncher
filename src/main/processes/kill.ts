@@ -205,22 +205,20 @@ async function killProcessByImageName(
       }
     }
 
-    const results =
-      processIds.length > 0
-        ? await Promise.all(
-            processIds.map((processId) =>
-              runTaskkill(
-                ['/PID', String(processId), '/T', '/F'],
-                `kill companion process ${targetAppPath}`
-              )
-            )
-          )
-        : [
-            await runTaskkill(
-              ['/IM', processName, '/T', '/F'],
-              `kill companion process ${processName}`
-            )
-          ]
+    if (processIds.length === 0) {
+      // WMI silently returns 0 PIDs for elevated processes (ExecutablePath filtered out).
+      // Treat as inconclusive — do not issue unscoped /IM kill.
+      return { processName, appPath: targetAppPath, gameKey, success: false, accessDenied: true }
+    }
+
+    const results = await Promise.all(
+      processIds.map((processId) =>
+        runTaskkill(
+          ['/PID', String(processId), '/T', '/F'],
+          `kill companion process ${targetAppPath}`
+        )
+      )
+    )
     const failedResult = results.find((result) => !result.success && !result.notFound)
 
     return {
