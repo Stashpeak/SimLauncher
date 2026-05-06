@@ -27,6 +27,14 @@ export function validateGameKey(gameKey: unknown) {
   return undefined
 }
 
+export function validateProfileIds(...profileIds: unknown[]) {
+  if (profileIds.some((profileId) => typeof profileId !== 'string')) {
+    return { success: false, error: 'Invalid argument' }
+  }
+
+  return undefined
+}
+
 export function registerLaunchHandlers() {
   ipcMain.handle('launch-profile', async (event, gameKey: string) => {
     const validationError = validateGameKey(gameKey)
@@ -78,6 +86,11 @@ export function registerLaunchHandlers() {
         return validationError
       }
 
+      const profileIdValidationError = validateProfileIds(fromProfileId, toProfileId)
+      if (profileIdValidationError) {
+        return profileIdValidationError
+      }
+
       const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
       const gamePath = gamePaths[gameKey]?.toLowerCase()
       const processNames = await readRunningProcessNames()
@@ -106,6 +119,11 @@ export function registerLaunchHandlers() {
       const validationError = validateGameKey(gameKey)
       if (validationError) {
         return validationError
+      }
+
+      const profileIdValidationError = validateProfileIds(fromProfileId, toProfileId)
+      if (profileIdValidationError) {
+        return profileIdValidationError
       }
 
       const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
