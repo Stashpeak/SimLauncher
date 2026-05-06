@@ -240,7 +240,7 @@ function asWebContents(webContents: MockWebContents) {
 const sender = {
   isDestroyed: () => false,
   send: vi.fn()
-} as never
+} as unknown as WebContents & { send: ReturnType<typeof vi.fn> }
 
 beforeEach(async () => {
   const { runningProcesses, unclosedProcesses } = await loadProcessModules()
@@ -407,6 +407,50 @@ test('launchProfileApps omits PowerShell ArgumentList for elevated launches with
   expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toEqual({
     filePath: 'C:/Tools/Admin Tool.exe',
     args: []
+  })
+})
+
+test('launchProfileApps reports synchronous spawn failures without tracking the failed process', async () => {
+  const { launchProfileApps, runningProcesses } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Broken.exe')
+  vi.mocked(await import('child_process')).spawn.mockImplementationOnce(() => {
+    throw new Error('spawn exploded')
+  })
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Broken.exe'])).resolves.toMatchObject({
+    success: false,
+    error: 'Failed to launch Broken.exe: spawn exploded',
+    launchedCount: 0,
+    failedCount: 1
+  })
+  expect(runningProcesses.has('C:/Tools/Broken.exe')).toBe(false)
+})
+
+test('launchProfileApps emits late launch errors to the renderer after initial spawn success', async () => {
+  const lateError = new Error('lost after spawn') as NodeJS.ErrnoException
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/LateError.exe')
+  const { launchProfileApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/LateError.exe'])
+  childHandlers.get('spawn')?.()
+  await expect(launchPromise).resolves.toMatchObject({ success: true, launchedCount: 1 })
+
+  childHandlers.get('error')?.(lateError)
+
+  expect(sender.send).toHaveBeenCalledWith('app-launch-error', {
+    app: 'C:/Tools/LateError.exe',
+    error: 'lost after spawn'
   })
 })
 

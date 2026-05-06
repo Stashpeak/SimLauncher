@@ -71,3 +71,27 @@ test('validateGameKey rejects user-injected game path keys that are not known ga
     error: 'Unknown game key'
   })
 })
+
+test('validateProfileIds rejects non-string from-profile ids', async () => {
+  const { validateProfileIds } = await import('../../src/main/ipc/launch')
+
+  expect(validateProfileIds(42, 'race')).toEqual({
+    success: false,
+    error: 'Invalid argument'
+  })
+})
+
+test('validateProfileIds rejects non-string to-profile ids', async () => {
+  const { validateProfileIds } = await import('../../src/main/ipc/launch')
+
+  expect(validateProfileIds('base', {})).toEqual({
+    success: false,
+    error: 'Invalid argument'
+  })
+})
+
+test('validateProfileIds accepts string profile ids', async () => {
+  const { validateProfileIds } = await import('../../src/main/ipc/launch')
+
+  expect(validateProfileIds('base', 'race')).toBeUndefined()
+})
