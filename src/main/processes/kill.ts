@@ -138,6 +138,33 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
   })
 }
 
+function processExistsByName(processName: string) {
+  return new Promise<boolean>((resolve) => {
+    const script = [
+      `$name = '${escapeWmiString(processName)}'`,
+      'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
+      '  Select-Object -First 1 -ExpandProperty ProcessId |',
+      '  ConvertTo-Json -Compress'
+    ].join('\n')
+
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          const detail = stderr.trim() || stdout.trim() || error.message
+          console.error(`Failed to check process existence for ${processName}: ${detail}`)
+          resolve(false)
+          return
+        }
+
+        resolve(parseProcessIds(stdout).length > 0)
+      }
+    )
+  })
+}
+
 async function killProcessTree(
   child: ChildProcess,
   appPath: string,
@@ -331,14 +358,14 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
           attempt.processName,
           attempt.appPath
         )
-        const nameStillRunning = processNamesAfterKill.has(attempt.processName)
-        // Heuristic: if WMI found no PID (notFound) but image still appears in tasklist,
-        // the process is likely elevated and inaccessible to WMI; approximate, fix in #307.
-        isElevatedInconclusive = attempt.notFound === true && nameStillRunning
+        isElevatedInconclusive =
+          attempt.notFound === true && (await processExistsByName(attempt.processName))
         stillRunning =
           processIds.length > 0 ||
           isElevatedInconclusive ||
-          (attempt.accessDenied === true && !attempt.notFound && nameStillRunning)
+          (attempt.accessDenied === true &&
+            !attempt.notFound &&
+            processNamesAfterKill.has(attempt.processName))
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
       }
