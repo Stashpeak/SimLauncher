@@ -124,7 +124,31 @@ export function useSettingsLoad({
     setGameIcons(gIcons)
 
     setLoading(false)
-  }, [latestSettingsObjects, themeRef])
+  }, [
+    latestSettingsObjects,
+    setAccentBgTint,
+    setAccentCustom,
+    setAccentPreset,
+    setAppArgs,
+    setAppIcons,
+    setAppNames,
+    setAppPaths,
+    setAutoCheckUpdates,
+    setCustomSlots,
+    setFocusActiveTitle,
+    setGameIcons,
+    setGamePaths,
+    setIsCustomColor,
+    setLaunchDelayMs,
+    setLoading,
+    setMinimizeToTray,
+    setProfiles,
+    setStartMinimized,
+    setStartWithWindows,
+    setThemeMode,
+    setZoomFactor,
+    themeRef
+  ])
 
   useEffect(() => {
     loadSettingsFromStore()
