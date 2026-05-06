@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron'
 import { beforeEach, expect, test, vi } from 'vitest'
+import path from 'path'
 
 type StoreData = Record<string, unknown>
 type MockWebContents = {
@@ -18,6 +19,10 @@ const execFileCalls: { command: string; args: string[]; options: Record<string, 
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
 const invalidateProcessNameCacheMock = vi.fn()
+function markExistingPath(filePath: string) {
+  existingPaths.add(filePath)
+  existingPaths.add(path.resolve(filePath))
+}
 
 function makeAccessDeniedError() {
   const error = new Error('Access is denied.') as NodeJS.ErrnoException
@@ -49,12 +54,7 @@ async function loadProcessModules() {
 
   vi.doMock('fs', () => ({
     default: {
-      existsSync: (filePath: string) => {
-        const normalizedPath = filePath.replace(/\\/g, '/').trim()
-        const drivePath = normalizedPath.match(/[A-Z]:\/.*$/i)?.[0] || normalizedPath
-
-        return existingPaths.has(drivePath)
-      }
+      existsSync: (filePath: string) => existingPaths.has(filePath)
     }
   }))
 
@@ -128,27 +128,46 @@ async function loadProcessModules() {
     invalidateProcessNameCache: invalidateProcessNameCacheMock,
     readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
   }
+  vi.doMock('./tasklist', () => tasklistMock)
+  vi.doMock('/src/main/processes/tasklist.ts', () => tasklistMock)
   vi.doMock('../../src/main/processes/tasklist', () => tasklistMock)
   vi.doMock('../../src/main/processes/tasklist.ts', () => tasklistMock)
+  vi.doMock('../../src/main/processes/tasklist.js', () => tasklistMock)
 
-  const storeMock = {
+  const storeModuleMock = {
     store: {
       store: storeData,
-      get: vi.fn((key: string) => storeData[key]),
-      set: vi.fn((key: string, value: unknown) => {
+      get: (key: string) => storeData[key],
+      set: (key: string, value: unknown) => {
         storeData[key] = value
-      }),
-      clear: vi.fn(() => {
+      },
+      clear: () => {
         Object.keys(storeData).forEach((key) => delete storeData[key])
-      })
+      }
     }
   }
-  vi.doMock('../../src/main/store', () => storeMock)
-  vi.doMock('../../src/main/store.ts', () => storeMock)
+  vi.doMock('../store', () => storeModuleMock)
+  vi.doMock('/src/main/store.ts', () => storeModuleMock)
+  vi.doMock('../../src/main/store', () => storeModuleMock)
+  vi.doMock('../../src/main/store.ts', () => storeModuleMock)
+  vi.doMock('../../src/main/store.js', () => storeModuleMock)
 
-  vi.doMock('../../src/main/profiles', () => ({
+  const profilesMock = {
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
       p.profiles.find((i) => i.id === p.activeProfileId)
+    ),
+    isUtilityEnabled: vi.fn((profile: Record<string, unknown> | undefined, utilityKey: string) =>
+      Array.isArray(profile?.utilities)
+        ? profile.utilities.some(
+            (utility) =>
+              !!utility &&
+              typeof utility === 'object' &&
+              'id' in utility &&
+              'enabled' in utility &&
+              utility.id === utilityKey &&
+              utility.enabled === true
+          )
+        : profile?.[utilityKey] === true
     ),
     getProfileTrackablePaths: vi.fn(
       (
@@ -158,7 +177,12 @@ async function loadProcessModules() {
         gamePaths: Record<string, string> | undefined
       ) => [...(gamePaths?.[gameKey] ? [gamePaths[gameKey]] : []), ...Object.values(appPaths || {})]
     )
-  }))
+  }
+  vi.doMock('../profiles', () => profilesMock)
+  vi.doMock('/src/main/profiles.ts', () => profilesMock)
+  vi.doMock('../../src/main/profiles', () => profilesMock)
+  vi.doMock('../../src/main/profiles.ts', () => profilesMock)
+  vi.doMock('../../src/main/profiles.js', () => profilesMock)
 
   const spawnModule = await import('../../src/main/processes/spawn')
   const killModule = await import('../../src/main/processes/kill')
@@ -174,6 +198,11 @@ async function loadProcessModules() {
     subscribeRunningApps: (await import('../../src/main/processes/running')).subscribeRunningApps,
     publishRunningApps: (await import('../../src/main/processes/running')).publishRunningApps
   }
+}
+
+function loadProcessModulesWithStore(data: StoreData) {
+  Object.assign(storeData, data)
+  return loadProcessModules()
 }
 
 function createMockWebContents(): MockWebContents {
@@ -196,7 +225,6 @@ const sender = {
 beforeEach(async () => {
   const { runningProcesses, unclosedProcesses } = await loadProcessModules()
 
-  vi.clearAllMocks()
   existingPaths.clear()
   processNames.clear()
   accessDeniedPids.clear()
@@ -226,7 +254,7 @@ test('launchProfileApps rejects empty launches when every configured executable 
 test('launchProfileApps skips profile apps that are already running', async () => {
   const { launchProfileApps } = await loadProcessModules()
 
-  existingPaths.add('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
 
   await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
@@ -238,13 +266,13 @@ test('launchProfileApps skips profile apps that are already running', async () =
 })
 
 test('launchProfileApps parses custom app arguments with quoted paths and escaped quotes', async () => {
-  const { launchProfileApps } = await loadProcessModules()
-
-  existingPaths.add('C:/Tools/Custom Tool.exe')
-  storeData.appPaths = { customapp1: 'C:/Tools/Custom Tool.exe' }
-  storeData.appArgs = {
-    customapp1: String.raw`--config "C:/Users/Driver/Sim Configs/main profile.json" --label "Crew \"Chief\""`
-  }
+  markExistingPath('C:/Tools/Custom Tool.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/Custom Tool.exe' },
+    appArgs: {
+      customapp1: String.raw`--config "C:/Users/Driver/Sim Configs/main profile.json" --label "Crew \"Chief\""`
+    }
+  })
 
   await expect(
     launchProfileApps(sender, 'ac', ['C:/Tools/Custom Tool.exe'])
@@ -261,15 +289,14 @@ test('launchProfileApps parses custom app arguments with quoted paths and escape
 })
 
 test('launchProfileApps treats PowerShell-sensitive custom argument characters as literal spawn args', async () => {
-  const { launchProfileApps } = await loadProcessModules()
-
-  existingPaths.add('C:/Tools/Custom Tool.exe')
-  existingPaths.add('C:/Tools/Custom Tool.exe --flag ^caret')
-  storeData.appPaths = { customapp1: 'C:/Tools/Custom Tool.exe' }
-  storeData.appArgs = {
-    customapp1:
-      '--name "literal & value" --pattern "$(Get-Process); | %{rm} `whoami`" --flag "^caret"'
-  }
+  markExistingPath('C:/Tools/Custom Tool.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/Custom Tool.exe' },
+    appArgs: {
+      customapp1:
+        '--name "literal & value" --pattern "$(Get-Process); | %{rm} `whoami`" --flag "^caret"'
+    }
+  })
 
   await expect(
     launchProfileApps(sender, 'ac', ['C:/Tools/Custom Tool.exe'])
@@ -292,15 +319,14 @@ test('launchProfileApps treats PowerShell-sensitive custom argument characters a
 })
 
 test('launchProfileApps uses encoded PowerShell command for elevated launches with literal custom args', async () => {
-  const { launchProfileApps } = await loadProcessModules()
-
-  existingPaths.add('C:/Tools/Admin Tool.exe')
-  existingPaths.add(`C:/Tools/Admin Tool.exe --literal "$(Start-Process calc); 'single' & value"`)
+  markExistingPath('C:/Tools/Admin Tool.exe')
   spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
-  storeData.appPaths = { customapp1: 'C:/Tools/Admin Tool.exe' }
-  storeData.appArgs = {
-    customapp1: `--path "C:/Users/Driver/Sim Configs" --literal "$(Start-Process calc); 'single' & value"`
-  }
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' },
+    appArgs: {
+      customapp1: `--path "C:/Users/Driver/Sim Configs" --literal "$(Start-Process calc); 'single' & value"`
+    }
+  })
 
   await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])).resolves.toMatchObject(
     {
@@ -336,7 +362,7 @@ test('launchProfileApps uses encoded PowerShell command for elevated launches wi
 test('launchProfileApps omits PowerShell ArgumentList for elevated launches without custom args', async () => {
   const { launchProfileApps } = await loadProcessModules()
 
-  existingPaths.add('C:/Tools/Admin Tool.exe')
+  markExistingPath('C:/Tools/Admin Tool.exe')
   spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
 
   await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])).resolves.toMatchObject(
@@ -377,7 +403,7 @@ test('killLaunchedApps returns a no-op kill result when no companion apps are ru
 test('killProfileApps rejects paths that are not configured app paths', async () => {
   const { killProfileApps } = await loadProcessModules()
 
-  existingPaths.add('C:/Tools/Unknown.exe')
+  markExistingPath('C:/Tools/Unknown.exe')
   storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
 
   await expect(killProfileApps('ac', ['C:/Tools/Unknown.exe'])).resolves.toEqual({
@@ -390,11 +416,11 @@ test('killProfileApps rejects paths that are not configured app paths', async ()
 })
 
 test('killProfileApps targets configured untracked Windows apps by resolved PID instead of image name', async () => {
-  const { killProfileApps } = await loadProcessModules()
-
-  existingPaths.add('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
-  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
 
   await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
     success: true,
@@ -423,12 +449,12 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
 })
 
 test('killProfileApps excludes processes with null executable paths when resolving PIDs', async () => {
-  const { killProfileApps } = await loadProcessModules()
-
-  existingPaths.add('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
   nullExecutablePathPids.add('9876')
-  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
 
   await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
     success: true,
@@ -459,19 +485,20 @@ test('killProfileApps excludes processes with null executable paths when resolvi
 })
 
 test('killProfileApps publishes promptly when untracked app remains elevated after kill failure', async () => {
-  const { killProfileApps, subscribeRunningApps } = await loadProcessModules()
   const webContents = createMockWebContents()
 
-  storeData.profiles = {
-    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
-  }
-  storeData.gamePaths = { ac: 'C:/Games/AssettoCorsa.exe' }
-  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
-  existingPaths.add('C:/Games/AssettoCorsa.exe')
-  existingPaths.add('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('assettocorsa.exe')
   processNames.add('simhub.exe')
   accessDeniedPids.add('4321')
+  const { killProfileApps, subscribeRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
 
   await subscribeRunningApps(asWebContents(webContents))
   webContents.send.mockClear()
@@ -507,7 +534,7 @@ test('killLaunchedApps keeps elevated access-denied app unclosed when path reche
     ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
   }
   storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
-  existingPaths.add('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
   accessDeniedPids.add('1234')
   inaccessibleExecutablePathProcesses.add('simhub.exe')
@@ -556,14 +583,15 @@ test('subscribeRunningApps returns initial snapshot and tracks subscriber', asyn
 })
 
 test('publishRunningApps emits changed event to subscribers when state changes', async () => {
-  const { subscribeRunningApps, publishRunningApps } = await loadProcessModules()
   const webContents = createMockWebContents()
 
-  storeData.profiles = {
-    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
-  }
-  storeData.gamePaths = { ac: 'C:/Games/AssettoCorsa.exe' }
-  existingPaths.add('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  const { subscribeRunningApps, publishRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
   await subscribeRunningApps(asWebContents(webContents))
 
   // Change state: add a process
