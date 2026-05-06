@@ -7,35 +7,18 @@ import { BehaviorSection } from './settings/BehaviorSection'
 import { ConfigSection } from './settings/ConfigSection'
 import { GamesSection } from './settings/GamesSection'
 import { SettingsSection } from './settings/SettingsSection'
-import { SettingsProvider, useSettings } from './settings/SettingsContext'
+import { useSettings } from './settings/SettingsContext'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
 
 export function SettingsView({
   onClose,
-  updateInfo,
-  onDirtyChange,
-  shouldSaveTrigger,
-  onSaved,
-  onConfigImported
+  updateInfo
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
-  onDirtyChange?: (isDirty: boolean) => void
-  shouldSaveTrigger?: boolean
-  onSaved?: () => void
-  onConfigImported?: () => void
 }) {
-  return (
-    <SettingsProvider
-      onDirtyChange={onDirtyChange}
-      shouldSaveTrigger={shouldSaveTrigger}
-      onSaved={onSaved}
-      onConfigImported={onConfigImported}
-    >
-      <SettingsViewContent onClose={onClose} updateInfo={updateInfo} />
-    </SettingsProvider>
-  )
+  return <SettingsViewContent onClose={onClose} updateInfo={updateInfo} />
 }
 
 function SettingsViewContent({

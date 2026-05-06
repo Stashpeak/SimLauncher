@@ -8,6 +8,7 @@ import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import { getUpdateInfo, onUpdateAvailable } from './lib/electron'
 import { runStartupMigrations } from './lib/migrations'
 import { useTheme } from './contexts/ThemeContext'
+import { SettingsProvider } from './components/settings/SettingsContext'
 
 export default function App() {
   const [view, setView] = useState<'games' | 'settings'>('games')
@@ -110,47 +111,47 @@ export default function App() {
           </div>
         )}
 
-        <main className="h-full relative overflow-hidden">
-          {/* Games View */}
-          <div
-            className={`h-full flex flex-col transition-all duration-300 ${
-              view === 'games'
-                ? 'opacity-100 scale-100 pointer-events-auto'
-                : 'opacity-0 scale-95 pointer-events-none'
-            }`}
-          >
-            <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
-              <GameList key={refreshKey} onNavigate={handleNavigate} />
+        <SettingsProvider
+          onDirtyChange={setSettingsDirty}
+          shouldSaveTrigger={saveRequested}
+          onConfigImported={handleConfigImported}
+          onSaved={() => {
+            setSaveRequested(false)
+            setRefreshKey((k) => k + 1)
+            if (pendingView) {
+              setView(pendingView)
+              setPendingView(null)
+            }
+          }}
+        >
+          <main className="h-full relative overflow-hidden">
+            {/* Games View */}
+            <div
+              className={`h-full flex flex-col transition-all duration-300 ${
+                view === 'games'
+                  ? 'opacity-100 scale-100 pointer-events-auto'
+                  : 'opacity-0 scale-95 pointer-events-none'
+              }`}
+            >
+              <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
+                <GameList key={refreshKey} onNavigate={handleNavigate} />
+              </div>
             </div>
-          </div>
 
-          {/* Settings View */}
-          <div
-            className={`absolute inset-0 z-10 h-full flex flex-col transition-all duration-300 ${
-              view === 'settings'
-                ? 'opacity-100 scale-100 pointer-events-auto'
-                : 'opacity-0 scale-95 pointer-events-none'
-            }`}
-          >
-            <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
-              <SettingsView
-                onClose={() => handleNavigate('games')}
-                updateInfo={updateInfo}
-                onDirtyChange={setSettingsDirty}
-                shouldSaveTrigger={saveRequested}
-                onConfigImported={handleConfigImported}
-                onSaved={() => {
-                  setSaveRequested(false)
-                  setRefreshKey((k) => k + 1)
-                  if (pendingView) {
-                    setView(pendingView)
-                    setPendingView(null)
-                  }
-                }}
-              />
+            {/* Settings View */}
+            <div
+              className={`absolute inset-0 z-10 h-full flex flex-col transition-all duration-300 ${
+                view === 'settings'
+                  ? 'opacity-100 scale-100 pointer-events-auto'
+                  : 'opacity-0 scale-95 pointer-events-none'
+              }`}
+            >
+              <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
+                <SettingsView onClose={() => handleNavigate('games')} updateInfo={updateInfo} />
+              </div>
             </div>
-          </div>
-        </main>
+          </main>
+        </SettingsProvider>
 
         <ConfirmDialog
           isOpen={pendingView !== null}

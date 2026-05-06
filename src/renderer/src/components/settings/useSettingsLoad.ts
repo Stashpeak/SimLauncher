@@ -106,20 +106,26 @@ export function useSettingsLoad({
 
     setIsCustomColor(settings.accentPreset === 'custom')
 
+    const iconEntries = await Promise.all(
+      Object.entries(settings.appPaths)
+        .filter((entry): entry is [string, string] => Boolean(entry[1]))
+        .map(async ([key, path]) => [key, await getFileIcon(path)] as const)
+    )
     const icons: Record<string, string> = {}
-    for (const [key, path] of Object.entries(settings.appPaths)) {
-      if (path) {
-        const icon = await getFileIcon(path)
-        if (icon) icons[key] = icon
-      }
+    for (const [key, icon] of iconEntries) {
+      if (icon) icons[key] = icon
     }
     setAppIcons(icons)
 
+    const gameIconEntries = await Promise.all(
+      GAMES.map(async (game) => {
+        const filename = game.icon.split('/').pop() || ''
+        return [game.key, await getAssetData(filename)] as const
+      })
+    )
     const gIcons: Record<string, string> = {}
-    for (const game of GAMES) {
-      const filename = game.icon.split('/').pop() || ''
-      const data = await getAssetData(filename)
-      if (data) gIcons[game.key] = data
+    for (const [key, data] of gameIconEntries) {
+      if (data) gIcons[key] = data
     }
     setGameIcons(gIcons)
 
