@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../src/main/store', () => ({
+  KNOWN_GAME_KEYS: new Set(['ac', 'acc']),
   store: {
     get: vi.fn((key: string, fallback?: unknown) => {
       if (key === 'gamePaths') {
@@ -51,6 +52,21 @@ test.each([
 ])('%s rejects unknown gameKey arguments', async (channel) => {
   expect(channel).toBeTruthy()
   await expect(validate('unknown')).resolves.toEqual({
+    success: false,
+    error: 'Unknown game key'
+  })
+})
+
+test('validateGameKey accepts known game keys even when no matching game path is stored', async () => {
+  mocks.storeData = { gamePaths: {} }
+
+  await expect(validate('acc')).resolves.toBeUndefined()
+})
+
+test('validateGameKey rejects user-injected game path keys that are not known games', async () => {
+  mocks.storeData = { gamePaths: { injected: 'C:/Games/Injected.exe' } }
+
+  await expect(validate('injected')).resolves.toEqual({
     success: false,
     error: 'Unknown game key'
   })

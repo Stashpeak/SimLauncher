@@ -12,7 +12,7 @@ import {
   subscribeRunningApps,
   unsubscribeRunningApps
 } from '../processes'
-import { store } from '../store'
+import { KNOWN_GAME_KEYS, store } from '../store'
 import { getExeName } from '../utils'
 
 export function validateGameKey(gameKey: unknown) {
@@ -20,7 +20,7 @@ export function validateGameKey(gameKey: unknown) {
     return { success: false, error: 'Invalid argument' }
   }
 
-  if (!Object.keys(store.get('gamePaths', {}) as Record<string, string>).includes(gameKey)) {
+  if (!KNOWN_GAME_KEYS.has(gameKey)) {
     return { success: false, error: 'Unknown game key' }
   }
 
