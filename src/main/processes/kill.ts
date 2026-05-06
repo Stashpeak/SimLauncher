@@ -323,16 +323,26 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
   const finalizedAttempts = await Promise.all(
     attempts.map(async (attempt) => {
       let stillRunning: boolean
+      let isElevatedInconclusive = false
       if (isFullExePath(attempt.appPath)) {
         const { processIds } = await findProcessIdsByExecutablePath(
           attempt.processName,
           attempt.appPath
         )
-        stillRunning = processIds.length > 0
+        const nameStillRunning = processNamesAfterKill.has(attempt.processName)
+        isElevatedInconclusive = attempt.notFound === true && nameStillRunning
+        stillRunning =
+          processIds.length > 0 ||
+          isElevatedInconclusive ||
+          (attempt.accessDenied === true && !attempt.notFound && nameStillRunning)
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
       }
-      return { ...attempt, stillRunning }
+      return {
+        ...attempt,
+        stillRunning,
+        accessDenied: attempt.accessDenied || isElevatedInconclusive
+      }
     })
   )
 
