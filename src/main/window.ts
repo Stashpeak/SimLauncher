@@ -47,6 +47,30 @@ export function getAppIconPath() {
     : path.join(app.getAppPath(), 'SimLauncher.ico')
 }
 
+function getLocalDevRendererUrl() {
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+
+  if (!rendererUrl) {
+    throw new Error('ELECTRON_RENDERER_URL must be set in development mode')
+  }
+
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(rendererUrl)
+  } catch {
+    throw new Error('ELECTRON_RENDERER_URL must be a valid URL in development mode')
+  }
+
+  if (
+    parsedUrl.protocol !== 'http:' ||
+    (parsedUrl.hostname !== 'localhost' && parsedUrl.hostname !== '127.0.0.1')
+  ) {
+    throw new Error('ELECTRON_RENDERER_URL must resolve to a local HTTP renderer URL')
+  }
+
+  return parsedUrl.toString()
+}
+
 export function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow()
@@ -74,6 +98,7 @@ export function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       zoomFactor,
       preload: path.join(__dirname, '../preload/index.js')
     }
@@ -133,8 +158,8 @@ export function createWindow() {
     }
   })
 
-  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  if (!app.isPackaged) {
+    mainWindow.loadURL(getLocalDevRendererUrl())
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
