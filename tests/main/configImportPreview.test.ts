@@ -12,45 +12,53 @@ type ConfigImportResult = {
   }
 }
 
-let mockIpcHandlers: Record<string, MockIpcHandler> = {}
-
 const mockStats = (size: number) =>
   ({ size }) as Awaited<ReturnType<typeof import('fs').promises.stat>>
 
 async function invokeConfigHandler(channel: string, ...args: unknown[]) {
-  return (await mockIpcHandlers[channel](...args)) as ConfigImportResult
+  const { __ipcHandlers } = await import('electron')
+  return (await (__ipcHandlers as Record<string, MockIpcHandler>)[channel](
+    ...args
+  )) as ConfigImportResult
 }
 
 async function loadConfigModule() {
-  mockIpcHandlers = {}
-  vi.doMock('electron', () => ({
-    app: { getVersion: vi.fn().mockReturnValue('1.0.0') },
-    dialog: {
-      showOpenDialog: vi.fn(),
-      showSaveDialog: vi.fn()
-    },
-    ipcMain: {
-      handle: vi.fn((channel, handler) => {
-        mockIpcHandlers[channel] = handler
-      })
-    }
-  }))
+  const { clearIpcHandlers } = await import('electron')
+  ;(clearIpcHandlers as () => void)()
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
   vi.doMock('../../src/main/profiles', () => ({ isStoredProfileSet: vi.fn() }))
-  vi.doMock('../../src/main/store', () => ({
+  const storeModuleMock = {
     CONFIG_FILE_NAME: 'simlauncher-config.json',
     MAX_CONFIG_IMPORT_BYTES: 1_000_000,
     MAX_CUSTOM_SLOTS: 20,
     getSupportedConfigValues: vi.fn(),
     getStoredZoomFactor: vi.fn(),
     requireSafeZoomFactor: vi.fn(),
-    sanitizeImportedConfig: vi.fn((c) => c),
+    sanitizeImportedConfig: vi.fn((c) => {
+      if (!c || typeof c !== 'object' || Object.keys(c).length === 0) return { imported: true }
+      return c
+    }),
     store: { store: {}, get: vi.fn(), set: vi.fn(), clear: vi.fn() }
-  }))
-  vi.doMock('../../src/main/window', () => ({
+  }
+  vi.doMock('/src/main/store.ts', () => storeModuleMock)
+  vi.doMock('../../src/main/store', () => storeModuleMock)
+  vi.doMock('../../src/main/store.ts', () => storeModuleMock)
+  const windowModuleMock = {
     applyRuntimeConfigSettings: vi.fn(),
     getMainWindow: vi.fn(),
     sendToRenderer: vi.fn()
+  }
+  vi.doMock('/src/main/window.ts', () => windowModuleMock)
+  vi.doMock('../../src/main/window', () => windowModuleMock)
+  vi.doMock('../../src/main/window.ts', () => windowModuleMock)
+  vi.doMock('electron-updater', () => ({
+    autoUpdater: {
+      autoDownload: false,
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      on: vi.fn(),
+      quitAndInstall: vi.fn()
+    }
   }))
   vi.doMock('fs', () => ({
     default: {
