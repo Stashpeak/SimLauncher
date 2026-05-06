@@ -206,6 +206,8 @@ async function killProcessByImageName(
     }
 
     if (processIds.length === 0) {
+      // Elevated processes can expose null ExecutablePath in WMI, so they are silently
+      // filtered out by the Where-Object clause; treat this as notFound rather than error.
       return { processName, appPath: targetAppPath, gameKey, success: true, notFound: true }
     }
 
@@ -330,6 +332,8 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
           attempt.appPath
         )
         const nameStillRunning = processNamesAfterKill.has(attempt.processName)
+        // Heuristic: if WMI found no PID (notFound) but image still appears in tasklist,
+        // the process is likely elevated and inaccessible to WMI; approximate, fix in #307.
         isElevatedInconclusive = attempt.notFound === true && nameStillRunning
         stillRunning =
           processIds.length > 0 ||
