@@ -158,7 +158,7 @@ export function createWindow() {
     }
   })
 
-  if (!app.isPackaged) {
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(getLocalDevRendererUrl())
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
