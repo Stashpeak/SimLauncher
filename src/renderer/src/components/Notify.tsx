@@ -101,7 +101,7 @@ function ToastCard({
   return (
     <button
       type="button"
-      className={`toast-card glass-surface overflow-hidden relative rounded-[18px] text-left border px-[16px] py-[14px] min-w-[280px] max-w-[400px] shadow-[0_8px_30px_#00000050] transition-all duration-250 ease-out ${TOAST_STYLES[toast.type]} ${isDismissing ? 'toast-card-dismissing opacity-0 translate-x-5 scale-95' : 'opacity-100 translate-x-0 scale-100'}`}
+      className={`toast-card glass-surface overflow-hidden relative rounded-[18px] text-left px-[16px] py-[14px] min-w-[280px] max-w-[400px] shadow-[0_8px_30px_#00000050] transition-all duration-250 ease-out ${TOAST_STYLES[toast.type]} ${isDismissing ? 'toast-card-dismissing opacity-0 translate-x-5 scale-95' : 'opacity-100 translate-x-0 scale-100'}`}
       onClick={() => onDismiss(toast.id)}
     >
       <div className="flex items-start gap-3.5">

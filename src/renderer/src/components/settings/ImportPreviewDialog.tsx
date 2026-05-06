@@ -94,7 +94,7 @@ export function ImportPreviewDialog({
           />
 
           {summary.warnings.length > 0 ? (
-            <ul className="space-y-1 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-3 text-xs text-yellow-100">
+            <ul className="space-y-1 rounded-xl border border-(--warning-border) bg-(--warning-surface) p-3 text-xs text-(--warning-text)">
               {summary.warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}
