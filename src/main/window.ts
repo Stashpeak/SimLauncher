@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, screen, type OpenDialogOptions } from 'electron'
 import path from 'path'
 
 import { getIsQuitting, setIsQuitting } from './app-state'
@@ -179,9 +179,9 @@ export function registerWindowHandlers() {
    */
   ipcMain.handle('browse-path', async (_event, inputId) => {
     try {
-      const options = {
+      const options: OpenDialogOptions = {
         title: 'Select Executable File (.exe)',
-        properties: ['openFile'] as const,
+        properties: ['openFile'],
         filters: [{ name: 'Executable Files', extensions: ['exe'] }]
       }
       const result =
