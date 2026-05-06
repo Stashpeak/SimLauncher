@@ -15,8 +15,25 @@ import {
 import { store } from '../store'
 import { getExeName } from '../utils'
 
+export function validateGameKey(gameKey: unknown) {
+  if (typeof gameKey !== 'string') {
+    return { success: false, error: 'Invalid argument' }
+  }
+
+  if (!Object.keys(store.get('gamePaths', {}) as Record<string, string>).includes(gameKey)) {
+    return { success: false, error: 'Unknown game key' }
+  }
+
+  return undefined
+}
+
 export function registerLaunchHandlers() {
   ipcMain.handle('launch-profile', async (event, gameKey: string) => {
+    const validationError = validateGameKey(gameKey)
+    if (validationError) {
+      return validationError
+    }
+
     const profileApps = buildActiveProfileLaunchPaths(gameKey)
 
     if (profileApps.length === 0) {
@@ -27,6 +44,11 @@ export function registerLaunchHandlers() {
   })
 
   ipcMain.handle('relaunch-missing-profile', async (event, gameKey: string) => {
+    const validationError = validateGameKey(gameKey)
+    if (validationError) {
+      return validationError
+    }
+
     const allPaths = buildActiveProfileLaunchPaths(gameKey)
 
     if (allPaths.length === 0) {
@@ -51,6 +73,11 @@ export function registerLaunchHandlers() {
   ipcMain.handle(
     'get-profile-switch-diff',
     async (_event, gameKey: string, fromProfileId: string, toProfileId: string) => {
+      const validationError = validateGameKey(gameKey)
+      if (validationError) {
+        return validationError
+      }
+
       const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
       const gamePath = gamePaths[gameKey]?.toLowerCase()
       const processNames = await readRunningProcessNames()
@@ -76,6 +103,11 @@ export function registerLaunchHandlers() {
   ipcMain.handle(
     'switch-profile-apps',
     async (event, gameKey: string, fromProfileId: string, toProfileId: string) => {
+      const validationError = validateGameKey(gameKey)
+      if (validationError) {
+        return validationError
+      }
+
       const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
       const gamePath = gamePaths[gameKey]?.toLowerCase()
 
@@ -134,6 +166,13 @@ export function registerLaunchHandlers() {
   })
 
   ipcMain.handle('kill-launched-apps', async (_event, gameKey?: string) => {
+    if (gameKey !== undefined) {
+      const validationError = validateGameKey(gameKey)
+      if (validationError) {
+        return validationError
+      }
+    }
+
     return killLaunchedApps(gameKey)
   })
 }
