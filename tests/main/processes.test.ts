@@ -217,6 +217,7 @@ async function loadProcessModules() {
     killProfileApps: killModule.killProfileApps,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
     processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
+    suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
     unclosedProcesses: stateModule.unclosedProcesses,
     getRunningApps: (await import('../../src/main/processes/running')).getRunningApps,
@@ -248,8 +249,12 @@ const sender = {
 } as unknown as WebContents & { send: ReturnType<typeof vi.fn> }
 
 beforeEach(async () => {
-  const { processNameMismatchWarnings, runningProcesses, unclosedProcesses } =
-    await loadProcessModules()
+  const {
+    processNameMismatchWarnings,
+    runningProcesses,
+    suppressedProcessNameMismatchWarnings,
+    unclosedProcesses
+  } = await loadProcessModules()
 
   existingPaths.clear()
   processNames.clear()
@@ -264,6 +269,7 @@ beforeEach(async () => {
   invalidateProcessNameCacheMock.mockClear()
   processNameMismatchWarnings.clear()
   runningProcesses.clear()
+  suppressedProcessNameMismatchWarnings.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
   storeData.launchDelayMs = 0
@@ -354,6 +360,99 @@ test('getRunningApps adopts tracked child processes while a wrapper warning is a
         name: 'cheatengine-x86_64-sse4-avx2.exe',
         gameKey: 'ac',
         tracked: true
+      })
+    ])
+  )
+})
+
+test('getRunningApps keeps wrapper warnings until the configured process is resolved', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  dateNow.mockReturnValue(1000)
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('cheat engine.exe')
+  processNames.add('cheatengine-x86_64-sse4-avx2.exe')
+  childHandlers.get('exit')?.()
+
+  dateNow.mockReturnValue(61000)
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        warning: expect.stringContaining('starts another process with a different name')
+      })
+    ])
+  )
+
+  processNames.add('cheat engine.exe')
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+  dateNow.mockRestore()
+})
+
+test('killLaunchedApps does not create a wrapper warning for user-initiated closes', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/Perplexity.exe')
+  processNames.add('perplexity.exe')
+  const { getRunningApps, killLaunchedApps, launchProfileApps } = await loadProcessModulesWithStore(
+    {
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { customapp1: 'C:/Tools/Perplexity.exe' }
+    }
+  )
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Perplexity.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  const killPromise = killLaunchedApps('ac')
+  processNames.delete('perplexity.exe')
+  childHandlers.get('exit')?.()
+
+  await expect(killPromise).resolves.toMatchObject({ success: true, failedCount: 0 })
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Tools/Perplexity.exe',
+        warning: expect.any(String)
       })
     ])
   )

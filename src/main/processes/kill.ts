@@ -10,7 +10,7 @@ import {
 import { store } from '../store'
 import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
-import { runningProcesses, unclosedProcesses } from './state'
+import { runningProcesses, suppressProcessNameMismatchWarning, unclosedProcesses } from './state'
 import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
@@ -488,6 +488,7 @@ export async function killLaunchedApps(gameKey?: string) {
     companionTargets.delete(processName)
 
     if (processNames.has(processName)) {
+      suppressProcessNameMismatchWarning(appPath)
       killTasks.push(killProcessTree(child, appPath, appProcess?.gameKey))
     } else {
       runningProcesses.delete(appPath)

@@ -6,14 +6,17 @@ import path from 'path'
 import { store } from '../store'
 import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from '../utils'
 
-import { processNameMismatchWarnings, runningProcesses } from './state'
+import {
+  consumeProcessNameMismatchWarningSuppression,
+  processNameMismatchWarnings,
+  runningProcesses
+} from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { AppLaunchResult, LaunchResult } from './types'
 import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
-const PROCESS_NAME_MISMATCH_WARNING_MS = 30000
 let launchBlockedUntil = 0
 
 export async function launchProfileApps(
@@ -327,14 +330,14 @@ function spawnDetachedApp(
       child.once('exit', () => {
         runningProcesses.delete(appPath)
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
+        const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
-        if (exitedDuringPostLaunchWindow) {
+        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           processNameMismatchWarnings.set(appPath.toLowerCase(), {
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning: `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`,
-            expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_MS
+            warning: `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`
           })
         }
         invalidateProcessNameCache()
