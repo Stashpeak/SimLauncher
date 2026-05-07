@@ -1,5 +1,5 @@
 import { Toggle } from '../Toggle'
-import { useSettings } from './SettingsContext'
+import { useBehaviorSettings } from './BehaviorContext'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 
 const DELAY_PRESETS = [
@@ -18,7 +18,7 @@ export function BehaviorSection() {
     onStartMinimizedChange,
     onMinimizeToTrayChange,
     onLaunchDelayMsChange
-  } = useSettings()
+  } = useBehaviorSettings()
   const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
 
   return (

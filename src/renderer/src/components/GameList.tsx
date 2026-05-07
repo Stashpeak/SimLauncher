@@ -4,7 +4,7 @@ import { getSettings } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
-import { useSettings } from './settings/SettingsContext'
+import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
@@ -20,7 +20,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock()
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
-  const { gameIcons } = useSettings()
+  const { gameIcons } = useGamesSettings()
 
   useEffect(() => {
     let mounted = true

@@ -1,5 +1,5 @@
 import { Toggle } from '../Toggle'
-import { useSettings } from './SettingsContext'
+import { useSettingsMeta } from './SettingsMetaContext'
 import type { UpdateInfo, UpdateStatus } from './types'
 
 interface AboutSectionProps {
@@ -23,7 +23,7 @@ export function AboutSection({
   onManualCheck,
   onInstallUpdate
 }: AboutSectionProps) {
-  const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettings()
+  const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettingsMeta()
 
   return (
     <>

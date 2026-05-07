@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -11,11 +9,16 @@ import {
   type SetStateAction
 } from 'react'
 import { useDirtyTracking } from '../../hooks/useDirtyTracking'
-import { DEFAULT_ACCENT_COLOR, getUtilities, type Profiles, type Utility } from '../../lib/config'
+import { DEFAULT_ACCENT_COLOR, getUtilities, type Profiles } from '../../lib/config'
 import { browsePath, getFileIcon, setLoginItem, setZoom } from '../../lib/electron'
 import type { ThemeMode } from '../../lib/theme'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useNotify } from '../Notify'
+import { AppearanceContext, type AppearanceContextValue } from './AppearanceContext'
+import { AppsContext, type AppsContextValue } from './AppsContext'
+import { BehaviorContext, type BehaviorContextValue } from './BehaviorContext'
+import { GamesContext, type GamesContextValue } from './GamesContext'
+import { SettingsMetaContext, type SettingsMetaContextValue } from './SettingsMetaContext'
 import {
   createSettingsObjectVersions,
   type SettingsObjectField,
@@ -25,69 +28,6 @@ import { useConfigIO } from './useConfigIO'
 import { useCustomSlots } from './useCustomSlots'
 import { useSettingsLoad } from './useSettingsLoad'
 import { useSettingsSave } from './useSettingsSave'
-
-interface SettingsContextValue {
-  loading: boolean
-  isDirty: boolean
-  appPaths: Record<string, string>
-  appNames: Record<string, string>
-  appArgs: Record<string, string>
-  profiles: Profiles
-  gamePaths: Record<string, string>
-  customSlots: number
-  accentPreset: string
-  accentCustom: string
-  accentBgTint: boolean
-  themeMode: ThemeMode
-  focusActiveTitle: boolean
-  launchDelayMs: number
-  startWithWindows: boolean
-  startMinimized: boolean
-  minimizeToTray: boolean
-  autoCheckUpdates: boolean
-  zoomFactor: number
-  exportingConfig: boolean
-  importingConfig: boolean
-  isCustomColor: boolean
-  appIcons: Record<string, string>
-  gameIcons: Record<string, string>
-  iconLoadErrors: Set<string>
-  utilities: Utility[]
-  onAutoCheckUpdatesChange: (checked: boolean) => void
-  onAccentChange: (presetHex: string) => void
-  onCustomColorChange: (hex: string) => void
-  onAccentBgTintChange: (checked: boolean) => void
-  onThemeModeChange: (mode: ThemeMode) => void
-  onFocusActiveTitleChange: (checked: boolean) => void
-  onZoomFactorChange: (factor: number) => void
-  onStartWithWindowsChange: (checked: boolean) => void
-  onStartMinimizedChange: (checked: boolean) => void
-  onMinimizeToTrayChange: (checked: boolean) => void
-  onLaunchDelayMsChange: (delayMs: number) => void
-  onExportConfig: () => void
-  onImportConfig: () => void
-  onBrowse: (key: string, isGame: boolean) => void
-  onGamePathChange: (key: string, path: string) => void
-  onAppNameChange: (key: string, name: string) => void
-  onAppPathChange: (key: string, path: string) => void
-  onAppArgsChange: (key: string, args: string) => void
-  onIconLoadError: (key: string) => void
-  onAddCustomSlot: () => void
-  onRemoveCustomSlot: (slotNumber: number) => void
-  saveSettings: () => Promise<void>
-}
-
-const SettingsContext = createContext<SettingsContextValue | null>(null)
-
-export function useSettings() {
-  const context = useContext(SettingsContext)
-
-  if (!context) {
-    throw new Error('useSettings must be used within SettingsProvider')
-  }
-
-  return context
-}
 
 export function SettingsProvider({
   children,
@@ -406,109 +346,136 @@ export function SettingsProvider({
 
   const utilities = useMemo(() => getUtilities(customSlots), [customSlots])
 
-  const value: SettingsContextValue = useMemo(
+  const appearanceValue: AppearanceContextValue = useMemo(
     () => ({
-      loading,
-      isDirty,
-      appPaths,
-      appNames,
-      appArgs,
-      profiles,
-      gamePaths,
-      customSlots,
       accentPreset,
       accentCustom,
       accentBgTint,
       themeMode,
       focusActiveTitle,
-      launchDelayMs,
-      startWithWindows,
-      startMinimized,
-      minimizeToTray,
-      autoCheckUpdates,
       zoomFactor,
-      exportingConfig,
-      importingConfig,
       isCustomColor,
-      appIcons,
-      gameIcons,
-      iconLoadErrors,
-      utilities,
-      onAutoCheckUpdatesChange: setAutoCheckUpdates,
       onAccentChange: handleAccentChange,
       onCustomColorChange: handleCustomColorChange,
       onAccentBgTintChange: handleAccentBgTintChange,
       onThemeModeChange: handleThemeModeChange,
       onFocusActiveTitleChange: setFocusActiveTitle,
-      onZoomFactorChange: handleZoomFactorChange,
-      onStartWithWindowsChange: handleStartWithWindowsChange,
-      onStartMinimizedChange: setStartMinimized,
-      onMinimizeToTrayChange: setMinimizeToTray,
-      onLaunchDelayMsChange: setLaunchDelayMs,
-      onExportConfig: handleExportConfig,
-      onImportConfig: handleImportConfig,
-      onBrowse: handleBrowse,
-      onGamePathChange: handleGamePathChange,
-      onAppNameChange: handleAppNameChange,
-      onAppPathChange: handleAppPathChange,
-      onAppArgsChange: handleAppArgsChange,
-      onIconLoadError: handleIconLoadError,
-      onAddCustomSlot: handleAddCustomSlot,
-      onRemoveCustomSlot: handleRemoveCustomSlot,
-      saveSettings: handleSave
+      onZoomFactorChange: handleZoomFactorChange
     }),
     [
-      loading,
-      isDirty,
-      appPaths,
-      appNames,
-      appArgs,
-      profiles,
-      gamePaths,
-      customSlots,
       accentPreset,
       accentCustom,
       accentBgTint,
       themeMode,
       focusActiveTitle,
-      launchDelayMs,
-      startWithWindows,
-      startMinimized,
-      minimizeToTray,
-      autoCheckUpdates,
       zoomFactor,
-      exportingConfig,
-      importingConfig,
       isCustomColor,
-      appIcons,
-      gameIcons,
-      iconLoadErrors,
-      utilities,
       handleAccentChange,
       handleCustomColorChange,
       handleAccentBgTintChange,
       handleThemeModeChange,
-      handleZoomFactorChange,
-      handleStartWithWindowsChange,
-      handleExportConfig,
-      handleImportConfig,
+      handleZoomFactorChange
+    ]
+  )
+
+  const appsValue: AppsContextValue = useMemo(
+    () => ({
+      appPaths,
+      appNames,
+      appArgs,
+      appIcons,
+      iconLoadErrors,
+      customSlots,
+      utilities,
+      profiles,
+      onBrowse: handleBrowse,
+      onAppNameChange: handleAppNameChange,
+      onAppPathChange: handleAppPathChange,
+      onAppArgsChange: handleAppArgsChange,
+      onIconLoadError: handleIconLoadError,
+      onAddCustomSlot: handleAddCustomSlot,
+      onRemoveCustomSlot: handleRemoveCustomSlot
+    }),
+    [
+      appPaths,
+      appNames,
+      appArgs,
+      appIcons,
+      iconLoadErrors,
+      customSlots,
+      utilities,
+      profiles,
       handleBrowse,
-      handleGamePathChange,
       handleAppNameChange,
       handleAppPathChange,
       handleAppArgsChange,
       handleIconLoadError,
       handleAddCustomSlot,
-      handleRemoveCustomSlot,
+      handleRemoveCustomSlot
+    ]
+  )
+
+  const gamesValue: GamesContextValue = useMemo(
+    () => ({
+      gamePaths,
+      gameIcons,
+      onBrowse: handleBrowse,
+      onGamePathChange: handleGamePathChange
+    }),
+    [gamePaths, gameIcons, handleBrowse, handleGamePathChange]
+  )
+
+  const behaviorValue: BehaviorContextValue = useMemo(
+    () => ({
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      launchDelayMs,
+      onStartWithWindowsChange: handleStartWithWindowsChange,
+      onStartMinimizedChange: setStartMinimized,
+      onMinimizeToTrayChange: setMinimizeToTray,
+      onLaunchDelayMsChange: setLaunchDelayMs
+    }),
+    [startWithWindows, startMinimized, minimizeToTray, launchDelayMs, handleStartWithWindowsChange]
+  )
+
+  const settingsMetaValue: SettingsMetaContextValue = useMemo(
+    () => ({
+      loading,
+      isDirty,
+      saveSettings: handleSave,
+      exportingConfig,
+      importingConfig,
+      autoCheckUpdates,
+      onExportConfig: handleExportConfig,
+      onImportConfig: handleImportConfig,
+      onAutoCheckUpdatesChange: setAutoCheckUpdates
+    }),
+    [
+      loading,
+      isDirty,
+      autoCheckUpdates,
+      exportingConfig,
+      importingConfig,
+      handleExportConfig,
+      handleImportConfig,
       handleSave
     ]
   )
 
   return (
-    <SettingsContext.Provider value={value}>
-      {children}
-      {customSlotRemoveDialog}
-      {configImportDialogs}
-    </SettingsContext.Provider>
+    <SettingsMetaContext.Provider value={settingsMetaValue}>
+      <AppearanceContext.Provider value={appearanceValue}>
+        <BehaviorContext.Provider value={behaviorValue}>
+          <GamesContext.Provider value={gamesValue}>
+            <AppsContext.Provider value={appsValue}>
+              {children}
+              {customSlotRemoveDialog}
+              {configImportDialogs}
+            </AppsContext.Provider>
+          </GamesContext.Provider>
+        </BehaviorContext.Provider>
+      </AppearanceContext.Provider>
+    </SettingsMetaContext.Provider>
   )
 }
