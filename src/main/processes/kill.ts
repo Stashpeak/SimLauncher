@@ -352,9 +352,18 @@ function getStoredAppPathTargets() {
   )
 }
 
-async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<KillResult> {
+function hasProcessNameMismatchWarning(gameKey?: string) {
+  return Array.from(processNameMismatchWarnings.values()).some(
+    (warning) => gameKey === undefined || warning.gameKey === gameKey
+  )
+}
+
+async function finalizeKillAttempts(
+  attempts: KillAttemptResult[],
+  gameKey?: string
+): Promise<KillResult> {
   if (attempts.length === 0) {
-    const hasMismatchWarnings = processNameMismatchWarnings.size > 0
+    const hasMismatchWarnings = hasProcessNameMismatchWarning(gameKey)
 
     return {
       success: true,
@@ -526,7 +535,7 @@ export async function killLaunchedApps(gameKey?: string) {
     }
   })
 
-  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
   return result
 }
@@ -594,7 +603,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
     }
   })
 
-  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
   return result
 }

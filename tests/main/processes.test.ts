@@ -746,6 +746,26 @@ test('killLaunchedApps explains no-op closes when only wrapper mismatch warnings
   })
 })
 
+test('killLaunchedApps keeps generic no-op message for unrelated game wrapper warnings', async () => {
+  const { killLaunchedApps, processNameMismatchWarnings } = await loadProcessModules()
+
+  processNameMismatchWarnings.set('c:/tools/cheat engine.exe', {
+    path: 'C:/Tools/Cheat Engine.exe',
+    name: 'Cheat Engine.exe',
+    gameKey: 'ac',
+    warning:
+      'Cheat Engine.exe exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.'
+  })
+
+  await expect(killLaunchedApps('iracing')).resolves.toEqual({
+    success: true,
+    message: 'No running companion apps to close.',
+    closedCount: 0,
+    failedCount: 0,
+    failures: []
+  })
+})
+
 test('killProfileApps rejects paths that are not configured app paths', async () => {
   const { killProfileApps } = await loadProcessModules()
 
