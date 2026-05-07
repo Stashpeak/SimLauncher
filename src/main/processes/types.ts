@@ -41,6 +41,14 @@ export interface RunningProcessEntry {
   isGame: boolean
 }
 
+export interface ProcessNameMismatchWarningEntry {
+  path: string
+  name: string
+  gameKey: string
+  warning: string
+  expiresAt: number
+}
+
 export interface UnclosedProcessEntry {
   path: string
   name: string

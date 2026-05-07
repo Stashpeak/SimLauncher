@@ -191,10 +191,14 @@ async function loadProcessModules() {
     getProfileTrackablePaths: vi.fn(
       (
         gameKey: string,
-        _profile: unknown,
+        profile: { trackedProcessPaths?: string[] } | undefined,
         appPaths: Record<string, string> | undefined,
         gamePaths: Record<string, string> | undefined
-      ) => [...(gamePaths?.[gameKey] ? [gamePaths[gameKey]] : []), ...Object.values(appPaths || {})]
+      ) => [
+        ...(gamePaths?.[gameKey] ? [gamePaths[gameKey]] : []),
+        ...Object.values(appPaths || {}),
+        ...(profile?.trackedProcessPaths || [])
+      ]
     )
   }
   vi.doMock('../profiles', () => profilesMock)
@@ -212,6 +216,7 @@ async function loadProcessModules() {
     killLaunchedApps: killModule.killLaunchedApps,
     killProfileApps: killModule.killProfileApps,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
+    processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
     unclosedProcesses: stateModule.unclosedProcesses,
     getRunningApps: (await import('../../src/main/processes/running')).getRunningApps,
@@ -243,7 +248,8 @@ const sender = {
 } as unknown as WebContents & { send: ReturnType<typeof vi.fn> }
 
 beforeEach(async () => {
-  const { runningProcesses, unclosedProcesses } = await loadProcessModules()
+  const { processNameMismatchWarnings, runningProcesses, unclosedProcesses } =
+    await loadProcessModules()
 
   existingPaths.clear()
   processNames.clear()
@@ -256,10 +262,140 @@ beforeEach(async () => {
   spawnCalls.length = 0
   spawnErrors.clear()
   invalidateProcessNameCacheMock.mockClear()
+  processNameMismatchWarnings.clear()
   runningProcesses.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
   storeData.launchDelayMs = 0
+})
+
+test('getRunningApps surfaces a warning when a launched wrapper exits before its configured process is found', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('cheat engine.exe')
+  processNames.add('cheatengine-x86_64-sse4-avx2.exe')
+  childHandlers.get('exit')?.()
+
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        name: 'Cheat Engine.exe',
+        gameKey: 'ac',
+        warning: expect.stringContaining('starts another process with a different name')
+      })
+    ])
+  )
+})
+
+test('getRunningApps adopts tracked child processes while a wrapper warning is active', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          {
+            id: 'default',
+            name: 'Default',
+            trackedProcessPaths: ['C:/Program Files/Cheat Engine/cheatengine-x86_64-sse4-avx2.exe']
+          }
+        ]
+      }
+    },
+    gamePaths: { ac: 'C:/Program Files/Cheat Engine/Cheat Engine.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('cheat engine.exe')
+  processNames.add('cheatengine-x86_64-sse4-avx2.exe')
+  childHandlers.get('exit')?.()
+
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/cheatengine-x86_64-sse4-avx2.exe',
+        name: 'cheatengine-x86_64-sse4-avx2.exe',
+        gameKey: 'ac',
+        tracked: true
+      })
+    ])
+  )
+})
+
+test('getRunningApps does not warn when a launched process exits after the post-launch window', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  dateNow.mockReturnValue(1000)
+  markExistingPath('C:/Program Files/CrewChief/CrewChief.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/CrewChief/CrewChief.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  dateNow.mockReturnValue(11001)
+  processNames.delete('crewchief.exe')
+  childHandlers.get('exit')?.()
+
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/CrewChief/CrewChief.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+  dateNow.mockRestore()
 })
 
 test('launchProfileApps rejects empty launches when every configured executable is invalid or missing', async () => {
