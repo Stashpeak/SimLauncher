@@ -171,7 +171,9 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
   const appPaths = store.get('appPaths') as Record<string, string> | undefined
   const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
-  const launchedGameKeys = new Set(surfacedApps.map((appProcess) => appProcess.gameKey))
+  const launchedGameKeys = new Set(
+    [...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey)
+  )
   const adoptedGameKeys = getExternallyAdoptableGameKeys(
     processNames,
     profiles,
