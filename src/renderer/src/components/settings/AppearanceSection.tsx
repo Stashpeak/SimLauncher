@@ -48,7 +48,7 @@ export function AppearanceSection() {
 
   return (
     <>
-      <div className="settings-row">
+      <div className="settings-row settings-row-responsive">
         <label className="settings-label text-(--text-secondary)">Theme</label>
         <div className="settings-control">
           {THEME_MODE_OPTIONS.map((option) => (
@@ -68,7 +68,7 @@ export function AppearanceSection() {
         </div>
       </div>
 
-      <div className="settings-row">
+      <div className="settings-row settings-row-responsive">
         <label className="settings-label text-(--text-secondary)">Accent Color</label>
         <div className="settings-control">
           {ACCENT_PRESETS.map((preset) => (
@@ -143,7 +143,7 @@ export function AppearanceSection() {
         />
       </div>
 
-      <div className="settings-row">
+      <div className="settings-row settings-row-responsive">
         <label className="settings-label text-(--text-secondary)">UI Scale</label>
         <div className="settings-control">
           {ZOOM_PRESETS.map((preset) => (
