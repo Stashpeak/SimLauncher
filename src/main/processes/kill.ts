@@ -392,13 +392,11 @@ async function finalizeKillAttempts(
           attempt.staleTask !== true &&
           (await processExistsByName(attempt.processName))
         stillRunning =
-          attempt.staleTask === true
-            ? false
-            : processIds.length > 0 ||
-              isElevatedInconclusive ||
-              (attempt.accessDenied === true &&
-                !attempt.notFound &&
-                processNamesAfterKill.has(attempt.processName))
+          processIds.length > 0 ||
+          isElevatedInconclusive ||
+          (attempt.accessDenied === true &&
+            !attempt.notFound &&
+            processNamesAfterKill.has(attempt.processName))
       } else {
         stillRunning =
           attempt.staleTask === true ? false : processNamesAfterKill.has(attempt.processName)

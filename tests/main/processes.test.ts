@@ -999,6 +999,7 @@ test('killLaunchedApps treats stale taskkill PID responses as closed', async () 
 
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
+  inaccessibleExecutablePathProcesses.add('simhub.exe')
   staleTaskkillPids.add('4321')
 
   const result = await killLaunchedApps('ac')
@@ -1011,6 +1012,32 @@ test('killLaunchedApps treats stale taskkill PID responses as closed', async () 
   })
   expect(result.error).toBeUndefined()
   expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+})
+
+test('killLaunchedApps keeps stale taskkill attempts failed when a replacement process is live', async () => {
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  staleTaskkillPids.add('4321')
+
+  const result = await killLaunchedApps('ac')
+
+  expect(result).toMatchObject({
+    success: false,
+    closedCount: 0,
+    failedCount: 1,
+    failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'still_running' })]
+  })
+  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+    path: 'C:/Tools/SimHub.exe',
+    reason: 'still_running'
+  })
 })
 
 test('killLaunchedApps uses image-name fallback for utility companion apps', async () => {
