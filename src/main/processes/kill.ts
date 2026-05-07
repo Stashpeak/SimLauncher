@@ -23,6 +23,7 @@ interface KillAttemptResult {
   error?: string
   accessDenied?: boolean
   notFound?: boolean
+  staleTask?: boolean
   stillRunning?: boolean
 }
 
@@ -35,7 +36,11 @@ function isAccessDeniedMessage(message: string) {
 }
 
 function isNotFoundMessage(message: string) {
-  return /not found/i.test(message)
+  return /not found|no running instance/i.test(message)
+}
+
+function isStaleTaskMessage(message: string) {
+  return /no running instance/i.test(message)
 }
 
 function runTaskkill(args: string[], description: string) {
@@ -44,6 +49,7 @@ function runTaskkill(args: string[], description: string) {
     detail?: string
     accessDenied?: boolean
     notFound?: boolean
+    staleTask?: boolean
   }>((resolve) => {
     execFile('taskkill', args, { windowsHide: true }, (error, stdout, stderr) => {
       if (!error) {
@@ -53,6 +59,7 @@ function runTaskkill(args: string[], description: string) {
 
       const detail = stderr.trim() || stdout.trim() || error.message
       const notFound = isNotFoundMessage(detail)
+      const staleTask = isStaleTaskMessage(detail)
       const accessDenied = isAccessDeniedMessage(detail)
 
       if (!notFound) {
@@ -63,7 +70,8 @@ function runTaskkill(args: string[], description: string) {
         success: notFound,
         detail,
         accessDenied,
-        notFound
+        notFound,
+        staleTask
       })
     })
   })
@@ -184,7 +192,8 @@ async function killProcessTree(
       success: result.success,
       error: result.detail,
       accessDenied: result.accessDenied,
-      notFound: result.notFound
+      notFound: result.notFound,
+      staleTask: result.staleTask
     }
   }
 
@@ -255,7 +264,8 @@ async function killProcessByImageName(
       success: !failedResult,
       error: failedResult?.detail,
       accessDenied: failedResult?.accessDenied,
-      notFound: results.every((result) => result.notFound)
+      notFound: results.every((result) => result.notFound),
+      staleTask: results.every((result) => result.staleTask)
     }
   }
 
@@ -270,7 +280,8 @@ async function killProcessByImageName(
     success: result.success,
     error: result.detail,
     accessDenied: result.accessDenied,
-    notFound: result.notFound
+    notFound: result.notFound,
+    staleTask: result.staleTask
   }
 }
 
@@ -359,15 +370,20 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
           attempt.appPath
         )
         isElevatedInconclusive =
-          attempt.notFound === true && (await processExistsByName(attempt.processName))
+          attempt.notFound === true &&
+          attempt.staleTask !== true &&
+          (await processExistsByName(attempt.processName))
         stillRunning =
-          processIds.length > 0 ||
-          isElevatedInconclusive ||
-          (attempt.accessDenied === true &&
-            !attempt.notFound &&
-            processNamesAfterKill.has(attempt.processName))
+          attempt.staleTask === true
+            ? false
+            : processIds.length > 0 ||
+              isElevatedInconclusive ||
+              (attempt.accessDenied === true &&
+                !attempt.notFound &&
+                processNamesAfterKill.has(attempt.processName))
       } else {
-        stillRunning = processNamesAfterKill.has(attempt.processName)
+        stillRunning =
+          attempt.staleTask === true ? false : processNamesAfterKill.has(attempt.processName)
       }
       return {
         ...attempt,

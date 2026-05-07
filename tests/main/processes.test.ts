@@ -17,6 +17,7 @@ const accessDeniedPids = new Set<string>()
 const accessDeniedImageNames = new Set<string>()
 const inaccessibleExecutablePathProcesses = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
+const staleTaskkillPids = new Set<string>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
@@ -100,6 +101,14 @@ async function loadProcessModules() {
       }
       if (command === 'taskkill' && args.includes('/PID')) {
         const pid = args[args.indexOf('/PID') + 1]
+        if (staleTaskkillPids.has(pid)) {
+          callback(
+            new Error('There is no running instance of the task.'),
+            '',
+            `ERROR: The process with PID ${pid} (child process of PID 50324) could not be terminated.\nReason: There is no running instance of the task.`
+          )
+          return
+        }
         if (accessDeniedPids.has(pid)) {
           callback(new Error('Access is denied.'), '', 'Access is denied.')
           return
@@ -263,6 +272,7 @@ beforeEach(async () => {
   accessDeniedImageNames.clear()
   inaccessibleExecutablePathProcesses.clear()
   nullExecutablePathPids.clear()
+  staleTaskkillPids.clear()
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
@@ -936,6 +946,30 @@ test('killLaunchedApps treats not-found full-path app as closed when image no lo
     failures: []
   })
 
+  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+})
+
+test('killLaunchedApps treats stale taskkill PID responses as closed', async () => {
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  staleTaskkillPids.add('4321')
+
+  const result = await killLaunchedApps('ac')
+
+  expect(result).toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0,
+    failures: []
+  })
+  expect(result.error).toBeUndefined()
   expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
 })
 
