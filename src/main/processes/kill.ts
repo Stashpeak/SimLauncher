@@ -10,7 +10,12 @@ import {
 import { store } from '../store'
 import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
-import { runningProcesses, suppressProcessNameMismatchWarning, unclosedProcesses } from './state'
+import {
+  processNameMismatchWarnings,
+  runningProcesses,
+  suppressProcessNameMismatchWarning,
+  unclosedProcesses
+} from './state'
 import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
@@ -349,9 +354,13 @@ function getStoredAppPathTargets() {
 
 async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<KillResult> {
   if (attempts.length === 0) {
+    const hasMismatchWarnings = processNameMismatchWarnings.size > 0
+
     return {
       success: true,
-      message: 'No running companion apps to close.',
+      message: hasMismatchWarnings
+        ? 'No closable companion apps found. Some apps may be running under a different process name; add the shown process under tracked processes to manage it.'
+        : 'No running companion apps to close.',
       closedCount: 0,
       failedCount: 0,
       failures: []
@@ -565,6 +574,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
 
     if (runningAppEntry) {
       const [, runningApp] = runningAppEntry
+      suppressProcessNameMismatchWarning(appPath)
       killTasks.push(killProcessTree(runningApp.process, appPath, runningApp.gameKey))
       killedExeNames.add(getExeName(appPath))
       return

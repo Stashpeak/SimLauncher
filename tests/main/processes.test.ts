@@ -726,6 +726,26 @@ test('killLaunchedApps returns a no-op kill result when no companion apps are ru
   })
 })
 
+test('killLaunchedApps explains no-op closes when only wrapper mismatch warnings remain', async () => {
+  const { killLaunchedApps, processNameMismatchWarnings } = await loadProcessModules()
+
+  processNameMismatchWarnings.set('c:/tools/cheat engine.exe', {
+    path: 'C:/Tools/Cheat Engine.exe',
+    name: 'Cheat Engine.exe',
+    gameKey: 'ac',
+    warning:
+      'Cheat Engine.exe exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.'
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    message: expect.stringContaining('different process name'),
+    closedCount: 0,
+    failedCount: 0,
+    failures: []
+  })
+})
+
 test('killProfileApps rejects paths that are not configured app paths', async () => {
   const { killProfileApps } = await loadProcessModules()
 
@@ -1115,6 +1135,49 @@ test('killProfileApps clears previous unclosed and running state after successfu
   )
   expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
   expect(runningProcesses.has('C:/Tools/SimHub.exe')).toBe(false)
+})
+
+test('killProfileApps suppresses wrapper warnings for SimLauncher-initiated profile switch closes', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/Cheat Engine.exe')
+  processNames.add('cheat engine.exe')
+  const { getRunningApps, killProfileApps, launchProfileApps, processNameMismatchWarnings } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { customapp1: 'C:/Tools/Cheat Engine.exe' }
+    })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Cheat Engine.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  const killPromise = killProfileApps('ac', ['C:/Tools/Cheat Engine.exe'])
+  processNames.delete('cheat engine.exe')
+  childHandlers.get('exit')?.()
+
+  await expect(killPromise).resolves.toMatchObject({ success: true, failedCount: 0 })
+  expect(processNameMismatchWarnings.size).toBe(0)
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Tools/Cheat Engine.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
 })
 
 test('killLaunchedApps uses plural message for multiple successful companion kills', async () => {
