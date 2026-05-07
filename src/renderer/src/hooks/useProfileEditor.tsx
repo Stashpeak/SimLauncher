@@ -5,7 +5,6 @@ import {
   getUtilities,
   normalizeGameProfileSet,
   normalizeProfileUtilities,
-  resolveCustomSlots,
   type ProfileUtility,
   type Profiles,
   type Utility
@@ -13,6 +12,8 @@ import {
 import { useNotify } from '../components/Notify'
 import { getSettings, getProfiles, saveProfile } from '../lib/store'
 import { getFileIcon, browsePath } from '../lib/electron'
+import { useAppsSettings } from '../components/settings/AppsContext'
+import { syncProfileUtilitiesWithSettings } from '../lib/profileEditorSettingsSync'
 
 export interface ProfileEditorProps {
   gameKey: string
@@ -28,6 +29,11 @@ export function useProfileEditor({
   onClose
 }: ProfileEditorProps) {
   const { notify } = useNotify()
+  const {
+    appPaths: settingsAppPaths,
+    appNames: settingsAppNames,
+    customSlots: settingsCustomSlots
+  } = useAppsSettings()
   const [loading, setLoading] = useState(true)
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
   const [appNames, setAppNames] = useState<Record<string, string>>({})
@@ -67,8 +73,11 @@ export function useProfileEditor({
       const profile =
         profileSet.profiles.find((entry) => entry.id === activeProfileId) ||
         getActiveGameProfile(profileSet)
-      const resolvedUtilities = getUtilities(
-        resolveCustomSlots(savedCustomSlots, paths, names, profile)
+      const { utilities: resolvedUtilities } = syncProfileUtilitiesWithSettings(
+        Array.isArray(profile.utilities) ? profile.utilities : [],
+        savedCustomSlots,
+        paths,
+        names
       )
 
       setAppPaths(paths)
@@ -110,6 +119,28 @@ export function useProfileEditor({
 
     loadData()
   }, [gameKey, activeProfileId])
+
+  useEffect(() => {
+    const { utilities: resolvedUtilities } = syncProfileUtilitiesWithSettings(
+      [],
+      settingsCustomSlots,
+      settingsAppPaths,
+      settingsAppNames
+    )
+
+    setAppPaths(settingsAppPaths)
+    setAppNames(settingsAppNames)
+    setUtilities(resolvedUtilities)
+    setProfileUtilities(
+      (currentUtilities) =>
+        syncProfileUtilitiesWithSettings(
+          currentUtilities,
+          settingsCustomSlots,
+          settingsAppPaths,
+          settingsAppNames
+        ).profileUtilities
+    )
+  }, [settingsAppNames, settingsAppPaths, settingsCustomSlots])
 
   const currentProfileState = useMemo(
     () => ({
