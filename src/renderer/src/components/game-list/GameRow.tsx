@@ -327,7 +327,9 @@ export function GameRow({
           <GameIcon game={game} isRunning={isRunning} iconUrl={gameIconUrl} />
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="game-title font-normal text-(--text-primary)">{game.name}</h3>
+              <h3 className="game-title select-none font-normal text-(--text-primary)">
+                {game.name}
+              </h3>
             </div>
             <RunningAppsStrip
               runningAppIcons={runningAppIcons}
@@ -382,7 +384,7 @@ export function GameRow({
                   height={10}
                   className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
                 />
-                <span className="min-w-0 truncate">{activeProfile.name}</span>
+                <span className="min-w-0 select-none truncate">{activeProfile.name}</span>
               </button>
               {profileMenuOpen && (
                 <div
