@@ -65,7 +65,7 @@ export function AppsSection() {
                   type="text"
                   value={appNames[utility.key] || utility.name}
                   onChange={(e) => onAppNameChange(utility.key, e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
+                  className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold tracking-wide text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
                   placeholder="App Name"
                   aria-label={`${utility.name} name`}
                   title="Editable app name"
