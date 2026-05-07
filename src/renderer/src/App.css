@@ -696,6 +696,7 @@ textarea {
 
 .settings-row-responsive .settings-control {
   flex: 1 1 17rem;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
