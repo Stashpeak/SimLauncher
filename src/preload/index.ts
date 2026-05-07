@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ProgressInfo, UpdateInfo } from 'electron-updater'
-import type { ElectronAPI, RunningAppsChangedPayload, StoreConfigChangePayload } from './api'
+import type {
+  ElectronAPI,
+  ProcessNameMismatchWarningPayload,
+  RunningAppsChangedPayload,
+  StoreConfigChangePayload
+} from './api'
 
 const electronAPI: ElectronAPI = {
   // launch
@@ -16,6 +21,11 @@ const electronAPI: ElectronAPI = {
     const handler = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('app-launch-error', handler)
     return () => ipcRenderer.removeListener('app-launch-error', handler)
+  },
+  onProcessNameMismatchWarning: (cb: (data: ProcessNameMismatchWarningPayload) => void) => {
+    const handler = (_: unknown, data: ProcessNameMismatchWarningPayload) => cb(data)
+    ipcRenderer.on('process-name-mismatch-warning', handler)
+    return () => ipcRenderer.removeListener('process-name-mismatch-warning', handler)
   },
 
   // window controls

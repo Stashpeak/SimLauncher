@@ -4,6 +4,7 @@ export const getProfileSwitchDiff = window.electronAPI.getProfileSwitchDiff
 export const switchProfileApps = window.electronAPI.switchProfileApps
 export const browsePath = window.electronAPI.browsePath
 export const onAppLaunchError = window.electronAPI.onAppLaunchError
+export const onProcessNameMismatchWarning = window.electronAPI.onProcessNameMismatchWarning
 export const minimize = () => window.electronAPI.minimize()
 export const maximize = () => window.electronAPI.maximize()
 export const close = () => window.electronAPI.close()

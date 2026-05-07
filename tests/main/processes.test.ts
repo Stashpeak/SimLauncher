@@ -266,6 +266,7 @@ beforeEach(async () => {
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
+  sender.send.mockClear()
   invalidateProcessNameCacheMock.mockClear()
   processNameMismatchWarnings.clear()
   runningProcesses.clear()
@@ -393,6 +394,13 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
   processNames.add('cheatengine-x86_64-sse4-avx2.exe')
   childHandlers.get('exit')?.()
 
+  expect(sender.send).toHaveBeenCalledWith(
+    'process-name-mismatch-warning',
+    expect.objectContaining({
+      app: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+      warning: expect.stringContaining('starts another process with a different name')
+    })
+  )
   dateNow.mockReturnValue(61000)
   await expect(getRunningApps()).resolves.toEqual(
     expect.arrayContaining([
@@ -412,6 +420,9 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
       })
     ])
   )
+  expect(
+    sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
+  ).toHaveLength(1)
   dateNow.mockRestore()
 })
 
@@ -448,6 +459,10 @@ test('killLaunchedApps does not create a wrapper warning for user-initiated clos
   childHandlers.get('exit')?.()
 
   await expect(killPromise).resolves.toMatchObject({ success: true, failedCount: 0 })
+  expect(sender.send).not.toHaveBeenCalledWith(
+    'process-name-mismatch-warning',
+    expect.objectContaining({ app: 'C:/Tools/Perplexity.exe' })
+  )
   await expect(getRunningApps()).resolves.not.toEqual(
     expect.arrayContaining([
       expect.objectContaining({

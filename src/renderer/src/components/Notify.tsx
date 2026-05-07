@@ -9,7 +9,7 @@ import {
   useState
 } from 'react'
 import { createPortal } from 'react-dom'
-import { onAppLaunchError } from '../lib/electron'
+import { onAppLaunchError, onProcessNameMismatchWarning } from '../lib/electron'
 import { CheckIcon, WarningTriangleIcon, ErrorIcon } from './icons'
 
 type ToastType = 'success' | 'warn' | 'error'
@@ -50,6 +50,17 @@ function formatLaunchErrorToast(data: unknown) {
     typeof error === 'string' && error.trim().length > 0 ? error : 'Unknown launch error'
 
   return `${appName} failed to launch: ${errorMessage}`
+}
+
+function formatProcessNameMismatchToast(data: unknown) {
+  if (!data || typeof data !== 'object') {
+    return 'A launched app may be running under a different process name.'
+  }
+
+  const { warning } = data as { warning?: unknown }
+  return typeof warning === 'string' && warning.trim().length > 0
+    ? warning
+    : 'A launched app may be running under a different process name.'
 }
 
 const TOAST_ICONS: Record<ToastType, ReactNode> = {
@@ -178,6 +189,12 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return onAppLaunchError((data: unknown) => {
       notify(formatLaunchErrorToast(data), 'error', 5000)
+    })
+  }, [notify])
+
+  useEffect(() => {
+    return onProcessNameMismatchWarning((data: unknown) => {
+      notify(formatProcessNameMismatchToast(data), 'warn', 5000)
     })
   }, [notify])
 
