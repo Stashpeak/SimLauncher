@@ -46,7 +46,7 @@ export interface ProcessNameMismatchWarningEntry {
   name: string
   gameKey: string
   warning: string
-  expiresAt: number
+  expiresAt?: number
 }
 
 export interface UnclosedProcessEntry {

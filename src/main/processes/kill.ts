@@ -10,7 +10,12 @@ import {
 import { store } from '../store'
 import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
-import { runningProcesses, unclosedProcesses } from './state'
+import {
+  processNameMismatchWarnings,
+  runningProcesses,
+  suppressProcessNameMismatchWarning,
+  unclosedProcesses
+} from './state'
 import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
@@ -23,6 +28,7 @@ interface KillAttemptResult {
   error?: string
   accessDenied?: boolean
   notFound?: boolean
+  staleTask?: boolean
   stillRunning?: boolean
 }
 
@@ -35,7 +41,11 @@ function isAccessDeniedMessage(message: string) {
 }
 
 function isNotFoundMessage(message: string) {
-  return /not found/i.test(message)
+  return /not found|no running instance/i.test(message)
+}
+
+function isStaleTaskMessage(message: string) {
+  return /no running instance/i.test(message)
 }
 
 function runTaskkill(args: string[], description: string) {
@@ -44,6 +54,7 @@ function runTaskkill(args: string[], description: string) {
     detail?: string
     accessDenied?: boolean
     notFound?: boolean
+    staleTask?: boolean
   }>((resolve) => {
     execFile('taskkill', args, { windowsHide: true }, (error, stdout, stderr) => {
       if (!error) {
@@ -53,6 +64,7 @@ function runTaskkill(args: string[], description: string) {
 
       const detail = stderr.trim() || stdout.trim() || error.message
       const notFound = isNotFoundMessage(detail)
+      const staleTask = isStaleTaskMessage(detail)
       const accessDenied = isAccessDeniedMessage(detail)
 
       if (!notFound) {
@@ -63,7 +75,8 @@ function runTaskkill(args: string[], description: string) {
         success: notFound,
         detail,
         accessDenied,
-        notFound
+        notFound,
+        staleTask
       })
     })
   })
@@ -184,7 +197,8 @@ async function killProcessTree(
       success: result.success,
       error: result.detail,
       accessDenied: result.accessDenied,
-      notFound: result.notFound
+      notFound: result.notFound,
+      staleTask: result.staleTask
     }
   }
 
@@ -255,7 +269,8 @@ async function killProcessByImageName(
       success: !failedResult,
       error: failedResult?.detail,
       accessDenied: failedResult?.accessDenied,
-      notFound: results.every((result) => result.notFound)
+      notFound: results.every((result) => result.notFound),
+      staleTask: results.every((result) => result.staleTask)
     }
   }
 
@@ -270,7 +285,8 @@ async function killProcessByImageName(
     success: result.success,
     error: result.detail,
     accessDenied: result.accessDenied,
-    notFound: result.notFound
+    notFound: result.notFound,
+    staleTask: result.staleTask
   }
 }
 
@@ -336,11 +352,24 @@ function getStoredAppPathTargets() {
   )
 }
 
-async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<KillResult> {
+function hasProcessNameMismatchWarning(gameKey?: string) {
+  return Array.from(processNameMismatchWarnings.values()).some(
+    (warning) => gameKey === undefined || warning.gameKey === gameKey
+  )
+}
+
+async function finalizeKillAttempts(
+  attempts: KillAttemptResult[],
+  gameKey?: string
+): Promise<KillResult> {
   if (attempts.length === 0) {
+    const hasMismatchWarnings = hasProcessNameMismatchWarning(gameKey)
+
     return {
       success: true,
-      message: 'No running companion apps to close.',
+      message: hasMismatchWarnings
+        ? 'No closable companion apps found. Some apps may be running under a different process name; add the shown process under tracked processes to manage it.'
+        : 'No running companion apps to close.',
       closedCount: 0,
       failedCount: 0,
       failures: []
@@ -359,7 +388,9 @@ async function finalizeKillAttempts(attempts: KillAttemptResult[]): Promise<Kill
           attempt.appPath
         )
         isElevatedInconclusive =
-          attempt.notFound === true && (await processExistsByName(attempt.processName))
+          attempt.notFound === true &&
+          attempt.staleTask !== true &&
+          processNamesAfterKill.has(attempt.processName)
         stillRunning =
           processIds.length > 0 ||
           isElevatedInconclusive ||
@@ -488,6 +519,7 @@ export async function killLaunchedApps(gameKey?: string) {
     companionTargets.delete(processName)
 
     if (processNames.has(processName)) {
+      suppressProcessNameMismatchWarning(appPath)
       killTasks.push(killProcessTree(child, appPath, appProcess?.gameKey))
     } else {
       runningProcesses.delete(appPath)
@@ -500,7 +532,7 @@ export async function killLaunchedApps(gameKey?: string) {
     }
   })
 
-  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
   return result
 }
@@ -548,6 +580,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
 
     if (runningAppEntry) {
       const [, runningApp] = runningAppEntry
+      suppressProcessNameMismatchWarning(appPath)
       killTasks.push(killProcessTree(runningApp.process, appPath, runningApp.gameKey))
       killedExeNames.add(getExeName(appPath))
       return
@@ -567,7 +600,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
     }
   })
 
-  const result = await finalizeKillAttempts(await Promise.all(killTasks))
+  const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
   return result
 }

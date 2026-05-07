@@ -58,6 +58,11 @@ export interface RunningAppsChangedPayload {
   updatedAt: number
 }
 
+export interface ProcessNameMismatchWarningPayload {
+  app: string
+  warning: string
+}
+
 export interface BrowsePathResult {
   filePath: string | null
   inputId: string
@@ -139,6 +144,9 @@ export interface ElectronAPI {
   ) => Promise<LaunchResult>
   browsePath: (inputId: string) => Promise<BrowsePathResult>
   onAppLaunchError: (cb: (data: unknown) => void) => Unsubscribe
+  onProcessNameMismatchWarning: (
+    cb: (data: ProcessNameMismatchWarningPayload) => void
+  ) => Unsubscribe
   minimize: () => Promise<void>
   maximize: () => Promise<void>
   close: () => Promise<void>
