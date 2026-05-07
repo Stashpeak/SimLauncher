@@ -1,8 +1,8 @@
 import { GAMES } from '../../lib/config'
-import { useSettings } from './SettingsContext'
+import { useGamesSettings } from './GamesContext'
 
 export function GamesSection() {
-  const { gamePaths, gameIcons, onBrowse, onGamePathChange } = useSettings()
+  const { gamePaths, gameIcons, onBrowse, onGamePathChange } = useGamesSettings()
 
   return (
     <>

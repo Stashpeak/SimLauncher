@@ -7,7 +7,7 @@ import { BehaviorSection } from './settings/BehaviorSection'
 import { ConfigSection } from './settings/ConfigSection'
 import { GamesSection } from './settings/GamesSection'
 import { SettingsSection } from './settings/SettingsSection'
-import { useSettings } from './settings/SettingsContext'
+import { useSettingsMeta } from './settings/SettingsMetaContext'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
 
@@ -29,7 +29,7 @@ function SettingsViewContent({
   updateInfo: UpdateInfo
 }) {
   const { notify } = useNotify()
-  const { loading, isDirty, saveSettings } = useSettings()
+  const { loading, isDirty, saveSettings } = useSettingsMeta()
   const [expandedSections, setExpandedSections] = useState({
     about: true,
     appearance: true,

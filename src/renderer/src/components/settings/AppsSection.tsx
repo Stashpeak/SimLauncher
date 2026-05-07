@@ -1,5 +1,5 @@
 import { MAX_CUSTOM_SLOTS } from '../../lib/config'
-import { useSettings } from './SettingsContext'
+import { useAppsSettings } from './AppsContext'
 
 function getInitials(label: string) {
   const words = label.trim().split(/\s+/).filter(Boolean)
@@ -35,7 +35,7 @@ export function AppsSection() {
     onBrowse,
     onAddCustomSlot,
     onRemoveCustomSlot
-  } = useSettings()
+  } = useAppsSettings()
 
   return (
     <>

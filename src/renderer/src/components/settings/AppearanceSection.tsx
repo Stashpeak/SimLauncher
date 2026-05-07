@@ -3,7 +3,7 @@ import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
 import { ColorPickerPopover } from '../ColorPickerPopover'
-import { useSettings } from './SettingsContext'
+import { useAppearanceSettings } from './AppearanceContext'
 
 const ZOOM_PRESETS = [
   { label: '100%', factor: 1.0 },
@@ -44,7 +44,7 @@ export function AppearanceSection() {
     onThemeModeChange,
     onFocusActiveTitleChange,
     onZoomFactorChange
-  } = useSettings()
+  } = useAppearanceSettings()
 
   return (
     <>

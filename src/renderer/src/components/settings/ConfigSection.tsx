@@ -1,7 +1,7 @@
-import { useSettings } from './SettingsContext'
+import { useSettingsMeta } from './SettingsMetaContext'
 
 export function ConfigSection() {
-  const { exportingConfig, importingConfig, onExportConfig, onImportConfig } = useSettings()
+  const { exportingConfig, importingConfig, onExportConfig, onImportConfig } = useSettingsMeta()
 
   return (
     <div className="p-5">
