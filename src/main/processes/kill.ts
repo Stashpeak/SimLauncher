@@ -390,7 +390,7 @@ async function finalizeKillAttempts(
         isElevatedInconclusive =
           attempt.notFound === true &&
           attempt.staleTask !== true &&
-          (await processExistsByName(attempt.processName))
+          processNamesAfterKill.has(attempt.processName)
         stillRunning =
           processIds.length > 0 ||
           isElevatedInconclusive ||
@@ -398,8 +398,7 @@ async function finalizeKillAttempts(
             !attempt.notFound &&
             processNamesAfterKill.has(attempt.processName))
       } else {
-        stillRunning =
-          attempt.staleTask === true ? false : processNamesAfterKill.has(attempt.processName)
+        stillRunning = processNamesAfterKill.has(attempt.processName)
       }
       return {
         ...attempt,
