@@ -6,7 +6,13 @@ import { store } from '../store'
 import { getExeName, isValidExePath } from '../utils'
 
 import { pruneUnclosedProcesses } from './kill'
-import { pruneStoppedRunningProcesses, runningProcesses, unclosedProcesses } from './state'
+import {
+  processNameMismatchWarnings,
+  pruneExpiredProcessNameMismatchWarnings,
+  pruneStoppedRunningProcesses,
+  runningProcesses,
+  unclosedProcesses
+} from './state'
 import { readRunningProcessNames } from './tasklist'
 
 export interface RunningApp {
@@ -125,6 +131,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   const processNames = await readRunningProcessNames()
   pruneStoppedRunningProcesses(processNames)
   pruneUnclosedProcesses(processNames)
+  pruneExpiredProcessNameMismatchWarnings()
 
   const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
     path: appPath,
@@ -143,6 +150,18 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       elevated: appProcess.elevated ?? appProcess.reason === 'access_denied'
     }))
   const surfacedApps = [...launchedApps, ...unclosedApps]
+  const mismatchWarnings = Array.from(processNameMismatchWarnings.values())
+    .filter((entry) => !processNames.has(getExeName(entry.path)))
+    .map((entry) => ({
+      path: entry.path,
+      name: entry.name,
+      gameKey: entry.gameKey,
+      tracked: false,
+      warning: entry.warning
+    }))
+  const warningKeys = new Set(
+    mismatchWarnings.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+  )
   const launchedKeys = new Set(
     surfacedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
   )
@@ -174,7 +193,15 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
   )
 
-  return [...surfacedApps, ...trackedApps]
+  return [
+    ...surfacedApps,
+    ...mismatchWarnings.filter(
+      (appProcess) => !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+    ),
+    ...trackedApps.filter(
+      (appProcess) => !warningKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+    )
+  ]
 }
 
 function normalizeRunningAppsSnapshot(apps: RunningApp[]) {

@@ -6,13 +6,14 @@ import path from 'path'
 import { store } from '../store'
 import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from '../utils'
 
-import { runningProcesses } from './state'
+import { processNameMismatchWarnings, runningProcesses } from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { AppLaunchResult, LaunchResult } from './types'
 import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
+const PROCESS_NAME_MISMATCH_WARNING_MS = 30000
 let launchBlockedUntil = 0
 
 export async function launchProfileApps(
@@ -324,6 +325,13 @@ function spawnDetachedApp(
 
       child.once('exit', () => {
         runningProcesses.delete(appPath)
+        processNameMismatchWarnings.set(appPath.toLowerCase(), {
+          path: appPath,
+          name: path.basename(appPath),
+          gameKey,
+          warning: `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`,
+          expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_MS
+        })
         invalidateProcessNameCache()
         publishRunningApps('exit').catch((err) => {
           console.error('Failed to publish running apps after exit:', err)
