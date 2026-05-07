@@ -303,6 +303,45 @@ test('getRunningApps surfaces a warning when a launched wrapper exits before its
   )
 })
 
+test('getRunningApps does not warn when a launched process exits after the post-launch window', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  dateNow.mockReturnValue(1000)
+  markExistingPath('C:/Program Files/CrewChief/CrewChief.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/CrewChief/CrewChief.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  dateNow.mockReturnValue(11001)
+  processNames.delete('crewchief.exe')
+  childHandlers.get('exit')?.()
+
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/CrewChief/CrewChief.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+  dateNow.mockRestore()
+})
+
 test('launchProfileApps rejects empty launches when every configured executable is invalid or missing', async () => {
   const { launchProfileApps } = await loadProcessModules()
 

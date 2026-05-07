@@ -272,6 +272,7 @@ function spawnDetachedApp(
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
+    const launchStartedAt = Date.now()
 
     const resolveOnce = (result: AppLaunchResult) => {
       if (!settled) {
@@ -325,13 +326,17 @@ function spawnDetachedApp(
 
       child.once('exit', () => {
         runningProcesses.delete(appPath)
-        processNameMismatchWarnings.set(appPath.toLowerCase(), {
-          path: appPath,
-          name: path.basename(appPath),
-          gameKey,
-          warning: `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`,
-          expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_MS
-        })
+        const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
+
+        if (exitedDuringPostLaunchWindow) {
+          processNameMismatchWarnings.set(appPath.toLowerCase(), {
+            path: appPath,
+            name: path.basename(appPath),
+            gameKey,
+            warning: `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`,
+            expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_MS
+          })
+        }
         invalidateProcessNameCache()
         publishRunningApps('exit').catch((err) => {
           console.error('Failed to publish running apps after exit:', err)
