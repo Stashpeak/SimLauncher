@@ -58,7 +58,7 @@ export function BehaviorSection() {
           aria-label="Minimize to tray on close"
         />
       </div>
-      <div className="settings-row">
+      <div className="settings-row settings-row-responsive">
         <div className="settings-label-group">
           <span className="settings-label">Launch delay between apps</span>
           <span className="settings-sublabel">Wait time before starting the next app</span>

@@ -38,7 +38,9 @@ export function SettingsSection({ title, open, onOpenChange, children }: Setting
         className={`grid transition-all duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className={open ? undefined : 'overflow-hidden'} inert={open ? undefined : true}>
-          <div className="glass-surface rounded-2xl flex flex-col pt-1">{children}</div>
+          <div className="glass-surface rounded-2xl flex flex-col pt-1 overflow-hidden">
+            {children}
+          </div>
         </div>
       </div>
     </section>

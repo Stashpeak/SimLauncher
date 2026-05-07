@@ -209,6 +209,7 @@ textarea {
 .drag-region {
   -webkit-app-region: drag;
 }
+
 .no-drag {
   -webkit-app-region: no-drag;
 }
@@ -504,9 +505,11 @@ textarea {
   display: grid;
   transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .profile-editor-closed {
   grid-template-rows: 0fr;
 }
+
 .profile-editor-open {
   grid-template-rows: 1fr;
 }
@@ -520,6 +523,7 @@ textarea {
     opacity: 0;
     transform: translateY(-8px);
   }
+
   to {
     opacity: 1;
     transform: none;
@@ -535,6 +539,7 @@ textarea {
     opacity: 0;
     transform: translateX(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -550,6 +555,7 @@ textarea {
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.4;
   }
@@ -602,10 +608,12 @@ textarea {
     opacity: 0;
     transform: translateX(30px) scale(0.92);
   }
+
   60% {
     opacity: 1;
     transform: translateX(0px) scale(1.03);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0px) scale(1);
@@ -677,6 +685,19 @@ textarea {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.settings-row-responsive {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.settings-row-responsive .settings-control {
+  flex: 1 1 17rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .settings-control-pill {
