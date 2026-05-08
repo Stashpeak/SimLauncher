@@ -18,6 +18,7 @@ import { publishRunningApps } from './running'
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
+const PROCESS_NAME_MISMATCH_WARNING_TTL_MS = 60000
 let launchBlockedUntil = 0
 
 export async function launchProfileApps(
@@ -348,7 +349,8 @@ function spawnDetachedApp(
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning
+            warning,
+            expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_TTL_MS
           })
           sendProcessNameMismatchWarning(sender, appPath, warning)
         }

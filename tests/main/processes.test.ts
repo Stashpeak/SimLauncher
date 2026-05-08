@@ -412,7 +412,7 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
       warning: expect.stringContaining('starts another process with a different name')
     })
   )
-  dateNow.mockReturnValue(61000)
+  dateNow.mockReturnValue(30000)
   await expect(getRunningApps()).resolves.toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -434,6 +434,68 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
   expect(
     sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
   ).toHaveLength(1)
+  dateNow.mockRestore()
+})
+
+test('process mismatch warnings expire after the TTL and are pruned (#351)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  dateNow.mockReturnValue(1000)
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  const { launchProfileApps, getRunningApps, processNameMismatchWarnings } =
+    await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('cheat engine.exe')
+  childHandlers.get('exit')?.()
+
+  // Warning should be created with an expiresAt field
+  expect(processNameMismatchWarnings.size).toBe(1)
+  const entry = processNameMismatchWarnings.values().next().value!
+  expect(entry.expiresAt).toBeDefined()
+  expect(entry.expiresAt).toBeGreaterThan(1000)
+
+  // Warning should still be visible before TTL expires (expiresAt = 1000 + 60000 = 61000)
+  dateNow.mockReturnValue(60999)
+  processNames.add('cheatengine-x86_64-sse4-avx2.exe')
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+
+  // After TTL expires, warning should be pruned (61000 <= 61000)
+  dateNow.mockReturnValue(61000)
+  processNames.delete('cheat engine.exe')
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+  expect(processNameMismatchWarnings.size).toBe(0)
+
   dateNow.mockRestore()
 })
 
