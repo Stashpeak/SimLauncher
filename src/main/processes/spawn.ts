@@ -335,11 +335,13 @@ function spawnDetachedApp(
       })
 
       child.once('exit', () => {
+        const processEntry = runningProcesses.get(appPath)
+        const wasGame = processEntry?.isGame ?? false
         runningProcesses.delete(appPath)
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
-        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
+        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher && !wasGame) {
           const warning = `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`
 
           processNameMismatchWarnings.set(appPath.toLowerCase(), {

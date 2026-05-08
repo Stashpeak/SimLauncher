@@ -350,7 +350,8 @@ test('getRunningApps adopts tracked child processes while a wrapper warning is a
         ]
       }
     },
-    gamePaths: { ac: 'C:/Program Files/Cheat Engine/Cheat Engine.exe' }
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { customapp1: 'C:/Program Files/Cheat Engine/Cheat Engine.exe' }
   })
   vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
 
@@ -477,6 +478,47 @@ test('killLaunchedApps does not create a wrapper warning for user-initiated clos
     expect.arrayContaining([
       expect.objectContaining({
         path: 'C:/Tools/Perplexity.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+})
+
+test('getRunningApps does not warn when a game executable exits within the post-launch window (#330)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/BeamNG.drive.exe')
+  const { launchProfileApps, getRunningApps, processNameMismatchWarnings } =
+    await loadProcessModulesWithStore({
+      gamePaths: { beamng: 'c:/games/beamng.drive.exe' }
+    })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'beamng', ['C:/Games/BeamNG.drive.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('beamng.drive.exe')
+  childHandlers.get('exit')?.()
+
+  expect(processNameMismatchWarnings.size).toBe(0)
+  expect(sender.send).not.toHaveBeenCalledWith(
+    'process-name-mismatch-warning',
+    expect.objectContaining({ app: 'C:/Games/BeamNG.drive.exe' })
+  )
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Games/BeamNG.drive.exe',
         warning: expect.any(String)
       })
     ])
