@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { MAX_CUSTOM_SLOTS } from '../../lib/config'
 import { useAppsSettings } from './AppsContext'
+import { Toggle } from '../Toggle'
 
 function getInitials(label: string) {
   const words = label.trim().split(/\s+/).filter(Boolean)
@@ -37,6 +39,12 @@ export function AppsSection() {
     onRemoveCustomSlot
   } = useAppsSettings()
 
+  const [showArgsMap, setShowArgsMap] = useState<Record<string, boolean>>({})
+
+  const toggleArgs = (key: string) => {
+    setShowArgsMap((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
   return (
     <>
       {utilities.map((utility) => (
@@ -44,35 +52,51 @@ export function AppsSection() {
           key={utility.key}
           className="flex flex-col gap-2.5 border-b border-(--header-glass-border) px-5 py-4"
         >
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) opacity-80">
-            {utility.isCustom ? (
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-(--text-secondary) opacity-80">
+              {utility.isCustom ? (
+                <div className="flex items-center gap-2">
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="shrink-0 text-(--accent)"
+                  >
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={appNames[utility.key] || utility.name}
+                    onChange={(e) => onAppNameChange(utility.key, e.target.value)}
+                    className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold normal-case tracking-wide text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
+                    placeholder="App Name"
+                    aria-label={`${utility.name} name`}
+                    title="Editable app name"
+                  />
+                </div>
+              ) : (
+                utility.name
+              )}
+            </div>
+
+            {!utility.isCustom && (
               <div className="flex items-center gap-2">
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="shrink-0 text-(--accent)"
-                >
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-                <input
-                  type="text"
-                  value={appNames[utility.key] || utility.name}
-                  onChange={(e) => onAppNameChange(utility.key, e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold normal-case tracking-wide text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
-                  placeholder="App Name"
-                  aria-label={`${utility.name} name`}
-                  title="Editable app name"
+                <span className="text-[9px] font-bold tracking-tight text-(--text-subtle) uppercase opacity-60">
+                  Custom Args
+                </span>
+                <Toggle
+                  checked={!!showArgsMap[utility.key] || !!appArgs[utility.key]}
+                  onChange={() => toggleArgs(utility.key)}
+                  size="sm"
+                  aria-label={`Toggle custom arguments for ${utility.name}`}
                 />
               </div>
-            ) : (
-              utility.name
             )}
           </div>
 
@@ -136,7 +160,7 @@ export function AppsSection() {
             </button>
           </div>
 
-          {utility.isCustom && (
+          {(utility.isCustom || showArgsMap[utility.key] || appArgs[utility.key]) && (
             <input
               type="text"
               value={appArgs[utility.key] || ''}
