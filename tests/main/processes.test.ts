@@ -546,7 +546,7 @@ test('killLaunchedApps does not create a wrapper warning for user-initiated clos
   )
 })
 
-test('getRunningApps does not warn when a game executable exits within the post-launch window (#330)', async () => {
+test('getRunningApps does not notify when a game executable exits within the post-launch window (#330)', async () => {
   const childHandlers = new Map<string, (...args: unknown[]) => void>()
   const child = {
     pid: 1234,
@@ -559,10 +559,9 @@ test('getRunningApps does not warn when a game executable exits within the post-
   }
 
   markExistingPath('C:/Games/BeamNG.drive.exe')
-  const { launchProfileApps, getRunningApps, processNameMismatchWarnings } =
-    await loadProcessModulesWithStore({
-      gamePaths: { beamng: 'c:/games/beamng.drive.exe' }
-    })
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModulesWithStore({
+    gamePaths: { beamng: 'c:/games/beamng.drive.exe' }
+  })
   vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
 
   const launchPromise = launchProfileApps(sender, 'beamng', ['C:/Games/BeamNG.drive.exe'])
@@ -572,18 +571,12 @@ test('getRunningApps does not warn when a game executable exits within the post-
   processNames.delete('beamng.drive.exe')
   childHandlers.get('exit')?.()
 
-  expect(processNameMismatchWarnings.size).toBe(0)
+  // Silent mismatch entry IS created (preserves launchedGameKeys for tracked adoption)
+  expect(processNameMismatchWarnings.size).toBe(1)
+  // But no user-facing notification is sent for game executables
   expect(sender.send).not.toHaveBeenCalledWith(
     'process-name-mismatch-warning',
     expect.objectContaining({ app: 'C:/Games/BeamNG.drive.exe' })
-  )
-  await expect(getRunningApps()).resolves.not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        path: 'C:/Games/BeamNG.drive.exe',
-        warning: expect.any(String)
-      })
-    ])
   )
 })
 

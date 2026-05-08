@@ -342,7 +342,7 @@ function spawnDetachedApp(
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
-        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher && !wasGame) {
+        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           const warning = `${path.basename(appPath)} exited shortly after launch. If it starts another process with a different name, add that executable under tracked processes to prevent duplicate launches.`
 
           processNameMismatchWarnings.set(appPath.toLowerCase(), {
@@ -352,7 +352,9 @@ function spawnDetachedApp(
             warning,
             expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_TTL_MS
           })
-          sendProcessNameMismatchWarning(sender, appPath, warning)
+          if (!wasGame) {
+            sendProcessNameMismatchWarning(sender, appPath, warning)
+          }
         }
         invalidateProcessNameCache()
         publishRunningApps('exit').catch((err) => {
