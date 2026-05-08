@@ -5,6 +5,7 @@ export interface RunningAppIcon {
   icon: string | null
   name: string
   path: string
+  gameKey: string
   warning?: string
   elevated?: boolean
 }
@@ -40,7 +41,7 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
               }
               onContextMenu={(e) => {
                 e.preventDefault()
-                showAppContextMenu(app.path)
+                showAppContextMenu(app.path, app.gameKey)
               }}
             />
           )
@@ -57,7 +58,7 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
             title={app.warning || app.name}
             onContextMenu={(e) => {
               e.preventDefault()
-              showAppContextMenu(app.path)
+              showAppContextMenu(app.path, app.gameKey)
             }}
           >
             {app.name

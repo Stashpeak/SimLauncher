@@ -38,8 +38,16 @@ export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()) {
   })
 }
 
-export function dismissAppIcon(appPath: string) {
+export function getUnclosedProcessKey(
+  gameKey: string | undefined,
+  appPath: string,
+  processName: string
+) {
+  return `${gameKey || 'unknown'}:${(appPath || processName).toLowerCase()}`
+}
+
+export function dismissAppIcon(appPath: string, gameKey?: string) {
   const normalizedPath = appPath.toLowerCase()
   processNameMismatchWarnings.delete(normalizedPath)
-  unclosedProcesses.delete(normalizedPath)
+  unclosedProcesses.delete(getUnclosedProcessKey(gameKey, appPath, getExeName(appPath)))
 }

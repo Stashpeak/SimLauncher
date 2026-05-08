@@ -2,12 +2,12 @@ import { BrowserWindow, Menu, MenuItemConstructorOptions, ipcMain } from 'electr
 import { dismissAppIcon, publishRunningApps } from '../processes'
 
 export function registerContextMenuHandlers() {
-  ipcMain.handle('show-app-context-menu', (event, appPath: string) => {
+  ipcMain.handle('show-app-context-menu', (event, appPath: string, gameKey: string) => {
     const template: MenuItemConstructorOptions[] = [
       {
         label: 'Dismiss Icon',
         click: () => {
-          dismissAppIcon(appPath)
+          dismissAppIcon(appPath, gameKey)
           publishRunningApps('scan').catch((err) => {
             console.error('Failed to publish running apps after dismissing icon', err)
           })

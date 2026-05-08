@@ -128,6 +128,7 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
             icon: appIconCache[normalizePath(a.path)] ?? null,
             name: a.name,
             path: a.path,
+            gameKey: a.gameKey,
             warning: a.warning,
             elevated: a.elevated
           }))

@@ -14,7 +14,8 @@ import {
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
-  unclosedProcesses
+  unclosedProcesses,
+  getUnclosedProcessKey
 } from './state'
 import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
@@ -151,33 +152,6 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
   })
 }
 
-function processExistsByName(processName: string) {
-  return new Promise<boolean>((resolve) => {
-    const script = [
-      `$name = '${escapeWmiString(processName)}'`,
-      'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
-      '  Select-Object -First 1 -ExpandProperty ProcessId |',
-      '  ConvertTo-Json -Compress'
-    ].join('\n')
-
-    execFile(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-      { windowsHide: true },
-      (error, stdout, stderr) => {
-        if (error) {
-          const detail = stderr.trim() || stdout.trim() || error.message
-          console.error(`Failed to check process existence for ${processName}: ${detail}`)
-          resolve(false)
-          return
-        }
-
-        resolve(parseProcessIds(stdout).length > 0)
-      }
-    )
-  })
-}
-
 async function killProcessTree(
   child: ChildProcess,
   appPath: string,
@@ -288,10 +262,6 @@ async function killProcessByImageName(
     notFound: result.notFound,
     staleTask: result.staleTask
   }
-}
-
-function getUnclosedProcessKey(gameKey: string | undefined, appPath: string, processName: string) {
-  return `${gameKey || 'unknown'}:${(appPath || processName).toLowerCase()}`
 }
 
 function clearUnclosedProcess(
