@@ -288,7 +288,7 @@ export function useProfileEditor({
     setTrackedProcessPaths((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
   }
 
-  const executeLaunch = async () => {
+  const executeLaunch = useCallback(async () => {
     setShowLaunchConfirm(false)
     onClose()
     onLaunchStart?.()
@@ -311,15 +311,15 @@ export function useProfileEditor({
     } finally {
       onLaunchEnd?.(cooldownMs)
     }
-  }
+  }, [gameKey, notify, onClose, onLaunchEnd, onLaunchStart, setShowLaunchConfirm])
 
-  const handleLaunch = async () => {
+  const handleLaunch = useCallback(async () => {
     if (isDirty) {
       setShowLaunchConfirm(true)
     } else {
       await executeLaunch()
     }
-  }
+  }, [isDirty, executeLaunch, setShowLaunchConfirm])
 
   const handleSave = async (shouldLaunch = false) => {
     if (shouldLaunch) setShowLaunchConfirm(false)
