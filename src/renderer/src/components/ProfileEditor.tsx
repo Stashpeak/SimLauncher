@@ -87,11 +87,9 @@ export function ProfileEditor(props: ProfileEditorProps) {
         title="Unsaved Changes"
         message="You have unsaved changes in this profile. Do you want to save them before launching?"
         saveLabel="Save Changes & Launch"
+        discardLabel="Launch Without Saving"
         onSave={() => editor.handleSave(true)}
-        onDiscard={() => {
-          editor.setShowLaunchConfirm(false)
-          props.onClose()
-        }}
+        onDiscard={editor.handleDiscardAndLaunch}
         onCancel={() => editor.setShowLaunchConfirm(false)}
       />
 

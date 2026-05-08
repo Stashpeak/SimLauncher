@@ -353,6 +353,21 @@ export function useProfileEditor({
     onClose()
   }
 
+  const handleDiscardAndLaunch = async () => {
+    setShowLaunchConfirm(false)
+    const { launchProfile } = await import('../lib/electron')
+    const result = await launchProfile(gameKey)
+    if (!result.success) {
+      notify(result.error || 'Failed to launch profile', 'error')
+    } else {
+      notify(
+        result.warning || result.message || `Launching profile`,
+        result.warning ? 'warn' : 'success'
+      )
+    }
+    onClose()
+  }
+
   const handleDeleteProfile = async () => {
     const allProfiles = await getProfiles()
     const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
@@ -451,6 +466,7 @@ export function useProfileEditor({
     handleIconFailed: (utilityKey: string) =>
       setFailedIcons((prev) => ({ ...prev, [utilityKey]: true })),
     handleLaunch,
+    handleDiscardAndLaunch,
     handleSave,
     handleDeleteProfile,
     confirmDeleteProfile,
