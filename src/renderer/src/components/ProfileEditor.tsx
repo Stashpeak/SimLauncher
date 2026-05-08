@@ -65,7 +65,6 @@ export function ProfileEditor(props: ProfileEditorProps) {
           isDirty={editor.isDirty}
           canDeleteProfile={editor.profileCount > 1}
           onSave={() => editor.handleSave(false)}
-          onLaunch={editor.handleLaunch}
           onCloseAttempt={editor.handleCloseAttempt}
           onDeleteProfile={editor.handleDeleteProfile}
         />

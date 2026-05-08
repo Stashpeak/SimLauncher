@@ -20,13 +20,15 @@ export interface ProfileEditorProps {
   activeProfileId: string
   onProfilesChanged: () => Promise<unknown>
   onClose: () => void
+  onLaunchRequest?: (handleLaunch: () => void) => void
 }
 
 export function useProfileEditor({
   gameKey,
   activeProfileId,
   onProfilesChanged,
-  onClose
+  onClose,
+  onLaunchRequest
 }: ProfileEditorProps) {
   const { notify } = useNotify()
   const {
@@ -393,6 +395,12 @@ export function useProfileEditor({
     notify('Profile deleted', 'warn', 2500)
     onClose()
   }
+
+  useEffect(() => {
+    if (onLaunchRequest) {
+      onLaunchRequest(handleLaunch)
+    }
+  }, [onLaunchRequest, handleLaunch])
 
   const utilityByKey = new Map(utilities.map((utility) => [utility.key, utility]))
   const availableUtilityEntries = profileUtilities.filter(
