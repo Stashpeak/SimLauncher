@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { showAppContextMenu } from '../../lib/electron'
 
 export interface RunningAppIcon {
   icon: string | null
@@ -39,7 +40,7 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
               }
               onContextMenu={(e) => {
                 e.preventDefault()
-                window.electronAPI.showAppContextMenu(app.path)
+                showAppContextMenu(app.path)
               }}
             />
           )
@@ -56,7 +57,7 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
             title={app.warning || app.name}
             onContextMenu={(e) => {
               e.preventDefault()
-              window.electronAPI.showAppContextMenu(app.path)
+              showAppContextMenu(app.path)
             }}
           >
             {app.name
