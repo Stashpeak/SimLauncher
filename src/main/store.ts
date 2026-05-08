@@ -554,10 +554,7 @@ export function getSupportedConfigValues(config: Record<string, unknown>) {
     }
 
     if (key === 'appArgs') {
-      const customUtilityKeys = new Set(
-        [...utilityKeys].filter((utilityKey) => /^customapp\d+$/.test(utilityKey))
-      )
-      const appArgs = sanitizeArgsRecord(value, customUtilityKeys)
+      const appArgs = sanitizeArgsRecord(value, utilityKeys)
 
       if (appArgs) {
         supportedConfig.appArgs = appArgs
