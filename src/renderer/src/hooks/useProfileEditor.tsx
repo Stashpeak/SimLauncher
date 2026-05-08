@@ -322,6 +322,7 @@ export function useProfileEditor({
   }
 
   const handleSave = async (shouldLaunch = false) => {
+    if (shouldLaunch) setShowLaunchConfirm(false)
     const allProfiles = await getProfiles()
     const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
     const activeProfile =
