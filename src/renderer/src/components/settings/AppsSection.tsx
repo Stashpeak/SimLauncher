@@ -92,7 +92,6 @@ export function AppsSection() {
               <Toggle
                 checked={!!showArgsMap[utility.key] || !!appArgs[utility.key]}
                 onChange={() => toggleArgs(utility.key)}
-                size="sm"
                 aria-label={`Toggle custom arguments for ${utility.name}`}
               />
             </div>
