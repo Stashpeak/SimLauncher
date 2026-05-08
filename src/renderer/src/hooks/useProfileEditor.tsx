@@ -285,6 +285,8 @@ export function useProfileEditor({
   }
 
   const executeLaunch = async () => {
+    setShowLaunchConfirm(false)
+    onClose()
     const { launchProfile } = await import('../lib/electron')
     const result = await launchProfile(gameKey)
     if (!result.success) {
@@ -295,7 +297,6 @@ export function useProfileEditor({
         result.warning ? 'warn' : 'success'
       )
     }
-    onClose()
   }
 
   const handleLaunch = async () => {
@@ -342,15 +343,14 @@ export function useProfileEditor({
     notify('Profile saved!', 'success', 2500)
 
     if (shouldLaunch) {
-      await executeLaunch()
+      executeLaunch()
     } else {
       onClose()
     }
   }
 
-  const handleDiscardAndLaunch = async () => {
-    setShowLaunchConfirm(false)
-    await executeLaunch()
+  const handleDiscardAndLaunch = () => {
+    executeLaunch()
   }
 
   const handleDeleteProfile = async () => {
