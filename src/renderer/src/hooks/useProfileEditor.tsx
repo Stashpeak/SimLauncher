@@ -284,21 +284,25 @@ export function useProfileEditor({
     setTrackedProcessPaths((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
   }
 
+  const executeLaunch = async () => {
+    const { launchProfile } = await import('../lib/electron')
+    const result = await launchProfile(gameKey)
+    if (!result.success) {
+      notify(result.error || 'Failed to launch profile', 'error')
+    } else {
+      notify(
+        result.warning || result.message || 'Launching profile',
+        result.warning ? 'warn' : 'success'
+      )
+    }
+    onClose()
+  }
+
   const handleLaunch = async () => {
     if (isDirty) {
       setShowLaunchConfirm(true)
     } else {
-      const { launchProfile } = await import('../lib/electron')
-      const result = await launchProfile(gameKey)
-      if (!result.success) {
-        notify(result.error || 'Failed to launch profile', 'error')
-      } else {
-        notify(
-          result.warning || result.message || `Launching profile`,
-          result.warning ? 'warn' : 'success'
-        )
-      }
-      onClose()
+      await executeLaunch()
     }
   }
 
@@ -338,34 +342,15 @@ export function useProfileEditor({
     notify('Profile saved!', 'success', 2500)
 
     if (shouldLaunch) {
-      const { launchProfile } = await import('../lib/electron')
-      const result = await launchProfile(gameKey)
-      if (!result.success) {
-        notify(result.error || 'Failed to launch profile', 'error')
-      } else {
-        notify(
-          result.warning || result.message || `Launching profile`,
-          result.warning ? 'warn' : 'success'
-        )
-      }
+      await executeLaunch()
+    } else {
+      onClose()
     }
-
-    onClose()
   }
 
   const handleDiscardAndLaunch = async () => {
     setShowLaunchConfirm(false)
-    const { launchProfile } = await import('../lib/electron')
-    const result = await launchProfile(gameKey)
-    if (!result.success) {
-      notify(result.error || 'Failed to launch profile', 'error')
-    } else {
-      notify(
-        result.warning || result.message || `Launching profile`,
-        result.warning ? 'warn' : 'success'
-      )
-    }
-    onClose()
+    await executeLaunch()
   }
 
   const handleDeleteProfile = async () => {
