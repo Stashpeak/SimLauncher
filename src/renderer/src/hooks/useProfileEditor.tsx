@@ -182,13 +182,13 @@ export function useProfileEditor({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !showLaunchConfirm && !profileDeleteConfirm) {
         handleCloseAttempt()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleCloseAttempt])
+  }, [handleCloseAttempt, showLaunchConfirm, profileDeleteConfirm])
 
   const handleToggleUtility = (key: string) => {
     setProfileUtilities((currentUtilities) => {
