@@ -350,7 +350,7 @@ function spawnDetachedApp(
             name: path.basename(appPath),
             gameKey,
             warning,
-            expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_TTL_MS
+            ...(wasGame ? {} : { expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_TTL_MS })
           })
           if (!wasGame) {
             sendProcessNameMismatchWarning(sender, appPath, warning)

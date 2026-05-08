@@ -573,6 +573,9 @@ test('getRunningApps does not notify when a game executable exits within the pos
 
   // Silent mismatch entry IS created (preserves launchedGameKeys for tracked adoption)
   expect(processNameMismatchWarnings.size).toBe(1)
+  const entry = processNameMismatchWarnings.values().next().value!
+  // Game entries persist indefinitely — no TTL, cleaned up when tracked child exits
+  expect(entry.expiresAt).toBeUndefined()
   // But no user-facing notification is sent for game executables
   expect(sender.send).not.toHaveBeenCalledWith(
     'process-name-mismatch-warning',
