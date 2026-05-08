@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { MAX_CUSTOM_SLOTS } from '../../lib/config'
 import { useAppsSettings } from './AppsContext'
-import { Toggle } from '../Toggle'
+import { ChevronDownIcon } from '../icons'
 
 function getInitials(label: string) {
   const words = label.trim().split(/\s+/).filter(Boolean)
@@ -92,16 +92,22 @@ export function AppsSection() {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-bold tracking-tight text-(--text-subtle) uppercase opacity-60">
+            <button
+              type="button"
+              onClick={() => toggleArgs(utility.key)}
+              className="group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-(--glass-bg)"
+              aria-label={`Toggle custom arguments for ${utility.name}`}
+              aria-expanded={isArgsVisible(utility.key)}
+            >
+              <span className="text-[9px] font-bold tracking-tight text-(--text-subtle) uppercase opacity-60 transition-opacity group-hover:opacity-80">
                 Custom Args
               </span>
-              <Toggle
-                checked={isArgsVisible(utility.key)}
-                onChange={() => toggleArgs(utility.key)}
-                aria-label={`Toggle custom arguments for ${utility.name}`}
+              <ChevronDownIcon
+                width={12}
+                height={12}
+                className={`shrink-0 text-(--text-muted) transition-transform ${isArgsVisible(utility.key) ? 'rotate-180' : ''}`}
               />
-            </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-4">
