@@ -85,19 +85,17 @@ export function AppsSection() {
               )}
             </div>
 
-            {!utility.isCustom && (
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold tracking-tight text-(--text-subtle) uppercase opacity-60">
-                  Custom Args
-                </span>
-                <Toggle
-                  checked={!!showArgsMap[utility.key] || !!appArgs[utility.key]}
-                  onChange={() => toggleArgs(utility.key)}
-                  size="sm"
-                  aria-label={`Toggle custom arguments for ${utility.name}`}
-                />
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold tracking-tight text-(--text-subtle) uppercase opacity-60">
+                Custom Args
+              </span>
+              <Toggle
+                checked={!!showArgsMap[utility.key] || !!appArgs[utility.key]}
+                onChange={() => toggleArgs(utility.key)}
+                size="sm"
+                aria-label={`Toggle custom arguments for ${utility.name}`}
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
@@ -160,7 +158,7 @@ export function AppsSection() {
             </button>
           </div>
 
-          {(utility.isCustom || showArgsMap[utility.key] || appArgs[utility.key]) && (
+          {(showArgsMap[utility.key] || appArgs[utility.key]) && (
             <input
               type="text"
               value={appArgs[utility.key] || ''}
