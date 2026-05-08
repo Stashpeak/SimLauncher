@@ -55,6 +55,7 @@ export function useProfileEditor({
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
   const [fetchingIcons, setFetchingIcons] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showLaunchConfirm, setShowLaunchConfirm] = useState(false)
   const [profileDeleteConfirm, setProfileDeleteConfirm] = useState<{
     profileId: string
     profileName: string
@@ -281,7 +282,25 @@ export function useProfileEditor({
     setTrackedProcessPaths((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
   }
 
-  const handleSave = async () => {
+  const handleLaunch = async () => {
+    if (isDirty) {
+      setShowLaunchConfirm(true)
+    } else {
+      const { launchProfile } = await import('../lib/electron')
+      const result = await launchProfile(gameKey)
+      if (!result.success) {
+        notify(result.error || 'Failed to launch profile', 'error')
+      } else {
+        notify(
+          result.warning || result.message || `Launching profile`,
+          result.warning ? 'warn' : 'success'
+        )
+      }
+      onClose()
+    }
+  }
+
+  const handleSave = async (shouldLaunch = false) => {
     const allProfiles = await getProfiles()
     const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
     const activeProfile =
@@ -315,6 +334,20 @@ export function useProfileEditor({
     resetDirty()
 
     notify('Profile saved!', 'success', 2500)
+
+    if (shouldLaunch) {
+      const { launchProfile } = await import('../lib/electron')
+      const result = await launchProfile(gameKey)
+      if (!result.success) {
+        notify(result.error || 'Failed to launch profile', 'error')
+      } else {
+        notify(
+          result.warning || result.message || `Launching profile`,
+          result.warning ? 'warn' : 'success'
+        )
+      }
+    }
+
     onClose()
   }
 
@@ -393,6 +426,8 @@ export function useProfileEditor({
     fetchingIcons,
     showConfirm,
     setShowConfirm,
+    showLaunchConfirm,
+    setShowLaunchConfirm,
     profileDeleteConfirm,
     setProfileDeleteConfirm,
     setDragUtilityId,
@@ -407,6 +442,7 @@ export function useProfileEditor({
     handleRemoveTrackedProcess,
     handleIconFailed: (utilityKey: string) =>
       setFailedIcons((prev) => ({ ...prev, [utilityKey]: true })),
+    handleLaunch,
     handleSave,
     handleDeleteProfile,
     confirmDeleteProfile,
