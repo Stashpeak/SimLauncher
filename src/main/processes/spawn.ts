@@ -18,6 +18,7 @@ import { publishRunningApps } from './running'
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
+const PROCESS_NAME_MISMATCH_WARNING_TTL_MS = 60000
 let launchBlockedUntil = 0
 
 export async function launchProfileApps(
@@ -335,6 +336,8 @@ function spawnDetachedApp(
       })
 
       child.once('exit', () => {
+        const processEntry = runningProcesses.get(appPath)
+        const wasGame = processEntry?.isGame ?? false
         runningProcesses.delete(appPath)
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
@@ -346,9 +349,12 @@ function spawnDetachedApp(
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning
+            warning,
+            ...(wasGame ? {} : { expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_TTL_MS })
           })
-          sendProcessNameMismatchWarning(sender, appPath, warning)
+          if (!wasGame) {
+            sendProcessNameMismatchWarning(sender, appPath, warning)
+          }
         }
         invalidateProcessNameCache()
         publishRunningApps('exit').catch((err) => {

@@ -350,7 +350,8 @@ test('getRunningApps adopts tracked child processes while a wrapper warning is a
         ]
       }
     },
-    gamePaths: { ac: 'C:/Program Files/Cheat Engine/Cheat Engine.exe' }
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { customapp1: 'C:/Program Files/Cheat Engine/Cheat Engine.exe' }
   })
   vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
 
@@ -411,7 +412,7 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
       warning: expect.stringContaining('starts another process with a different name')
     })
   )
-  dateNow.mockReturnValue(61000)
+  dateNow.mockReturnValue(30000)
   await expect(getRunningApps()).resolves.toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -433,6 +434,68 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
   expect(
     sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
   ).toHaveLength(1)
+  dateNow.mockRestore()
+})
+
+test('process mismatch warnings expire after the TTL and are pruned (#351)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  dateNow.mockReturnValue(1000)
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  const { launchProfileApps, getRunningApps, processNameMismatchWarnings } =
+    await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('cheat engine.exe')
+  childHandlers.get('exit')?.()
+
+  // Warning should be created with an expiresAt field
+  expect(processNameMismatchWarnings.size).toBe(1)
+  const entry = processNameMismatchWarnings.values().next().value!
+  expect(entry.expiresAt).toBeDefined()
+  expect(entry.expiresAt).toBeGreaterThan(1000)
+
+  // Warning should still be visible before TTL expires (expiresAt = 1000 + 60000 = 61000)
+  dateNow.mockReturnValue(60999)
+  processNames.add('cheatengine-x86_64-sse4-avx2.exe')
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+
+  // After TTL expires, warning should be pruned (61000 <= 61000)
+  dateNow.mockReturnValue(61000)
+  processNames.delete('cheat engine.exe')
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
+        warning: expect.any(String)
+      })
+    ])
+  )
+  expect(processNameMismatchWarnings.size).toBe(0)
+
   dateNow.mockRestore()
 })
 
@@ -480,6 +543,43 @@ test('killLaunchedApps does not create a wrapper warning for user-initiated clos
         warning: expect.any(String)
       })
     ])
+  )
+})
+
+test('getRunningApps does not notify when a game executable exits within the post-launch window (#330)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/BeamNG.drive.exe')
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModulesWithStore({
+    gamePaths: { beamng: 'c:/games/beamng.drive.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'beamng', ['C:/Games/BeamNG.drive.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('beamng.drive.exe')
+  childHandlers.get('exit')?.()
+
+  // Silent mismatch entry IS created (preserves launchedGameKeys for tracked adoption)
+  expect(processNameMismatchWarnings.size).toBe(1)
+  const entry = processNameMismatchWarnings.values().next().value!
+  // Game entries persist indefinitely — no TTL, cleaned up when tracked child exits
+  expect(entry.expiresAt).toBeUndefined()
+  // But no user-facing notification is sent for game executables
+  expect(sender.send).not.toHaveBeenCalledWith(
+    'process-name-mismatch-warning',
+    expect.objectContaining({ app: 'C:/Games/BeamNG.drive.exe' })
   )
 })
 
