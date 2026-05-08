@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { showAppContextMenu } from '../../lib/electron'
 
 export interface RunningAppIcon {
   icon: string | null
   name: string
+  path: string
+  gameKey: string
   warning?: string
   elevated?: boolean
 }
@@ -36,6 +39,12 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
               onError={() =>
                 setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))
               }
+              onContextMenu={(e) => {
+                if (app.warning) {
+                  e.preventDefault()
+                  showAppContextMenu(app.path, app.gameKey)
+                }
+              }}
             />
           )
         }
@@ -47,8 +56,14 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
         return (
           <div
             key={i}
-            className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
+            className={`fallback-initial-icon select-none h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
             title={app.warning || app.name}
+            onContextMenu={(e) => {
+              if (app.warning) {
+                e.preventDefault()
+                showAppContextMenu(app.path, app.gameKey)
+              }
+            }}
           >
             {app.name
               .replace(/\.exe$/i, '')
