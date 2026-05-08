@@ -191,19 +191,19 @@ function parseCommandLineArgs(input: string) {
   return args
 }
 
-function getCustomAppArgs(appPath: string) {
+function getAppArgs(appPath: string) {
   const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
   const appArgs = (store.get('appArgs') as Record<string, string> | undefined) || {}
   const normalizedAppPath = appPath.trim().toLowerCase()
-  const customAppEntry = Object.entries(appPaths).find(
-    ([key, value]) => /^customapp\d+$/.test(key) && value.trim().toLowerCase() === normalizedAppPath
+  const appEntry = Object.entries(appPaths).find(
+    ([, value]) => value.trim().toLowerCase() === normalizedAppPath
   )
 
-  if (!customAppEntry) {
+  if (!appEntry) {
     return []
   }
 
-  const args = appArgs[customAppEntry[0]]
+  const args = appArgs[appEntry[0]]
   return typeof args === 'string' && args.trim().length > 0 ? parseCommandLineArgs(args) : []
 }
 
@@ -296,7 +296,7 @@ function spawnDetachedApp(
     }
 
     try {
-      const args = getCustomAppArgs(appPath)
+      const args = getAppArgs(appPath)
       const child = spawn(appPath, args, { detached: true, stdio: 'ignore' })
       runningProcesses.set(appPath, {
         process: child,
@@ -328,7 +328,7 @@ function spawnDetachedApp(
         }
 
         if (isElevatedLaunchError(err)) {
-          resolveOnce(await launchElevated(appPath, args))
+          resolveOnce(await launchElevated(appPath, getAppArgs(appPath)))
           return
         }
 
@@ -368,7 +368,7 @@ function spawnDetachedApp(
       console.error(`Error launching ${appPath}: ${message}`)
 
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getCustomAppArgs(appPath)).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appPath)).then(resolveOnce)
         return
       }
 
