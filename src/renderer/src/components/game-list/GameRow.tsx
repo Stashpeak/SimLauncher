@@ -219,7 +219,14 @@ export function GameRow({
     closeProfileMenu(true)
   }
 
+  const handleLaunchRequest = useRef<(() => void) | null>(null)
+
   const handleLaunch = async () => {
+    if (isActive && handleLaunchRequest.current) {
+      handleLaunchRequest.current()
+      return
+    }
+
     if (isLaunchBlocked) {
       return
     }
@@ -534,6 +541,11 @@ export function GameRow({
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
                 onClose={onToggleEditor}
+                onLaunchRequest={(launcher) => {
+                  handleLaunchRequest.current = launcher
+                }}
+                onLaunchStart={() => onLaunchStart(game.key)}
+                onLaunchEnd={(cooldownMs) => onLaunchEnd(game.key, cooldownMs)}
               />
             </div>
           )}

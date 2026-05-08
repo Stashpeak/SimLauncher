@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 interface ConfirmDialogProps {
   isOpen: boolean
@@ -41,7 +42,7 @@ export function ConfirmDialog({
 
   if (!isOpen) return null
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
       {/* Backdrop overlay */}
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
@@ -78,6 +79,7 @@ export function ConfirmDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

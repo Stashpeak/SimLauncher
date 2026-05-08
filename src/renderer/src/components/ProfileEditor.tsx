@@ -64,7 +64,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
         <ProfileEditorActions
           isDirty={editor.isDirty}
           canDeleteProfile={editor.profileCount > 1}
-          onSave={editor.handleSave}
+          onSave={() => editor.handleSave(false)}
           onCloseAttempt={editor.handleCloseAttempt}
           onDeleteProfile={editor.handleDeleteProfile}
         />
@@ -74,12 +74,23 @@ export function ProfileEditor(props: ProfileEditorProps) {
         isOpen={editor.showConfirm}
         title="Unsaved Changes"
         message="You have unsaved changes in this profile. Do you want to save them before leaving?"
-        onSave={editor.handleSave}
+        onSave={() => editor.handleSave(false)}
         onDiscard={() => {
           editor.setShowConfirm(false)
           props.onClose()
         }}
         onCancel={() => editor.setShowConfirm(false)}
+      />
+
+      <ConfirmDialog
+        isOpen={editor.showLaunchConfirm}
+        title="Unsaved Changes"
+        message="You have unsaved changes in this profile. Do you want to save them before launching?"
+        saveLabel="Save Changes & Launch"
+        discardLabel="Launch Without Saving"
+        onSave={() => editor.handleSave(true)}
+        onDiscard={editor.handleDiscardAndLaunch}
+        onCancel={() => editor.setShowLaunchConfirm(false)}
       />
 
       <ConfirmDialog
