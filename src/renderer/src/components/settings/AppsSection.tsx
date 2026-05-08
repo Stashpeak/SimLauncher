@@ -41,8 +41,15 @@ export function AppsSection() {
 
   const [showArgsMap, setShowArgsMap] = useState<Record<string, boolean>>({})
 
+  const isArgsVisible = (key: string) => {
+    return showArgsMap[key] !== undefined ? showArgsMap[key] : !!appArgs[key]
+  }
+
   const toggleArgs = (key: string) => {
-    setShowArgsMap((prev) => ({ ...prev, [key]: !prev[key] }))
+    setShowArgsMap((prev) => ({
+      ...prev,
+      [key]: prev[key] !== undefined ? !prev[key] : !appArgs[key]
+    }))
   }
 
   return (
@@ -90,7 +97,7 @@ export function AppsSection() {
                 Custom Args
               </span>
               <Toggle
-                checked={!!showArgsMap[utility.key] || !!appArgs[utility.key]}
+                checked={isArgsVisible(utility.key)}
                 onChange={() => toggleArgs(utility.key)}
                 aria-label={`Toggle custom arguments for ${utility.name}`}
               />
@@ -157,7 +164,7 @@ export function AppsSection() {
             </button>
           </div>
 
-          {(showArgsMap[utility.key] || appArgs[utility.key]) && (
+          {isArgsVisible(utility.key) && (
             <input
               type="text"
               value={appArgs[utility.key] || ''}
