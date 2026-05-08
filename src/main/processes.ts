@@ -5,6 +5,7 @@ export {
   subscribeRunningApps,
   unsubscribeRunningApps
 } from './processes/running'
+export { dismissAppIcon } from './processes/state'
 export { launchProfileApps, isRunningExePath } from './processes/spawn'
 export { readRunningProcessNames, invalidateProcessNameCache } from './processes/tasklist'
 export type { RunningAppsChangedPayload, RunningAppsChangeReason } from './processes/running'

@@ -37,3 +37,9 @@ export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()) {
     }
   })
 }
+
+export function dismissAppIcon(appPath: string) {
+  const normalizedPath = appPath.toLowerCase()
+  processNameMismatchWarnings.delete(normalizedPath)
+  unclosedProcesses.delete(normalizedPath)
+}

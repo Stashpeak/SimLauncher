@@ -3,6 +3,7 @@ import { useState } from 'react'
 export interface RunningAppIcon {
   icon: string | null
   name: string
+  path: string
   warning?: string
   elevated?: boolean
 }
@@ -36,6 +37,10 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
               onError={() =>
                 setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))
               }
+              onContextMenu={(e) => {
+                e.preventDefault()
+                window.electronAPI.showAppContextMenu(app.path)
+              }}
             />
           )
         }
@@ -49,6 +54,10 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
             key={i}
             className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
             title={app.warning || app.name}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              window.electronAPI.showAppContextMenu(app.path)
+            }}
           >
             {app.name
               .replace(/\.exe$/i, '')

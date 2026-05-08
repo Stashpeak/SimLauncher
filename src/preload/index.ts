@@ -100,7 +100,8 @@ const electronAPI: ElectronAPI = {
   cancelImportConfig: (token: string) => ipcRenderer.invoke('cancel-import-config', token),
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),
   getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath),
-  getVersion: () => ipcRenderer.invoke('get-version')
+  getVersion: () => ipcRenderer.invoke('get-version'),
+  showAppContextMenu: (appPath: string) => ipcRenderer.invoke('show-app-context-menu', appPath)
 }
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI)
