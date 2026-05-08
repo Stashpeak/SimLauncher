@@ -21,6 +21,8 @@ export interface ProfileEditorProps {
   onProfilesChanged: () => Promise<unknown>
   onClose: () => void
   onLaunchRequest?: (handleLaunch: () => void) => void
+  onLaunchStart?: () => void
+  onLaunchEnd?: (cooldownMs: number) => void
 }
 
 export function useProfileEditor({
@@ -28,7 +30,9 @@ export function useProfileEditor({
   activeProfileId,
   onProfilesChanged,
   onClose,
-  onLaunchRequest
+  onLaunchRequest,
+  onLaunchStart,
+  onLaunchEnd
 }: ProfileEditorProps) {
   const { notify } = useNotify()
   const {
@@ -287,15 +291,25 @@ export function useProfileEditor({
   const executeLaunch = async () => {
     setShowLaunchConfirm(false)
     onClose()
-    const { launchProfile } = await import('../lib/electron')
-    const result = await launchProfile(gameKey)
-    if (!result.success) {
-      notify(result.error || 'Failed to launch profile', 'error')
-    } else {
-      notify(
-        result.warning || result.message || 'Launching profile',
-        result.warning ? 'warn' : 'success'
-      )
+    onLaunchStart?.()
+    let cooldownMs = 0
+    try {
+      const { launchProfile } = await import('../lib/electron')
+      const result = await launchProfile(gameKey)
+      cooldownMs = result.launchedCount === 0 ? 0 : 10000
+      if (!result.success) {
+        notify(result.error || 'Failed to launch profile', 'error')
+      } else {
+        notify(
+          result.warning || result.message || 'Launching profile',
+          result.warning ? 'warn' : 'success'
+        )
+      }
+    } catch (err) {
+      notify('Failed to launch profile', 'error')
+      console.error(err)
+    } finally {
+      onLaunchEnd?.(cooldownMs)
     }
   }
 

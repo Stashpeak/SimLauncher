@@ -544,6 +544,8 @@ export function GameRow({
                 onLaunchRequest={(launcher) => {
                   handleLaunchRequest.current = launcher
                 }}
+                onLaunchStart={() => onLaunchStart(game.key)}
+                onLaunchEnd={(cooldownMs) => onLaunchEnd(game.key, cooldownMs)}
               />
             </div>
           )}
