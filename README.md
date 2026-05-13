@@ -87,35 +87,6 @@ SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus 20 custom ap
 
 ---
 
-## Development
-
-**Requirements:** Node.js 20+
-
-```bash
-# Install dependencies
-npm install
-
-# Run in development
-npm run dev
-
-# Build app output
-npm run build
-
-# Build Windows installer
-npm run dist:win
-```
-
-The built installer will appear in `dist/`.
-
-**Stack:** Electron, React, TypeScript, Tailwind CSS, electron-vite
-
-**Adding a new game:**
-
-1. Add an entry to `GAMES` in `src/renderer/src/lib/config.ts`.
-2. Place a `<key>.png` icon in `assets/`.
-
----
-
 ## Support
 
 If SimLauncher saves you time on race day, a small tip is appreciated: [paypal.me/shieldxx](https://paypal.me/shieldxx)

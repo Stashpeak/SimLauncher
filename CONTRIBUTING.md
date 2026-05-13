@@ -1,5 +1,8 @@
 # Contributing to SimLauncher
 
+**Requirements:** Node.js 20+
+**Stack:** Electron, React 19, TypeScript, Tailwind CSS v4, electron-vite
+
 ## Dev setup
 
 ```bash
@@ -38,10 +41,14 @@ npm run dev
 ## Building the installer
 
 ```bash
+# Build app output
 npm run build
+
+# Build Windows installer (.exe)
+npm run dist:win
 ```
 
-Output: `dist/SimLauncher Setup x.x.x.exe`
+Output will appear in `dist/`.
 
 ## Pull requests
 
