@@ -1,6 +1,8 @@
 # SimLauncher
 
-A Windows desktop app for simracing enthusiasts that launches sim games together with companion utilities such as SimHub, Crew Chief, and Trading Paints in a single click.
+One-click startup for your entire sim racing setup.
+
+Launch iRacing, Assetto Corsa, ACC and other sims together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software automatically.
 
 <table>
   <tr>
@@ -46,6 +48,7 @@ In that case, your current setup is already simple enough.
 
 - One-click launch of a sim game plus selected utilities
 - Per-game profiles with drag-to-reorder launch order
+- Integrated auto-updates to stay current with the latest features
 - Optional auto-launch of the game itself
 - 1–20 configurable custom app slots with editable names
 - Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 30s)
@@ -55,6 +58,14 @@ In that case, your current setup is already simple enough.
 - Config export and import
 - Start with Windows, start minimized, and minimize to tray options
 - Toast notifications for launch status and errors
+
+## Planned Features
+
+- **Optional auto-close**: Automatically terminate companion apps and utilities when the sim game session ends.
+- **Smart path detection**: Automatic detection of installed sims and common utility app installation paths.
+- **Themed color collections**: Expanded accent presets and curated color palettes for deeper UI personalization.
+- **Enhanced session management**: Session-state-aware app launching and advanced restart triggers.
+- **Global profile actions**: Explicit "Close Full Profile" and "Close Game" actions for better control.
 
 ## Supported Games
 
