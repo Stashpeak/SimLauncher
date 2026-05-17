@@ -1,7 +1,11 @@
 import { app, session } from 'electron'
 
-const COMMON_CSP_DIRECTIVES = [
+const DEV_CSP = [
   "default-src 'self'",
+  // Vite's React plugin injects an inline HMR preamble in dev that needs
+  // 'unsafe-inline'. The packaged build has no inline scripts and keeps a
+  // strict script-src via the meta tag injected by electron.vite.config.ts.
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
@@ -12,24 +16,18 @@ const COMMON_CSP_DIRECTIVES = [
   "frame-ancestors 'none'",
   "form-action 'none'",
   "base-uri 'self'"
-]
+].join('; ')
 
-function buildContentSecurityPolicy() {
-  // Vite's React plugin injects an inline HMR preamble script in development
-  // that requires 'unsafe-inline' to execute. Production builds are bundled
-  // and load only external scripts from 'self', so the packaged app keeps a
-  // strict script-src.
-  const scriptSrc = app.isPackaged ? "script-src 'self'" : "script-src 'self' 'unsafe-inline'"
-
-  return [...COMMON_CSP_DIRECTIVES, scriptSrc].join('; ')
-}
-
-// Injects CSP as an HTTP response header on the main document. frame-ancestors
-// is only enforced when delivered via header (the spec ignores it inside a
-// <meta http-equiv> tag), so the header is the canonical place for the full
-// policy.
+// webRequest.onHeadersReceived does not apply to file:// loads, so the
+// packaged renderer (loaded via loadFile) cannot receive a response-header
+// CSP. The packaged CSP is delivered through a meta tag injected at build
+// time (see electron.vite.config.ts). This header injection covers the dev
+// renderer served from Vite's HTTP server, where it also provides
+// frame-ancestors enforcement that the meta tag cannot.
 export function registerContentSecurityPolicy() {
-  const policy = buildContentSecurityPolicy()
+  if (app.isPackaged) {
+    return
+  }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.resourceType !== 'mainFrame') {
@@ -40,7 +38,7 @@ export function registerContentSecurityPolicy() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [policy]
+        'Content-Security-Policy': [DEV_CSP]
       }
     })
   })
