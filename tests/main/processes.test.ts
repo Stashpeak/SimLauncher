@@ -163,6 +163,19 @@ async function loadProcessModules() {
   vi.doMock('../../src/main/processes/tasklist.js', () => tasklistMock)
 
   const storeModuleMock = {
+    getStoredStringRecord: (key: string) => {
+      const value = storeData[key]
+
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {}
+      }
+
+      return Object.fromEntries(
+        Object.entries(value).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string'
+        )
+      )
+    },
     store: {
       store: storeData,
       get: (key: string) => storeData[key],
@@ -184,6 +197,15 @@ async function loadProcessModules() {
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
       p.profiles.find((i) => i.id === p.activeProfileId)
     ),
+    getStoredProfiles: vi.fn(() => {
+      const value = storeData.profiles
+
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {}
+      }
+
+      return value as Record<string, unknown>
+    }),
     isUtilityEnabled: vi.fn((profile: Record<string, unknown> | undefined, utilityKey: string) =>
       Array.isArray(profile?.utilities)
         ? profile.utilities.some(

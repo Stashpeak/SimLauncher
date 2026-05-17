@@ -1,8 +1,13 @@
 import path from 'path'
 import type { WebContents } from 'electron'
 
-import { StoredProfileEntry, getActiveStoredProfile, getProfileTrackablePaths } from '../profiles'
-import { store } from '../store'
+import {
+  StoredProfileEntry,
+  getActiveStoredProfile,
+  getProfileTrackablePaths,
+  getStoredProfiles
+} from '../profiles'
+import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath } from '../utils'
 
 import { pruneUnclosedProcesses } from './kill'
@@ -168,9 +173,9 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   const launchedExeNames = new Set(
     surfacedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase())
   )
-  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
-  const appPaths = store.get('appPaths') as Record<string, string> | undefined
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const profiles = getStoredProfiles()
+  const appPaths = getStoredStringRecord('appPaths')
+  const gamePaths = getStoredStringRecord('gamePaths')
   const launchedGameKeys = new Set(
     [...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey)
   )

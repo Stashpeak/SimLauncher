@@ -172,11 +172,11 @@ async function readAndSanitizeConfig(filePath: string) {
 
   const rawConfig = await fs.promises.readFile(filePath, 'utf8')
   const parsedConfig: unknown = JSON.parse(rawConfig)
+  if (!isRecord(parsedConfig)) {
+    throw new Error('Config file must contain a JSON object.')
+  }
   const supportedConfig = sanitizeImportedConfig(parsedConfig)
-  const summary = buildImportPreviewSummary(
-    parsedConfig as Record<string, unknown>,
-    supportedConfig
-  )
+  const summary = buildImportPreviewSummary(parsedConfig, supportedConfig)
 
   return { supportedConfig, summary }
 }
@@ -463,7 +463,8 @@ export function registerConfigHandlers() {
     if (typeof gameKey !== 'string' || !gameKey) return
     const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
     if (!sanitizedProfileSet) return
-    const profiles = (store.get('profiles') as Record<string, unknown> | undefined) || {}
+    const storedProfiles = store.get('profiles')
+    const profiles = isRecord(storedProfiles) ? storedProfiles : {}
     profiles[gameKey] = sanitizedProfileSet
     store.set('profiles', profiles)
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })

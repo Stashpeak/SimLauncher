@@ -2,11 +2,13 @@ import {
   StoredNamedProfile,
   StoredProfile,
   StoredProfileEntry,
+  getStoredProfiles,
   getUtilityKeys,
   isStoredProfileSet,
   isStoredProfileUtility
 } from './profiles'
-import { store } from './store'
+import { getStoredStringRecord, store } from './store'
+import { isRecord } from './utils'
 
 function getCustomSlotNumber(key: string) {
   const match = key.match(/^customapp(\d+)$/)
@@ -20,8 +22,8 @@ function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefi
     Object.entries(record || {}).forEach(([key, value]) => {
       if (key === 'profiles' && Array.isArray(value)) {
         value.forEach((profile) => {
-          if (profile && typeof profile === 'object') {
-            scanRecord(profile as Record<string, unknown>)
+          if (isRecord(profile)) {
+            scanRecord(profile)
           }
         })
         return
@@ -78,23 +80,22 @@ function normalizeStoredNamedProfile(
   utilityKeys: string[],
   fallbackIndex: number
 ): StoredNamedProfile | null {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return null
   }
 
   const profile = value as StoredProfile
   const orderedProfile = normalizeStoredProfileUtilityOrder(profile, utilityKeys)
-  const rawProfile = value as Record<string, unknown>
 
   return {
     ...orderedProfile,
     id:
-      typeof rawProfile.id === 'string' && rawProfile.id.trim().length > 0
-        ? rawProfile.id
+      typeof value.id === 'string' && value.id.trim().length > 0
+        ? value.id
         : `profile-${Date.now().toString(36)}-${fallbackIndex}`,
     name:
-      typeof rawProfile.name === 'string' && rawProfile.name.trim().length > 0
-        ? rawProfile.name.trim()
+      typeof value.name === 'string' && value.name.trim().length > 0
+        ? value.name.trim()
         : fallbackIndex === 0
           ? 'Default'
           : `Profile ${fallbackIndex + 1}`
@@ -148,8 +149,8 @@ export function migrateProfilesToNamedSets() {
     return
   }
 
-  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
-  const appPaths = store.get('appPaths') as Record<string, string> | undefined
+  const profiles = getStoredProfiles()
+  const appPaths = getStoredStringRecord('appPaths')
 
   if (!profiles || Object.keys(profiles).length === 0) {
     store.set('profileUtilityOrderMigrated', true)
@@ -162,10 +163,7 @@ export function migrateProfilesToNamedSets() {
     typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots)
       ? savedCustomSlots
       : 1,
-    getHighestCustomSlot(
-      appPaths,
-      ...Object.values(profiles).map((profile) => profile as Record<string, unknown>)
-    )
+    getHighestCustomSlot(appPaths, ...Object.values(profiles).filter(isRecord))
   )
   const utilityKeys = getUtilityKeys(customSlots)
   const migratedProfiles = Object.fromEntries(

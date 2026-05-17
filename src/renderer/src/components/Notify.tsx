@@ -9,6 +9,7 @@ import {
   useState
 } from 'react'
 import { createPortal } from 'react-dom'
+import { isRecord } from '../lib/config'
 import { onAppLaunchError, onProcessNameMismatchWarning } from '../lib/electron'
 import { CheckIcon, WarningTriangleIcon, ErrorIcon } from './icons'
 
@@ -40,11 +41,11 @@ function getPathName(filePath: string) {
 }
 
 function formatLaunchErrorToast(data: unknown) {
-  if (!data || typeof data !== 'object') {
+  if (!isRecord(data)) {
     return 'App launch failed'
   }
 
-  const { app, error } = data as { app?: unknown; error?: unknown }
+  const { app, error } = data
   const appName = typeof app === 'string' ? getPathName(app) : 'App'
   const errorMessage =
     typeof error === 'string' && error.trim().length > 0 ? error : 'Unknown launch error'
@@ -53,11 +54,11 @@ function formatLaunchErrorToast(data: unknown) {
 }
 
 function formatProcessNameMismatchToast(data: unknown) {
-  if (!data || typeof data !== 'object') {
+  if (!isRecord(data)) {
     return 'A launched app may be running under a different process name.'
   }
 
-  const { warning } = data as { warning?: unknown }
+  const { warning } = data
   return typeof warning === 'string' && warning.trim().length > 0
     ? warning
     : 'A launched app may be running under a different process name.'

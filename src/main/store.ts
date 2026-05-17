@@ -125,13 +125,12 @@ export interface WindowBounds {
 }
 
 export function isWindowBounds(value: unknown): value is WindowBounds {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
 
-  const bounds = value as Record<string, unknown>
   return ['x', 'y', 'width', 'height'].every((key) => {
-    const coordinate = bounds[key]
+    const coordinate = value[key]
     return typeof coordinate === 'number' && Number.isFinite(coordinate)
   })
 }
@@ -163,6 +162,23 @@ export function getStoredZoomFactor() {
   }
 
   return safeZoomFactor
+}
+
+export function getStoredBoolean(key: string, fallback = false) {
+  const value = store.get(key)
+  return typeof value === 'boolean' ? value : fallback
+}
+
+export function getStoredStringRecord(key: string) {
+  const value = store.get(key)
+
+  if (!isRecord(value)) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  )
 }
 
 function getSafeObjectEntries(value: Record<string, unknown>) {

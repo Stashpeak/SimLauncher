@@ -1,5 +1,12 @@
 import { useCallback, useEffect, type MutableRefObject } from 'react'
-import { DEFAULT_ACCENT_COLOR, GAMES, resolveCustomSlots, type Profiles } from '../../lib/config'
+import {
+  DEFAULT_ACCENT_COLOR,
+  GAMES,
+  isRecord,
+  normalizeProfiles,
+  resolveCustomSlots,
+  type Profiles
+} from '../../lib/config'
 import { getAssetData, getFileIcon } from '../../lib/electron'
 import { getProfiles, getSettings, onStoreConfigChanged } from '../../lib/store'
 import { normalizeThemeMode, type ThemeMode } from '../../lib/theme'
@@ -67,7 +74,7 @@ export function useSettingsLoad({
 }: UseSettingsLoadArgs) {
   const loadSettingsFromStore = useCallback(async () => {
     const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
-    const typedProfiles = savedProfiles as Profiles
+    const typedProfiles = normalizeProfiles(savedProfiles)
 
     latestSettingsObjects.current = {
       appPaths: settings.appPaths,
@@ -86,7 +93,7 @@ export function useSettingsLoad({
         settings.customSlots,
         settings.appPaths,
         settings.appNames,
-        ...(Object.values(typedProfiles) as Record<string, unknown>[])
+        ...Object.values(typedProfiles).filter(isRecord)
       )
     )
     const loadedThemeMode = normalizeThemeMode(settings.themeMode)

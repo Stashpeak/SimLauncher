@@ -3,6 +3,7 @@ import {
   createDefaultProfile,
   getHighestCustomSlot,
   getUtilities,
+  isRecord,
   migrateProfileToUtilityOrder,
   type GameProfile,
   type GameProfileSet
@@ -46,6 +47,25 @@ const LEGACY_GAME_KEYS = [
   'rf2'
 ]
 
+function parseLegacyRecord(raw: string | null) {
+  if (!raw) {
+    return {}
+  }
+
+  const parsed: unknown = JSON.parse(raw)
+  return isRecord(parsed) ? parsed : {}
+}
+
+function getStringRecord(value: unknown) {
+  if (!isRecord(value)) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  )
+}
+
 export async function migrateFromLocalStorage() {
   const flags = await getMigrationFlags()
   if (flags.migrated) return
@@ -54,14 +74,14 @@ export async function migrateFromLocalStorage() {
 
   const appPathsRaw = localStorage.getItem('simLauncherAppPaths')
   const gamePathsRaw = localStorage.getItem('simLauncherGamePaths')
-  let appPaths: Record<string, unknown> = {}
+  const appPaths = parseLegacyRecord(appPathsRaw)
 
-  if (appPathsRaw) {
-    appPaths = JSON.parse(appPathsRaw)
-    patch.appPaths = appPaths as Record<string, string>
+  if (Object.keys(appPaths).length > 0) {
+    patch.appPaths = getStringRecord(appPaths)
   }
 
-  if (gamePathsRaw) patch.gamePaths = JSON.parse(gamePathsRaw)
+  const gamePaths = getStringRecord(parseLegacyRecord(gamePathsRaw))
+  if (Object.keys(gamePaths).length > 0) patch.gamePaths = gamePaths
 
   const accentPreset = localStorage.getItem('simLauncherAccentPreset')
   const accentCustom = localStorage.getItem('simLauncherAccentCustom')
@@ -78,7 +98,8 @@ export async function migrateFromLocalStorage() {
   const profiles: Record<string, GameProfile> = {}
   for (const key of LEGACY_GAME_KEYS) {
     const raw = localStorage.getItem(`profile_${key}`)
-    if (raw) profiles[key] = JSON.parse(raw)
+    const profile = parseLegacyRecord(raw)
+    if (Object.keys(profile).length > 0) profiles[key] = profile
   }
 
   const migratedCustomSlots = getHighestCustomSlot(appPaths, appNames, ...Object.values(profiles))
@@ -91,7 +112,7 @@ export async function migrateFromLocalStorage() {
         profiles: [createDefaultProfile(migrateProfileToUtilityOrder(profile, utilities))]
       }
     ])
-  ) as Record<string, GameProfileSet>
+  )
 
   if (migratedCustomSlots > 1) patch.customSlots = migratedCustomSlots
   if (Object.keys(patch).length > 0) await saveSettings(patch)
