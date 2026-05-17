@@ -39,6 +39,7 @@ async function loadConfigModule() {
       if (!c || typeof c !== 'object' || Object.keys(c).length === 0) return { imported: true }
       return c
     }),
+    sanitizeSettingsPatch: vi.fn((patch) => patch),
     store: { store: {}, get: vi.fn(), set: vi.fn(), clear: vi.fn() }
   }
   vi.doMock('/src/main/store.ts', () => storeModuleMock)
@@ -243,6 +244,37 @@ test('save-profiles stores only sanitized known profile sets', async () => {
     customSlots: 1,
     profiles: { ac: rawProfileSet }
   })
+})
+
+test('save-settings stores sanitized patch values only', async () => {
+  await loadConfigModule()
+  const storeModule = await import('../../src/main/store')
+
+  vi.mocked(storeModule.sanitizeSettingsPatch).mockReturnValue({
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    appArgs: { customapp1: '--safe' }
+  })
+
+  await invokeConfigHandler('save-settings', {}, { appPaths: { simhub: 'C:/Tools/SimHub.exe' } })
+
+  expect(storeModule.sanitizeSettingsPatch).toHaveBeenCalledWith({
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  expect(storeModule.store.set).toHaveBeenCalledWith('appPaths', {
+    simhub: 'C:/Tools/SimHub.exe'
+  })
+  expect(storeModule.store.set).toHaveBeenCalledWith('appArgs', { customapp1: '--safe' })
+})
+
+test('set-login-item ignores non-boolean runtime values', async () => {
+  await loadConfigModule()
+  const { app } = await import('electron')
+
+  await invokeConfigHandler('set-login-item', {}, 'true')
+  expect(app.setLoginItemSettings).not.toHaveBeenCalled()
+
+  await invokeConfigHandler('set-login-item', {}, true)
+  expect(app.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true })
 })
 
 test('save-profile widens customSlots when profile references a slot beyond the stored count', async () => {

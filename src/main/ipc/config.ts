@@ -13,6 +13,7 @@ import {
   getStoredZoomFactor,
   requireSafeZoomFactor,
   sanitizeImportedConfig,
+  sanitizeSettingsPatch,
   store
 } from '../store'
 import { isRecord } from '../utils'
@@ -409,7 +410,8 @@ export function registerConfigHandlers() {
     return app.getVersion()
   })
 
-  ipcMain.handle('set-login-item', (_event, openAtLogin: boolean) => {
+  ipcMain.handle('set-login-item', (_event, openAtLogin: unknown) => {
+    if (typeof openAtLogin !== 'boolean') return
     app.setLoginItemSettings({ openAtLogin })
   })
 
@@ -441,51 +443,7 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('save-settings', (_event, patch: unknown) => {
     if (!isRecord(patch)) return
-    const OBJECT_KEYS = new Set(['appPaths', 'gamePaths', 'appNames', 'appArgs'])
-    const BOOLEAN_KEYS = new Set([
-      'accentBgTint',
-      'focusActiveTitle',
-      'startMinimized',
-      'minimizeToTray',
-      'autoCheckUpdates',
-      'startWithWindows'
-    ])
-    const STRING_KEYS = new Set(['accentPreset', 'accentCustom'])
-    const THEME_MODES = new Set(['light', 'dark', 'system'])
-    const WRITABLE_KEYS = new Set([
-      ...OBJECT_KEYS,
-      ...BOOLEAN_KEYS,
-      ...STRING_KEYS,
-      'themeMode',
-      'customSlots',
-      'launchDelayMs',
-      'zoomFactor'
-    ])
-
-    const safe: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(patch)) {
-      if (!WRITABLE_KEYS.has(key)) continue
-      if (OBJECT_KEYS.has(key) && isRecord(value)) {
-        safe[key] = value
-      } else if (BOOLEAN_KEYS.has(key) && typeof value === 'boolean') {
-        safe[key] = value
-      } else if (STRING_KEYS.has(key) && typeof value === 'string') {
-        safe[key] = value
-      } else if (key === 'themeMode' && typeof value === 'string' && THEME_MODES.has(value)) {
-        safe.themeMode = value
-      } else if (
-        key === 'customSlots' &&
-        typeof value === 'number' &&
-        Number.isFinite(value) &&
-        value >= 1
-      ) {
-        safe[key] = Math.min(Math.floor(value), MAX_CUSTOM_SLOTS)
-      } else if (key === 'launchDelayMs' && typeof value === 'number' && Number.isFinite(value)) {
-        safe[key] = Math.min(Math.max(Math.round(value), 0), 5000)
-      } else if (key === 'zoomFactor' && typeof value === 'number' && Number.isFinite(value)) {
-        safe[key] = requireSafeZoomFactor(value)
-      }
-    }
+    const safe = sanitizeSettingsPatch(patch)
     const changedKeys = Object.keys(safe)
     if (changedKeys.length > 0) {
       setStoreEntries(safe)
