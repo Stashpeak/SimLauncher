@@ -1,5 +1,5 @@
-import { store } from './store'
-import { isValidExePath } from './utils'
+import { getStoredStringRecord, store } from './store'
+import { isRecord, isValidExePath } from './utils'
 
 export interface StoredProfile extends Record<string, unknown> {
   utilities?: StoredProfileUtility[]
@@ -34,21 +34,37 @@ export const BUILT_IN_UTILITY_KEYS = [
 ]
 
 export function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
 
-  const utility = value as Record<string, unknown>
-  return typeof utility.id === 'string' && typeof utility.enabled === 'boolean'
+  return typeof value.id === 'string' && typeof value.enabled === 'boolean'
 }
 
 export function isStoredProfileSet(value: unknown): value is StoredProfileSet {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
 
-  const profileSet = value as Record<string, unknown>
-  return typeof profileSet.activeProfileId === 'string' && Array.isArray(profileSet.profiles)
+  return typeof value.activeProfileId === 'string' && Array.isArray(value.profiles)
+}
+
+export function getStoredProfiles() {
+  const value = store.get('profiles')
+
+  if (!isRecord(value)) {
+    return {}
+  }
+
+  const profiles: Record<string, StoredProfileEntry> = {}
+
+  Object.entries(value).forEach(([gameKey, entry]) => {
+    if (isStoredProfileSet(entry) || isRecord(entry)) {
+      profiles[gameKey] = entry
+    }
+  })
+
+  return profiles
 }
 
 export function resolveActiveProfile(entry: StoredProfileEntry | undefined): StoredNamedProfile {
@@ -57,8 +73,7 @@ export function resolveActiveProfile(entry: StoredProfileEntry | undefined): Sto
   }
   if (isStoredProfileSet(entry)) {
     const validProfiles = entry.profiles.filter(
-      (p): p is StoredNamedProfile =>
-        !!p && typeof p === 'object' && typeof (p as Record<string, unknown>).id === 'string'
+      (p): p is StoredNamedProfile => isRecord(p) && typeof p.id === 'string'
     )
     if (validProfiles.length === 0) return { id: 'default', name: 'Default' }
     return validProfiles.find((p) => p.id === entry.activeProfileId) || validProfiles[0]
@@ -72,8 +87,7 @@ export function resolveNamedProfile(
 ): StoredNamedProfile {
   if (isStoredProfileSet(entry)) {
     const validProfiles = entry.profiles.filter(
-      (p): p is StoredNamedProfile =>
-        !!p && typeof p === 'object' && typeof (p as Record<string, unknown>).id === 'string'
+      (p): p is StoredNamedProfile => isRecord(p) && typeof p.id === 'string'
     )
     return (
       validProfiles.find((p) => p.id === profileId) ||
@@ -102,10 +116,7 @@ export function getEnabledUtilityPaths(
     profile.utilities
       .filter(
         (u): u is StoredProfileUtility =>
-          !!u &&
-          typeof u === 'object' &&
-          typeof (u as Record<string, unknown>).id === 'string' &&
-          typeof (u as Record<string, unknown>).enabled === 'boolean'
+          isRecord(u) && typeof u.id === 'string' && typeof u.enabled === 'boolean'
       )
       .filter((u) => u.enabled && utilityKeys.includes(u.id) && appPaths[u.id])
       .forEach((u) => paths.push(appPaths[u.id]))
@@ -119,9 +130,9 @@ export function getEnabledUtilityPaths(
 }
 
 export function buildActiveProfileLaunchPaths(gameKey: string): string[] {
-  const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
-  const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
-  const profiles = (store.get('profiles') as Record<string, StoredProfileEntry> | undefined) || {}
+  const appPaths = getStoredStringRecord('appPaths')
+  const gamePaths = getStoredStringRecord('gamePaths')
+  const profiles = getStoredProfiles()
   const customSlots = store.get('customSlots')
   const profile = resolveActiveProfile(profiles[gameKey])
   const paths: string[] = []
@@ -133,9 +144,9 @@ export function buildActiveProfileLaunchPaths(gameKey: string): string[] {
 }
 
 export function buildNamedProfileLaunchPaths(gameKey: string, profileId: string): string[] {
-  const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
-  const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
-  const profiles = (store.get('profiles') as Record<string, StoredProfileEntry> | undefined) || {}
+  const appPaths = getStoredStringRecord('appPaths')
+  const gamePaths = getStoredStringRecord('gamePaths')
+  const profiles = getStoredProfiles()
   const customSlots = store.get('customSlots')
   const profile = resolveNamedProfile(profiles[gameKey], profileId)
   const paths: string[] = []

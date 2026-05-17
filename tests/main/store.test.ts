@@ -17,10 +17,29 @@ async function loadStoreModule() {
 
   const storeModule = await import('../../src/main/store')
   return {
+    getStoredBoolean: storeModule.getStoredBoolean,
+    getStoredStringRecord: storeModule.getStoredStringRecord,
     MAX_CUSTOM_SLOTS: storeModule.MAX_CUSTOM_SLOTS,
-    sanitizeImportedConfig: storeModule.sanitizeImportedConfig
+    sanitizeImportedConfig: storeModule.sanitizeImportedConfig,
+    store: storeModule.store
   }
 }
+
+test('store accessors validate scalar and string-record values at runtime', async () => {
+  const { getStoredBoolean, getStoredStringRecord, store } = await loadStoreModule()
+
+  store.set('startWithWindows', 'yes')
+  store.set('appPaths', {
+    simhub: 'C:/Tools/SimHub.exe',
+    bad: 42,
+    nested: { path: 'C:/Tools/Nested.exe' }
+  })
+
+  expect(getStoredBoolean('startWithWindows')).toBe(false)
+  expect(getStoredBoolean('missing', true)).toBe(true)
+  expect(getStoredStringRecord('appPaths')).toEqual({ simhub: 'C:/Tools/SimHub.exe' })
+  expect(getStoredStringRecord('missing')).toEqual({})
+})
 
 test('sanitizeImportedConfig rejects non-SimLauncher config payloads', async () => {
   const { sanitizeImportedConfig } = await loadStoreModule()
@@ -84,7 +103,7 @@ test('sanitizeImportedConfig filters path, name, args, and prototype pollution k
     gamePaths: { iracing: 'C:/Games/iRacing/iRacingSim64DX11.exe' },
     appPaths: { simhub: 'C:/Tools/SimHub.exe', customapp2: 'C:/Tools/Overlay.exe' },
     appNames: { simhub: 'SimHub', customapp2: 'Overlay' },
-    appArgs: { customapp2: '--safe' }
+    appArgs: { customapp2: '--safe', simhub: '--not-allowed' }
   })
 })
 

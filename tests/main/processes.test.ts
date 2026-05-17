@@ -163,6 +163,19 @@ async function loadProcessModules() {
   vi.doMock('../../src/main/processes/tasklist.js', () => tasklistMock)
 
   const storeModuleMock = {
+    getStoredStringRecord: (key: string) => {
+      const value = storeData[key]
+
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {}
+      }
+
+      return Object.fromEntries(
+        Object.entries(value).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string'
+        )
+      )
+    },
     store: {
       store: storeData,
       get: (key: string) => storeData[key],
@@ -184,6 +197,15 @@ async function loadProcessModules() {
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
       p.profiles.find((i) => i.id === p.activeProfileId)
     ),
+    getStoredProfiles: vi.fn(() => {
+      const value = storeData.profiles
+
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {}
+      }
+
+      return value as Record<string, unknown>
+    }),
     isUtilityEnabled: vi.fn((profile: Record<string, unknown> | undefined, utilityKey: string) =>
       Array.isArray(profile?.utilities)
         ? profile.utilities.some(
@@ -225,6 +247,7 @@ async function loadProcessModules() {
     killLaunchedApps: killModule.killLaunchedApps,
     killProfileApps: killModule.killProfileApps,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
+    dismissAppIcon: stateModule.dismissAppIcon,
     processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
     suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
@@ -437,7 +460,7 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
   dateNow.mockRestore()
 })
 
-test('process mismatch warnings expire after the TTL and are pruned (#351)', async () => {
+test('process mismatch warnings persist until manually dismissed (#360)', async () => {
   const dateNow = vi.spyOn(Date, 'now')
   const childHandlers = new Map<string, (...args: unknown[]) => void>()
   const child = {
@@ -452,7 +475,7 @@ test('process mismatch warnings expire after the TTL and are pruned (#351)', asy
 
   dateNow.mockReturnValue(1000)
   markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
-  const { launchProfileApps, getRunningApps, processNameMismatchWarnings } =
+  const { dismissAppIcon, launchProfileApps, getRunningApps, processNameMismatchWarnings } =
     await loadProcessModules()
   vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
 
@@ -465,14 +488,11 @@ test('process mismatch warnings expire after the TTL and are pruned (#351)', asy
   processNames.delete('cheat engine.exe')
   childHandlers.get('exit')?.()
 
-  // Warning should be created with an expiresAt field
   expect(processNameMismatchWarnings.size).toBe(1)
   const entry = processNameMismatchWarnings.values().next().value!
-  expect(entry.expiresAt).toBeDefined()
-  expect(entry.expiresAt).toBeGreaterThan(1000)
+  expect(entry.expiresAt).toBeUndefined()
 
-  // Warning should still be visible before TTL expires (expiresAt = 1000 + 60000 = 61000)
-  dateNow.mockReturnValue(60999)
+  dateNow.mockReturnValue(61000)
   processNames.add('cheatengine-x86_64-sse4-avx2.exe')
   await expect(getRunningApps()).resolves.toEqual(
     expect.arrayContaining([
@@ -482,9 +502,9 @@ test('process mismatch warnings expire after the TTL and are pruned (#351)', asy
       })
     ])
   )
+  expect(processNameMismatchWarnings.size).toBe(1)
 
-  // After TTL expires, warning should be pruned (61000 <= 61000)
-  dateNow.mockReturnValue(61000)
+  dismissAppIcon('C:/Program Files/Cheat Engine/Cheat Engine.exe', 'ac')
   processNames.delete('cheat engine.exe')
   await expect(getRunningApps()).resolves.not.toEqual(
     expect.arrayContaining([

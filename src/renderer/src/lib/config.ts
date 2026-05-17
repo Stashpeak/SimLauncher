@@ -38,6 +38,10 @@ export const DEFAULT_PROFILE_ID = 'default'
 export const DEFAULT_PROFILE_NAME = 'Default'
 export const MAX_CUSTOM_SLOTS = 20
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 export const GAMES: Game[] = [
   { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },
   { key: 'acc', name: 'Assetto Corsa Competizione', icon: 'assets/acc.png' },
@@ -106,8 +110,8 @@ export function getHighestCustomSlot(...records: Array<Record<string, unknown> |
     Object.entries(record || {}).forEach(([key, value]) => {
       if (key === 'profiles' && Array.isArray(value)) {
         value.forEach((profile) => {
-          if (profile && typeof profile === 'object') {
-            scanRecord(profile as Record<string, unknown>)
+          if (isRecord(profile)) {
+            scanRecord(profile)
           }
         })
         return
@@ -173,12 +177,11 @@ export function getUtilities(customSlots: unknown): Utility[] {
 }
 
 export function isProfileUtility(value: unknown): value is ProfileUtility {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
 
-  const entry = value as Record<string, unknown>
-  return typeof entry.id === 'string' && typeof entry.enabled === 'boolean'
+  return typeof value.id === 'string' && typeof value.enabled === 'boolean'
 }
 
 export function normalizeProfileUtilities(profile: GameProfile | undefined, utilities: Utility[]) {
@@ -230,12 +233,27 @@ export function migrateProfileToUtilityOrder(profile: GameProfile, utilities: Ut
 }
 
 export function isGameProfileSet(value: unknown): value is GameProfileSet {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return false
   }
 
-  const entry = value as Record<string, unknown>
-  return typeof entry.activeProfileId === 'string' && Array.isArray(entry.profiles)
+  return typeof value.activeProfileId === 'string' && Array.isArray(value.profiles)
+}
+
+export function normalizeProfiles(value: unknown): Profiles {
+  if (!isRecord(value)) {
+    return {}
+  }
+
+  const profiles: Profiles = {}
+
+  Object.entries(value).forEach(([gameKey, profile]) => {
+    if (isGameProfileSet(profile) || isRecord(profile)) {
+      profiles[gameKey] = profile
+    }
+  })
+
+  return profiles
 }
 
 export function createProfileId() {
@@ -243,22 +261,18 @@ export function createProfileId() {
 }
 
 function normalizeNamedProfile(value: unknown, fallbackIndex: number): NamedGameProfile | null {
-  if (!value || typeof value !== 'object') {
+  if (!isRecord(value)) {
     return null
   }
 
-  const profile = value as Record<string, unknown>
   const fallbackName = fallbackIndex === 0 ? DEFAULT_PROFILE_NAME : `Profile ${fallbackIndex + 1}`
 
   return {
-    ...(profile as GameProfile),
-    id:
-      typeof profile.id === 'string' && profile.id.trim().length > 0
-        ? profile.id
-        : createProfileId(),
+    ...value,
+    id: typeof value.id === 'string' && value.id.trim().length > 0 ? value.id : createProfileId(),
     name:
-      typeof profile.name === 'string' && profile.name.trim().length > 0
-        ? profile.name.trim()
+      typeof value.name === 'string' && value.name.trim().length > 0
+        ? value.name.trim()
         : fallbackName
   }
 }

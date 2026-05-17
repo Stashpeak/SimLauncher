@@ -3,9 +3,10 @@ import crypto from 'crypto'
 import fs from 'fs'
 
 import { migrateProfilesToNamedSets } from '../migrator'
-import { isStoredProfileSet, type StoredNamedProfile } from '../profiles'
+import { isStoredProfileSet, type StoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
+  KNOWN_GAME_KEYS,
   MAX_CONFIG_IMPORT_BYTES,
   MAX_CUSTOM_SLOTS,
   getSupportedConfigValues,
@@ -171,11 +172,11 @@ async function readAndSanitizeConfig(filePath: string) {
 
   const rawConfig = await fs.promises.readFile(filePath, 'utf8')
   const parsedConfig: unknown = JSON.parse(rawConfig)
+  if (!isRecord(parsedConfig)) {
+    throw new Error('Config file must contain a JSON object.')
+  }
   const supportedConfig = sanitizeImportedConfig(parsedConfig)
-  const summary = buildImportPreviewSummary(
-    parsedConfig as Record<string, unknown>,
-    supportedConfig
-  )
+  const summary = buildImportPreviewSummary(parsedConfig, supportedConfig)
 
   return { supportedConfig, summary }
 }
@@ -201,6 +202,81 @@ function setStoreEntries(values: Record<string, unknown>) {
   Object.entries(values).forEach(([key, value]) => {
     store.set(key, value)
   })
+}
+
+function getHighestCustomSlotInProfileSet(profileSet: StoredProfileSet) {
+  let highest = 0
+
+  const visitId = (id: unknown) => {
+    if (typeof id !== 'string') return
+    const match = id.match(/^customapp(\d+)$/)
+    if (!match) return
+    const slot = Number(match[1])
+    if (Number.isFinite(slot) && slot > highest) {
+      highest = slot
+    }
+  }
+
+  profileSet.profiles.forEach((profile) => {
+    if (!isRecord(profile)) return
+    Object.keys(profile).forEach(visitId)
+    if (Array.isArray(profile.utilities)) {
+      profile.utilities.forEach((utility) => {
+        if (isRecord(utility)) visitId(utility.id)
+      })
+    }
+  })
+
+  return highest
+}
+
+function getSanitizedProfileSet(gameKey: string, profileSet: unknown) {
+  if (!KNOWN_GAME_KEYS.has(gameKey) || !isStoredProfileSet(profileSet)) {
+    return undefined
+  }
+
+  const storedCustomSlots = store.get('customSlots')
+  const baseSlots =
+    typeof storedCustomSlots === 'number' && Number.isFinite(storedCustomSlots)
+      ? storedCustomSlots
+      : 1
+  // Widen the allowed slot count so a profile saved in parallel with a
+  // customSlots increase isn't silently stripped before save-settings lands.
+  const effectiveCustomSlots = Math.min(
+    MAX_CUSTOM_SLOTS,
+    Math.max(baseSlots, getHighestCustomSlotInProfileSet(profileSet))
+  )
+
+  const supportedConfig = getSupportedConfigValues({
+    customSlots: effectiveCustomSlots,
+    profiles: { [gameKey]: profileSet }
+  })
+  const profiles = supportedConfig.profiles
+
+  if (!isRecord(profiles)) {
+    return undefined
+  }
+
+  const sanitizedProfileSet = profiles[gameKey]
+  return isStoredProfileSet(sanitizedProfileSet) ? sanitizedProfileSet : undefined
+}
+
+function getSanitizedProfileRecord(profiles: unknown) {
+  if (!isRecord(profiles)) {
+    return undefined
+  }
+
+  const safeProfiles: Record<string, unknown> = {}
+
+  Object.entries(profiles).forEach(([gameKey, profileSet]) => {
+    const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
+
+    if (sanitizedProfileSet) {
+      safeProfiles[gameKey] = sanitizedProfileSet
+    }
+  })
+
+  return Object.keys(safeProfiles).length > 0 ? safeProfiles : undefined
 }
 
 export function registerConfigHandlers() {
@@ -423,24 +499,19 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('save-profile', (_event, gameKey: unknown, profileSet: unknown) => {
     if (typeof gameKey !== 'string' || !gameKey) return
-    if (!isStoredProfileSet(profileSet)) return
-    const validProfiles = profileSet.profiles.filter(
-      (p): p is StoredNamedProfile =>
-        !!p &&
-        typeof p === 'object' &&
-        typeof (p as Record<string, unknown>).id === 'string' &&
-        typeof (p as Record<string, unknown>).name === 'string'
-    )
-    if (validProfiles.length === 0) return
-    const profiles = (store.get('profiles') as Record<string, unknown> | undefined) || {}
-    profiles[gameKey] = { activeProfileId: profileSet.activeProfileId, profiles: validProfiles }
+    const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
+    if (!sanitizedProfileSet) return
+    const storedProfiles = store.get('profiles')
+    const profiles = isRecord(storedProfiles) ? storedProfiles : {}
+    profiles[gameKey] = sanitizedProfileSet
     store.set('profiles', profiles)
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {
-    if (!isRecord(profiles)) return
-    store.set('profiles', profiles)
+    const sanitizedProfiles = getSanitizedProfileRecord(profiles)
+    if (!sanitizedProfiles) return
+    store.set('profiles', sanitizedProfiles)
     notifyStoreConfigChanged({ reason: 'save-profiles', keys: ['profiles'] })
   })
 

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, screen, type OpenDialogOptions } f
 import path from 'path'
 
 import { getIsQuitting, setIsQuitting } from './app-state'
-import { getStoredZoomFactor, isWindowBounds, store } from './store'
+import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
 import { checkForUpdates, registerUpdaterEvents } from './updater'
 import { clamp } from './utils'
 
@@ -127,15 +127,15 @@ export function createWindow() {
 
   // Show window once ready, or keep it hidden when starting minimized to tray.
   mainWindow.once('ready-to-show', () => {
-    const startMinimized = store.get('startMinimized') as boolean
+    const startMinimized = getStoredBoolean('startMinimized')
     if (!startMinimized) {
       mainWindow!.show()
     }
   })
 
   // Apply login-item setting on startup
-  const startWithWindows = store.get('startWithWindows') as boolean
-  app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
+  const startWithWindows = getStoredBoolean('startWithWindows')
+  app.setLoginItemSettings({ openAtLogin: startWithWindows })
 
   registerUpdaterEvents(sendToRenderer)
 
@@ -166,8 +166,8 @@ export function createWindow() {
 }
 
 export function applyRuntimeConfigSettings() {
-  const startWithWindows = store.get('startWithWindows') as boolean
-  app.setLoginItemSettings({ openAtLogin: !!startWithWindows })
+  const startWithWindows = getStoredBoolean('startWithWindows')
+  app.setLoginItemSettings({ openAtLogin: startWithWindows })
 
   mainWindow?.webContents.setZoomFactor(getStoredZoomFactor())
 }

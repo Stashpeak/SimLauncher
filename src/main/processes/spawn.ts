@@ -3,7 +3,7 @@ import type { WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
 
-import { store } from '../store'
+import { getStoredStringRecord, store } from '../store'
 import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from '../utils'
 
 import {
@@ -18,7 +18,6 @@ import { publishRunningApps } from './running'
 const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
-const PROCESS_NAME_MISMATCH_WARNING_TTL_MS = 60000
 let launchBlockedUntil = 0
 
 export async function launchProfileApps(
@@ -40,7 +39,7 @@ export async function launchProfileApps(
 
   activeLaunches.add(gameKey)
   const launchDelayMs = getLaunchDelayMs()
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
   const processNames = await readRunningProcessNames()
   const validApps = profileApps.filter((appPath) => {
@@ -192,8 +191,8 @@ function parseCommandLineArgs(input: string) {
 }
 
 function getAppArgs(appPath: string) {
-  const appPaths = (store.get('appPaths') as Record<string, string> | undefined) || {}
-  const appArgs = (store.get('appArgs') as Record<string, string> | undefined) || {}
+  const appPaths = getStoredStringRecord('appPaths')
+  const appArgs = getStoredStringRecord('appArgs')
   const normalizedAppPath = appPath.trim().toLowerCase()
   const appEntry = Object.entries(appPaths).find(
     ([, value]) => value.trim().toLowerCase() === normalizedAppPath
@@ -349,8 +348,7 @@ function spawnDetachedApp(
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning,
-            ...(wasGame ? {} : { expiresAt: Date.now() + PROCESS_NAME_MISMATCH_WARNING_TTL_MS })
+            warning
           })
           if (!wasGame) {
             sendProcessNameMismatchWarning(sender, appPath, warning)

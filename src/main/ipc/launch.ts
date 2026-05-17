@@ -12,7 +12,7 @@ import {
   subscribeRunningApps,
   unsubscribeRunningApps
 } from '../processes'
-import { KNOWN_GAME_KEYS, store } from '../store'
+import { KNOWN_GAME_KEYS, getStoredStringRecord } from '../store'
 import { getExeName } from '../utils'
 
 export function validateGameKey(gameKey: unknown) {
@@ -91,7 +91,7 @@ export function registerLaunchHandlers() {
         return profileIdValidationError
       }
 
-      const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+      const gamePaths = getStoredStringRecord('gamePaths')
       const gamePath = gamePaths[gameKey]?.toLowerCase()
       const processNames = await readRunningProcessNames()
 
@@ -126,7 +126,7 @@ export function registerLaunchHandlers() {
         return profileIdValidationError
       }
 
-      const gamePaths = (store.get('gamePaths') as Record<string, string> | undefined) || {}
+      const gamePaths = getStoredStringRecord('gamePaths')
       const gamePath = gamePaths[gameKey]?.toLowerCase()
 
       const fromPaths = buildNamedProfileLaunchPaths(gameKey, fromProfileId).filter(

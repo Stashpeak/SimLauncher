@@ -2,12 +2,12 @@ import { execFile, type ChildProcess } from 'child_process'
 import path from 'path'
 
 import {
-  StoredProfileEntry,
   getActiveStoredProfile,
   getProfileTrackablePaths,
+  getStoredProfiles,
   isUtilityEnabled
 } from '../profiles'
-import { store } from '../store'
+import { getStoredStringRecord } from '../store'
 import { getErrorMessage, getExeName, isValidExePath } from '../utils'
 
 import {
@@ -311,7 +311,7 @@ function normalizePathForComparison(appPath: string) {
 }
 
 function getStoredAppPathTargets() {
-  const storedAppPaths = store.get('appPaths') as Record<string, string> | undefined
+  const storedAppPaths = getStoredStringRecord('appPaths')
 
   return new Set(
     Object.values(storedAppPaths || {})
@@ -423,9 +423,9 @@ async function finalizeKillAttempts(
 }
 
 function getProfileCompanionTargets(gameKey?: string) {
-  const profiles = store.get('profiles') as Record<string, StoredProfileEntry> | undefined
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
-  const appPaths = store.get('appPaths') as Record<string, string> | undefined
+  const profiles = getStoredProfiles()
+  const gamePaths = getStoredStringRecord('gamePaths')
+  const appPaths = getStoredStringRecord('appPaths')
   const companionTargets = new Map<
     string,
     { processName: string; appPath: string; gameKey: string }
@@ -509,7 +509,7 @@ export async function killLaunchedApps(gameKey?: string) {
 
 export async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
   const processNames = await readRunningProcessNames()
-  const gamePaths = store.get('gamePaths') as Record<string, string> | undefined
+  const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
   const storedAppPathTargets = getStoredAppPathTargets()
   const validAppPathsToKill: string[] = []

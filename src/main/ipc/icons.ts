@@ -2,7 +2,7 @@ import { app, ipcMain, nativeImage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 
-import { store } from '../store'
+import { getStoredStringRecord } from '../store'
 
 let genericIconFingerprint: string | null | undefined
 let genericIconFingerprintPromise: Promise<string | null> | null = null
@@ -83,8 +83,8 @@ export function registerIconHandlers() {
 
   ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
     const storedPaths = [
-      ...Object.values((store.get('gamePaths') as Record<string, string>) ?? {}),
-      ...Object.values((store.get('appPaths') as Record<string, string>) ?? {})
+      ...Object.values(getStoredStringRecord('gamePaths')),
+      ...Object.values(getStoredStringRecord('appPaths'))
     ]
     if (!storedPaths.includes(filePath)) return null
 
