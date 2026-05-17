@@ -29,6 +29,7 @@ async function loadConfigModule() {
   vi.doMock('../../src/main/profiles', () => ({ isStoredProfileSet: vi.fn() }))
   const storeModuleMock = {
     CONFIG_FILE_NAME: 'simlauncher-config.json',
+    KNOWN_GAME_KEYS: new Set(['ac', 'acc']),
     MAX_CONFIG_IMPORT_BYTES: 1_000_000,
     MAX_CUSTOM_SLOTS: 20,
     getSupportedConfigValues: vi.fn(),
@@ -186,6 +187,62 @@ test('cancel-import-config clears pending import', async () => {
 
   const applyResult = await invokeConfigHandler('apply-import-config', {}, token)
   expect(applyResult.success).toBe(false)
+})
+
+test('save-profiles stores only sanitized known profile sets', async () => {
+  await loadConfigModule()
+  const storeModule = await import('../../src/main/store')
+  const profilesModule = await import('../../src/main/profiles')
+  const rawProfileSet = {
+    activeProfileId: 'default',
+    profiles: [
+      {
+        id: 'default',
+        name: 'Default',
+        trackedProcessPaths: ['C:/Tools/SimHub.exe', 'C:/Tools/readme.txt']
+      }
+    ]
+  }
+  const sanitizedProfileSet = {
+    activeProfileId: 'default',
+    profiles: [
+      {
+        id: 'default',
+        name: 'Default',
+        trackedProcessPaths: ['C:/Tools/SimHub.exe']
+      }
+    ]
+  }
+
+  vi.mocked(storeModule.store.get).mockReturnValue(1)
+  vi.mocked(profilesModule.isStoredProfileSet).mockImplementation(
+    (value) =>
+      !!value &&
+      typeof value === 'object' &&
+      typeof (value as Record<string, unknown>).activeProfileId === 'string' &&
+      Array.isArray((value as Record<string, unknown>).profiles)
+  )
+  vi.mocked(storeModule.getSupportedConfigValues).mockImplementation((config) => {
+    const profiles = (config as { profiles?: Record<string, unknown> }).profiles ?? {}
+    return profiles.ac ? { profiles: { ac: sanitizedProfileSet } } : {}
+  })
+
+  await invokeConfigHandler(
+    'save-profiles',
+    {},
+    {
+      ac: rawProfileSet,
+      unknown: rawProfileSet,
+      acc: { profiles: 'invalid' },
+      constructor: rawProfileSet
+    }
+  )
+
+  expect(storeModule.store.set).toHaveBeenCalledWith('profiles', { ac: sanitizedProfileSet })
+  expect(storeModule.getSupportedConfigValues).toHaveBeenCalledWith({
+    customSlots: 1,
+    profiles: { ac: rawProfileSet }
+  })
 })
 
 test('new preview replacement: subsequent previews invalidate previous tokens', async () => {

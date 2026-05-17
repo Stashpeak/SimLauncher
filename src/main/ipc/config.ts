@@ -3,9 +3,10 @@ import crypto from 'crypto'
 import fs from 'fs'
 
 import { migrateProfilesToNamedSets } from '../migrator'
-import { isStoredProfileSet, type StoredNamedProfile } from '../profiles'
+import { isStoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
+  KNOWN_GAME_KEYS,
   MAX_CONFIG_IMPORT_BYTES,
   MAX_CUSTOM_SLOTS,
   getSupportedConfigValues,
@@ -201,6 +202,43 @@ function setStoreEntries(values: Record<string, unknown>) {
   Object.entries(values).forEach(([key, value]) => {
     store.set(key, value)
   })
+}
+
+function getSanitizedProfileSet(gameKey: string, profileSet: unknown) {
+  if (!KNOWN_GAME_KEYS.has(gameKey) || !isStoredProfileSet(profileSet)) {
+    return undefined
+  }
+
+  const supportedConfig = getSupportedConfigValues({
+    customSlots: store.get('customSlots'),
+    profiles: { [gameKey]: profileSet }
+  })
+  const profiles = supportedConfig.profiles
+
+  if (!isRecord(profiles)) {
+    return undefined
+  }
+
+  const sanitizedProfileSet = profiles[gameKey]
+  return isStoredProfileSet(sanitizedProfileSet) ? sanitizedProfileSet : undefined
+}
+
+function getSanitizedProfileRecord(profiles: unknown) {
+  if (!isRecord(profiles)) {
+    return undefined
+  }
+
+  const safeProfiles: Record<string, unknown> = {}
+
+  Object.entries(profiles).forEach(([gameKey, profileSet]) => {
+    const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
+
+    if (sanitizedProfileSet) {
+      safeProfiles[gameKey] = sanitizedProfileSet
+    }
+  })
+
+  return Object.keys(safeProfiles).length > 0 ? safeProfiles : undefined
 }
 
 export function registerConfigHandlers() {
@@ -423,24 +461,18 @@ export function registerConfigHandlers() {
 
   ipcMain.handle('save-profile', (_event, gameKey: unknown, profileSet: unknown) => {
     if (typeof gameKey !== 'string' || !gameKey) return
-    if (!isStoredProfileSet(profileSet)) return
-    const validProfiles = profileSet.profiles.filter(
-      (p): p is StoredNamedProfile =>
-        !!p &&
-        typeof p === 'object' &&
-        typeof (p as Record<string, unknown>).id === 'string' &&
-        typeof (p as Record<string, unknown>).name === 'string'
-    )
-    if (validProfiles.length === 0) return
+    const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
+    if (!sanitizedProfileSet) return
     const profiles = (store.get('profiles') as Record<string, unknown> | undefined) || {}
-    profiles[gameKey] = { activeProfileId: profileSet.activeProfileId, profiles: validProfiles }
+    profiles[gameKey] = sanitizedProfileSet
     store.set('profiles', profiles)
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {
-    if (!isRecord(profiles)) return
-    store.set('profiles', profiles)
+    const sanitizedProfiles = getSanitizedProfileRecord(profiles)
+    if (!sanitizedProfiles) return
+    store.set('profiles', sanitizedProfiles)
     notifyStoreConfigChanged({ reason: 'save-profiles', keys: ['profiles'] })
   })
 
