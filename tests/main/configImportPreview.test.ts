@@ -245,6 +245,83 @@ test('save-profiles stores only sanitized known profile sets', async () => {
   })
 })
 
+test('save-profile widens customSlots when profile references a slot beyond the stored count', async () => {
+  await loadConfigModule()
+  const storeModule = await import('../../src/main/store')
+  const profilesModule = await import('../../src/main/profiles')
+  const rawProfileSet = {
+    activeProfileId: 'default',
+    profiles: [
+      {
+        id: 'default',
+        name: 'Default',
+        utilities: [
+          { id: 'simhub', enabled: true },
+          { id: 'customapp2', enabled: true }
+        ]
+      }
+    ]
+  }
+
+  vi.mocked(storeModule.store.get).mockImplementation((key: string) =>
+    key === 'customSlots' ? 1 : undefined
+  )
+  vi.mocked(profilesModule.isStoredProfileSet).mockImplementation(
+    (value) =>
+      !!value &&
+      typeof value === 'object' &&
+      typeof (value as Record<string, unknown>).activeProfileId === 'string' &&
+      Array.isArray((value as Record<string, unknown>).profiles)
+  )
+  vi.mocked(storeModule.getSupportedConfigValues).mockImplementation((config) => ({
+    profiles: (config as { profiles?: Record<string, unknown> }).profiles ?? {}
+  }))
+
+  await invokeConfigHandler('save-profile', {}, 'ac', rawProfileSet)
+
+  expect(storeModule.getSupportedConfigValues).toHaveBeenCalledWith({
+    customSlots: 2,
+    profiles: { ac: rawProfileSet }
+  })
+})
+
+test('save-profile caps widened customSlots at MAX_CUSTOM_SLOTS', async () => {
+  await loadConfigModule()
+  const storeModule = await import('../../src/main/store')
+  const profilesModule = await import('../../src/main/profiles')
+  const rawProfileSet = {
+    activeProfileId: 'default',
+    profiles: [
+      {
+        id: 'default',
+        name: 'Default',
+        utilities: [{ id: 'customapp99', enabled: true }]
+      }
+    ]
+  }
+
+  vi.mocked(storeModule.store.get).mockImplementation((key: string) =>
+    key === 'customSlots' ? 1 : undefined
+  )
+  vi.mocked(profilesModule.isStoredProfileSet).mockImplementation(
+    (value) =>
+      !!value &&
+      typeof value === 'object' &&
+      typeof (value as Record<string, unknown>).activeProfileId === 'string' &&
+      Array.isArray((value as Record<string, unknown>).profiles)
+  )
+  vi.mocked(storeModule.getSupportedConfigValues).mockImplementation((config) => ({
+    profiles: (config as { profiles?: Record<string, unknown> }).profiles ?? {}
+  }))
+
+  await invokeConfigHandler('save-profile', {}, 'ac', rawProfileSet)
+
+  expect(storeModule.getSupportedConfigValues).toHaveBeenCalledWith({
+    customSlots: 20,
+    profiles: { ac: rawProfileSet }
+  })
+})
+
 test('new preview replacement: subsequent previews invalidate previous tokens', async () => {
   await loadConfigModule()
   const { dialog } = await import('electron')

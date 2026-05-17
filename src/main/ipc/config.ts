@@ -3,7 +3,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 
 import { migrateProfilesToNamedSets } from '../migrator'
-import { isStoredProfileSet } from '../profiles'
+import { isStoredProfileSet, type StoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
@@ -204,13 +204,51 @@ function setStoreEntries(values: Record<string, unknown>) {
   })
 }
 
+function getHighestCustomSlotInProfileSet(profileSet: StoredProfileSet) {
+  let highest = 0
+
+  const visitId = (id: unknown) => {
+    if (typeof id !== 'string') return
+    const match = id.match(/^customapp(\d+)$/)
+    if (!match) return
+    const slot = Number(match[1])
+    if (Number.isFinite(slot) && slot > highest) {
+      highest = slot
+    }
+  }
+
+  profileSet.profiles.forEach((profile) => {
+    if (!isRecord(profile)) return
+    Object.keys(profile).forEach(visitId)
+    if (Array.isArray(profile.utilities)) {
+      profile.utilities.forEach((utility) => {
+        if (isRecord(utility)) visitId(utility.id)
+      })
+    }
+  })
+
+  return highest
+}
+
 function getSanitizedProfileSet(gameKey: string, profileSet: unknown) {
   if (!KNOWN_GAME_KEYS.has(gameKey) || !isStoredProfileSet(profileSet)) {
     return undefined
   }
 
+  const storedCustomSlots = store.get('customSlots')
+  const baseSlots =
+    typeof storedCustomSlots === 'number' && Number.isFinite(storedCustomSlots)
+      ? storedCustomSlots
+      : 1
+  // Widen the allowed slot count so a profile saved in parallel with a
+  // customSlots increase isn't silently stripped before save-settings lands.
+  const effectiveCustomSlots = Math.min(
+    MAX_CUSTOM_SLOTS,
+    Math.max(baseSlots, getHighestCustomSlotInProfileSet(profileSet))
+  )
+
   const supportedConfig = getSupportedConfigValues({
-    customSlots: store.get('customSlots'),
+    customSlots: effectiveCustomSlots,
     profiles: { [gameKey]: profileSet }
   })
   const profiles = supportedConfig.profiles
