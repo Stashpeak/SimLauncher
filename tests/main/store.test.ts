@@ -20,6 +20,7 @@ async function loadStoreModule() {
     getStoredBoolean: storeModule.getStoredBoolean,
     getStoredStringRecord: storeModule.getStoredStringRecord,
     MAX_CUSTOM_SLOTS: storeModule.MAX_CUSTOM_SLOTS,
+    sanitizeSettingsPatch: storeModule.sanitizeSettingsPatch,
     sanitizeImportedConfig: storeModule.sanitizeImportedConfig,
     store: storeModule.store
   }
@@ -104,6 +105,42 @@ test('sanitizeImportedConfig filters path, name, args, and prototype pollution k
     appPaths: { simhub: 'C:/Tools/SimHub.exe', customapp2: 'C:/Tools/Overlay.exe' },
     appNames: { simhub: 'SimHub', customapp2: 'Overlay' },
     appArgs: { customapp2: '--safe', simhub: '--not-allowed' }
+  })
+})
+
+test('sanitizeSettingsPatch filters object settings like config import', async () => {
+  const { sanitizeSettingsPatch, store } = await loadStoreModule()
+  store.set('customSlots', 2)
+
+  expect(
+    sanitizeSettingsPatch({
+      gamePaths: {
+        iracing: ' C:/Games/iRacing/iRacingSim64DX11.exe ',
+        unknown: 'C:/Games/Unknown.exe',
+        acc: 'C:/Games/ACC/readme.txt',
+        __proto__: 'C:/Games/Polluted.exe'
+      },
+      appPaths: {
+        simhub: 'C:/Tools/SimHub.exe',
+        customapp2: 'C:/Tools/Overlay.exe',
+        customapp3: 'C:/Tools/OutOfRange.exe'
+      },
+      appNames: {
+        simhub: ' SimHub ',
+        customapp2: 'Overlay',
+        customapp3: 'Hidden'
+      },
+      appArgs: {
+        customapp2: ' --safe ',
+        customapp3: '--out-of-range',
+        constructor: '--polluted'
+      }
+    })
+  ).toEqual({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingSim64DX11.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe', customapp2: 'C:/Tools/Overlay.exe' },
+    appNames: { simhub: 'SimHub', customapp2: 'Overlay' },
+    appArgs: { customapp2: '--safe' }
   })
 })
 

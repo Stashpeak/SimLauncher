@@ -597,3 +597,37 @@ export function getSupportedConfigValues(config: Record<string, unknown>) {
 
   return supportedConfig
 }
+
+export function sanitizeSettingsPatch(patch: Record<string, unknown>) {
+  const currentCustomSlots = getSafeCustomSlots(store.get('customSlots'))
+  const patchCustomSlots = getSafeCustomSlots(patch.customSlots)
+  const config: Record<string, unknown> = {
+    customSlots: patchCustomSlots ?? currentCustomSlots ?? 1
+  }
+
+  EXPECTED_CONFIG_KEYS.forEach((key) => {
+    if (
+      key !== 'profiles' &&
+      key !== 'windowBounds' &&
+      key !== 'profileUtilityOrderMigrated' &&
+      key !== 'profileSetsMigrated' &&
+      key !== 'migrated' &&
+      Object.prototype.hasOwnProperty.call(patch, key)
+    ) {
+      config[key] = patch[key]
+    }
+  })
+
+  const supportedConfig = getSupportedConfigValues(config)
+  delete supportedConfig.profiles
+  delete supportedConfig.windowBounds
+  delete supportedConfig.profileUtilityOrderMigrated
+  delete supportedConfig.profileSetsMigrated
+  delete supportedConfig.migrated
+
+  if (!Object.prototype.hasOwnProperty.call(patch, 'customSlots')) {
+    delete supportedConfig.customSlots
+  }
+
+  return supportedConfig
+}

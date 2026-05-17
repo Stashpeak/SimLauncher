@@ -177,7 +177,8 @@ export function registerWindowHandlers() {
    * Opens a file dialog to select an executable file and sends the path back.
    * @param inputId The ID of the input field in the Renderer to update.
    */
-  ipcMain.handle('browse-path', async (_event, inputId) => {
+  ipcMain.handle('browse-path', async (_event, inputId: unknown) => {
+    const safeInputId = typeof inputId === 'string' ? inputId : ''
     try {
       const options: OpenDialogOptions = {
         title: 'Select Executable File (.exe)',
@@ -189,12 +190,12 @@ export function registerWindowHandlers() {
           ? await dialog.showOpenDialog(mainWindow, options)
           : await dialog.showOpenDialog(options)
       if (!result.canceled && result.filePaths.length > 0) {
-        return { filePath: result.filePaths[0], inputId }
+        return { filePath: result.filePaths[0], inputId: safeInputId }
       }
-      return { filePath: null, inputId }
+      return { filePath: null, inputId: safeInputId }
     } catch (err) {
       console.error('Dialog error:', err)
-      return { filePath: null, inputId }
+      return { filePath: null, inputId: safeInputId }
     }
   })
 
