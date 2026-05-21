@@ -41,7 +41,7 @@ export async function launchProfileApps(
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
-  const processNames = await readRunningProcessNames()
+  const { processNames } = await readRunningProcessNames()
   const validApps = profileApps.filter((appPath) => {
     if (!isValidExePath(appPath)) {
       console.error(`Skipping invalid path: ${appPath}`)

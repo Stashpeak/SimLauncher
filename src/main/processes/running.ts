@@ -133,9 +133,14 @@ async function getTrackedRunningApps(
 }
 
 export async function getRunningApps(): Promise<RunningApp[]> {
-  const processNames = await readRunningProcessNames()
-  pruneStoppedRunningProcesses(processNames)
-  pruneUnclosedProcesses(processNames)
+  const { processNames, succeeded: tasklistReadSucceeded } = await readRunningProcessNames()
+  // When the tasklist read failed, processNames is an empty Set with no
+  // signal value — skip pruning so we don't silently clear running/unclosed
+  // state based on bogus "everything is gone" data (see #399).
+  if (tasklistReadSucceeded) {
+    pruneStoppedRunningProcesses(processNames)
+    pruneUnclosedProcesses(processNames)
+  }
   pruneExpiredProcessNameMismatchWarnings()
 
   const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({

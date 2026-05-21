@@ -63,7 +63,7 @@ export function registerLaunchHandlers() {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
-    const processNames = await readRunningProcessNames()
+    const { processNames } = await readRunningProcessNames()
     const missingPaths = allPaths.filter((p) => !isRunningExePath(processNames, p))
 
     if (missingPaths.length === 0) {
@@ -93,7 +93,7 @@ export function registerLaunchHandlers() {
 
       const gamePaths = getStoredStringRecord('gamePaths')
       const gamePath = gamePaths[gameKey]?.toLowerCase()
-      const processNames = await readRunningProcessNames()
+      const { processNames } = await readRunningProcessNames()
 
       const utilityPaths = (profileId: string) =>
         new Set(
@@ -136,7 +136,7 @@ export function registerLaunchHandlers() {
         (p) => !gamePath || p.toLowerCase() !== gamePath
       )
       const toPathSet = new Set(toPaths.map((p) => p.toLowerCase()))
-      const processNamesBeforeSwitch = await readRunningProcessNames()
+      const { processNames: processNamesBeforeSwitch } = await readRunningProcessNames()
 
       const pathsToStop = fromPaths.filter(
         (p) => !toPathSet.has(p.toLowerCase()) && processNamesBeforeSwitch.has(getExeName(p))
@@ -147,7 +147,7 @@ export function registerLaunchHandlers() {
         killResult = await killProfileApps(gameKey, pathsToStop)
       }
 
-      const processNamesAfterStop = await readRunningProcessNames()
+      const { processNames: processNamesAfterStop } = await readRunningProcessNames()
       const pathsToStart = toPaths.filter((p) => !processNamesAfterStop.has(getExeName(p)))
 
       if (pathsToStart.length === 0) {

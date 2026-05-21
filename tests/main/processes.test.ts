@@ -35,6 +35,17 @@ const processNamesGoneAfterKill = new Set<string>()
 // process has a different name, so the wrapper's PID kill fails but the app
 // effectively exits anyway (and the verification must treat that as success).
 const pidsAccessDeniedButImageGone = new Set<string>()
+// Mutable flag that flips the mocked readRunningProcessNames into the "tasklist
+// command failed" branch (succeeded: false, empty Set). Used to verify that
+// kill verification doesn't treat an empty Set as evidence-of-exit when the
+// read itself was invalid (see #399).
+let tasklistReadShouldFail = false
+// When >0, the mocked readRunningProcessNames returns a successful response
+// for the first N calls, then starts failing. Lets a single test simulate a
+// transient tasklist failure on the post-kill recheck only — without breaking
+// the pre-kill scan that decides which processes to attempt to kill.
+let tasklistReadFailAfterCalls = 0
+let tasklistReadCallCount = 0
 const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
@@ -238,7 +249,21 @@ async function loadProcessModules() {
 
   const tasklistMock = {
     invalidateProcessNameCache: invalidateProcessNameCacheMock,
-    readRunningProcessNames: vi.fn(() => Promise.resolve(new Set(processNames)))
+    readRunningProcessNames: vi.fn(() => {
+      tasklistReadCallCount += 1
+      const shouldFailNow =
+        tasklistReadShouldFail ||
+        (tasklistReadFailAfterCalls > 0 && tasklistReadCallCount > tasklistReadFailAfterCalls)
+      // Production's readRunningProcessNames swallows tasklist execution
+      // errors and resolves with an empty Set + succeeded: false. Modelling
+      // the empty-Set here is what lets the regression test distinguish
+      // "image is gone" from "we don't know" (see #399).
+      return Promise.resolve(
+        shouldFailNow
+          ? { processNames: new Set<string>(), succeeded: false }
+          : { processNames: new Set(processNames), succeeded: true }
+      )
+    })
   }
   vi.doMock('./tasklist', () => tasklistMock)
   vi.doMock('/src/main/processes/tasklist.ts', () => tasklistMock)
@@ -383,6 +408,9 @@ beforeEach(async () => {
   processNamesGoneAfterWmiLookup.clear()
   processNamesGoneAfterKill.clear()
   pidsAccessDeniedButImageGone.clear()
+  tasklistReadShouldFail = false
+  tasklistReadFailAfterCalls = 0
+  tasklistReadCallCount = 0
   wmiLookupCounts.clear()
   processRegistry.clear()
   execFileCalls.length = 0
@@ -2067,4 +2095,49 @@ test('kill is reported successful when the launched exe is gone from tasklist ev
   expect(
     unclosedProcesses.has('ac:c:/users/test/appdata/local/programs/perplexity/perplexity.exe')
   ).toBe(false)
+})
+
+test('kill is NOT reported successful when taskkill failed and the post-kill tasklist read itself failed (#399)', async () => {
+  // Codex review noted that gating success on `!processNamesAfterKill.has(...)`
+  // alone collapses two very different states into one when the post-kill
+  // tasklist command itself fails: production's readRunningProcessNames
+  // swallows the error and returns an empty Set, which would make the
+  // imageGoneFromTasklist override misfire and turn a real taskkill failure
+  // into a false success. The fix propagates a `succeeded` flag so the
+  // override only applies when the read actually confirmed the image is gone.
+  markExistingPath('C:/tools/access-denied-app.exe')
+  processNames.add('access-denied-app.exe')
+  registerProcess('C:/tools/access-denied-app.exe', 'access-denied-app.exe', '5555')
+  // taskkill /PID 5555 reports access-denied AND leaves the image in
+  // tasklist — i.e. nothing was actually terminated.
+  accessDeniedPids.add('5555')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: {
+      accessdenied: 'C:/tools/access-denied-app.exe'
+    }
+  })
+
+  // Let the PRE-kill scan succeed so a kill attempt is actually dispatched,
+  // then make the POST-kill recheck fail. With the buggy code, the empty Set
+  // from the failed recheck satisfied `!processNamesAfterKill.has(...)` and
+  // turned the access-denied failure into success: true / closedCount: 1.
+  tasklistReadFailAfterCalls = 1
+
+  const result = await killLaunchedApps('ac')
+
+  expect(result.success).toBe(false)
+  expect(result.failedCount).toBe(1)
+  expect(result.closedCount).toBe(0)
+  expect(result.failures).toHaveLength(1)
+  expect(result.failures[0]).toMatchObject({
+    appName: 'access-denied-app.exe',
+    reason: 'access_denied'
+  })
+  // The unclosed-process entry must be registered so the UI surfaces the
+  // failure rather than silently clearing it.
+  expect(unclosedProcesses.has('ac:c:/tools/access-denied-app.exe')).toBe(true)
 })
