@@ -22,6 +22,39 @@ const execFileCalls: { command: string; args: string[]; options: Record<string, 
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
 const invalidateProcessNameCacheMock = vi.fn()
+
+type ProcessRegistryEntry = {
+  pid: string
+  processName: string
+  executablePath: string
+}
+
+// Path-keyed registry that mirrors what WMI/Get-CimInstance would return for a
+// given SIMLAUNCHER_TARGET_PROCESS_PATH. The key is the normalized absolute
+// path so the mock can answer queries the same way production code does.
+const processRegistry = new Map<string, ProcessRegistryEntry>()
+
+function normalizeRegistryKey(filePath: string) {
+  return path.resolve(filePath).toLowerCase()
+}
+
+function registerProcess(executablePath: string, processName: string, pid: string) {
+  processRegistry.set(normalizeRegistryKey(executablePath), {
+    pid,
+    processName: processName.toLowerCase(),
+    executablePath
+  })
+}
+
+function findRegistryEntryByPid(pid: string): ProcessRegistryEntry | undefined {
+  for (const entry of processRegistry.values()) {
+    if (entry.pid === pid) {
+      return entry
+    }
+  }
+  return undefined
+}
+
 function markExistingPath(filePath: string) {
   existingPaths.add(filePath)
   existingPaths.add(path.resolve(filePath))
@@ -83,18 +116,26 @@ async function loadProcessModules() {
         const script = args[args.indexOf('-Command') + 1]
         const processName = script.match(/\$name = '([^']+)'/)?.[1]?.toLowerCase()
 
-        if (!options.env?.SIMLAUNCHER_TARGET_PROCESS_PATH) {
+        const targetPathEnv = options.env?.SIMLAUNCHER_TARGET_PROCESS_PATH
+        if (typeof targetPathEnv !== 'string' || targetPathEnv.length === 0) {
           const exists = processName ? processExistsNames.has(processName) : false
           callback(null, exists ? JSON.stringify(1234) : '', '')
           return
         }
 
-        const pids = []
+        // Replicate the WMI lookup: only return PIDs for the registered entry
+        // whose executable path matches SIMLAUNCHER_TARGET_PROCESS_PATH AND
+        // whose process name matches the queried $name. This is what makes
+        // findProcessIdsByExecutablePath path-scoped in production.
+        const entry = processRegistry.get(normalizeRegistryKey(targetPathEnv))
+        const pids: string[] = []
         if (
-          processNames.has('simhub.exe') &&
-          !inaccessibleExecutablePathProcesses.has('simhub.exe')
+          entry &&
+          (!processName || entry.processName === processName) &&
+          processNames.has(entry.processName) &&
+          !inaccessibleExecutablePathProcesses.has(entry.processName)
         ) {
-          pids.push('4321')
+          pids.push(entry.pid)
         }
         callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
         return
@@ -113,8 +154,9 @@ async function loadProcessModules() {
           callback(new Error('Access is denied.'), '', 'Access is denied.')
           return
         }
-        if (pid === '4321' || pid === '1234') {
-          processNames.delete('simhub.exe')
+        const entry = findRegistryEntryByPid(pid)
+        if (entry) {
+          processNames.delete(entry.processName)
         }
         nullExecutablePathPids.delete(pid)
       }
@@ -296,6 +338,7 @@ beforeEach(async () => {
   inaccessibleExecutablePathProcesses.clear()
   nullExecutablePathPids.clear()
   staleTaskkillPids.clear()
+  processRegistry.clear()
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
@@ -904,6 +947,7 @@ test('killProfileApps rejects paths that are not configured app paths', async ()
 test('killProfileApps targets configured untracked Windows apps by resolved PID instead of image name', async () => {
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
   const { killProfileApps } = await loadProcessModulesWithStore({
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
@@ -934,10 +978,50 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
   expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
 })
 
+test('killProfileApps only kills the PID matching the requested executable path (#341)', async () => {
+  // Two distinct installs share the same image name (simhub.exe). Killing
+  // the configured app path must target the PID whose ExecutablePath matches
+  // that path, not just any simhub.exe process. Before the path-scoped mock
+  // refactor, a regression that killed the wrong PID would have passed
+  // undetected because the mock returned the same hardcoded PID either way.
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('D:/Other/SimHub.exe')
+  processNames.add('simhub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
+  registerProcess('D:/Other/SimHub.exe', 'simhub.exe', '9999')
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { simhub: 'C:/Tools/SimHub.exe', other: 'D:/Other/SimHub.exe' }
+  })
+
+  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/PID', '4321', '/T', '/F']
+      })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/PID', '9999', '/T', '/F']
+      })
+    ])
+  )
+})
+
 test('killProfileApps excludes processes with null executable paths when resolving PIDs', async () => {
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
   nullExecutablePathPids.add('9876')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
   const { killProfileApps } = await loadProcessModulesWithStore({
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
@@ -978,6 +1062,7 @@ test('killProfileApps publishes promptly when untracked app remains elevated aft
   processNames.add('assettocorsa.exe')
   processNames.add('simhub.exe')
   accessDeniedPids.add('4321')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
   const { killProfileApps, subscribeRunningApps } = await loadProcessModulesWithStore({
     profiles: {
       ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
@@ -1145,6 +1230,7 @@ test('killLaunchedApps keeps stale taskkill attempts failed when a replacement p
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
   staleTaskkillPids.add('4321')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
 
   const result = await killLaunchedApps('ac')
 
@@ -1270,6 +1356,7 @@ test('killProfileApps skips game executable paths without issuing kill commands'
 test('killProfileApps clears previous unclosed and running state after successful kill', async () => {
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
   const { killProfileApps, runningProcesses, unclosedProcesses } =
     await loadProcessModulesWithStore({
       appPaths: { simhub: 'C:/Tools/SimHub.exe' }
@@ -1358,6 +1445,8 @@ test('killLaunchedApps uses plural message for multiple successful companion kil
   markExistingPath('C:/Tools/Overlay.exe')
   processNames.add('simhub.exe')
   processNames.add('overlay.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
+  registerProcess('C:/Tools/Overlay.exe', 'overlay.exe', '5678')
 
   await expect(killLaunchedApps('ac')).resolves.toMatchObject({
     success: true,
