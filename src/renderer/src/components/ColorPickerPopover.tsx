@@ -10,6 +10,9 @@ interface ColorPickerPopoverProps {
 }
 
 const POPOVER_GAP = 12
+// Matches the intrinsic width of react-colorful's HexColorPicker (200px) so the
+// popover does not stretch to the parent container's width.
+const POPOVER_WIDTH = 200
 
 export function ColorPickerPopover({
   color,
@@ -27,7 +30,6 @@ export function ColorPickerPopover({
       if (!anchor) return
 
       const rect = anchor.getBoundingClientRect()
-      const popoverWidth = popover?.offsetWidth ?? 240
       const popoverHeight = popover?.offsetHeight ?? 280
       const viewportHeight = window.innerHeight
       const viewportWidth = window.innerWidth
@@ -40,14 +42,16 @@ export function ColorPickerPopover({
         ? Math.max(POPOVER_GAP, rect.top - popoverHeight - POPOVER_GAP)
         : Math.min(viewportHeight - popoverHeight - POPOVER_GAP, rect.bottom + POPOVER_GAP)
 
-      // Right-align with the swatch, clamped to viewport.
-      const desiredLeft = rect.right - popoverWidth
-      const left = Math.max(
+      // Right-anchor: align the popover's right edge to the swatch's right edge,
+      // clamped to the viewport. Using `right` (distance from viewport right edge)
+      // instead of `left` keeps the alignment stable regardless of intrinsic width.
+      const desiredRight = window.innerWidth - rect.right
+      const right = Math.max(
         POPOVER_GAP,
-        Math.min(desiredLeft, viewportWidth - popoverWidth - POPOVER_GAP)
+        Math.min(desiredRight, viewportWidth - POPOVER_WIDTH - POPOVER_GAP)
       )
 
-      setPosition({ top, left })
+      setPosition({ top, right, width: POPOVER_WIDTH })
     }
 
     updatePosition()
@@ -65,7 +69,7 @@ export function ColorPickerPopover({
       <div className="absolute inset-0" onClick={onClose} />
       <div
         ref={popoverRef}
-        style={position ?? { visibility: 'hidden' }}
+        style={position ?? { visibility: 'hidden', width: POPOVER_WIDTH }}
         className="glass-surface-elevated fixed flex flex-col items-center gap-3 rounded-2xl p-4 shadow-[0_12px_30px_#00000040] backdrop-blur-xl animate-fade-slide"
       >
         <HexColorPicker color={color} onChange={onChange} />
@@ -98,6 +102,14 @@ export function ColorPickerPopover({
             spellCheck={false}
           />
         </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="accent-action action-hover-scale w-full cursor-pointer rounded-xl py-2 text-xs font-bold"
+        >
+          Done
+        </button>
       </div>
     </div>,
     document.body
