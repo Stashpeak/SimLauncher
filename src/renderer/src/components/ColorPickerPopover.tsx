@@ -30,9 +30,16 @@ export function ColorPickerPopover({
       if (!anchor) return
 
       const rect = anchor.getBoundingClientRect()
+
+      // Defensive: if the anchor has not been laid out yet (zero width), retry
+      // on the next animation frame so we measure against a real rect.
+      if (rect.width === 0) {
+        requestAnimationFrame(updatePosition)
+        return
+      }
+
       const popoverHeight = popover?.offsetHeight ?? 280
       const viewportHeight = window.innerHeight
-      const viewportWidth = window.innerWidth
 
       // Prefer rendering above the swatch; fall back to below if there is not enough room.
       const spaceAbove = rect.top
@@ -42,16 +49,16 @@ export function ColorPickerPopover({
         ? Math.max(POPOVER_GAP, rect.top - popoverHeight - POPOVER_GAP)
         : Math.min(viewportHeight - popoverHeight - POPOVER_GAP, rect.bottom + POPOVER_GAP)
 
-      // Right-anchor: align the popover's right edge to the swatch's right edge,
-      // clamped to the viewport. Using `right` (distance from viewport right edge)
-      // instead of `left` keeps the alignment stable regardless of intrinsic width.
-      const desiredRight = window.innerWidth - rect.right
-      const right = Math.max(
+      // Right-align the popover with the swatch's right edge using direct left math.
+      // left = rect.right - POPOVER_WIDTH places the popover's right edge at the
+      // swatch's right edge. Then clamp left into the viewport with a gap.
+      const desiredLeft = rect.right - POPOVER_WIDTH
+      const left = Math.max(
         POPOVER_GAP,
-        Math.min(desiredRight, viewportWidth - POPOVER_WIDTH - POPOVER_GAP)
+        Math.min(desiredLeft, window.innerWidth - POPOVER_WIDTH - POPOVER_GAP)
       )
 
-      setPosition({ top, right, width: POPOVER_WIDTH })
+      setPosition({ top, left, width: POPOVER_WIDTH })
     }
 
     updatePosition()
