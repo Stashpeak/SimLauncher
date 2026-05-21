@@ -30,6 +30,11 @@ const processNamesGoneAfterWmiLookup = new Set<string>()
 // predicate `processNamesAfterKill.has(processName)` must stay true so the
 // staleTask branch is the only thing keeping isElevatedInconclusive false.
 const processNamesGoneAfterKill = new Set<string>()
+// "taskkill /PID reports access-denied, but the image is gone from tasklist
+// afterwards" — used to model #390 where the launched exe's actual running
+// process has a different name, so the wrapper's PID kill fails but the app
+// effectively exits anyway (and the verification must treat that as success).
+const pidsAccessDeniedButImageGone = new Set<string>()
 const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
@@ -182,6 +187,12 @@ async function loadProcessModules() {
           return
         }
         if (accessDeniedPids.has(pid)) {
+          if (pidsAccessDeniedButImageGone.has(pid)) {
+            const entry = findRegistryEntryByPid(pid)
+            if (entry) {
+              processNames.delete(entry.processName)
+            }
+          }
           callback(new Error('Access is denied.'), '', 'Access is denied.')
           return
         }
@@ -371,6 +382,7 @@ beforeEach(async () => {
   staleTaskkillPids.clear()
   processNamesGoneAfterWmiLookup.clear()
   processNamesGoneAfterKill.clear()
+  pidsAccessDeniedButImageGone.clear()
   wmiLookupCounts.clear()
   processRegistry.clear()
   execFileCalls.length = 0
@@ -2013,4 +2025,46 @@ test('pruneUnclosedProcesses removes entries whose image is no longer active (#3
   expect(unclosedProcesses.has('ac:c:/tools/active.exe')).toBe(true)
   expect(unclosedProcesses.has('ac:c:/tools/inactive.exe')).toBe(false)
   expect(unclosedProcesses.has('ac:c:/tools/also-inactive.exe')).toBe(false)
+})
+
+test('kill is reported successful when the launched exe is gone from tasklist even if taskkill complained (#390)', async () => {
+  // Reproduces the Perplexity scenario from #390: the launched exe (a wrapper
+  // / Electron stub) spawns the real app under a different process name and
+  // exits. When the user closes the profile, taskkill against the tracked
+  // PID may fail (access-denied / no-running-instance) because the wrapper
+  // PID is already stale, BUT the launched image is gone from tasklist on
+  // the post-kill recheck — the kill effectively succeeded. The finalize
+  // logic must treat this as success and NOT emit a "couldn't be closed"
+  // toast / unclosed entry.
+  markExistingPath('C:/Users/test/AppData/Local/Programs/Perplexity/Perplexity.exe')
+  processNames.add('perplexity.exe')
+  registerProcess(
+    'C:/Users/test/AppData/Local/Programs/Perplexity/Perplexity.exe',
+    'perplexity.exe',
+    '9876'
+  )
+  // taskkill /PID 9876 will report access-denied, but the image disappears
+  // from tasklist anyway (the wrapper exited / the OS finished tearing down
+  // the tree).
+  accessDeniedPids.add('9876')
+  pidsAccessDeniedButImageGone.add('9876')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: {
+      perplexity: 'C:/Users/test/AppData/Local/Programs/Perplexity/Perplexity.exe'
+    }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0,
+    failures: []
+  })
+  expect(
+    unclosedProcesses.has('ac:c:/users/test/appdata/local/programs/perplexity/perplexity.exe')
+  ).toBe(false)
 })
