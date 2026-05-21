@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
@@ -30,6 +30,7 @@ const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
 
 export function AppearanceSection() {
   const [showPicker, setShowPicker] = useState(false)
+  const customSwatchRef = useRef<HTMLButtonElement>(null)
   const {
     accentPreset,
     accentCustom,
@@ -83,6 +84,7 @@ export function AppearanceSection() {
           ))}
           <div className="relative">
             <button
+              ref={customSwatchRef}
               type="button"
               onClick={() => {
                 setShowPicker(!showPicker)
@@ -119,6 +121,7 @@ export function AppearanceSection() {
                 color={accentCustom || '#ad46ff'}
                 onChange={onCustomColorChange}
                 onClose={() => setShowPicker(false)}
+                anchorRef={customSwatchRef}
               />
             )}
           </div>
