@@ -77,7 +77,7 @@ export function ColorPickerPopover({
       <div
         ref={popoverRef}
         style={position ?? { visibility: 'hidden', width: POPOVER_WIDTH }}
-        className="glass-surface-elevated fixed flex flex-col items-center gap-3 rounded-2xl p-4 shadow-[0_12px_30px_#00000040] backdrop-blur-xl animate-fade-slide"
+        className="glass-surface-elevated fixed flex flex-col items-center gap-3 overflow-hidden rounded-2xl px-4 pb-4 shadow-[0_12px_30px_#00000040] backdrop-blur-xl animate-fade-slide"
       >
         <HexColorPicker color={color} onChange={onChange} />
 
