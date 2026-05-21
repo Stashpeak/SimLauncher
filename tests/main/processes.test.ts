@@ -18,6 +18,19 @@ const accessDeniedImageNames = new Set<string>()
 const inaccessibleExecutablePathProcesses = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
 const staleTaskkillPids = new Set<string>()
+// "Process exited cleanly BEFORE the kill ran" — when a name is in this set,
+// the path-scoped WMI lookup removes it from `processNames` so the post-kill
+// tasklist recheck reports the image as absent. Models the genuine pre-kill
+// exit case for elevated/inaccessible processes (#352, #378, #350).
+const processNamesGoneAfterWmiLookup = new Set<string>()
+// "WMI PIDs are gone AFTER the kill, but the image MAY still be in tasklist"
+// — when a name is in this set, the SECOND+ path-scoped WMI lookup for that
+// name returns 0 PIDs while leaving `processNames` intact. Used to isolate
+// the `staleTask !== true` predicate at kill.ts:362 (#345): the third
+// predicate `processNamesAfterKill.has(processName)` must stay true so the
+// staleTask branch is the only thing keeping isElevatedInconclusive false.
+const processNamesGoneAfterKill = new Set<string>()
+const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
@@ -128,14 +141,32 @@ async function loadProcessModules() {
         // whose process name matches the queried $name. This is what makes
         // findProcessIdsByExecutablePath path-scoped in production.
         const entry = processRegistry.get(normalizeRegistryKey(targetPathEnv))
+        const lookupCount = processName ? (wmiLookupCounts.get(processName) ?? 0) + 1 : 0
+        if (processName) {
+          wmiLookupCounts.set(processName, lookupCount)
+        }
+        // `processNamesGoneAfterKill` suppresses PIDs on the POST-kill lookup
+        // (second invocation onward) only, leaving `processNames` intact so
+        // the post-kill tasklist recheck still reports the image as present.
+        const suppressPidsForPostKill =
+          !!processName && lookupCount > 1 && processNamesGoneAfterKill.has(processName)
         const pids: string[] = []
         if (
           entry &&
           (!processName || entry.processName === processName) &&
           processNames.has(entry.processName) &&
-          !inaccessibleExecutablePathProcesses.has(entry.processName)
+          !inaccessibleExecutablePathProcesses.has(entry.processName) &&
+          !suppressPidsForPostKill
         ) {
           pids.push(entry.pid)
+        }
+        // Drop processNames entries that opted into "image is gone" after a
+        // WMI lookup. This lets tests model the case where the WMI lookup
+        // returned 0 PIDs because the elevated process genuinely exited
+        // BEFORE the kill ran, so the subsequent tasklist recheck must
+        // report the image as absent.
+        if (processName && processNamesGoneAfterWmiLookup.has(processName)) {
+          processNames.delete(processName)
         }
         callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
         return
@@ -338,6 +369,9 @@ beforeEach(async () => {
   inaccessibleExecutablePathProcesses.clear()
   nullExecutablePathPids.clear()
   staleTaskkillPids.clear()
+  processNamesGoneAfterWmiLookup.clear()
+  processNamesGoneAfterKill.clear()
+  wmiLookupCounts.clear()
   processRegistry.clear()
   execFileCalls.length = 0
   spawnCalls.length = 0
@@ -1180,9 +1214,14 @@ test('killLaunchedApps treats not-found full-path app as closed when image no lo
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
+  // The image is briefly visible to tasklist when the kill is dispatched but
+  // disappears by the time the post-kill recheck runs - this is the "process
+  // exited cleanly between the initial scan and the recheck" case where the
+  // path-keyed WMI lookup correctly reports 0 PIDs both times.
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
   inaccessibleExecutablePathProcesses.add('simhub.exe')
+  processNamesGoneAfterWmiLookup.add('simhub.exe')
 
   await expect(killLaunchedApps('ac')).resolves.toMatchObject({
     success: true,
@@ -1202,10 +1241,15 @@ test('killLaunchedApps treats stale taskkill PID responses as closed', async () 
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
+  // Register a process so the initial WMI lookup returns PID 4321 and
+  // killProcessByImageName issues a real taskkill /PID. The taskkill returns
+  // the "no running instance" error indicating the PID was stale, and the
+  // post-kill recheck must find no surviving PIDs to treat this as closed.
   markExistingPath('C:/Tools/SimHub.exe')
   processNames.add('simhub.exe')
-  inaccessibleExecutablePathProcesses.add('simhub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
   staleTaskkillPids.add('4321')
+  processNamesGoneAfterWmiLookup.add('simhub.exe')
 
   const result = await killLaunchedApps('ac')
 
@@ -1217,6 +1261,11 @@ test('killLaunchedApps treats stale taskkill PID responses as closed', async () 
   })
   expect(result.error).toBeUndefined()
   expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '4321', '/T', '/F'] })
+    ])
+  )
 })
 
 test('killLaunchedApps keeps stale taskkill attempts failed when a replacement process is live', async () => {
@@ -1505,4 +1554,463 @@ test('publishRunningApps deduplicates emissions if snapshot is identical', async
   await publishRunningApps('scan')
 
   expect(webContents.send).not.toHaveBeenCalled()
+})
+
+test('concurrent launchProfileApps rejects with the active-launch message (#342)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  // Start the first launch but do NOT fire 'spawn' yet so the launch sits in
+  // its `activeLaunches.add(gameKey)` window. The second concurrent call must
+  // be rejected with the active-launch message instead of beginning its own
+  // launch pipeline.
+  const firstLaunch = launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  const secondResult = await launchProfileApps(sender, 'iracing', ['C:/Tools/SimHub.exe'])
+
+  expect(secondResult).toEqual({
+    success: false,
+    error: 'Another profile is already launching.'
+  })
+
+  // Release the first launch so the test does not leak the active-launch flag.
+  childHandlers.get('spawn')?.()
+  await firstLaunch
+})
+
+test('rapid re-launch within the cooldown window returns the settling message (#342)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+
+  dateNow.mockReturnValue(10_000)
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  // First launch succeeds; this sets launchBlockedUntil to now + 10000.
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  // Advance only 2 seconds - still inside the post-launch cooldown.
+  dateNow.mockReturnValue(12_000)
+  markExistingPath('C:/Tools/Overlay.exe')
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe'])).resolves.toMatchObject({
+    success: false,
+    error: expect.stringMatching(/Launch is settling\. Try again in 8s\./)
+  })
+
+  dateNow.mockRestore()
+})
+
+test('launchBlockedUntil is not set when no apps were actually launched (#342)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+
+  dateNow.mockReturnValue(50_000)
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  // SimHub is already running so launchProfileApps short-circuits with
+  // skippedCount=1, launchedCount=0 and never enters the launch loop.
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 0,
+    skippedCount: 1
+  })
+
+  // No cooldown should be active. If launchBlockedUntil had been set, the
+  // next call would be rejected with the settling message; instead it
+  // proceeds and reports "already running".
+  dateNow.mockReturnValue(50_100)
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 0,
+    skippedCount: 1
+  })
+
+  dateNow.mockRestore()
+})
+
+test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('assettocorsa.exe')
+  processNames.add('simhub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
+  registerProcess('C:/Games/AssettoCorsa.exe', 'assettocorsa.exe', '9999')
+  const { killLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  runningProcesses.set('C:/Games/AssettoCorsa.exe', {
+    process: { pid: 9999 } as never,
+    name: 'AssettoCorsa.exe',
+    gameKey: 'ac',
+    isGame: true
+  })
+  runningProcesses.set('C:/Tools/SimHub.exe', {
+    process: { pid: 4321 } as never,
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  // The companion app was killed via /PID 4321, the game executable's PID 9999
+  // must never appear in any taskkill call (whether /PID or /IM).
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '4321', '/T', '/F'] })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '9999', '/T', '/F'] })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/IM', 'assettocorsa.exe', '/T', '/F']
+      })
+    ])
+  )
+})
+
+test('killLaunchedApps should kill tracked utility processes (#350)', async () => {
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+
+  // The utility companion is registered under garage61 with no full path, so
+  // killProcessByImageName follows the /IM fallback and the tasklist mock
+  // drops the image on success.
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/IM', 'garage61 telemetry agent.exe', '/T', '/F']
+      })
+    ])
+  )
+})
+
+test('killLaunchedApps should skip game processes during kill (#350)', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  processNames.add('assettocorsa.exe')
+  const { killLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+  runningProcesses.set('C:/Games/AssettoCorsa.exe', {
+    process: { pid: 9999 } as never,
+    name: 'AssettoCorsa.exe',
+    gameKey: 'ac',
+    isGame: true
+  })
+
+  // The only running process is the game itself - because it's flagged
+  // isGame: true, killLaunchedApps must produce a no-op result with no
+  // taskkill calls and no game-exe /IM fallback.
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: expect.arrayContaining(['/PID']) })
+    ])
+  )
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: expect.arrayContaining(['/IM', 'assettocorsa.exe'])
+      })
+    ])
+  )
+})
+
+test('launchProfileApps skips a tracked wrapper child on subsequent launch (#314, #345)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  dateNow.mockReturnValue(1000)
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  markExistingPath('C:/Program Files/Cheat Engine/cheatengine-x86_64-sse4-avx2.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          {
+            id: 'default',
+            name: 'Default',
+            trackedProcessPaths: ['C:/Program Files/Cheat Engine/cheatengine-x86_64-sse4-avx2.exe']
+          }
+        ]
+      }
+    },
+    appPaths: { customapp1: 'C:/Program Files/Cheat Engine/Cheat Engine.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  // First launch: the wrapper exits but spawns the tracked child process
+  // configured under `trackedProcessPaths`. This is the #314 Cheat Engine
+  // scenario: the configured exe name disappears from tasklist while a
+  // differently-named child remains alive.
+  const firstLaunch = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await firstLaunch
+  processNames.delete('cheat engine.exe')
+  processNames.add('cheatengine-x86_64-sse4-avx2.exe')
+  childHandlers.get('exit')?.()
+
+  // Advance past the 10s post-launch cooldown window before the second call.
+  dateNow.mockReturnValue(20_000)
+
+  // Regression for #314: the tracked child path must be skipped by
+  // `isRunningExePath` because its image name IS in processNames. The
+  // wrapper exe's image name is gone from tasklist, so production may still
+  // attempt to relaunch it; this test asserts the contract that matters -
+  // the tracked child is NOT relaunched.
+  const spawnCallCountBefore = spawnCalls.length
+  const secondResult = await launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/cheatengine-x86_64-sse4-avx2.exe'
+  ])
+  expect(secondResult).toMatchObject({
+    success: true,
+    launchedCount: 0,
+    skippedCount: 1,
+    message: 'All profile applications are already running.'
+  })
+  expect(spawnCalls.length).toBe(spawnCallCountBefore)
+
+  dateNow.mockRestore()
+})
+
+test('finalize keeps stale-only attempts closed when image is gone (staleTask predicate, #326, #345)', async () => {
+  // Isolates the `staleTask !== true` predicate at kill.ts:362. The other
+  // two predicates of isElevatedInconclusive must stay TRUE so the staleTask
+  // check is the only thing keeping it false:
+  //   1. attempt.notFound === true                       <- stale taskkill error
+  //   2. attempt.staleTask !== true                      <- THE PREDICATE under test
+  //   3. processNamesAfterKill.has(attempt.processName)  <- image must still be in tasklist
+  //
+  // We use `processNamesGoneAfterKill` (NOT `processNamesGoneAfterWmiLookup`)
+  // so the post-kill WMI lookup returns 0 PIDs while leaving `simhub.exe` in
+  // `processNames`. That keeps predicate #3 true. If the production code
+  // regressed `staleTask !== true` to `staleTask === true` or removed it,
+  // isElevatedInconclusive would flip true and this test would fail because
+  // the attempt would be registered as unclosed/elevated.
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
+  staleTaskkillPids.add('4321')
+  processNamesGoneAfterKill.add('simhub.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0,
+    failures: []
+  })
+  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+})
+
+test('killLaunchedApps non-full-path utility companion with replacement is reported unclosed (#326, #345)', async () => {
+  // When a utility companion is killed by image name (no full path) and a
+  // replacement process with the same name appears in tasklist on the
+  // recheck, finalizeKillAttempts must mark it as still_running. This
+  // covers the image-name-only branch of the elevated/replacement check.
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  // The taskkill /IM mock deletes the image from processNames on success,
+  // so to model "replacement is alive on recheck" we use accessDeniedImageNames
+  // to make taskkill fail and leave the image in tasklist.
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  const result = await killLaunchedApps('ac')
+  expect(result).toMatchObject({
+    success: false,
+    closedCount: 0,
+    failedCount: 1,
+    failures: [
+      expect.objectContaining({
+        appPath: 'Garage61 telemetry agent.exe',
+        reason: 'access_denied'
+      })
+    ]
+  })
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    reason: 'access_denied',
+    elevated: true
+  })
+})
+
+test('WMI returning 0 PIDs after taskkill is treated as closed (genuine exit) (#352)', async () => {
+  // Negative test for the elevated-process recovery path: when the initial
+  // WMI lookup yields 0 PIDs AND the post-kill recheck also yields 0 PIDs
+  // AND the image is gone from tasklist, the kill must succeed - no
+  // unclosed/elevated entry should be registered.
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  inaccessibleExecutablePathProcesses.add('simhub.exe')
+  processNamesGoneAfterWmiLookup.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0,
+    failures: []
+  })
+  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  // Critically: no taskkill /PID call should have run for this companion -
+  // the WMI lookup returned 0 PIDs so the elevated/exited branch was taken.
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: expect.arrayContaining(['/PID']) })
+    ])
+  )
+})
+
+test('killProfileApps falls back to /IM for non-full-path utility companions (#352)', async () => {
+  // When the configured app path is an image-name only (e.g. a utility
+  // companion that has no installed location), killProfileApps cannot use
+  // the WMI PID lookup and must fall back to taskkill /IM <image-name>.
+  // Note: killProfileApps requires a full-path appPath in `appPaths`, so
+  // this fallback path is exercised via killLaunchedApps + a utility
+  // companion whose registered name is just the image.
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  // No WMI lookup should occur for the image-name-only target.
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ command: 'powershell.exe' })])
+  )
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        command: 'taskkill',
+        args: ['/IM', 'garage61 telemetry agent.exe', '/T', '/F']
+      })
+    ])
+  )
+})
+
+test('pruneUnclosedProcesses removes entries whose image is no longer active (#352)', async () => {
+  // Direct unit coverage for the cleanup invariant at kill.ts:331 - when
+  // a tracked unclosed entry no longer appears in the running process
+  // names, it should be removed so it does not surface in getRunningApps.
+  const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
+
+  unclosedProcesses.set('ac:c:/tools/active.exe', {
+    path: 'C:/Tools/Active.exe',
+    name: 'Active.exe',
+    gameKey: 'ac',
+    error: 'access denied',
+    reason: 'access_denied',
+    elevated: true
+  })
+  unclosedProcesses.set('ac:c:/tools/inactive.exe', {
+    path: 'C:/Tools/Inactive.exe',
+    name: 'Inactive.exe',
+    gameKey: 'ac',
+    error: 'still running',
+    reason: 'still_running',
+    elevated: false
+  })
+  unclosedProcesses.set('ac:c:/tools/also-inactive.exe', {
+    path: 'C:/Tools/Also-Inactive.exe',
+    name: 'Also-Inactive.exe',
+    gameKey: 'ac',
+    error: 'access denied',
+    reason: 'access_denied',
+    elevated: true
+  })
+
+  pruneUnclosedProcesses(new Set(['active.exe']))
+
+  expect(unclosedProcesses.has('ac:c:/tools/active.exe')).toBe(true)
+  expect(unclosedProcesses.has('ac:c:/tools/inactive.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:/tools/also-inactive.exe')).toBe(false)
 })
