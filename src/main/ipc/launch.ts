@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron'
 
-import { buildActiveProfileLaunchPaths, buildNamedProfileLaunchPaths } from '../profiles'
+import {
+  buildActiveProfileLaunchEntries,
+  buildNamedProfileLaunchEntries,
+  buildNamedProfileLaunchPaths
+} from '../profiles'
 import {
   type KillResult,
   getRunningApps,
@@ -42,7 +46,7 @@ export function registerLaunchHandlers() {
       return validationError
     }
 
-    const profileApps = buildActiveProfileLaunchPaths(gameKey)
+    const profileApps = buildActiveProfileLaunchEntries(gameKey)
 
     if (profileApps.length === 0) {
       return { success: false, error: 'No executable paths configured for this profile.' }
@@ -57,16 +61,16 @@ export function registerLaunchHandlers() {
       return validationError
     }
 
-    const allPaths = buildActiveProfileLaunchPaths(gameKey)
+    const allEntries = buildActiveProfileLaunchEntries(gameKey)
 
-    if (allPaths.length === 0) {
+    if (allEntries.length === 0) {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
     const processNames = await readRunningProcessNames()
-    const missingPaths = allPaths.filter((p) => !isRunningExePath(processNames, p))
+    const missingEntries = allEntries.filter((entry) => !isRunningExePath(processNames, entry.path))
 
-    if (missingPaths.length === 0) {
+    if (missingEntries.length === 0) {
       return {
         success: true,
         message: 'All profile apps are already running.',
@@ -75,7 +79,7 @@ export function registerLaunchHandlers() {
       }
     }
 
-    return launchProfileApps(event.sender, gameKey, missingPaths)
+    return launchProfileApps(event.sender, gameKey, missingEntries)
   })
 
   ipcMain.handle(
@@ -129,28 +133,35 @@ export function registerLaunchHandlers() {
       const gamePaths = getStoredStringRecord('gamePaths')
       const gamePath = gamePaths[gameKey]?.toLowerCase()
 
-      const fromPaths = buildNamedProfileLaunchPaths(gameKey, fromProfileId).filter(
-        (p) => !gamePath || p.toLowerCase() !== gamePath
+      const fromEntries = buildNamedProfileLaunchEntries(gameKey, fromProfileId).filter(
+        (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
       )
-      const toPaths = buildNamedProfileLaunchPaths(gameKey, toProfileId).filter(
-        (p) => !gamePath || p.toLowerCase() !== gamePath
+      const toEntries = buildNamedProfileLaunchEntries(gameKey, toProfileId).filter(
+        (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
       )
-      const toPathSet = new Set(toPaths.map((p) => p.toLowerCase()))
+      const toPathSet = new Set(toEntries.map((entry) => entry.path.toLowerCase()))
       const processNamesBeforeSwitch = await readRunningProcessNames()
 
-      const pathsToStop = fromPaths.filter(
-        (p) => !toPathSet.has(p.toLowerCase()) && processNamesBeforeSwitch.has(getExeName(p))
+      const entriesToStop = fromEntries.filter(
+        (entry) =>
+          !toPathSet.has(entry.path.toLowerCase()) &&
+          processNamesBeforeSwitch.has(getExeName(entry.path))
       )
       let killResult: KillResult | undefined
 
-      if (pathsToStop.length > 0) {
-        killResult = await killProfileApps(gameKey, pathsToStop)
+      if (entriesToStop.length > 0) {
+        killResult = await killProfileApps(
+          gameKey,
+          entriesToStop.map((entry) => entry.path)
+        )
       }
 
       const processNamesAfterStop = await readRunningProcessNames()
-      const pathsToStart = toPaths.filter((p) => !processNamesAfterStop.has(getExeName(p)))
+      const entriesToStart = toEntries.filter(
+        (entry) => !processNamesAfterStop.has(getExeName(entry.path))
+      )
 
-      if (pathsToStart.length === 0) {
+      if (entriesToStart.length === 0) {
         return {
           success: true,
           message: killResult?.message,
@@ -161,7 +172,7 @@ export function registerLaunchHandlers() {
         }
       }
 
-      const launchResult = await launchProfileApps(event.sender, gameKey, pathsToStart)
+      const launchResult = await launchProfileApps(event.sender, gameKey, entriesToStart)
 
       return {
         ...launchResult,

@@ -12,7 +12,7 @@ import {
   runningProcesses
 } from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
-import type { AppLaunchResult, LaunchResult } from './types'
+import type { AppLaunchResult, LaunchResult, ProfileLaunchEntry, ProfileLaunchInput } from './types'
 import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
@@ -23,7 +23,7 @@ let launchBlockedUntil = 0
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
-  profileApps: string[]
+  profileApps: ProfileLaunchInput[]
 ): Promise<LaunchResult> {
   if (activeLaunches.size > 0) {
     return { success: false, error: 'Another profile is already launching.' }
@@ -42,13 +42,14 @@ export async function launchProfileApps(
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
   const processNames = await readRunningProcessNames()
-  const validApps = profileApps.filter((appPath) => {
-    if (!isValidExePath(appPath)) {
-      console.error(`Skipping invalid path: ${appPath}`)
+  const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
+  const validApps = normalizedEntries.filter((entry) => {
+    if (!isValidExePath(entry.path)) {
+      console.error(`Skipping invalid path: ${entry.path}`)
       return false
     }
-    if (!fs.existsSync(appPath.trim())) {
-      console.error(`Skipping missing executable: ${appPath}`)
+    if (!fs.existsSync(entry.path.trim())) {
+      console.error(`Skipping missing executable: ${entry.path}`)
       return false
     }
     return true
@@ -62,7 +63,7 @@ export async function launchProfileApps(
   let launchedAny = false
 
   try {
-    const appsToLaunch = validApps.filter((appPath) => !isRunningExePath(processNames, appPath))
+    const appsToLaunch = validApps.filter((entry) => !isRunningExePath(processNames, entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
 
     if (appsToLaunch.length === 0) {
@@ -190,20 +191,40 @@ function parseCommandLineArgs(input: string) {
   return args
 }
 
-function getAppArgs(appPath: string) {
-  const appPaths = getStoredStringRecord('appPaths')
+function getAppArgs(appKey: string) {
   const appArgs = getStoredStringRecord('appArgs')
+  const args = appArgs[appKey]
+  return typeof args === 'string' && args.trim().length > 0 ? parseCommandLineArgs(args) : []
+}
+
+function resolveAppKeyFromPath(appPath: string): string | undefined {
+  const appPaths = getStoredStringRecord('appPaths')
   const normalizedAppPath = appPath.trim().toLowerCase()
   const appEntry = Object.entries(appPaths).find(
     ([, value]) => value.trim().toLowerCase() === normalizedAppPath
   )
+  return appEntry?.[0]
+}
 
-  if (!appEntry) {
-    return []
+function normalizeLaunchInput(input: ProfileLaunchInput, gameKey: string): ProfileLaunchEntry {
+  if (typeof input !== 'string') {
+    return { key: input.key, path: input.path }
   }
 
-  const args = appArgs[appEntry[0]]
-  return typeof args === 'string' && args.trim().length > 0 ? parseCommandLineArgs(args) : []
+  const gamePaths = getStoredStringRecord('gamePaths')
+  const matchingGamePath = gamePaths?.[gameKey]
+  if (
+    typeof matchingGamePath === 'string' &&
+    matchingGamePath.trim().toLowerCase() === input.trim().toLowerCase()
+  ) {
+    return { key: gameKey, path: input }
+  }
+
+  // Legacy callers that supply plain paths fall back to a reverse lookup against
+  // `appPaths`. New callers should pass {key, path} so the lookup is unambiguous
+  // when two slots share an exe (#357).
+  const resolvedKey = resolveAppKeyFromPath(input)
+  return { key: resolvedKey ?? input, path: input }
 }
 
 function sendLaunchError(sender: WebContents, appPath: string, error: string) {
@@ -276,9 +297,10 @@ function launchElevated(appPath: string, args: string[] = []) {
 function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
-  appPath: string,
+  entry: ProfileLaunchEntry,
   gamePath?: string
 ) {
+  const { path: appPath, key: appKey } = entry
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -295,7 +317,7 @@ function spawnDetachedApp(
     }
 
     try {
-      const args = getAppArgs(appPath)
+      const args = getAppArgs(appKey)
       const child = spawn(appPath, args, { detached: true, stdio: 'ignore' })
       runningProcesses.set(appPath, {
         process: child,
@@ -327,7 +349,7 @@ function spawnDetachedApp(
         }
 
         if (isElevatedLaunchError(err)) {
-          resolveOnce(await launchElevated(appPath, getAppArgs(appPath)))
+          resolveOnce(await launchElevated(appPath, getAppArgs(appKey)))
           return
         }
 
@@ -366,7 +388,7 @@ function spawnDetachedApp(
       console.error(`Error launching ${appPath}: ${message}`)
 
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appPath)).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey)).then(resolveOnce)
         return
       }
 
