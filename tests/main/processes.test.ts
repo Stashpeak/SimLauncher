@@ -18,7 +18,19 @@ const accessDeniedImageNames = new Set<string>()
 const inaccessibleExecutablePathProcesses = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
 const staleTaskkillPids = new Set<string>()
+// "Process exited cleanly BEFORE the kill ran" — when a name is in this set,
+// the path-scoped WMI lookup removes it from `processNames` so the post-kill
+// tasklist recheck reports the image as absent. Models the genuine pre-kill
+// exit case for elevated/inaccessible processes (#352, #378, #350).
 const processNamesGoneAfterWmiLookup = new Set<string>()
+// "WMI PIDs are gone AFTER the kill, but the image MAY still be in tasklist"
+// — when a name is in this set, the SECOND+ path-scoped WMI lookup for that
+// name returns 0 PIDs while leaving `processNames` intact. Used to isolate
+// the `staleTask !== true` predicate at kill.ts:362 (#345): the third
+// predicate `processNamesAfterKill.has(processName)` must stay true so the
+// staleTask branch is the only thing keeping isElevatedInconclusive false.
+const processNamesGoneAfterKill = new Set<string>()
+const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
@@ -129,19 +141,30 @@ async function loadProcessModules() {
         // whose process name matches the queried $name. This is what makes
         // findProcessIdsByExecutablePath path-scoped in production.
         const entry = processRegistry.get(normalizeRegistryKey(targetPathEnv))
+        const lookupCount = processName ? (wmiLookupCounts.get(processName) ?? 0) + 1 : 0
+        if (processName) {
+          wmiLookupCounts.set(processName, lookupCount)
+        }
+        // `processNamesGoneAfterKill` suppresses PIDs on the POST-kill lookup
+        // (second invocation onward) only, leaving `processNames` intact so
+        // the post-kill tasklist recheck still reports the image as present.
+        const suppressPidsForPostKill =
+          !!processName && lookupCount > 1 && processNamesGoneAfterKill.has(processName)
         const pids: string[] = []
         if (
           entry &&
           (!processName || entry.processName === processName) &&
           processNames.has(entry.processName) &&
-          !inaccessibleExecutablePathProcesses.has(entry.processName)
+          !inaccessibleExecutablePathProcesses.has(entry.processName) &&
+          !suppressPidsForPostKill
         ) {
           pids.push(entry.pid)
         }
         // Drop processNames entries that opted into "image is gone" after a
         // WMI lookup. This lets tests model the case where the WMI lookup
-        // returned 0 PIDs because the elevated process genuinely exited, so
-        // the subsequent tasklist recheck must report the image as absent.
+        // returned 0 PIDs because the elevated process genuinely exited
+        // BEFORE the kill ran, so the subsequent tasklist recheck must
+        // report the image as absent.
         if (processName && processNamesGoneAfterWmiLookup.has(processName)) {
           processNames.delete(processName)
         }
@@ -347,6 +370,8 @@ beforeEach(async () => {
   nullExecutablePathPids.clear()
   staleTaskkillPids.clear()
   processNamesGoneAfterWmiLookup.clear()
+  processNamesGoneAfterKill.clear()
+  wmiLookupCounts.clear()
   processRegistry.clear()
   execFileCalls.length = 0
   spawnCalls.length = 0
@@ -1812,12 +1837,19 @@ test('launchProfileApps skips a tracked wrapper child on subsequent launch (#314
 })
 
 test('finalize keeps stale-only attempts closed when image is gone (staleTask predicate, #326, #345)', async () => {
-  // Isolates the `staleTask !== true` predicate at kill.ts:362. If the
-  // predicate regressed to `staleTask === true` or was removed entirely,
-  // an attempt whose taskkill returned stale + recheck WMI empty + image
-  // gone would still be treated as inconclusive/access_denied. The
-  // staleTask-aware code path must short-circuit isElevatedInconclusive
-  // for this exact scenario.
+  // Isolates the `staleTask !== true` predicate at kill.ts:362. The other
+  // two predicates of isElevatedInconclusive must stay TRUE so the staleTask
+  // check is the only thing keeping it false:
+  //   1. attempt.notFound === true                       <- stale taskkill error
+  //   2. attempt.staleTask !== true                      <- THE PREDICATE under test
+  //   3. processNamesAfterKill.has(attempt.processName)  <- image must still be in tasklist
+  //
+  // We use `processNamesGoneAfterKill` (NOT `processNamesGoneAfterWmiLookup`)
+  // so the post-kill WMI lookup returns 0 PIDs while leaving `simhub.exe` in
+  // `processNames`. That keeps predicate #3 true. If the production code
+  // regressed `staleTask !== true` to `staleTask === true` or removed it,
+  // isElevatedInconclusive would flip true and this test would fail because
+  // the attempt would be registered as unclosed/elevated.
   const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
     profiles: {
       ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
@@ -1828,7 +1860,7 @@ test('finalize keeps stale-only attempts closed when image is gone (staleTask pr
   processNames.add('simhub.exe')
   registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4321')
   staleTaskkillPids.add('4321')
-  processNamesGoneAfterWmiLookup.add('simhub.exe')
+  processNamesGoneAfterKill.add('simhub.exe')
 
   await expect(killLaunchedApps('ac')).resolves.toMatchObject({
     success: true,
