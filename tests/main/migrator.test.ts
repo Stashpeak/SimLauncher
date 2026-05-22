@@ -16,6 +16,17 @@ async function loadMigratorModule() {
       set(key: string, value: unknown) {
         storeData[key] = value
       }
+    },
+    getStoredStringRecord(key: string) {
+      const value = storeData[key]
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {}
+      }
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string'
+        )
+      )
     }
   }
 
