@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 export type DirtyScopeId = 'settings' | string
 
+export type SaveHandler = () => Promise<boolean> | boolean
+
 export interface AppDirtyContextValue {
   isAnyDirty: boolean
   isSettingsDirty: boolean
@@ -9,15 +11,18 @@ export interface AppDirtyContextValue {
   activeProfileEditorScope: string | null
   reportSettingsDirty: (isDirty: boolean) => void
   reportProfileEditorDirty: (scopeId: string, isDirty: boolean) => void
-  registerSaveHandler: (
-    scope: 'settings' | 'profile-editor',
-    handler: (() => Promise<void> | void) | null
-  ) => void
+  registerSaveHandler: (scope: 'settings' | 'profile-editor', handler: SaveHandler | null) => void
   registerDiscardHandler: (
     scope: 'settings' | 'profile-editor',
     handler: (() => void) | null
   ) => void
-  requestSaveAll: () => Promise<void>
+  /**
+   * Runs every registered save handler in turn and returns `true` only if every
+   * handler reported success. Handlers report failure either by returning
+   * `false` or by throwing — both are treated as a failed save so the caller
+   * can keep dirty UI/dialogs open and surface an error toast.
+   */
+  requestSaveAll: () => Promise<boolean>
   requestDiscardAll: () => void
 }
 
@@ -26,12 +31,8 @@ const AppDirtyContext = createContext<AppDirtyContextValue | null>(null)
 export function AppDirtyProvider({ children }: { children: ReactNode }) {
   const [isSettingsDirty, setIsSettingsDirty] = useState(false)
   const [profileEditorDirtyScope, setProfileEditorDirtyScope] = useState<string | null>(null)
-  const [settingsSaveHandler, setSettingsSaveHandler] = useState<
-    (() => Promise<void> | void) | null
-  >(null)
-  const [profileSaveHandler, setProfileSaveHandler] = useState<(() => Promise<void> | void) | null>(
-    null
-  )
+  const [settingsSaveHandler, setSettingsSaveHandler] = useState<SaveHandler | null>(null)
+  const [profileSaveHandler, setProfileSaveHandler] = useState<SaveHandler | null>(null)
   const [settingsDiscardHandler, setSettingsDiscardHandler] = useState<(() => void) | null>(null)
   const [profileDiscardHandler, setProfileDiscardHandler] = useState<(() => void) | null>(null)
 
@@ -49,7 +50,7 @@ export function AppDirtyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const registerSaveHandler = useCallback(
-    (scope: 'settings' | 'profile-editor', handler: (() => Promise<void> | void) | null) => {
+    (scope: 'settings' | 'profile-editor', handler: SaveHandler | null) => {
       if (scope === 'settings') {
         setSettingsSaveHandler(() => handler)
       } else {
@@ -70,14 +71,24 @@ export function AppDirtyProvider({ children }: { children: ReactNode }) {
     []
   )
 
-  const requestSaveAll = useCallback(async () => {
-    if (profileSaveHandler) {
-      await profileSaveHandler()
+  const runHandler = useCallback(async (handler: SaveHandler | null): Promise<boolean> => {
+    if (!handler) {
+      return true
     }
-    if (settingsSaveHandler) {
-      await settingsSaveHandler()
+    try {
+      const result = await handler()
+      return result !== false
+    } catch (err) {
+      console.error('Dirty-scope save handler threw', err)
+      return false
     }
-  }, [profileSaveHandler, settingsSaveHandler])
+  }, [])
+
+  const requestSaveAll = useCallback(async (): Promise<boolean> => {
+    const profileOk = await runHandler(profileSaveHandler)
+    const settingsOk = await runHandler(settingsSaveHandler)
+    return profileOk && settingsOk
+  }, [profileSaveHandler, runHandler, settingsSaveHandler])
 
   const requestDiscardAll = useCallback(() => {
     profileDiscardHandler?.()

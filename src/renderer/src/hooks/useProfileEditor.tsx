@@ -321,46 +321,55 @@ export function useProfileEditor({
     }
   }, [isDirty, executeLaunch, setShowLaunchConfirm])
 
-  const handleSave = async (shouldLaunch = false) => {
+  const handleSave = async (shouldLaunch = false): Promise<boolean> => {
     if (shouldLaunch) setShowLaunchConfirm(false)
-    const allProfiles = await getProfiles()
-    const profileSet = normalizeGameProfileSet(allProfiles[gameKey] as Profiles[string] | undefined)
-    const activeProfile =
-      profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
-      getActiveGameProfile(profileSet)
-    const normalizedProfileName = profileName.trim() || activeProfile.name
-
-    const updatedProfile = {
-      ...activeProfile,
-      name: normalizedProfileName,
-      utilities: profileUtilities.map((utility) => ({
-        id: utility.id,
-        enabled: utility.enabled
-      })),
-      launchAutomatically,
-      trackingEnabled,
-      killControlsEnabled,
-      relaunchControlsEnabled,
-      trackedProcessPaths: trackedProcessPaths.filter(
-        (processPath) => processPath.trim().length > 0
+    try {
+      const allProfiles = await getProfiles()
+      const profileSet = normalizeGameProfileSet(
+        allProfiles[gameKey] as Profiles[string] | undefined
       )
-    }
+      const activeProfile =
+        profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
+        getActiveGameProfile(profileSet)
+      const normalizedProfileName = profileName.trim() || activeProfile.name
 
-    await saveProfile(gameKey, {
-      activeProfileId: updatedProfile.id,
-      profiles: profileSet.profiles.map((profile) =>
-        profile.id === updatedProfile.id ? updatedProfile : profile
-      )
-    })
-    await onProfilesChanged()
-    resetDirty()
+      const updatedProfile = {
+        ...activeProfile,
+        name: normalizedProfileName,
+        utilities: profileUtilities.map((utility) => ({
+          id: utility.id,
+          enabled: utility.enabled
+        })),
+        launchAutomatically,
+        trackingEnabled,
+        killControlsEnabled,
+        relaunchControlsEnabled,
+        trackedProcessPaths: trackedProcessPaths.filter(
+          (processPath) => processPath.trim().length > 0
+        )
+      }
 
-    notify('Profile saved!', 'success', 2500)
+      await saveProfile(gameKey, {
+        activeProfileId: updatedProfile.id,
+        profiles: profileSet.profiles.map((profile) =>
+          profile.id === updatedProfile.id ? updatedProfile : profile
+        )
+      })
+      await onProfilesChanged()
+      resetDirty()
 
-    if (shouldLaunch) {
-      executeLaunch()
-    } else {
-      onClose()
+      notify('Profile saved!', 'success', 2500)
+
+      if (shouldLaunch) {
+        executeLaunch()
+      } else {
+        onClose()
+      }
+      return true
+    } catch (err) {
+      console.error('Failed to save profile', err)
+      notify('Failed to save profile', 'error')
+      return false
     }
   }
 

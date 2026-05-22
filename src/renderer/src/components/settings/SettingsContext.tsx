@@ -45,7 +45,7 @@ export function SettingsProvider({
   children: ReactNode
   onDirtyChange?: (isDirty: boolean) => void
   shouldSaveTrigger?: boolean
-  onSaved?: () => void
+  onSaved?: (success: boolean) => void
   onConfigImported?: () => void
 }) {
   const { notify } = useNotify()

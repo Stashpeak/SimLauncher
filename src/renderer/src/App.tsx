@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { NotifyProvider } from './components/Notify'
+import { NotifyProvider, useNotify } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
@@ -30,6 +30,7 @@ export default function App() {
 function AppContent() {
   const [view, setView] = useState<'games' | 'settings'>('games')
   const { accentBgTint, syncThemeFromStore } = useTheme()
+  const { notify } = useNotify()
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
   const [showImportWarning, setShowImportWarning] = useState(false)
   const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
@@ -116,7 +117,12 @@ function AppContent() {
   const handleConfirmSave = useCallback(async () => {
     // If only the profile editor is dirty, trigger its save handler and pivot.
     if (isProfileEditorDirty && !isSettingsDirty) {
-      await requestSaveAll()
+      const success = await requestSaveAll()
+      if (!success) {
+        // Keep the dialog open so the user can retry or discard; the failed
+        // save handler already surfaced its own error toast.
+        return
+      }
       if (pendingView) {
         setView(pendingView)
         setPendingView(null)
@@ -124,20 +130,28 @@ function AppContent() {
       return
     }
     // Otherwise let the settings save pipeline run via its existing trigger.
+    // The pendingView pivot happens in SettingsProvider's onSaved callback,
+    // which is only allowed to navigate when the save reports success.
     setSaveRequested(true)
   }, [isProfileEditorDirty, isSettingsDirty, pendingView, requestSaveAll])
 
   const handleCloseConfirmSave = useCallback(async () => {
+    let success: boolean
     try {
-      await requestSaveAll()
+      success = await requestSaveAll()
     } catch (err) {
+      // requestSaveAll catches handler errors internally, but guard anyway.
       console.error('Failed to save before close', err)
-      setCloseConfirmOpen(false)
+      success = false
+    }
+    if (!success) {
+      // Do NOT force-close — leave dialog open so the user keeps their data.
+      notify('Failed to save changes. Window not closed.', 'error', 4000)
       return
     }
     setCloseConfirmOpen(false)
     await forceClose()
-  }, [requestSaveAll])
+  }, [notify, requestSaveAll])
 
   const handleCloseConfirmDiscard = useCallback(async () => {
     requestDiscardAll()
@@ -186,10 +200,10 @@ function AppContent() {
         onDirtyChange={reportSettingsDirty}
         shouldSaveTrigger={saveRequested}
         onConfigImported={handleConfigImported}
-        onSaved={() => {
+        onSaved={(success) => {
           setSaveRequested(false)
           setRefreshKey((k) => k + 1)
-          if (pendingView) {
+          if (success && pendingView) {
             setView(pendingView)
             setPendingView(null)
           }
