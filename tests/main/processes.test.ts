@@ -907,6 +907,43 @@ test('launchProfileApps omits PowerShell ArgumentList for elevated launches with
   })
 })
 
+test('launchProfileApps resolves args per utility key when two slots share the same exe (#357)', async () => {
+  // Two custom-app slots configured with the same .exe but different args:
+  // each slot must launch with the args assigned to its own key, not whichever
+  // key the path-based reverse lookup happened to find first.
+  markExistingPath('C:/Tools/Shared Utility.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: {
+      customapp1: 'C:/Tools/Shared Utility.exe',
+      customapp2: 'C:/Tools/Shared Utility.exe'
+    },
+    appArgs: {
+      customapp1: '--mode debug',
+      customapp2: '--mode silent'
+    }
+  })
+
+  await expect(
+    launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' },
+      { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
+    ])
+  ).resolves.toMatchObject({
+    success: true,
+    launchedCount: 2
+  })
+
+  expect(spawnCalls).toHaveLength(2)
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Tools/Shared Utility.exe',
+    args: ['--mode', 'debug']
+  })
+  expect(spawnCalls[1]).toMatchObject({
+    appPath: 'C:/Tools/Shared Utility.exe',
+    args: ['--mode', 'silent']
+  })
+})
+
 test('launchProfileApps reports synchronous spawn failures without tracking the failed process', async () => {
   const { launchProfileApps, runningProcesses } = await loadProcessModules()
 

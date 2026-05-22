@@ -1,8 +1,9 @@
 import { ipcMain } from 'electron'
 
-import { buildActiveProfileLaunchPaths, buildNamedProfileLaunchPaths } from '../profiles'
+import { buildActiveProfileLaunchEntries, buildNamedProfileLaunchEntries } from '../profiles'
 import {
   type KillResult,
+  type ProfileLaunchEntry,
   getRunningApps,
   isRunningExePath,
   killLaunchedApps,
@@ -14,6 +15,18 @@ import {
 } from '../processes'
 import { KNOWN_GAME_KEYS, getStoredStringRecord } from '../store'
 import { getExeName } from '../utils'
+
+/**
+ * Identifier used to diff profile-switch targets. Two entries match only when
+ * they share BOTH the utility/game key AND the executable path. Comparing on
+ * path alone would treat e.g. `customapp1` and `customapp2` pointing at the
+ * same exe as equal, which is wrong after the #357 key-based arg refactor:
+ * the slots may carry different `appArgs`, so a slot move must still trigger
+ * a stop + relaunch with the new args.
+ */
+export function getProfileLaunchEntryId(entry: ProfileLaunchEntry) {
+  return `${entry.key} ${entry.path.toLowerCase()}`
+}
 
 export function validateGameKey(gameKey: unknown) {
   if (typeof gameKey !== 'string') {
@@ -42,7 +55,7 @@ export function registerLaunchHandlers() {
       return validationError
     }
 
-    const profileApps = buildActiveProfileLaunchPaths(gameKey)
+    const profileApps = buildActiveProfileLaunchEntries(gameKey)
 
     if (profileApps.length === 0) {
       return { success: false, error: 'No executable paths configured for this profile.' }
@@ -57,16 +70,16 @@ export function registerLaunchHandlers() {
       return validationError
     }
 
-    const allPaths = buildActiveProfileLaunchPaths(gameKey)
+    const allEntries = buildActiveProfileLaunchEntries(gameKey)
 
-    if (allPaths.length === 0) {
+    if (allEntries.length === 0) {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
     const { processNames } = await readRunningProcessNames()
-    const missingPaths = allPaths.filter((p) => !isRunningExePath(processNames, p))
+    const missingEntries = allEntries.filter((entry) => !isRunningExePath(processNames, entry.path))
 
-    if (missingPaths.length === 0) {
+    if (missingEntries.length === 0) {
       return {
         success: true,
         message: 'All profile apps are already running.',
@@ -75,7 +88,7 @@ export function registerLaunchHandlers() {
       }
     }
 
-    return launchProfileApps(event.sender, gameKey, missingPaths)
+    return launchProfileApps(event.sender, gameKey, missingEntries)
   })
 
   ipcMain.handle(
@@ -95,19 +108,35 @@ export function registerLaunchHandlers() {
       const gamePath = gamePaths[gameKey]?.toLowerCase()
       const { processNames } = await readRunningProcessNames()
 
-      const utilityPaths = (profileId: string) =>
-        new Set(
-          buildNamedProfileLaunchPaths(gameKey, profileId)
-            .filter((p) => !gamePath || p.toLowerCase() !== gamePath)
-            .map((p) => p.toLowerCase())
+      const utilityEntries = (profileId: string) =>
+        buildNamedProfileLaunchEntries(gameKey, profileId).filter(
+          (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
         )
 
-      const fromPaths = utilityPaths(fromProfileId)
-      const toPaths = utilityPaths(toProfileId)
-      const toStopCount = [...fromPaths].filter(
-        (p) => !toPaths.has(p) && processNames.has(getExeName(p))
+      const fromEntries = utilityEntries(fromProfileId)
+      const toEntries = utilityEntries(toProfileId)
+      const toEntryIds = new Set(toEntries.map(getProfileLaunchEntryId))
+      const fromEntryIds = new Set(fromEntries.map(getProfileLaunchEntryId))
+      // Slots that leave the profile and whose image is currently running
+      // need to be stopped. Match on `{key, path}` so a slot whose key
+      // changes (different args) still counts as a stop even when the
+      // exe path is unchanged.
+      const stopping = fromEntries.filter(
+        (entry) =>
+          !toEntryIds.has(getProfileLaunchEntryId(entry)) &&
+          processNames.has(getExeName(entry.path))
+      )
+      const stoppedExeNames = new Set(stopping.map((entry) => getExeName(entry.path)))
+      const toStopCount = stopping.length
+      // A slot that newly enters the profile needs a start when either its
+      // image isn't running, or its image is about to be stopped above
+      // (same exe, different key — the incoming slot still needs its own
+      // args, so the running process must be replaced).
+      const toStartCount = toEntries.filter(
+        (entry) =>
+          !fromEntryIds.has(getProfileLaunchEntryId(entry)) &&
+          (stoppedExeNames.has(getExeName(entry.path)) || !processNames.has(getExeName(entry.path)))
       ).length
-      const toStartCount = [...toPaths].filter((p) => !processNames.has(getExeName(p))).length
 
       return { toStopCount, toStartCount }
     }
@@ -129,28 +158,48 @@ export function registerLaunchHandlers() {
       const gamePaths = getStoredStringRecord('gamePaths')
       const gamePath = gamePaths[gameKey]?.toLowerCase()
 
-      const fromPaths = buildNamedProfileLaunchPaths(gameKey, fromProfileId).filter(
-        (p) => !gamePath || p.toLowerCase() !== gamePath
+      const fromEntries = buildNamedProfileLaunchEntries(gameKey, fromProfileId).filter(
+        (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
       )
-      const toPaths = buildNamedProfileLaunchPaths(gameKey, toProfileId).filter(
-        (p) => !gamePath || p.toLowerCase() !== gamePath
+      const toEntries = buildNamedProfileLaunchEntries(gameKey, toProfileId).filter(
+        (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
       )
-      const toPathSet = new Set(toPaths.map((p) => p.toLowerCase()))
+      // Match on `{key, path}` rather than path alone. After the #357
+      // key-based arg refactor, `customapp1` and `customapp2` pointing at
+      // the same exe legitimately carry different `appArgs`, so a slot
+      // move must still trigger a stop + relaunch even though the path is
+      // unchanged.
+      const toEntryIds = new Set(toEntries.map(getProfileLaunchEntryId))
       const { processNames: processNamesBeforeSwitch } = await readRunningProcessNames()
 
-      const pathsToStop = fromPaths.filter(
-        (p) => !toPathSet.has(p.toLowerCase()) && processNamesBeforeSwitch.has(getExeName(p))
+      const entriesToStop = fromEntries.filter(
+        (entry) =>
+          !toEntryIds.has(getProfileLaunchEntryId(entry)) &&
+          processNamesBeforeSwitch.has(getExeName(entry.path))
       )
       let killResult: KillResult | undefined
 
-      if (pathsToStop.length > 0) {
-        killResult = await killProfileApps(gameKey, pathsToStop)
+      if (entriesToStop.length > 0) {
+        killResult = await killProfileApps(
+          gameKey,
+          entriesToStop.map((entry) => entry.path)
+        )
       }
 
       const { processNames: processNamesAfterStop } = await readRunningProcessNames()
-      const pathsToStart = toPaths.filter((p) => !processNamesAfterStop.has(getExeName(p)))
+      // If we just stopped a slot pointing at the same exe (different key
+      // and args), the incoming slot still needs to start with its own
+      // args — treat that exe as "needs to launch" regardless of post-kill
+      // tasklist state. Without this, a same-exe key swap would skip the
+      // relaunch and leave the old args active.
+      const stoppedExeNames = new Set(entriesToStop.map((entry) => getExeName(entry.path)))
+      const entriesToStart = toEntries.filter(
+        (entry) =>
+          stoppedExeNames.has(getExeName(entry.path)) ||
+          !processNamesAfterStop.has(getExeName(entry.path))
+      )
 
-      if (pathsToStart.length === 0) {
+      if (entriesToStart.length === 0) {
         return {
           success: true,
           message: killResult?.message,
@@ -161,7 +210,7 @@ export function registerLaunchHandlers() {
         }
       }
 
-      const launchResult = await launchProfileApps(event.sender, gameKey, pathsToStart)
+      const launchResult = await launchProfileApps(event.sender, gameKey, entriesToStart)
 
       return {
         ...launchResult,

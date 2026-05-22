@@ -1,3 +1,4 @@
+import type { ProfileLaunchEntry } from './processes/types'
 import { getStoredStringRecord, store } from './store'
 import { isRecord, isValidExePath } from './utils'
 
@@ -97,11 +98,11 @@ export function resolveNamedProfile(
   return { ...((entry as StoredProfile | undefined) || {}), id: 'default', name: 'Default' }
 }
 
-export function getEnabledUtilityPaths(
+export function getEnabledUtilityEntries(
   profile: StoredProfile,
   appPaths: Record<string, string>,
   customSlots: unknown
-): string[] {
+): ProfileLaunchEntry[] {
   const count =
     typeof customSlots === 'number' && Number.isFinite(customSlots)
       ? Math.max(1, Math.floor(customSlots))
@@ -110,7 +111,7 @@ export function getEnabledUtilityPaths(
     ...BUILT_IN_UTILITY_KEYS,
     ...Array.from({ length: count }, (_, i) => `customapp${i + 1}`)
   ]
-  const paths: string[] = []
+  const entries: ProfileLaunchEntry[] = []
 
   if (Array.isArray(profile.utilities)) {
     profile.utilities
@@ -119,42 +120,65 @@ export function getEnabledUtilityPaths(
           isRecord(u) && typeof u.id === 'string' && typeof u.enabled === 'boolean'
       )
       .filter((u) => u.enabled && utilityKeys.includes(u.id) && appPaths[u.id])
-      .forEach((u) => paths.push(appPaths[u.id]))
+      .forEach((u) => entries.push({ key: u.id, path: appPaths[u.id] }))
   } else {
     utilityKeys.forEach((key) => {
-      if (profile[key] === true && appPaths[key]) paths.push(appPaths[key])
+      if (profile[key] === true && appPaths[key]) entries.push({ key, path: appPaths[key] })
     })
   }
 
-  return paths
+  return entries
 }
 
-export function buildActiveProfileLaunchPaths(gameKey: string): string[] {
+export function getEnabledUtilityPaths(
+  profile: StoredProfile,
+  appPaths: Record<string, string>,
+  customSlots: unknown
+): string[] {
+  return getEnabledUtilityEntries(profile, appPaths, customSlots).map((entry) => entry.path)
+}
+
+export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchEntry[] {
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
   const profiles = getStoredProfiles()
   const customSlots = store.get('customSlots')
   const profile = resolveActiveProfile(profiles[gameKey])
-  const paths: string[] = []
+  const entries: ProfileLaunchEntry[] = []
 
-  if (profile.launchAutomatically !== false && gamePaths[gameKey]) paths.push(gamePaths[gameKey])
-  getEnabledUtilityPaths(profile, appPaths, customSlots).forEach((p) => paths.push(p))
+  if (profile.launchAutomatically !== false && gamePaths[gameKey]) {
+    entries.push({ key: gameKey, path: gamePaths[gameKey] })
+  }
+  getEnabledUtilityEntries(profile, appPaths, customSlots).forEach((entry) => entries.push(entry))
 
-  return paths
+  return entries
 }
 
-export function buildNamedProfileLaunchPaths(gameKey: string, profileId: string): string[] {
+export function buildActiveProfileLaunchPaths(gameKey: string): string[] {
+  return buildActiveProfileLaunchEntries(gameKey).map((entry) => entry.path)
+}
+
+export function buildNamedProfileLaunchEntries(
+  gameKey: string,
+  profileId: string
+): ProfileLaunchEntry[] {
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
   const profiles = getStoredProfiles()
   const customSlots = store.get('customSlots')
   const profile = resolveNamedProfile(profiles[gameKey], profileId)
-  const paths: string[] = []
+  const entries: ProfileLaunchEntry[] = []
 
-  if (profile.launchAutomatically !== false && gamePaths[gameKey]) paths.push(gamePaths[gameKey])
-  getEnabledUtilityPaths(profile, appPaths, customSlots).forEach((p) => paths.push(p))
+  if (profile.launchAutomatically !== false && gamePaths[gameKey]) {
+    entries.push({ key: gameKey, path: gamePaths[gameKey] })
+  }
+  getEnabledUtilityEntries(profile, appPaths, customSlots).forEach((entry) => entries.push(entry))
 
-  return paths
+  return entries
+}
+
+export function buildNamedProfileLaunchPaths(gameKey: string, profileId: string): string[] {
+  return buildNamedProfileLaunchEntries(gameKey, profileId).map((entry) => entry.path)
 }
 
 export function getUtilityKeys(customSlots: unknown) {
