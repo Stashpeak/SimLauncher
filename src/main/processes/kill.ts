@@ -347,9 +347,24 @@ async function finalizeKillAttempts(
   }
 
   invalidateProcessNameCache()
-  const processNamesAfterKill = await readRunningProcessNames()
+  const { processNames: processNamesAfterKill, succeeded: tasklistReadSucceeded } =
+    await readRunningProcessNames()
   const finalizedAttempts = await Promise.all(
     attempts.map(async (attempt) => {
+      // Treat the launched exe's absence from the post-kill tasklist as the
+      // authoritative success signal. This covers apps whose actual running
+      // process has a different name than the launched exe (e.g. Perplexity
+      // and similar Electron wrappers, see #390): the kill effectively
+      // succeeded if the image we asked Windows to terminate is gone, even
+      // when taskkill reported access-denied/not-found or WMI returns a
+      // stale PID on the post-kill recheck.
+      //
+      // Gate this override on tasklistReadSucceeded so a transient tasklist
+      // command failure (which yields an empty Set) doesn't silently turn
+      // real taskkill failures into false successes (see #399).
+      const imageGoneFromTasklist =
+        tasklistReadSucceeded && !processNamesAfterKill.has(attempt.processName)
+
       let stillRunning: boolean
       let isElevatedInconclusive = false
       if (isFullExePath(attempt.appPath)) {
@@ -358,28 +373,33 @@ async function finalizeKillAttempts(
           attempt.appPath
         )
         isElevatedInconclusive =
+          !imageGoneFromTasklist &&
           attempt.notFound === true &&
           attempt.staleTask !== true &&
           processNamesAfterKill.has(attempt.processName)
         stillRunning =
-          processIds.length > 0 ||
-          isElevatedInconclusive ||
-          (attempt.accessDenied === true &&
-            !attempt.notFound &&
-            processNamesAfterKill.has(attempt.processName))
+          !imageGoneFromTasklist &&
+          (processIds.length > 0 ||
+            isElevatedInconclusive ||
+            (attempt.accessDenied === true &&
+              !attempt.notFound &&
+              processNamesAfterKill.has(attempt.processName)))
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
       }
       return {
         ...attempt,
         stillRunning,
+        imageGoneFromTasklist,
         accessDenied: attempt.accessDenied || isElevatedInconclusive
       }
     })
   )
 
   finalizedAttempts.forEach((attempt) => {
-    const failedToClose = attempt.stillRunning || (!attempt.success && !attempt.notFound)
+    const failedToClose =
+      attempt.stillRunning ||
+      (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
 
     if (failedToClose) {
       registerUnclosedProcess(attempt)
@@ -398,7 +418,9 @@ async function finalizeKillAttempts(
   })
 
   const failedAttempts = finalizedAttempts.filter(
-    (attempt) => attempt.stillRunning || (!attempt.success && !attempt.notFound)
+    (attempt) =>
+      attempt.stillRunning ||
+      (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
   )
   const closedCount = finalizedAttempts.length - failedAttempts.length
   const failures: KillFailure[] = failedAttempts.map((attempt) => {
@@ -472,7 +494,7 @@ function getProfileCompanionTargets(gameKey?: string) {
 }
 
 export async function killLaunchedApps(gameKey?: string) {
-  const processNames = await readRunningProcessNames()
+  const { processNames } = await readRunningProcessNames()
   const companionTargets = getProfileCompanionTargets(gameKey)
   const killTasks: Promise<KillAttemptResult>[] = []
 
@@ -508,7 +530,7 @@ export async function killLaunchedApps(gameKey?: string) {
 }
 
 export async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
-  const processNames = await readRunningProcessNames()
+  const { processNames } = await readRunningProcessNames()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
   const storedAppPathTargets = getStoredAppPathTargets()

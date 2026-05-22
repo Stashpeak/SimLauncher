@@ -22,7 +22,9 @@ const mocks = vi.hoisted(() => ({
     (gameKey: string, profileId: string) => ProfileLaunchEntry[]
   >(() => []),
   buildActiveProfileLaunchEntries: vi.fn<(gameKey: string) => ProfileLaunchEntry[]>(() => []),
-  readRunningProcessNames: vi.fn<() => Promise<Set<string>>>(async () => new Set<string>()),
+  readRunningProcessNames: vi.fn<() => Promise<{ processNames: Set<string>; succeeded: boolean }>>(
+    async () => ({ processNames: new Set<string>(), succeeded: true })
+  ),
   launchProfileApps: vi.fn<
     (sender: WebContents, gameKey: string, entries: ProfileLaunchInput[]) => Promise<unknown>
   >(async () => ({ success: true, launchedCount: 0, skippedCount: 0 })),
@@ -85,7 +87,10 @@ beforeEach(async () => {
   mocks.buildNamedProfileLaunchEntries.mockReset()
   mocks.buildActiveProfileLaunchEntries.mockReset()
   mocks.readRunningProcessNames.mockReset()
-  mocks.readRunningProcessNames.mockResolvedValue(new Set<string>())
+  mocks.readRunningProcessNames.mockResolvedValue({
+    processNames: new Set<string>(),
+    succeeded: true
+  })
   mocks.launchProfileApps.mockReset()
   mocks.launchProfileApps.mockResolvedValue({
     success: true,
@@ -212,8 +217,8 @@ test('switch-profile-apps stops and relaunches when a slot moves to a new key bu
     return []
   })
   mocks.readRunningProcessNames
-    .mockResolvedValueOnce(new Set(['shared utility.exe']))
-    .mockResolvedValueOnce(new Set<string>())
+    .mockResolvedValueOnce({ processNames: new Set(['shared utility.exe']), succeeded: true })
+    .mockResolvedValueOnce({ processNames: new Set<string>(), succeeded: true })
 
   const { registerLaunchHandlers } = await import('../../src/main/ipc/launch')
   registerLaunchHandlers()
@@ -246,8 +251,8 @@ test('switch-profile-apps relaunches the incoming slot even when its exe is stil
     return []
   })
   mocks.readRunningProcessNames
-    .mockResolvedValueOnce(new Set(['shared utility.exe']))
-    .mockResolvedValueOnce(new Set(['shared utility.exe']))
+    .mockResolvedValueOnce({ processNames: new Set(['shared utility.exe']), succeeded: true })
+    .mockResolvedValueOnce({ processNames: new Set(['shared utility.exe']), succeeded: true })
 
   const { registerLaunchHandlers } = await import('../../src/main/ipc/launch')
   registerLaunchHandlers()
@@ -268,7 +273,10 @@ test('switch-profile-apps treats unchanged {key, path} entries as no-op', async 
   mocks.buildNamedProfileLaunchEntries.mockImplementation(() => [
     { key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }
   ])
-  mocks.readRunningProcessNames.mockResolvedValue(new Set(['shared utility.exe']))
+  mocks.readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['shared utility.exe']),
+    succeeded: true
+  })
 
   const { registerLaunchHandlers } = await import('../../src/main/ipc/launch')
   registerLaunchHandlers()

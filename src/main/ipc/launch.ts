@@ -76,7 +76,7 @@ export function registerLaunchHandlers() {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
-    const processNames = await readRunningProcessNames()
+    const { processNames } = await readRunningProcessNames()
     const missingEntries = allEntries.filter((entry) => !isRunningExePath(processNames, entry.path))
 
     if (missingEntries.length === 0) {
@@ -106,7 +106,7 @@ export function registerLaunchHandlers() {
 
       const gamePaths = getStoredStringRecord('gamePaths')
       const gamePath = gamePaths[gameKey]?.toLowerCase()
-      const processNames = await readRunningProcessNames()
+      const { processNames } = await readRunningProcessNames()
 
       const utilityEntries = (profileId: string) =>
         buildNamedProfileLaunchEntries(gameKey, profileId).filter(
@@ -170,7 +170,7 @@ export function registerLaunchHandlers() {
       // move must still trigger a stop + relaunch even though the path is
       // unchanged.
       const toEntryIds = new Set(toEntries.map(getProfileLaunchEntryId))
-      const processNamesBeforeSwitch = await readRunningProcessNames()
+      const { processNames: processNamesBeforeSwitch } = await readRunningProcessNames()
 
       const entriesToStop = fromEntries.filter(
         (entry) =>
@@ -186,7 +186,7 @@ export function registerLaunchHandlers() {
         )
       }
 
-      const processNamesAfterStop = await readRunningProcessNames()
+      const { processNames: processNamesAfterStop } = await readRunningProcessNames()
       // If we just stopped a slot pointing at the same exe (different key
       // and args), the incoming slot still needs to start with its own
       // args — treat that exe as "needs to launch" regardless of post-kill

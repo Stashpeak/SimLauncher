@@ -41,7 +41,7 @@ export async function launchProfileApps(
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]?.toLowerCase()
-  const processNames = await readRunningProcessNames()
+  const { processNames } = await readRunningProcessNames()
   const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
   const validApps = normalizedEntries.filter((entry) => {
     if (!isValidExePath(entry.path)) {
