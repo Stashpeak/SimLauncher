@@ -65,7 +65,10 @@ export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningA
             onContextMenu={(e) => {
               if (app.warning) {
                 e.preventDefault()
-                showAppContextMenu(app.path, app.gameKey)
+                showAppContextMenu(app.path, app.gameKey, {
+                  tracked: app.tracked,
+                  name: app.name
+                })
               }
             }}
           >
