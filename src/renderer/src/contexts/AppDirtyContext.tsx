@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 
 export type DirtyScopeId = 'settings' | string
 
@@ -31,10 +39,15 @@ const AppDirtyContext = createContext<AppDirtyContextValue | null>(null)
 export function AppDirtyProvider({ children }: { children: ReactNode }) {
   const [isSettingsDirty, setIsSettingsDirty] = useState(false)
   const [profileEditorDirtyScope, setProfileEditorDirtyScope] = useState<string | null>(null)
-  const [settingsSaveHandler, setSettingsSaveHandler] = useState<SaveHandler | null>(null)
-  const [profileSaveHandler, setProfileSaveHandler] = useState<SaveHandler | null>(null)
-  const [settingsDiscardHandler, setSettingsDiscardHandler] = useState<(() => void) | null>(null)
-  const [profileDiscardHandler, setProfileDiscardHandler] = useState<(() => void) | null>(null)
+  // Handlers live in refs (not state) so re-registering on every parent render
+  // does not trigger a Provider state update, which would cascade re-renders
+  // through every consumer of `useAppDirty()` and create a rerender loop when
+  // the underlying handler reference is unstable (e.g. an unmemoized
+  // `handleSave` from a hook).
+  const settingsSaveHandlerRef = useRef<SaveHandler | null>(null)
+  const profileSaveHandlerRef = useRef<SaveHandler | null>(null)
+  const settingsDiscardHandlerRef = useRef<(() => void) | null>(null)
+  const profileDiscardHandlerRef = useRef<(() => void) | null>(null)
 
   const reportSettingsDirty = useCallback((isDirty: boolean) => {
     setIsSettingsDirty(isDirty)
@@ -52,9 +65,9 @@ export function AppDirtyProvider({ children }: { children: ReactNode }) {
   const registerSaveHandler = useCallback(
     (scope: 'settings' | 'profile-editor', handler: SaveHandler | null) => {
       if (scope === 'settings') {
-        setSettingsSaveHandler(() => handler)
+        settingsSaveHandlerRef.current = handler
       } else {
-        setProfileSaveHandler(() => handler)
+        profileSaveHandlerRef.current = handler
       }
     },
     []
@@ -63,9 +76,9 @@ export function AppDirtyProvider({ children }: { children: ReactNode }) {
   const registerDiscardHandler = useCallback(
     (scope: 'settings' | 'profile-editor', handler: (() => void) | null) => {
       if (scope === 'settings') {
-        setSettingsDiscardHandler(() => handler)
+        settingsDiscardHandlerRef.current = handler
       } else {
-        setProfileDiscardHandler(() => handler)
+        profileDiscardHandlerRef.current = handler
       }
     },
     []
@@ -85,15 +98,15 @@ export function AppDirtyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const requestSaveAll = useCallback(async (): Promise<boolean> => {
-    const profileOk = await runHandler(profileSaveHandler)
-    const settingsOk = await runHandler(settingsSaveHandler)
+    const profileOk = await runHandler(profileSaveHandlerRef.current)
+    const settingsOk = await runHandler(settingsSaveHandlerRef.current)
     return profileOk && settingsOk
-  }, [profileSaveHandler, runHandler, settingsSaveHandler])
+  }, [runHandler])
 
   const requestDiscardAll = useCallback(() => {
-    profileDiscardHandler?.()
-    settingsDiscardHandler?.()
-  }, [profileDiscardHandler, settingsDiscardHandler])
+    profileDiscardHandlerRef.current?.()
+    settingsDiscardHandlerRef.current?.()
+  }, [])
 
   const value = useMemo<AppDirtyContextValue>(
     () => ({
