@@ -532,7 +532,10 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   return result
 }
 
-export async function killProfileApps(gameKey: string, appPathsToKill: string[]): Promise<KillResult> {
+export async function killProfileApps(
+  gameKey: string,
+  appPathsToKill: string[]
+): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
