@@ -130,7 +130,8 @@ export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'setting
             path: a.path,
             gameKey: a.gameKey,
             warning: a.warning,
-            elevated: a.elevated
+            elevated: a.elevated,
+            tracked: a.tracked
           }))
 
           return (
