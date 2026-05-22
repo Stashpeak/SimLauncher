@@ -30,18 +30,27 @@ export function getExeName(filePath: unknown): string {
     return ''
   }
 
-  return path.basename(filePath).toLowerCase()
+  // Use win32 basename explicitly: SimLauncher targets Windows exclusively, but
+  // CI/tests run on Linux where the platform-native path module treats
+  // backslashes as literal characters. Forcing win32 keeps the result
+  // consistent across host OSes.
+  return path.win32.basename(filePath).toLowerCase()
 }
 
 /**
- * Canonical form for path comparison: trim, resolve to absolute, lowercase.
- * Returns "" for invalid input (non-string, empty, whitespace-only).
+ * Canonical form for path comparison: trim, resolve to absolute (using win32
+ * semantics), lowercase. Returns "" for invalid input (non-string, empty,
+ * whitespace-only).
+ *
+ * SimLauncher targets Windows exclusively, but CI/tests run on Linux where
+ * the platform-native `path` module treats backslashes as literal characters
+ * and would not canonicalise e.g. `C:\Apps\foo.exe` and `c:/apps/FOO.EXE` to
+ * the same string. Forcing `path.win32` ensures host-independent canonical
+ * keys safe to use in Maps/Sets and equality checks.
  *
  * Stored exe paths in this app are validated via isValidExePath (which calls
  * fs.existsSync(path.resolve(...))), so they are de-facto absolute by the time
- * they reach comparison sites. path.resolve() here normalizes drive letter
- * case and slashes consistently; the .toLowerCase() then yields a canonical
- * key safe to use in Maps/Sets and equality checks.
+ * they reach comparison sites.
  */
 export function normalizePathForComparison(p: unknown): string {
   if (typeof p !== 'string') {
@@ -53,7 +62,7 @@ export function normalizePathForComparison(p: unknown): string {
     return ''
   }
 
-  return path.resolve(trimmed).toLowerCase()
+  return path.win32.resolve(trimmed).toLowerCase()
 }
 
 /**
