@@ -125,12 +125,6 @@ export function createWindow() {
 
     store.set('windowBounds', mainWindow.getBounds())
 
-    if (!getIsQuitting() && getRendererDirty()) {
-      event.preventDefault()
-      mainWindow.webContents.send('close-requested')
-      return
-    }
-
     // Honour the renderer's pending tray preference (e.g. when the user toggled
     // Minimize-to-tray but has not saved yet) so the close button respects the
     // user's current intent rather than the last persisted value.
@@ -138,9 +132,18 @@ export function createWindow() {
     const effectiveMinimizeToTray =
       pendingMinimizeToTray === null ? store.get('minimizeToTray') === true : pendingMinimizeToTray
 
+    // Tray takes precedence over the dirty-changes prompt: hiding to tray
+    // keeps the renderer alive so unsaved data is preserved. The unsaved-
+    // changes confirm only matters when the close would actually quit.
     if (!getIsQuitting() && effectiveMinimizeToTray) {
       event.preventDefault()
       mainWindow.hide()
+      return
+    }
+
+    if (!getIsQuitting() && getRendererDirty()) {
+      event.preventDefault()
+      mainWindow.webContents.send('close-requested')
     }
   })
 
