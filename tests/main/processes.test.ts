@@ -458,7 +458,7 @@ test('getRunningApps surfaces a warning when a launched wrapper exits before its
         path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
         name: 'Cheat Engine.exe',
         gameKey: 'ac',
-        warning: expect.stringContaining('starts another process with a different name')
+        warning: expect.stringContaining('SimLauncher can no longer detect when you close it')
       })
     ])
   )
@@ -549,7 +549,7 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
     'process-name-mismatch-warning',
     expect.objectContaining({
       app: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
-      warning: expect.stringContaining('starts another process with a different name')
+      warning: expect.stringContaining('SimLauncher can no longer detect when you close it')
     })
   )
   dateNow.mockReturnValue(30000)
@@ -557,7 +557,7 @@ test('getRunningApps keeps wrapper warnings until the configured process is reso
     expect.arrayContaining([
       expect.objectContaining({
         path: 'C:/Program Files/Cheat Engine/Cheat Engine.exe',
-        warning: expect.stringContaining('starts another process with a different name')
+        warning: expect.stringContaining('SimLauncher can no longer detect when you close it')
       })
     ])
   )
@@ -634,6 +634,52 @@ test('process mismatch warnings persist until manually dismissed (#360)', async 
   expect(processNameMismatchWarnings.size).toBe(0)
 
   dateNow.mockRestore()
+})
+
+test('wrapper exit warning tells the user tracking is lost and how to fix it (#402)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/Perplexity.exe')
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Perplexity.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // Simulate the wrapper exiting immediately after spawning a differently-named
+  // child process. The launched image disappears from tasklist while another
+  // PID continues running under a different name.
+  processNames.delete('perplexity.exe')
+  processNames.add('perplexity-helper.exe')
+  childHandlers.get('exit')?.()
+
+  const mismatchCall = sender.send.mock.calls.find(
+    ([channel]) => channel === 'process-name-mismatch-warning'
+  )
+  expect(mismatchCall).toBeDefined()
+  const payload = mismatchCall?.[1] as { app: string; warning: string }
+  expect(payload.app).toBe('C:/Tools/Perplexity.exe')
+  // Wording must (a) name the exited wrapper, (b) state SimLauncher loses
+  // tracking, (c) point the user at Task Manager + tracked processes to fix.
+  expect(payload.warning).toContain('Perplexity.exe')
+  expect(payload.warning).toMatch(/no longer detect when you close it/i)
+  expect(payload.warning).toMatch(/task manager/i)
+  expect(payload.warning).toMatch(/tracked processes/i)
+
+  // Persistent strip warning carries the same actionable copy so the user
+  // doesn't only see it during the 5s toast window.
+  const stripWarning = processNameMismatchWarnings.values().next().value
+  expect(stripWarning?.warning).toBe(payload.warning)
 })
 
 test('killLaunchedApps does not create a wrapper warning for user-initiated closes', async () => {
