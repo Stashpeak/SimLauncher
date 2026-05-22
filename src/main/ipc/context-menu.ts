@@ -8,10 +8,13 @@ interface ShowAppContextMenuOptions {
 }
 
 // Strip the `.exe` suffix so context-menu labels read naturally (e.g. "Dismiss
-// OTT Warning" instead of "Dismiss OTT.exe Warning").
+// OTT Warning" instead of "Dismiss OTT.exe Warning"). Electron treats `&` in
+// menu labels as a mnemonic prefix on Windows, so we double-escape it to
+// preserve the original character in app names like "AT&T".
 function formatAppDisplayName(appPath: string, providedName?: string): string {
   const rawName = providedName?.trim() || path.basename(appPath)
-  return rawName.replace(/\.exe$/i, '') || rawName
+  const stripped = rawName.replace(/\.exe$/i, '') || rawName
+  return stripped.replace(/&/g, '&&')
 }
 
 export function buildDismissLabel(

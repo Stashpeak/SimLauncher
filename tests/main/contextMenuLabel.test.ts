@@ -45,4 +45,13 @@ describe('buildDismissLabel', () => {
   test('drops the display segment when name resolution yields an empty string', () => {
     expect(buildDismissLabel('', { name: '' })).toBe('Dismiss Icon')
   })
+
+  test('escapes ampersands so Electron does not treat them as mnemonics', () => {
+    expect(buildDismissLabel('C:/games/sim/AT&T.exe', { tracked: false })).toBe(
+      'Dismiss Icon for AT&&T'
+    )
+    expect(buildDismissLabel('C:/games/sim/utility.exe', { tracked: true, name: 'Foo & Bar' })).toBe(
+      'Dismiss Warning for Foo && Bar'
+    )
+  })
 })
