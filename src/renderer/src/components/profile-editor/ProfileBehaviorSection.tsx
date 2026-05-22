@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { ProfileToggleRow } from './ProfileToggleRow'
 
 interface ProfileBehaviorSectionProps {
@@ -13,7 +13,7 @@ export function ProfileBehaviorSection({
   trackingEnabled,
   onLaunchAutomaticallyChange,
   onTrackingEnabledChange
-}: ProfileBehaviorSectionProps) {
+}: ProfileBehaviorSectionProps): ReactNode {
   return (
     <div className="border-t border-(--glass-border) pt-4">
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import {
   applyImportConfig,
   cancelImportConfig,
@@ -13,7 +13,15 @@ interface UseConfigIOArgs {
   onConfigImported?: () => void
 }
 
-export function useConfigIO({ notify, onConfigImported }: UseConfigIOArgs) {
+export interface UseConfigIOResult {
+  exportingConfig: boolean
+  importingConfig: boolean
+  handleExportConfig: () => Promise<void>
+  handleImportConfig: () => Promise<void>
+  configImportDialogs: ReactNode
+}
+
+export function useConfigIO({ notify, onConfigImported }: UseConfigIOArgs): UseConfigIOResult {
   const [exportingConfig, setExportingConfig] = useState(false)
   const [importingConfig, setImportingConfig] = useState(false)
   const [importConfirmOpen, setImportConfirmOpen] = useState(false)

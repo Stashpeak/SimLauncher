@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
 import type { UpdateInfo, UpdateStatus } from './types'
@@ -22,7 +24,7 @@ export function AboutSection({
   updateStatus,
   onManualCheck,
   onInstallUpdate
-}: AboutSectionProps) {
+}: AboutSectionProps): ReactNode {
   const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettingsMeta()
 
   return (

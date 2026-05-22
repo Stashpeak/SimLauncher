@@ -102,7 +102,7 @@ export function useSettingsSave({
   setLaunchDelayMs,
   shouldSaveTrigger,
   onSaved
-}: UseSettingsSaveArgs) {
+}: UseSettingsSaveArgs): { handleSave: () => Promise<boolean> } {
   const handleSave = useCallback(async (): Promise<boolean> => {
     try {
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)

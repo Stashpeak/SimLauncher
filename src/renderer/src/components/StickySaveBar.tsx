@@ -27,7 +27,7 @@ export function StickySaveBar({
   onSecondary,
   ariaLabel,
   extra
-}: StickySaveBarProps) {
+}: StickySaveBarProps): ReactNode {
   if (!isDirty) {
     return null
   }

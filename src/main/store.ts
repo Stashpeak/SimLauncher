@@ -135,7 +135,7 @@ export function isWindowBounds(value: unknown): value is WindowBounds {
   })
 }
 
-export function requireSafeZoomFactor(value: unknown) {
+export function requireSafeZoomFactor(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new Error(
       `Zoom factor must be a finite number from ${MIN_ZOOM_FACTOR} to ${MAX_ZOOM_FACTOR}.`
@@ -153,7 +153,7 @@ function getSafeZoomFactor(value: unknown) {
   return clamp(value, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR)
 }
 
-export function getStoredZoomFactor() {
+export function getStoredZoomFactor(): number {
   const storedZoomFactor = store.get('zoomFactor')
   const safeZoomFactor = getSafeZoomFactor(storedZoomFactor)
 
@@ -164,12 +164,12 @@ export function getStoredZoomFactor() {
   return safeZoomFactor
 }
 
-export function getStoredBoolean(key: string, fallback = false) {
+export function getStoredBoolean(key: string, fallback = false): boolean {
   const value = store.get(key)
   return typeof value === 'boolean' ? value : fallback
 }
 
-export function getStoredStringRecord(key: string) {
+export function getStoredStringRecord(key: string): Record<string, string> {
   const value = store.get(key)
 
   if (!isRecord(value)) {
@@ -458,7 +458,7 @@ function sanitizeProfiles(value: unknown, utilityKeys: Set<string>) {
   return safeProfiles
 }
 
-export function sanitizeImportedConfig(value: unknown) {
+export function sanitizeImportedConfig(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new Error('Config file must contain a JSON object.')
   }
@@ -482,7 +482,7 @@ export function sanitizeImportedConfig(value: unknown) {
   return getSupportedConfigValues(value)
 }
 
-export function getSupportedConfigValues(config: Record<string, unknown>) {
+export function getSupportedConfigValues(config: Record<string, unknown>): Record<string, unknown> {
   const supportedConfig: Record<string, unknown> = {}
   const customSlots = getSafeCustomSlots(config.customSlots)
   const utilityKeys = getUtilityKeySet(customSlots ?? 1)
@@ -598,7 +598,7 @@ export function getSupportedConfigValues(config: Record<string, unknown>) {
   return supportedConfig
 }
 
-export function sanitizeSettingsPatch(patch: Record<string, unknown>) {
+export function sanitizeSettingsPatch(patch: Record<string, unknown>): Record<string, unknown> {
   const currentCustomSlots = getSafeCustomSlots(store.get('customSlots'))
   const patchCustomSlots = getSafeCustomSlots(patch.customSlots)
   const config: Record<string, unknown> = {

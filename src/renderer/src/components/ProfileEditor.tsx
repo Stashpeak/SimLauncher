@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ProfileBehaviorSection } from './profile-editor/ProfileBehaviorSection'
 import { ProfileEditorActions } from './profile-editor/ProfileEditorActions'
@@ -9,7 +9,7 @@ import { StickySaveBar } from './StickySaveBar'
 import { useAppDirty } from '../contexts/AppDirtyContext'
 import { useProfileEditor, type ProfileEditorProps } from '../hooks/useProfileEditor'
 
-export function ProfileEditor(props: ProfileEditorProps) {
+export function ProfileEditor(props: ProfileEditorProps): ReactNode {
   const editor = useProfileEditor(props)
   const { reportProfileEditorDirty, registerSaveHandler, registerDiscardHandler } = useAppDirty()
   const scopeId = `${props.gameKey}:${props.activeProfileId}`

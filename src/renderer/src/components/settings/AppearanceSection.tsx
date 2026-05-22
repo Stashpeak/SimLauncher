@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
@@ -28,7 +28,7 @@ const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
   { label: 'System', value: 'system' }
 ]
 
-export function AppearanceSection() {
+export function AppearanceSection(): ReactNode {
   const [showPicker, setShowPicker] = useState(false)
   const customSwatchRef = useRef<HTMLButtonElement>(null)
   const {

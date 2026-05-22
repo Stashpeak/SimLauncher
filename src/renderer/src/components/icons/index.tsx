@@ -1,4 +1,4 @@
-import type { SVGProps } from 'react'
+import type { ReactNode, SVGProps } from 'react'
 
 type IconProps = SVGProps<SVGSVGElement>
 
@@ -6,7 +6,7 @@ function Icon(props: IconProps) {
   return <svg {...props} />
 }
 
-export function WarningTriangleIcon(props: IconProps) {
+export function WarningTriangleIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -26,7 +26,7 @@ export function WarningTriangleIcon(props: IconProps) {
   )
 }
 
-export function CloseIcon(props: IconProps) {
+export function CloseIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -45,7 +45,7 @@ export function CloseIcon(props: IconProps) {
   )
 }
 
-export function GamepadIcon(props: IconProps) {
+export function GamepadIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -65,7 +65,7 @@ export function GamepadIcon(props: IconProps) {
   )
 }
 
-export function SettingsIcon(props: IconProps) {
+export function SettingsIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -84,7 +84,7 @@ export function SettingsIcon(props: IconProps) {
   )
 }
 
-export function MinimizeIcon(props: IconProps) {
+export function MinimizeIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 16}
@@ -100,7 +100,7 @@ export function MinimizeIcon(props: IconProps) {
   )
 }
 
-export function MaximizeIcon(props: IconProps) {
+export function MaximizeIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 16}
@@ -118,7 +118,7 @@ export function MaximizeIcon(props: IconProps) {
   )
 }
 
-export function CloseWindowIcon(props: IconProps) {
+export function CloseWindowIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 16}
@@ -136,7 +136,7 @@ export function CloseWindowIcon(props: IconProps) {
   )
 }
 
-export function RefreshIcon(props: IconProps) {
+export function RefreshIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -155,7 +155,7 @@ export function RefreshIcon(props: IconProps) {
   )
 }
 
-export function CopyIcon(props: IconProps) {
+export function CopyIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -174,7 +174,7 @@ export function CopyIcon(props: IconProps) {
   )
 }
 
-export function ChevronDownIcon(props: IconProps) {
+export function ChevronDownIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 16}
@@ -192,7 +192,7 @@ export function ChevronDownIcon(props: IconProps) {
   )
 }
 
-export function PlusIcon(props: IconProps) {
+export function PlusIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -210,7 +210,7 @@ export function PlusIcon(props: IconProps) {
   )
 }
 
-export function CheckIcon(props: IconProps) {
+export function CheckIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -228,7 +228,7 @@ export function CheckIcon(props: IconProps) {
   )
 }
 
-export function ErrorIcon(props: IconProps) {
+export function ErrorIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -248,7 +248,7 @@ export function ErrorIcon(props: IconProps) {
   )
 }
 
-export function KillIcon(props: IconProps) {
+export function KillIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -267,7 +267,7 @@ export function KillIcon(props: IconProps) {
   )
 }
 
-export function ReloadIcon(props: IconProps) {
+export function ReloadIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}
@@ -285,7 +285,7 @@ export function ReloadIcon(props: IconProps) {
   )
 }
 
-export function PlayMarkIcon(props: IconProps) {
+export function PlayMarkIcon(props: IconProps): ReactNode {
   return (
     <Icon
       width={props.width ?? 24}

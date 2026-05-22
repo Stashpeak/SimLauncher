@@ -13,18 +13,18 @@ export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 
-export function suppressProcessNameMismatchWarning(appPath: string) {
+export function suppressProcessNameMismatchWarning(appPath: string): void {
   suppressedProcessNameMismatchWarnings.add(normalizePathForComparison(appPath))
 }
 
-export function consumeProcessNameMismatchWarningSuppression(appPath: string) {
+export function consumeProcessNameMismatchWarningSuppression(appPath: string): boolean {
   const key = normalizePathForComparison(appPath)
   const suppressed = suppressedProcessNameMismatchWarnings.has(key)
   suppressedProcessNameMismatchWarnings.delete(key)
   return suppressed
 }
 
-export function pruneStoppedRunningProcesses(processNames: Set<string>) {
+export function pruneStoppedRunningProcesses(processNames: Set<string>): void {
   runningProcesses.forEach((appProcess, key) => {
     if (!processNames.has(getExeName(appProcess.path))) {
       runningProcesses.delete(key)
@@ -32,7 +32,7 @@ export function pruneStoppedRunningProcesses(processNames: Set<string>) {
   })
 }
 
-export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()) {
+export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()): void {
   processNameMismatchWarnings.forEach((entry, key) => {
     if (entry.expiresAt !== undefined && entry.expiresAt <= now) {
       processNameMismatchWarnings.delete(key)
@@ -44,7 +44,7 @@ export function getUnclosedProcessKey(
   gameKey: string | undefined,
   appPath: string,
   processName: string
-) {
+): string {
   // Callers occasionally pass a bare process name (e.g. "foo.exe") as the
   // appPath fallback. Bare names lack drive/separator info, so resolving them
   // via normalizePathForComparison would pin the key to the launcher's cwd —
@@ -57,7 +57,7 @@ export function getUnclosedProcessKey(
   return `${gameKey || 'unknown'}:${pathPart}`
 }
 
-export function dismissAppIcon(appPath: string, gameKey?: string) {
+export function dismissAppIcon(appPath: string, gameKey?: string): void {
   const normalizedPath = normalizePathForComparison(appPath)
   processNameMismatchWarnings.delete(normalizedPath)
   unclosedProcesses.delete(getUnclosedProcessKey(gameKey, appPath, getExeName(appPath)))

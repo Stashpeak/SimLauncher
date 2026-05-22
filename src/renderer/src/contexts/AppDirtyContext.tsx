@@ -36,7 +36,7 @@ export interface AppDirtyContextValue {
 
 const AppDirtyContext = createContext<AppDirtyContextValue | null>(null)
 
-export function AppDirtyProvider({ children }: { children: ReactNode }) {
+export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNode {
   const [isSettingsDirty, setIsSettingsDirty] = useState(false)
   const [profileEditorDirtyScope, setProfileEditorDirtyScope] = useState<string | null>(null)
   // Handlers live in refs (not state) so re-registering on every parent render
@@ -136,7 +136,7 @@ export function AppDirtyProvider({ children }: { children: ReactNode }) {
   return <AppDirtyContext.Provider value={value}>{children}</AppDirtyContext.Provider>
 }
 
-export function useAppDirty() {
+export function useAppDirty(): AppDirtyContextValue {
   const context = useContext(AppDirtyContext)
   if (!context) {
     throw new Error('useAppDirty must be used within AppDirtyProvider')

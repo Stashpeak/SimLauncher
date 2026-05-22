@@ -2,7 +2,8 @@ import {
   getUtilities,
   normalizeProfileUtilities,
   resolveCustomSlots,
-  type ProfileUtility
+  type ProfileUtility,
+  type Utility
 } from './config'
 
 export function syncProfileUtilitiesWithSettings(
@@ -10,7 +11,7 @@ export function syncProfileUtilitiesWithSettings(
   settingsCustomSlots: number,
   settingsAppPaths: Record<string, string>,
   settingsAppNames: Record<string, string>
-) {
+): { utilities: Utility[]; profileUtilities: ProfileUtility[] } {
   const resolvedUtilities = getUtilities(
     resolveCustomSlots(settingsCustomSlots, settingsAppPaths, settingsAppNames)
   )

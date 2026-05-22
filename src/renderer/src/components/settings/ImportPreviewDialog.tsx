@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 export interface ConfigImportPreviewSummary {
   changedKeys: string[]
   gamePaths: Array<{ key: string; path?: string; args?: string }>
@@ -24,7 +26,7 @@ function PreviewSection({
   title: string
   items: Array<{ key: string; path?: string; args?: string }>
   valueKey: 'path' | 'args'
-}) {
+}): ReactNode {
   if (items.length === 0) return null
 
   return (
@@ -50,7 +52,7 @@ export function ImportPreviewDialog({
   summary,
   onImport,
   onCancel
-}: ImportPreviewDialogProps) {
+}: ImportPreviewDialogProps): ReactNode {
   if (!isOpen || !summary) return null
 
   const previewCount =

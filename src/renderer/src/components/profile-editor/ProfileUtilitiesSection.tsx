@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import type { ProfileUtility, Utility } from '../../lib/config'
 import { Toggle } from '../Toggle'
 
@@ -22,7 +22,7 @@ interface ProfileUtilitiesSectionProps {
   onIconFailed: (utilityKey: string) => void
 }
 
-export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps) {
+export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): ReactNode {
   const { availableUtilities, enabledUtilityEntries, disabledUtilityEntries } = props
 
   return (

@@ -30,7 +30,7 @@ export function buildDismissLabel(
   return displayName ? `${action} for ${displayName}` : action
 }
 
-export function registerContextMenuHandlers() {
+export function registerContextMenuHandlers(): void {
   ipcMain.handle(
     'show-app-context-menu',
     (event, appPath: string, gameKey: string, options?: ShowAppContextMenuOptions) => {

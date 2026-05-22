@@ -1,6 +1,32 @@
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type Dispatch,
+  type KeyboardEvent,
+  type RefObject,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState
+} from 'react'
 
-export function useProfileMenu() {
+export interface UseProfileMenuResult {
+  profileMenuOpen: boolean
+  setProfileMenuOpen: Dispatch<SetStateAction<boolean>>
+  openProfileMenu: (focusSelectedProfileOnOpen?: boolean) => void
+  closeProfileMenu: (returnFocusToTrigger?: boolean) => void
+  newProfileFormOpen: boolean
+  setNewProfileFormOpen: Dispatch<SetStateAction<boolean>>
+  newProfileName: string
+  setNewProfileName: Dispatch<SetStateAction<string>>
+  profileMenuRef: RefObject<HTMLDivElement | null>
+  menuRef: RefObject<HTMLDivElement | null>
+  triggerRef: RefObject<HTMLButtonElement | null>
+  handleProfileMenuTriggerKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+  handleProfileMenuKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
+  newProfileInputRef: RefObject<HTMLInputElement | null>
+}
+
+export function useProfileMenu(): UseProfileMenuResult {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [newProfileFormOpen, setNewProfileFormOpen] = useState(false)
   const [newProfileName, setNewProfileName] = useState('')

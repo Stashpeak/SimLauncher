@@ -1,9 +1,14 @@
+import type { ReactNode } from 'react'
+
 interface ProfileNameSectionProps {
   profileName: string
   onProfileNameChange: (profileName: string) => void
 }
 
-export function ProfileNameSection({ profileName, onProfileNameChange }: ProfileNameSectionProps) {
+export function ProfileNameSection({
+  profileName,
+  onProfileNameChange
+}: ProfileNameSectionProps): ReactNode {
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">

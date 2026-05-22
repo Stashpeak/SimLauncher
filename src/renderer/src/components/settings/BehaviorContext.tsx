@@ -13,7 +13,7 @@ export interface BehaviorContextValue {
 
 export const BehaviorContext = createContext<BehaviorContextValue | null>(null)
 
-export function useBehaviorSettings() {
+export function useBehaviorSettings(): BehaviorContextValue {
   const context = useContext(BehaviorContext)
 
   if (!context) {

@@ -59,7 +59,7 @@ export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
   return inflight
 }
 
-export function invalidateProcessNameCache() {
+export function invalidateProcessNameCache(): void {
   cachedResult = undefined
   cachedAt = 0
 }

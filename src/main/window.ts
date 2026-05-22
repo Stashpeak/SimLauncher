@@ -37,11 +37,11 @@ function getInitialWindowBounds() {
   }
 }
 
-export function getMainWindow() {
+export function getMainWindow(): BrowserWindow | null {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
 }
 
-export function sendToRenderer(channel: string, payload: unknown) {
+export function sendToRenderer(channel: string, payload: unknown): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
   }
@@ -49,7 +49,7 @@ export function sendToRenderer(channel: string, payload: unknown) {
   mainWindow.webContents.send(channel, payload)
 }
 
-export function getAppIconPath() {
+export function getAppIconPath(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'SimLauncher.ico')
     : path.join(app.getAppPath(), 'SimLauncher.ico')
@@ -79,7 +79,7 @@ function getLocalDevRendererUrl() {
   return parsedUrl.toString()
 }
 
-export function showMainWindow() {
+export function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow()
     return
@@ -93,7 +93,7 @@ export function showMainWindow() {
   mainWindow.focus()
 }
 
-export function createWindow() {
+export function createWindow(): void {
   const zoomFactor = getStoredZoomFactor()
   const windowBounds = getInitialWindowBounds()
 
@@ -187,14 +187,14 @@ export function createWindow() {
   }
 }
 
-export function applyRuntimeConfigSettings() {
+export function applyRuntimeConfigSettings(): void {
   const startWithWindows = getStoredBoolean('startWithWindows')
   app.setLoginItemSettings({ openAtLogin: startWithWindows })
 
   mainWindow?.webContents.setZoomFactor(getStoredZoomFactor())
 }
 
-export function registerWindowHandlers() {
+export function registerWindowHandlers(): void {
   /**
    * Opens a file dialog to select an executable file and sends the path back.
    * @param inputId The ID of the input field in the Renderer to update.

@@ -66,7 +66,7 @@ function getStringRecord(value: unknown) {
   )
 }
 
-export async function migrateFromLocalStorage() {
+export async function migrateFromLocalStorage(): Promise<void> {
   const flags = await getMigrationFlags()
   if (flags.migrated) return
 
@@ -124,7 +124,7 @@ export async function migrateFromLocalStorage() {
   })
 }
 
-export async function runStartupMigrations() {
+export async function runStartupMigrations(): Promise<void> {
   try {
     await migrateFromLocalStorage()
   } catch (err) {

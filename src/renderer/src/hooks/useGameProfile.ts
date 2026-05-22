@@ -41,7 +41,19 @@ const getProfileState = (profileSet: GameProfileSet): ProfileState => {
   }
 }
 
-export function useGameProfile(gameKey: string, isActive: boolean, activeProfileId?: string) {
+export interface UseGameProfileResult {
+  profileSet: GameProfileSet
+  profileState: ProfileState
+  loadProfileSet: () => Promise<GameProfileSet>
+  getProfileRuntimeConfig: () => Promise<GameProfileSet>
+  saveProfileSet: (nextProfileSet: GameProfileSet) => Promise<void>
+}
+
+export function useGameProfile(
+  gameKey: string,
+  isActive: boolean,
+  activeProfileId?: string
+): UseGameProfileResult {
   const [profileSet, setProfileSet] = useState<GameProfileSet>(() =>
     normalizeGameProfileSet(undefined)
   )

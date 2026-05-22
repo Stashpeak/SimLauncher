@@ -19,7 +19,7 @@ export interface AppearanceContextValue {
 
 export const AppearanceContext = createContext<AppearanceContextValue | null>(null)
 
-export function useAppearanceSettings() {
+export function useAppearanceSettings(): AppearanceContextValue {
   const context = useContext(AppearanceContext)
 
   if (!context) {

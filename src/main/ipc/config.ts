@@ -280,7 +280,7 @@ function getSanitizedProfileRecord(profiles: unknown) {
   return Object.keys(safeProfiles).length > 0 ? safeProfiles : undefined
 }
 
-export function registerConfigHandlers() {
+export function registerConfigHandlers(): void {
   ipcMain.handle('export-config', async () => {
     try {
       const options = {

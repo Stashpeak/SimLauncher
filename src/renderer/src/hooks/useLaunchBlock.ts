@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function useLaunchBlock() {
+export interface UseLaunchBlockResult {
+  launchingGameKey: string | null
+  handleLaunchStart: (gameKey: string) => void
+  handleLaunchEnd: (finishedGameKey: string, cooldownMs?: number) => void
+}
+
+export function useLaunchBlock(): UseLaunchBlockResult {
   const [launchingGameKey, setLaunchingGameKey] = useState<string | null>(null)
   const launchBlockTimeoutRef = useRef<number | null>(null)
 

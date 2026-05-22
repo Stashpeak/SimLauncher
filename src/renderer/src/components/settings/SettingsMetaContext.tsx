@@ -14,7 +14,7 @@ export interface SettingsMetaContextValue {
 
 export const SettingsMetaContext = createContext<SettingsMetaContextValue | null>(null)
 
-export function useSettingsMeta() {
+export function useSettingsMeta(): SettingsMetaContextValue {
   const context = useContext(SettingsMetaContext)
 
   if (!context) {

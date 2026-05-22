@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Game } from '../../lib/config'
 
 interface GameIconProps {
@@ -7,7 +7,7 @@ interface GameIconProps {
   iconUrl?: string
 }
 
-export function GameIcon({ game, isRunning, iconUrl }: GameIconProps) {
+export function GameIcon({ game, isRunning, iconUrl }: GameIconProps): ReactNode {
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
 
   useEffect(() => {

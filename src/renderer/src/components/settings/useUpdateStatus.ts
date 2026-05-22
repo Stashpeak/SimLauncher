@@ -14,13 +14,23 @@ import type { UpdateInfo, UpdateStatus } from './types'
 
 type Notify = (message: string, type: 'success' | 'warn' | 'error', durationMs?: number) => void
 
+export interface UseUpdateStatusResult {
+  appVersion: string
+  checkingUpdate: boolean
+  installingUpdate: boolean
+  updateProgress: number | null
+  updateStatus: UpdateStatus
+  handleManualCheck: () => Promise<void>
+  handleInstallUpdate: () => Promise<void>
+}
+
 export function useUpdateStatus({
   updateInfo,
   notify
 }: {
   updateInfo: UpdateInfo
   notify: Notify
-}) {
+}): UseUpdateStatusResult {
   const [appVersion, setAppVersion] = useState<string>('')
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [installingUpdate, setInstallingUpdate] = useState(false)

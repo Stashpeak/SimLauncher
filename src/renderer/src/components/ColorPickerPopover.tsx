@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject
+} from 'react'
 import { createPortal } from 'react-dom'
 import { HexColorPicker } from 'react-colorful'
 
@@ -19,7 +26,7 @@ export function ColorPickerPopover({
   onChange,
   onClose,
   anchorRef
-}: ColorPickerPopoverProps) {
+}: ColorPickerPopoverProps): ReactNode {
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
 

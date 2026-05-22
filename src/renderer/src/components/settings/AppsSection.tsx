@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { MAX_CUSTOM_SLOTS } from '../../lib/config'
 import { useAppsSettings } from './AppsContext'
 import { ChevronDownIcon } from '../icons'
@@ -21,7 +21,7 @@ function getCustomSlotNumber(key: string) {
   return Number(key.replace('customapp', ''))
 }
 
-export function AppsSection() {
+export function AppsSection(): ReactNode {
   const {
     utilities,
     appPaths,

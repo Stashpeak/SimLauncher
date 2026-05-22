@@ -10,7 +10,7 @@ interface EmptyStateProps {
   }
 }
 
-export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action }: EmptyStateProps): ReactNode {
   return (
     <div className="relative flex flex-col items-center justify-center py-20 px-8 text-center">
       <div className="relative glass-surface-elevated animate-fade-slide max-w-md w-full rounded-3xl p-10 flex flex-col items-center gap-6 shadow-2xl">

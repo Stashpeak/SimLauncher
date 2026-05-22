@@ -11,7 +11,7 @@ export const shiftCustomSlotRecord = <T>(
   record: Record<string, T>,
   removedSlot: number,
   slotCount: number
-) => {
+): Record<string, T> => {
   const next = { ...record }
 
   for (let slot = removedSlot; slot <= slotCount; slot += 1) {
@@ -28,7 +28,11 @@ export const shiftCustomSlotRecord = <T>(
   return next
 }
 
-export const shiftCustomSlotSet = (values: Set<string>, removedSlot: number, slotCount: number) => {
+export const shiftCustomSlotSet = (
+  values: Set<string>,
+  removedSlot: number,
+  slotCount: number
+): Set<string> => {
   const shifted = new Set<string>()
 
   values.forEach((value) => {
@@ -87,7 +91,7 @@ export const shiftProfileCustomSlots = (
   profile: Profiles[string],
   removedSlot: number,
   slotCount: number
-) => {
+): Profiles[string] => {
   if (isGameProfileSet(profile)) {
     return {
       ...profile,

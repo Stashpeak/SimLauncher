@@ -24,11 +24,11 @@ import { getExeName, normalizePathForComparison, pathsEqual } from '../utils'
  * the slots may carry different `appArgs`, so a slot move must still trigger
  * a stop + relaunch with the new args.
  */
-export function getProfileLaunchEntryId(entry: ProfileLaunchEntry) {
+export function getProfileLaunchEntryId(entry: ProfileLaunchEntry): string {
   return `${entry.key} ${normalizePathForComparison(entry.path)}`
 }
 
-export function validateGameKey(gameKey: unknown) {
+export function validateGameKey(gameKey: unknown): { success: false; error: string } | undefined {
   if (typeof gameKey !== 'string') {
     return { success: false, error: 'Invalid argument' }
   }
@@ -40,7 +40,9 @@ export function validateGameKey(gameKey: unknown) {
   return undefined
 }
 
-export function validateProfileIds(...profileIds: unknown[]) {
+export function validateProfileIds(
+  ...profileIds: unknown[]
+): { success: false; error: string } | undefined {
   if (profileIds.some((profileId) => typeof profileId !== 'string')) {
     return { success: false, error: 'Invalid argument' }
   }
@@ -48,7 +50,7 @@ export function validateProfileIds(...profileIds: unknown[]) {
   return undefined
 }
 
-export function registerLaunchHandlers() {
+export function registerLaunchHandlers(): void {
   ipcMain.handle('launch-profile', async (event, gameKey: string) => {
     const validationError = validateGameKey(gameKey)
     if (validationError) {

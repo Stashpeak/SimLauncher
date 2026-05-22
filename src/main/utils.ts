@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 
-export function clamp(value: number, min: number, max: number) {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
@@ -81,15 +81,15 @@ export function pathsEqual(a: unknown, b: unknown): boolean {
   return normalizedA === normalizedB
 }
 
-export function wait(ms: number) {
+export function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export function getErrorMessage(err: unknown) {
+export function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function getErrorCode(err: unknown) {
+export function getErrorCode(err: unknown): string | undefined {
   return err && typeof err === 'object' && 'code' in err
     ? String((err as { code?: unknown }).code)
     : undefined

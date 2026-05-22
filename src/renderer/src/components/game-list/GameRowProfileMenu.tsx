@@ -1,4 +1,4 @@
-import type { Dispatch, KeyboardEvent, MutableRefObject, SetStateAction } from 'react'
+import type { Dispatch, KeyboardEvent, MutableRefObject, ReactNode, SetStateAction } from 'react'
 import type { GameProfileSet, NamedGameProfile } from '../../lib/config'
 import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
 
@@ -40,7 +40,7 @@ export function GameRowProfileMenu({
   gameName,
   onProfileSelect,
   onNewProfileSubmit
-}: GameRowProfileMenuProps) {
+}: GameRowProfileMenuProps): ReactNode {
   return (
     <div ref={profileMenuRef} className="relative">
       <button

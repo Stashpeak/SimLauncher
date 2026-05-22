@@ -74,7 +74,7 @@ export const BUILT_IN_UTILITIES: Utility[] = [
   { key: 'secondmonitor', name: 'Second Monitor' }
 ]
 
-export function normalizeCustomSlots(value: unknown) {
+export function normalizeCustomSlots(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_CUSTOM_SLOTS
   }
@@ -82,7 +82,7 @@ export function normalizeCustomSlots(value: unknown) {
   return Math.max(1, Math.min(Math.floor(value), MAX_CUSTOM_SLOTS))
 }
 
-export function getCustomUtilityKey(index: number) {
+export function getCustomUtilityKey(index: number): string {
   return `customapp${index}`
 }
 
@@ -103,7 +103,9 @@ function getCustomSlotNumberFromKey(key: string) {
   return match ? Number(match[1]) : null
 }
 
-export function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
+export function getHighestCustomSlot(
+  ...records: Array<Record<string, unknown> | undefined>
+): number {
   let highestSlot = 0
 
   const scanRecord = (record: Record<string, unknown> | undefined) => {
@@ -151,7 +153,7 @@ export function getHighestCustomSlot(...records: Array<Record<string, unknown> |
 export function resolveCustomSlots(
   value: unknown,
   ...records: Array<Record<string, unknown> | undefined>
-) {
+): number {
   return Math.min(
     Math.max(normalizeCustomSlots(value), getHighestCustomSlot(...records)),
     MAX_CUSTOM_SLOTS
@@ -184,7 +186,10 @@ export function isProfileUtility(value: unknown): value is ProfileUtility {
   return typeof value.id === 'string' && typeof value.enabled === 'boolean'
 }
 
-export function normalizeProfileUtilities(profile: GameProfile | undefined, utilities: Utility[]) {
+export function normalizeProfileUtilities(
+  profile: GameProfile | undefined,
+  utilities: Utility[]
+): ProfileUtility[] {
   const utilityIds = new Set(utilities.map((utility) => utility.key))
   const orderedUtilities: ProfileUtility[] = []
   const seen = new Set<string>()
@@ -215,11 +220,17 @@ export function normalizeProfileUtilities(profile: GameProfile | undefined, util
   return orderedUtilities
 }
 
-export function getEnabledProfileUtilities(profile: GameProfile | undefined, utilities: Utility[]) {
+export function getEnabledProfileUtilities(
+  profile: GameProfile | undefined,
+  utilities: Utility[]
+): ProfileUtility[] {
   return normalizeProfileUtilities(profile, utilities).filter((utility) => utility.enabled)
 }
 
-export function migrateProfileToUtilityOrder(profile: GameProfile, utilities: Utility[]) {
+export function migrateProfileToUtilityOrder(
+  profile: GameProfile,
+  utilities: Utility[]
+): GameProfile {
   const migratedProfile: GameProfile = {
     ...profile,
     utilities: normalizeProfileUtilities(profile, utilities)
@@ -256,7 +267,7 @@ export function normalizeProfiles(value: unknown): Profiles {
   return profiles
 }
 
-export function createProfileId() {
+export function createProfileId(): string {
   return `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
@@ -320,7 +331,7 @@ export function normalizeGameProfileSet(value: StoredGameProfile | undefined): G
   }
 }
 
-export function getActiveGameProfile(value: StoredGameProfile | undefined) {
+export function getActiveGameProfile(value: StoredGameProfile | undefined): NamedGameProfile {
   const profileSet = normalizeGameProfileSet(value)
   return (
     profileSet.profiles.find((profile) => profile.id === profileSet.activeProfileId) ||

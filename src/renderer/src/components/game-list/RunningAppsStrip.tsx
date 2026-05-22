@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { showAppContextMenu } from '../../lib/electron'
 
 export interface RunningAppIcon {
@@ -16,7 +16,10 @@ interface RunningAppsStripProps {
   cacheInitialized: boolean
 }
 
-export function RunningAppsStrip({ runningAppIcons, cacheInitialized }: RunningAppsStripProps) {
+export function RunningAppsStrip({
+  runningAppIcons,
+  cacheInitialized
+}: RunningAppsStripProps): ReactNode {
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
 
   if (runningAppIcons.length === 0) return null

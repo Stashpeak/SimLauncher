@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState, useMemo, type DragEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useMemo,
+  type Dispatch,
+  type DragEvent,
+  type SetStateAction
+} from 'react'
 import { useDirtyTracking } from './useDirtyTracking'
 import {
   getActiveGameProfile,
@@ -25,6 +33,58 @@ export interface ProfileEditorProps {
   onLaunchEnd?: (cooldownMs: number) => void
 }
 
+export interface UseProfileEditorResult {
+  loading: boolean
+  appPaths: Record<string, string>
+  appNames: Record<string, string>
+  profileName: string
+  setProfileName: Dispatch<SetStateAction<string>>
+  profileCount: number
+  dragUtilityId: string | null
+  dropTarget: { id: string; placement: 'before' | 'after' } | null
+  launchAutomatically: boolean
+  setLaunchAutomatically: Dispatch<SetStateAction<boolean>>
+  trackingEnabled: boolean
+  setTrackingEnabled: Dispatch<SetStateAction<boolean>>
+  killControlsEnabled: boolean
+  setKillControlsEnabled: Dispatch<SetStateAction<boolean>>
+  relaunchControlsEnabled: boolean
+  setRelaunchControlsEnabled: Dispatch<SetStateAction<boolean>>
+  trackedProcessPaths: string[]
+  appIconCache: Record<string, string>
+  failedIcons: Record<string, boolean>
+  setFailedIcons: Dispatch<SetStateAction<Record<string, boolean>>>
+  fetchingIcons: boolean
+  showConfirm: boolean
+  setShowConfirm: Dispatch<SetStateAction<boolean>>
+  showLaunchConfirm: boolean
+  setShowLaunchConfirm: Dispatch<SetStateAction<boolean>>
+  profileDeleteConfirm: { profileId: string; profileName: string } | null
+  setProfileDeleteConfirm: Dispatch<
+    SetStateAction<{ profileId: string; profileName: string } | null>
+  >
+  setDragUtilityId: Dispatch<SetStateAction<string | null>>
+  setDropTarget: Dispatch<SetStateAction<{ id: string; placement: 'before' | 'after' } | null>>
+  isDirty: boolean
+  handleCloseAttempt: () => void
+  handleToggleUtility: (key: string) => void
+  moveEnabledUtility: (draggedId: string, targetId: string, placement: 'before' | 'after') => void
+  startUtilityDrag: (event: DragEvent<HTMLDivElement>, utilityKey: string) => void
+  handleAddTrackedProcess: () => void
+  handleBrowseTrackedProcess: (index: number) => Promise<void>
+  handleRemoveTrackedProcess: (index: number) => void
+  handleIconFailed: (utilityKey: string) => void
+  handleLaunch: () => Promise<void>
+  handleDiscardAndLaunch: () => void
+  handleSave: (shouldLaunch?: boolean) => Promise<boolean>
+  handleDeleteProfile: () => Promise<void>
+  confirmDeleteProfile: () => Promise<void>
+  utilityByKey: Map<string, Utility>
+  availableUtilities: Utility[]
+  enabledUtilityEntries: ProfileUtility[]
+  disabledUtilityEntries: ProfileUtility[]
+}
+
 export function useProfileEditor({
   gameKey,
   activeProfileId,
@@ -33,7 +93,7 @@ export function useProfileEditor({
   onLaunchRequest,
   onLaunchStart,
   onLaunchEnd
-}: ProfileEditorProps) {
+}: ProfileEditorProps): UseProfileEditorResult {
   const { notify } = useNotify()
   const {
     appPaths: settingsAppPaths,

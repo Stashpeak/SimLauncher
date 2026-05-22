@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react'
+
 import { useSettingsMeta } from './SettingsMetaContext'
 
-export function ConfigSection() {
+export function ConfigSection(): ReactNode {
   const { exportingConfig, importingConfig, onExportConfig, onImportConfig } = useSettingsMeta()
 
   return (

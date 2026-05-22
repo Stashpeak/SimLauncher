@@ -24,7 +24,7 @@ const DEV_CSP = [
 // time (see electron.vite.config.ts). This header injection covers the dev
 // renderer served from Vite's HTTP server, where it also provides
 // frame-ancestors enforcement that the meta tag cannot.
-export function registerContentSecurityPolicy() {
+export function registerContentSecurityPolicy(): void {
   if (app.isPackaged) {
     return
   }

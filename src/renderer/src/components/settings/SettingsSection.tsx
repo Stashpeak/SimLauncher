@@ -7,7 +7,12 @@ interface SettingsSectionProps {
   children: ReactNode
 }
 
-export function SettingsSection({ title, open, onOpenChange, children }: SettingsSectionProps) {
+export function SettingsSection({
+  title,
+  open,
+  onOpenChange,
+  children
+}: SettingsSectionProps): ReactNode {
   return (
     <section className="space-y-4">
       <button

@@ -27,7 +27,7 @@ function getContrastRatio(lighterLuminance: number, darkerLuminance: number) {
   return (lighterLuminance + 0.05) / (darkerLuminance + 0.05)
 }
 
-export function getAccentForeground(hex: string) {
+export function getAccentForeground(hex: string): '#000000' | '#ffffff' {
   const accentLuminance = getRelativeLuminance(hex)
   const whiteContrast = getContrastRatio(1, accentLuminance)
   const blackContrast = getContrastRatio(accentLuminance, 0)
@@ -35,7 +35,7 @@ export function getAccentForeground(hex: string) {
   return blackContrast >= whiteContrast ? '#000000' : '#ffffff'
 }
 
-export function applyAccentTheme(hex: string) {
+export function applyAccentTheme(hex: string): void {
   const normalizedHex = hex.trim()
 
   if (!HEX_COLOR_PATTERN.test(normalizedHex)) {
@@ -61,7 +61,7 @@ export function normalizeThemeMode(value: unknown): ThemeMode {
   return value === 'light' || value === 'dark' || value === 'system' ? value : DEFAULT_THEME_MODE
 }
 
-export function applyThemeMode(mode: ThemeMode) {
+export function applyThemeMode(mode: ThemeMode): void {
   themeMediaCleanup?.()
   themeMediaCleanup = null
 

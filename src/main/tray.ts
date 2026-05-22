@@ -8,7 +8,7 @@ interface CreateTrayOptions {
   quitApp: () => void
 }
 
-export function createTray({ getIconPath, showMainWindow, quitApp }: CreateTrayOptions) {
+export function createTray({ getIconPath, showMainWindow, quitApp }: CreateTrayOptions): void {
   if (tray) {
     return
   }
