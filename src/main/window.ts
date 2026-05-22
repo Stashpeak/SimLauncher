@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, screen, type OpenDialogOptions } f
 import path from 'path'
 
 import { getIsQuitting, setIsQuitting } from './app-state'
+import { markRecentlyBrowsedPath } from './ipc/icons'
 import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
 import { checkForUpdates, registerUpdaterEvents } from './updater'
 import { clamp } from './utils'
@@ -190,7 +191,9 @@ export function registerWindowHandlers() {
           ? await dialog.showOpenDialog(mainWindow, options)
           : await dialog.showOpenDialog(options)
       if (!result.canceled && result.filePaths.length > 0) {
-        return { filePath: result.filePaths[0], inputId: safeInputId }
+        const filePath = result.filePaths[0]
+        markRecentlyBrowsedPath(filePath)
+        return { filePath, inputId: safeInputId }
       }
       return { filePath: null, inputId: safeInputId }
     } catch (err) {

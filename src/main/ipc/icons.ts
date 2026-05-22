@@ -7,6 +7,28 @@ import { getStoredStringRecord } from '../store'
 let genericIconFingerprint: string | null | undefined
 let genericIconFingerprintPromise: Promise<string | null> | null = null
 
+const RECENTLY_BROWSED_PATH_LIMIT = 32
+const recentlyBrowsedPaths = new Set<string>()
+
+/**
+ * Marks a file path as having been selected by the user via the OS file
+ * dialog. This grants `get-file-icon` permission to read its icon before the
+ * path has been persisted to the store, so freshly picked executables show
+ * their icon immediately in Settings rather than only after an app restart.
+ */
+export function markRecentlyBrowsedPath(filePath: string) {
+  if (typeof filePath !== 'string' || !filePath) return
+  if (recentlyBrowsedPaths.has(filePath)) {
+    recentlyBrowsedPaths.delete(filePath)
+  }
+  recentlyBrowsedPaths.add(filePath)
+  while (recentlyBrowsedPaths.size > RECENTLY_BROWSED_PATH_LIMIT) {
+    const oldest = recentlyBrowsedPaths.values().next().value
+    if (oldest === undefined) break
+    recentlyBrowsedPaths.delete(oldest)
+  }
+}
+
 async function computeGenericIconFingerprint() {
   if (process.platform !== 'win32') {
     return null
@@ -86,7 +108,7 @@ export function registerIconHandlers() {
       ...Object.values(getStoredStringRecord('gamePaths')),
       ...Object.values(getStoredStringRecord('appPaths'))
     ]
-    if (!storedPaths.includes(filePath)) return null
+    if (!storedPaths.includes(filePath) && !recentlyBrowsedPaths.has(filePath)) return null
 
     try {
       const icon = await app.getFileIcon(filePath, { size: 'normal' })
