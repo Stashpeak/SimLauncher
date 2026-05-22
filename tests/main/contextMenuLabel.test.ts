@@ -50,8 +50,8 @@ describe('buildDismissLabel', () => {
     expect(buildDismissLabel('C:/games/sim/AT&T.exe', { tracked: false })).toBe(
       'Dismiss Icon for AT&&T'
     )
-    expect(buildDismissLabel('C:/games/sim/utility.exe', { tracked: true, name: 'Foo & Bar' })).toBe(
-      'Dismiss Warning for Foo && Bar'
-    )
+    expect(
+      buildDismissLabel('C:/games/sim/utility.exe', { tracked: true, name: 'Foo & Bar' })
+    ).toBe('Dismiss Warning for Foo && Bar')
   })
 })
