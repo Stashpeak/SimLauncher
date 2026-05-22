@@ -136,6 +136,11 @@ function AppContent() {
       // save handler already surfaced its own error toast.
       return
     }
+    // Remount the games view so it reloads settings-derived state (game
+    // list, paths). GameList caches configured games once on mount, so a
+    // save-through-dialog that updates Settings without bumping refreshKey
+    // would otherwise leave the Games tab showing stale paths.
+    setRefreshKey((k) => k + 1)
     if (pendingView) {
       setView(pendingView)
       setPendingView(null)
