@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNotify } from './Notify'
 import { AboutSection } from './settings/AboutSection'
 import { AppearanceSection } from './settings/AppearanceSection'
@@ -19,7 +19,7 @@ export function SettingsView({
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
-}) {
+}): ReactNode {
   return <SettingsViewContent onClose={onClose} updateInfo={updateInfo} />
 }
 

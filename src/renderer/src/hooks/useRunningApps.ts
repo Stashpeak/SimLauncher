@@ -24,7 +24,13 @@ export interface RunningAppsChangedPayload {
   updatedAt: number
 }
 
-export function useRunningApps(configuredGames: Game[]) {
+export interface UseRunningAppsResult {
+  runningApps: RunningApp[]
+  runningStatus: Record<string, boolean>
+  refreshRunningState: (isMounted?: () => boolean) => Promise<void>
+}
+
+export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
   const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
 

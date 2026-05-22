@@ -274,7 +274,9 @@ async function publishRunningAppsInternal(
   return payload
 }
 
-export function publishRunningApps(reason: RunningAppsChangeReason = 'scan') {
+export function publishRunningApps(
+  reason: RunningAppsChangeReason = 'scan'
+): Promise<RunningAppsChangedPayload | null> {
   const next = (publishRunningAppsPromise || Promise.resolve(null))
     .catch(() => null)
     .then(() => publishRunningAppsInternal(reason))
@@ -300,7 +302,9 @@ function startRunningAppsMonitor() {
   }, RUNNING_APPS_SCAN_INTERVAL_MS)
 }
 
-export async function subscribeRunningApps(webContents: WebContents) {
+export async function subscribeRunningApps(
+  webContents: WebContents
+): Promise<RunningAppsChangedPayload> {
   runningAppsSubscribers.add(webContents)
   webContents.once('destroyed', () => removeRunningAppsSubscriber(webContents))
   startRunningAppsMonitor()
@@ -310,6 +314,6 @@ export async function subscribeRunningApps(webContents: WebContents) {
   return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
 }
 
-export function unsubscribeRunningApps(webContents: WebContents) {
+export function unsubscribeRunningApps(webContents: WebContents): void {
   removeRunningAppsSubscriber(webContents)
 }

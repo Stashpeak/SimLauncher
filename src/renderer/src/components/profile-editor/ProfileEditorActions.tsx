@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 interface ProfileEditorActionsProps {
   isDirty: boolean
   canDeleteProfile: boolean
@@ -12,7 +14,7 @@ export function ProfileEditorActions({
   onSave,
   onCloseAttempt,
   onDeleteProfile
-}: ProfileEditorActionsProps) {
+}: ProfileEditorActionsProps): ReactNode {
   return (
     <div className="flex gap-3 pt-2">
       <button

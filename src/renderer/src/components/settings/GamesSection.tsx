@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react'
+
 import { GAMES } from '../../lib/config'
 import { useGamesSettings } from './GamesContext'
 
-export function GamesSection() {
+export function GamesSection(): ReactNode {
   const { gamePaths, gameIcons, onBrowse, onGamePathChange } = useGamesSettings()
 
   return (

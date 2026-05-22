@@ -1,4 +1,4 @@
-import React from 'react'
+import type { ReactNode } from 'react'
 
 interface ToggleProps {
   checked: boolean
@@ -7,7 +7,7 @@ interface ToggleProps {
   'aria-label'?: string
 }
 
-export function Toggle({ checked, onChange, id, 'aria-label': ariaLabel }: ToggleProps) {
+export function Toggle({ checked, onChange, id, 'aria-label': ariaLabel }: ToggleProps): ReactNode {
   return (
     <label className="relative inline-flex items-center cursor-pointer no-drag">
       <input

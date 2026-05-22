@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { minimize, maximize, close } from '../lib/electron'
 import { PlayMarkIcon, SettingsIcon, MinimizeIcon, MaximizeIcon, CloseWindowIcon } from './icons'
 
@@ -8,7 +8,7 @@ interface WindowControlsProps {
   updateInfo: { version: string } | null
 }
 
-export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsProps) {
+export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsProps): ReactNode {
   const [isMaximized, setIsMaximized] = useState(false)
 
   const handleMinimize = () => minimize()

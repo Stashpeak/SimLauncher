@@ -71,7 +71,7 @@ export function useSettingsLoad({
   setIsCustomColor,
   setAppIcons,
   setGameIcons
-}: UseSettingsLoadArgs) {
+}: UseSettingsLoadArgs): { loadSettingsFromStore: () => Promise<void> } {
   const loadSettingsFromStore = useCallback(async () => {
     const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
     const typedProfiles = normalizeProfiles(savedProfiles)

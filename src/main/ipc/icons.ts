@@ -20,7 +20,7 @@ const recentlyBrowsedPaths = new Set<string>()
  * Paths are stored canonicalised so case/slash variants of the same file
  * collapse to one entry (see `normalizePathForComparison`).
  */
-export function markRecentlyBrowsedPath(filePath: string) {
+export function markRecentlyBrowsedPath(filePath: string): void {
   if (typeof filePath !== 'string' || !filePath) return
   const key = normalizePathForComparison(filePath)
   if (!key) return
@@ -91,7 +91,7 @@ function getGenericIconFingerprint() {
   return genericIconFingerprintPromise
 }
 
-export function registerIconHandlers() {
+export function registerIconHandlers(): void {
   ipcMain.handle('get-asset-data', async (_event, filename: unknown) => {
     if (typeof filename !== 'string' || path.basename(filename) !== filename || !filename)
       return null

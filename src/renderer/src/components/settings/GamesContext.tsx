@@ -9,7 +9,7 @@ export interface GamesContextValue {
 
 export const GamesContext = createContext<GamesContextValue | null>(null)
 
-export function useGamesSettings() {
+export function useGamesSettings(): GamesContextValue {
   const context = useContext(GamesContext)
 
   if (!context) {

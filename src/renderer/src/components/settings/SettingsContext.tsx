@@ -34,7 +34,7 @@ export function SettingsProvider({
   shouldSaveTrigger?: boolean
   onSaved?: (success: boolean) => void
   onConfigImported?: () => void
-}) {
+}): ReactNode {
   const { notify } = useNotify()
   const theme = useTheme()
   const themeRef = useRef(theme)

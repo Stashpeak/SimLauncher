@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { NotifyProvider, useNotify } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
@@ -18,7 +18,7 @@ import { useTheme } from './contexts/ThemeContext'
 import { SettingsProvider } from './components/settings/SettingsContext'
 import { AppDirtyProvider, useAppDirty } from './contexts/AppDirtyContext'
 
-export default function App() {
+export default function App(): ReactNode {
   return (
     <NotifyProvider>
       <AppDirtyProvider>

@@ -50,7 +50,7 @@ export function isStoredProfileSet(value: unknown): value is StoredProfileSet {
   return typeof value.activeProfileId === 'string' && Array.isArray(value.profiles)
 }
 
-export function getStoredProfiles() {
+export function getStoredProfiles(): Record<string, StoredProfileEntry> {
   const value = store.get('profiles')
 
   if (!isRecord(value)) {
@@ -181,7 +181,7 @@ export function buildNamedProfileLaunchPaths(gameKey: string, profileId: string)
   return buildNamedProfileLaunchEntries(gameKey, profileId).map((entry) => entry.path)
 }
 
-export function getUtilityKeys(customSlots: unknown) {
+export function getUtilityKeys(customSlots: unknown): string[] {
   const slotCount =
     typeof customSlots === 'number' && Number.isFinite(customSlots)
       ? Math.max(1, Math.floor(customSlots))
@@ -193,7 +193,7 @@ export function getUtilityKeys(customSlots: unknown) {
   ]
 }
 
-export function getEnabledUtilityKeys(profile: StoredProfile | undefined) {
+export function getEnabledUtilityKeys(profile: StoredProfile | undefined): string[] {
   if (!profile) {
     return []
   }
@@ -209,7 +209,7 @@ export function getEnabledUtilityKeys(profile: StoredProfile | undefined) {
     .map(([key]) => key)
 }
 
-export function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey: string) {
+export function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey: string): boolean {
   if (!profile) {
     return false
   }
@@ -223,7 +223,9 @@ export function isUtilityEnabled(profile: StoredProfile | undefined, utilityKey:
   return profile[utilityKey] === true
 }
 
-export function getActiveStoredProfile(profileEntry: StoredProfileEntry | undefined) {
+export function getActiveStoredProfile(
+  profileEntry: StoredProfileEntry | undefined
+): StoredProfile | StoredNamedProfile | undefined {
   if (!profileEntry) {
     return undefined
   }
@@ -243,7 +245,7 @@ export function getProfileTrackablePaths(
   profile: StoredProfile | undefined,
   appPaths: Record<string, string> | undefined,
   gamePaths: Record<string, string> | undefined
-) {
+): string[] {
   const trackablePaths = [
     gamePaths?.[gameKey],
     ...getEnabledUtilityKeys(profile)

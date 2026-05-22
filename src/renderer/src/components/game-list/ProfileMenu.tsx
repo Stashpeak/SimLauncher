@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import type { NamedGameProfile } from '../../lib/config'
 import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
 
@@ -42,7 +42,7 @@ export function ProfileMenu({
   onProfileSelect,
   onNewProfileNameChange,
   onNewProfileSubmit
-}: ProfileMenuProps) {
+}: ProfileMenuProps): ReactNode {
   return (
     <div ref={profileMenuRef} className="relative">
       <button

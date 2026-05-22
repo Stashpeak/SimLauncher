@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 interface ConfirmDialogProps {
@@ -27,7 +27,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   saveClassName = 'accent-action',
   discardClassName = 'danger-action'
-}: ConfirmDialogProps) {
+}: ConfirmDialogProps): ReactNode {
   useEffect(() => {
     if (!isOpen) return
 

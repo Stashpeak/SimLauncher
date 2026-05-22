@@ -5,7 +5,7 @@ interface ScrollFadeProps {
   className?: string
 }
 
-export function ScrollFade({ children, className = '' }: ScrollFadeProps) {
+export function ScrollFade({ children, className = '' }: ScrollFadeProps): ReactNode {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const [fade, setFade] = useState({ top: false, bottom: false })
 

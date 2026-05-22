@@ -1,4 +1,4 @@
-export function normalizeLaunchDelayMs(value: number) {
+export function normalizeLaunchDelayMs(value: number): number {
   if (!Number.isFinite(value)) {
     return 1000
   }

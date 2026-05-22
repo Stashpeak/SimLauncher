@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -52,7 +52,7 @@ export function GameRow({
   onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
   cacheInitialized: boolean
-}) {
+}): ReactNode {
   const { notify } = useNotify()
   const [profileSwitchConfirm, setProfileSwitchConfirm] = useState<{
     nextProfileId: string

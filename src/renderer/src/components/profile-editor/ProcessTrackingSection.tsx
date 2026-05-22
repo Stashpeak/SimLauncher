@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { ProfileToggleRow } from './ProfileToggleRow'
 
 interface ProcessTrackingSectionProps {
@@ -21,7 +21,7 @@ export function ProcessTrackingSection({
   onAddTrackedProcess,
   onBrowseTrackedProcess,
   onRemoveTrackedProcess
-}: ProcessTrackingSectionProps) {
+}: ProcessTrackingSectionProps): ReactNode {
   return (
     <div className="space-y-4 border-t border-(--glass-border) pt-4">
       <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">

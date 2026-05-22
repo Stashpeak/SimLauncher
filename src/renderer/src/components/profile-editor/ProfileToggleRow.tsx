@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { Toggle } from '../Toggle'
 
 interface ProfileToggleRowProps {
@@ -7,7 +9,12 @@ interface ProfileToggleRowProps {
   onChange: (checked: boolean) => void
 }
 
-export function ProfileToggleRow({ label, checked, onToggle, onChange }: ProfileToggleRowProps) {
+export function ProfileToggleRow({
+  label,
+  checked,
+  onToggle,
+  onChange
+}: ProfileToggleRowProps): ReactNode {
   return (
     <div
       role="switch"

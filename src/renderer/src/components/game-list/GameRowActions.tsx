@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { GameRowProfileMenu, type GameRowProfileMenuProps } from './GameRowProfileMenu'
 import { RefreshIcon, KillIcon, PlayMarkIcon, SettingsIcon } from '../icons'
 
@@ -25,7 +27,7 @@ export function GameRowActions({
   onRelaunchMissing,
   onToggleEditor,
   profileMenuProps
-}: GameRowActionsProps) {
+}: GameRowActionsProps): ReactNode {
   const primaryAction = canKill ? onKill : onPrimary
   const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
   const primaryTitle = isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : 'Launch'

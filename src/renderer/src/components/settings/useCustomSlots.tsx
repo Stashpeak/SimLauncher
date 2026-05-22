@@ -1,8 +1,14 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { getCustomUtilityKey, type Profiles } from '../../lib/config'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { shiftCustomSlotRecord, shiftCustomSlotSet, shiftProfileCustomSlots } from './customSlots'
 import type { SettingsObjectField } from './saveRace'
+
+export interface UseCustomSlotsResult {
+  handleAddCustomSlot: () => void
+  handleRemoveCustomSlot: (slotNumber: number) => void
+  customSlotRemoveDialog: ReactNode
+}
 
 interface UseCustomSlotsArgs {
   appNames: Record<string, string>
@@ -36,7 +42,7 @@ export function useCustomSlots({
   setIconLoadErrors,
   setProfiles,
   setCustomSlots
-}: UseCustomSlotsArgs) {
+}: UseCustomSlotsArgs): UseCustomSlotsResult {
   const [customSlotRemoveConfirm, setCustomSlotRemoveConfirm] = useState<{
     slotNumber: number
     slotName: string

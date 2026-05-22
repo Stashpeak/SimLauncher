@@ -144,7 +144,7 @@ function normalizeStoredProfileSet(profileEntry: StoredProfileEntry, utilityKeys
   }
 }
 
-export function migrateProfilesToNamedSets() {
+export function migrateProfilesToNamedSets(): void {
   if (store.get('profileSetsMigrated') === true) {
     return
   }

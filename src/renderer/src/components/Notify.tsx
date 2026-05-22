@@ -126,7 +126,7 @@ function ToastCard({
   )
 }
 
-export function NotifyProvider({ children }: { children: ReactNode }) {
+export function NotifyProvider({ children }: { children: ReactNode }): ReactNode {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [dismissingToastIds, setDismissingToastIds] = useState<Set<number>>(() => new Set())
   const dismissTimersRef = useRef<Map<number, number>>(new Map())
@@ -218,7 +218,7 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   )
 }
 
-export function useNotify() {
+export function useNotify(): NotifyContextValue {
   const context = useContext(NotifyContext)
 
   if (!context) {

@@ -13,7 +13,7 @@ let availableUpdate: UpdateAvailability | null = null
 
 autoUpdater.autoDownload = false
 
-export function registerUpdaterEvents(rendererSender: SendToRenderer) {
+export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
   sendToRenderer = rendererSender
 
   autoUpdater.on('update-available', (info) => {
@@ -53,7 +53,9 @@ function quitAndInstallUpdate() {
   autoUpdater.quitAndInstall()
 }
 
-export async function checkForUpdates() {
+export async function checkForUpdates(): Promise<Awaited<
+  ReturnType<typeof autoUpdater.checkForUpdates>
+> | null> {
   if (!app.isPackaged) {
     availableUpdate = { version: '99.0.0' }
     sendToRenderer('update-available', availableUpdate)
@@ -63,11 +65,11 @@ export async function checkForUpdates() {
   return await autoUpdater.checkForUpdates()
 }
 
-export function getAvailableUpdate() {
+export function getAvailableUpdate(): UpdateAvailability | null {
   return availableUpdate
 }
 
-export function registerUpdaterHandlers(rendererSender: SendToRenderer) {
+export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
   sendToRenderer = rendererSender
 
   ipcMain.handle('install-update', async () => {

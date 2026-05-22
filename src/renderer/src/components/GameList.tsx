@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { GAMES, type Game } from '../lib/config'
 import { getSettings } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
@@ -11,7 +11,11 @@ import { GamepadIcon } from './icons'
 
 const normalizePath = (path: string) => path.toLowerCase()
 
-export function GameList({ onNavigate }: { onNavigate: (view: 'games' | 'settings') => void }) {
+export function GameList({
+  onNavigate
+}: {
+  onNavigate: (view: 'games' | 'settings') => void
+}): ReactNode {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)

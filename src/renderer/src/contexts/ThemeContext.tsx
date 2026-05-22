@@ -27,7 +27,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-export function useTheme() {
+export function useTheme(): ThemeContextValue {
   const context = useContext(ThemeContext)
 
   if (!context) {
@@ -37,7 +37,7 @@ export function useTheme() {
   return context
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children }: { children: ReactNode }): ReactNode {
   const [accentPreset, setAccentPresetState] = useState(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustomState] = useState('')
   const [accentBgTint, setAccentBgTintState] = useState(false)

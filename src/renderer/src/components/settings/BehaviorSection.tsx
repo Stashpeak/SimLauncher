@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import { Toggle } from '../Toggle'
 import { useBehaviorSettings } from './BehaviorContext'
 import { normalizeLaunchDelayMs } from './settingsUtils'
@@ -8,7 +10,7 @@ const DELAY_PRESETS = [
   { label: '2s', value: 2000 }
 ]
 
-export function BehaviorSection() {
+export function BehaviorSection(): ReactNode {
   const {
     startWithWindows,
     startMinimized,

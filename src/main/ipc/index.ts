@@ -5,7 +5,7 @@ import { registerContextMenuHandlers } from './context-menu'
 import { registerIconHandlers } from './icons'
 import { registerLaunchHandlers } from './launch'
 
-export function registerHandlers() {
+export function registerHandlers(): void {
   registerConfigHandlers()
   registerLaunchHandlers()
   registerIconHandlers()

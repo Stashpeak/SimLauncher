@@ -21,7 +21,7 @@ export interface AppsContextValue {
 
 export const AppsContext = createContext<AppsContextValue | null>(null)
 
-export function useAppsSettings() {
+export function useAppsSettings(): AppsContextValue {
   const context = useContext(AppsContext)
 
   if (!context) {
