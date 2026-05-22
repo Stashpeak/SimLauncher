@@ -32,6 +32,15 @@ const electronAPI: ElectronAPI = {
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
+  forceClose: () => ipcRenderer.invoke('force-close-window'),
+  setRendererDirty: (isDirty: boolean) => ipcRenderer.invoke('set-renderer-dirty', isDirty),
+  setPendingMinimizeToTray: (value: boolean | null) =>
+    ipcRenderer.invoke('set-pending-minimize-to-tray', value),
+  onCloseRequested: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('close-requested', handler)
+    return () => ipcRenderer.removeListener('close-requested', handler)
+  },
   restartApp: () => ipcRenderer.invoke('restart-app'),
 
   // process monitoring

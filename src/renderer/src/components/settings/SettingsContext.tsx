@@ -10,7 +10,13 @@ import {
 } from 'react'
 import { useDirtyTracking } from '../../hooks/useDirtyTracking'
 import { DEFAULT_ACCENT_COLOR, getUtilities, type Profiles } from '../../lib/config'
-import { browsePath, getFileIcon, setLoginItem, setZoom } from '../../lib/electron'
+import {
+  browsePath,
+  getFileIcon,
+  setLoginItem,
+  setPendingMinimizeToTray,
+  setZoom
+} from '../../lib/electron'
 import type { ThemeMode } from '../../lib/theme'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useNotify } from '../Notify'
@@ -39,7 +45,7 @@ export function SettingsProvider({
   children: ReactNode
   onDirtyChange?: (isDirty: boolean) => void
   shouldSaveTrigger?: boolean
-  onSaved?: () => void
+  onSaved?: (success: boolean) => void
   onConfigImported?: () => void
 }) {
   const { notify } = useNotify()
@@ -170,6 +176,15 @@ export function SettingsProvider({
   useEffect(() => {
     onDirtyChange?.(isDirty)
   }, [isDirty, onDirtyChange])
+
+  // Mirror the renderer's pending minimize-to-tray preference to the main
+  // process so the window close handler honours unsaved toggle changes
+  // (Closes #387). When dirty we forward the in-flight value; otherwise we
+  // clear the pending preference so main falls back to the persisted setting.
+  useEffect(() => {
+    if (loading) return
+    void setPendingMinimizeToTray(isDirty ? minimizeToTray : null)
+  }, [isDirty, loading, minimizeToTray])
 
   const handleAccentChange = useCallback(
     (presetHex: string) => {

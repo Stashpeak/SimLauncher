@@ -70,7 +70,7 @@ interface UseSettingsSaveArgs {
   setAppArgs: (appArgs: Record<string, string>) => void
   setLaunchDelayMs: (launchDelayMs: number) => void
   shouldSaveTrigger?: boolean
-  onSaved?: () => void
+  onSaved?: (success: boolean) => void
 }
 
 export function useSettingsSave({
@@ -103,7 +103,7 @@ export function useSettingsSave({
   shouldSaveTrigger,
   onSaved
 }: UseSettingsSaveArgs) {
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     try {
       const normalizedLaunchDelayMs = normalizeLaunchDelayMs(launchDelayMs)
       const trimmedAppPaths = trimPathRecord(appPaths)
@@ -159,9 +159,11 @@ export function useSettingsSave({
         ...resetSettingsObjects,
         launchDelayMs: normalizedLaunchDelayMs
       })
+      return true
     } catch (err) {
       notify('Failed to save settings', 'error')
       console.error(err)
+      return false
     }
   }, [
     appArgs,
@@ -194,8 +196,8 @@ export function useSettingsSave({
 
   useEffect(() => {
     if (shouldSaveTrigger) {
-      handleSave().then(() => {
-        onSaved?.()
+      handleSave().then((success) => {
+        onSaved?.(success)
       })
     }
   }, [handleSave, onSaved, shouldSaveTrigger])
