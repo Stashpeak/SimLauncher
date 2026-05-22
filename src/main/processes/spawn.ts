@@ -157,7 +157,7 @@ function getLaunchDelayMs() {
   return Math.min(Math.max(Math.round(value), 0), 5000)
 }
 
-export function isRunningExePath(processNames: Set<string>, appPath: string) {
+export function isRunningExePath(processNames: Set<string>, appPath: string): boolean {
   return processNames.has(getExeName(appPath))
 }
 
@@ -296,12 +296,12 @@ function launchElevated(appPath: string, args: string[] = []) {
   })
 }
 
-function spawnDetachedApp(
+export function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
   entry: ProfileLaunchEntry,
   gamePath?: string
-) {
+): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
