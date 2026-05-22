@@ -19,15 +19,7 @@ import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
 import { GameIcon } from './GameIcon'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
-import {
-  ChevronDownIcon,
-  CheckIcon,
-  PlusIcon,
-  RefreshIcon,
-  KillIcon,
-  PlayMarkIcon,
-  SettingsIcon
-} from '../icons'
+import { GameRowActions } from './GameRowActions'
 import { ConfirmDialog } from '../ConfirmDialog'
 
 const POST_LAUNCH_BLOCK_MS = 10000
@@ -317,9 +309,6 @@ export function GameRow({
 
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
-  const primaryAction = canKill ? handleKill : handleLaunch
-  const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
-  const primaryTitle = isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : 'Launch'
   const activeProfile = getActiveGameProfile(profileSet)
 
   return (
@@ -345,189 +334,36 @@ export function GameRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 no-drag">
-          <div className="flex h-9 w-9 items-center justify-center">
-            {canRelaunch && (
-              <button
-                type="button"
-                onClick={handleRelaunchMissing}
-                disabled={isLaunchBlocked}
-                className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
-                title="Relaunch missing apps"
-                aria-label="Relaunch missing apps"
-              >
-                <RefreshIcon
-                  width={18}
-                  height={18}
-                  strokeWidth="2.2"
-                  className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                />
-              </button>
-            )}
-          </div>
-
-          <div className="no-drag glass-surface flex items-center rounded-full p-0.5">
-            <div ref={profileMenuRef} className="relative">
-              <button
-                ref={triggerRef}
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  if (profileMenuOpen) {
-                    closeProfileMenu(false)
-                  } else {
-                    openProfileMenu(false)
-                  }
-                }}
-                onKeyDown={handleProfileMenuTriggerKeyDown}
-                className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-all hover:text-(--text-primary)"
-                aria-haspopup="menu"
-                aria-expanded={profileMenuOpen}
-                aria-label={`${game.name} profile`}
-                title={activeProfile.name}
-              >
-                <ChevronDownIcon
-                  width={10}
-                  height={10}
-                  className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
-                />
-                <span className="min-w-0 select-none truncate">{activeProfile.name}</span>
-              </button>
-              {profileMenuOpen && (
-                <div
-                  ref={menuRef}
-                  role="menu"
-                  onKeyDown={handleProfileMenuKeyDown}
-                  className="dropdown-surface absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 backdrop-blur-xl animate-fade-slide"
-                >
-                  {profileSet.profiles.map((profile) => {
-                    const selected = profile.id === profileSet.activeProfileId
-
-                    return (
-                      <button
-                        key={profile.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={selected ? 'true' : 'false'}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          handleProfileSelect(profile.id)
-                        }}
-                        className={`dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold ${
-                          selected ? 'selected-surface' : ''
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
-                        />
-                        <span className="min-w-0 flex-1 truncate">{profile.name}</span>
-                      </button>
-                    )
-                  })}
-                  <div className="my-1 h-px bg-(--glass-border)" />
-                  {newProfileFormOpen ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        handleNewProfileSubmit()
-                      }}
-                      className="flex items-center gap-1.5 rounded-lg px-1.5 py-1"
-                    >
-                      <input
-                        ref={newProfileInputRef}
-                        type="text"
-                        value={newProfileName}
-                        onChange={(event) => setNewProfileName(event.target.value)}
-                        onClick={(event) => event.stopPropagation()}
-                        placeholder="Profile name"
-                        className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
-                        aria-label="New profile name"
-                      />
-                      <button
-                        type="submit"
-                        disabled={newProfileName.trim().length === 0}
-                        className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md"
-                        aria-label="Create profile"
-                        title="Create profile"
-                      >
-                        <CheckIcon width={13} height={13} />
-                      </button>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleProfileSelect('__new__')
-                      }}
-                      className="dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
-                    >
-                      <PlusIcon width={12} height={12} />
-                      New profile
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-15" />
-
-            <button
-              type="button"
-              onClick={primaryAction}
-              disabled={isLaunchBlocked && !canKill}
-              className={`launcher-play-btn group/btn flex h-9 w-[54px] shrink-0 cursor-pointer items-center justify-center rounded-r-full transition-all ${primaryButtonClass}`}
-              title={primaryTitle}
-              aria-label={primaryTitle}
-            >
-              {isLaunching && !canKill ? (
-                <RefreshIcon
-                  width={21}
-                  height={21}
-                  stroke="var(--launcher-play)"
-                  strokeWidth="2.8"
-                  className="animate-spin transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                />
-              ) : canKill ? (
-                <KillIcon
-                  width={21}
-                  height={21}
-                  className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                />
-              ) : (
-                <PlayMarkIcon
-                  width={24}
-                  height={24}
-                  className="ml-0.5 transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                />
-              )}
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleToggle}
-            className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 ${
-              isActive
-                ? 'icon-action-active'
-                : 'icon-action opacity-40 group-hover/row:opacity-100 group-hover/row:bg-(--glass-bg)'
-            }`}
-            title={isActive ? 'Close Profile Settings' : 'Profile Settings'}
-            aria-label={isActive ? 'Close Profile Settings' : 'Profile Settings'}
-          >
-            {isActive ? (
-              <KillIcon width={18} height={18} className="transition-transform hover:scale-110" />
-            ) : (
-              <SettingsIcon
-                width={18}
-                height={18}
-                className="transition-transform hover:rotate-90"
-              />
-            )}
-          </button>
-        </div>
+        <GameRowActions
+          isActive={isActive}
+          isLaunching={isLaunching}
+          isLaunchBlocked={isLaunchBlocked}
+          canKill={canKill}
+          canRelaunch={canRelaunch}
+          onPrimary={handleLaunch}
+          onKill={handleKill}
+          onRelaunchMissing={handleRelaunchMissing}
+          onToggleEditor={handleToggle}
+          profileMenuProps={{
+            profileSet,
+            activeProfile,
+            profileMenuOpen,
+            openProfileMenu,
+            closeProfileMenu,
+            profileMenuRef,
+            menuRef,
+            triggerRef,
+            handleProfileMenuTriggerKeyDown,
+            handleProfileMenuKeyDown,
+            newProfileFormOpen,
+            newProfileName,
+            setNewProfileName,
+            newProfileInputRef,
+            gameName: game.name,
+            onProfileSelect: handleProfileSelect,
+            onNewProfileSubmit: handleNewProfileSubmit
+          }}
+        />
       </div>
 
       <div
