@@ -353,8 +353,10 @@ async function loadProcessModules() {
 
   return {
     launchProfileApps: spawnModule.launchProfileApps,
+    spawnDetachedApp: spawnModule.spawnDetachedApp,
     killLaunchedApps: killModule.killLaunchedApps,
     killProfileApps: killModule.killProfileApps,
+    finalizeKillAttempts: killModule.finalizeKillAttempts,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
     dismissAppIcon: stateModule.dismissAppIcon,
     processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
@@ -2271,4 +2273,217 @@ test('kill is NOT reported successful when taskkill failed and the post-kill tas
   // The unclosed-process entry must be registered so the UI surfaces the
   // failure rather than silently clearing it.
   expect(unclosedProcesses.has('ac:c:\\tools\\access-denied-app.exe')).toBe(true)
+})
+
+// --- Direct unit tests for spawnDetachedApp (#344) ---
+//
+// These bypass launchProfileApps so we can probe spawnDetachedApp's exit /
+// error / mismatch-warning branches without setting up the full launch
+// orchestration (validity gates, store reads, post-launch cooldown, etc.).
+
+test('spawnDetachedApp resolves with launched on the happy path and registers the running process', async () => {
+  markExistingPath('C:/Apps/Happy.exe')
+  const { spawnDetachedApp, runningProcesses } = await loadProcessModules()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Happy.exe' },
+    undefined
+  )
+
+  expect(result).toEqual({ status: 'launched', appPath: 'C:/Apps/Happy.exe' })
+  expect(spawnCalls).toHaveLength(1)
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Apps/Happy.exe',
+    options: { detached: true, stdio: 'ignore' }
+  })
+  // The runningProcesses registry must contain the spawned exe so subsequent
+  // kill/track operations can find it.
+  expect(runningProcesses.size).toBe(1)
+})
+
+test('spawnDetachedApp emits a process-name-mismatch warning when the wrapper exits inside the post-launch window', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Apps/Wrapper.exe')
+  const { spawnDetachedApp, processNameMismatchWarnings } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Wrapper.exe' },
+    undefined
+  )
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // Wrapper exits immediately (still within POST_LAUNCH_BLOCK_MS), the child
+  // process re-spawns under a different name — exactly the scenario the
+  // mismatch warning is designed to surface (#262, #390).
+  childHandlers.get('exit')?.()
+
+  expect(sender.send).toHaveBeenCalledWith(
+    'process-name-mismatch-warning',
+    expect.objectContaining({
+      app: 'C:/Apps/Wrapper.exe',
+      warning: expect.stringContaining('SimLauncher can no longer detect when you close it')
+    })
+  )
+  expect(processNameMismatchWarnings.size).toBe(1)
+})
+
+test('spawnDetachedApp returns elevated when the OS rejects the spawn with EACCES', async () => {
+  markExistingPath('C:/Apps/Elevated.exe')
+  spawnErrors.set('C:/Apps/Elevated.exe', makeAccessDeniedError())
+  const { spawnDetachedApp } = await loadProcessModules()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Elevated.exe' },
+    undefined
+  )
+
+  // The EACCES error path must trigger the PowerShell Start-Process -Verb
+  // RunAs fallback and resolve with an `elevated` status carrying the user
+  // warning string. Without the export, this path is only reachable
+  // indirectly via launchProfileApps.
+  expect(result.status).toBe('elevated')
+  if (result.status === 'elevated') {
+    expect(result.appPath).toBe('C:/Apps/Elevated.exe')
+    expect(result.warning).toContain('administrator permission')
+  }
+  expect(execFileCalls.some((call) => call.command === 'powershell.exe')).toBe(true)
+})
+
+// --- Direct unit tests for finalizeKillAttempts (#344) ---
+//
+// Drive the predicates (notFound, staleTask, image-gone-from-tasklist,
+// elevated-inconclusive) without going through killLaunchedApps /
+// killProfileApps so we can hand-craft KillAttemptResult inputs.
+
+test('finalizeKillAttempts returns the empty-attempts message and reports zero counts when given no attempts', async () => {
+  const { finalizeKillAttempts } = await loadProcessModules()
+
+  const result = await finalizeKillAttempts([], 'ac')
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(0)
+  expect(result.failedCount).toBe(0)
+  expect(result.failures).toEqual([])
+  expect(result.message).toBe('No running companion apps to close.')
+})
+
+test('finalizeKillAttempts treats a notFound attempt as closed and prunes the running-process entry', async () => {
+  const { finalizeKillAttempts, runningProcesses, unclosedProcesses } = await loadProcessModules()
+
+  // Pre-seed runningProcesses with a stale entry — finalize must remove it
+  // when the kill attempt reports the image as already gone.
+  runningProcesses.set('c:\\apps\\notfound.exe', {
+    process: { pid: 9999 } as never,
+    path: 'C:/Apps/NotFound.exe',
+    name: 'NotFound.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  // No entry in processNames -> the post-kill tasklist read reports the
+  // image as absent, exercising the imageGoneFromTasklist branch.
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'notfound.exe',
+        appPath: 'C:/Apps/NotFound.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  expect(result.failedCount).toBe(0)
+  expect(result.failures).toEqual([])
+  expect(runningProcesses.size).toBe(0)
+  expect(unclosedProcesses.size).toBe(0)
+})
+
+test('finalizeKillAttempts treats image-gone-from-tasklist as closed even when taskkill reported access-denied (#390)', async () => {
+  const { finalizeKillAttempts, unclosedProcesses } = await loadProcessModules()
+
+  // processNames is empty, so the post-kill tasklist read confirms the
+  // image is gone. Production code must let the imageGoneFromTasklist
+  // override turn this access-denied attempt into success — that's the
+  // exact fix for #390 wrappers whose child process kills the wrapper PID.
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'wrapper.exe',
+        appPath: 'C:/Apps/Wrapper.exe',
+        gameKey: 'ac',
+        success: false,
+        accessDenied: true,
+        error: 'Access is denied.'
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  expect(result.failedCount).toBe(0)
+  expect(unclosedProcesses.size).toBe(0)
+})
+
+test('finalizeKillAttempts flags an elevated-inconclusive attempt as still running and registers an unclosed-process entry', async () => {
+  const { finalizeKillAttempts, unclosedProcesses } = await loadProcessModules()
+
+  // For the elevated-inconclusive triple-predicate to fire we need:
+  //   1. !imageGoneFromTasklist           -> processName stays in processNames
+  //   2. attempt.notFound === true        -> taskkill reported not-found
+  //   3. attempt.staleTask !== true       -> NOT a "no running instance"
+  //   4. processNamesAfterKill.has(...)   -> same as #1
+  markExistingPath('C:/Apps/Elevated.exe')
+  processNames.add('elevated.exe')
+
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'elevated.exe',
+        appPath: 'C:/Apps/Elevated.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true,
+        // staleTask intentionally absent -> staleTask !== true holds
+        accessDenied: false
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(false)
+  expect(result.closedCount).toBe(0)
+  expect(result.failedCount).toBe(1)
+  expect(result.failures).toHaveLength(1)
+  // The triple-predicate flips accessDenied to true, so the failure must
+  // surface as `access_denied` (matches what the UI shows for elevated
+  // processes that SimLauncher can't terminate).
+  expect(result.failures[0]).toMatchObject({
+    appName: 'Elevated.exe',
+    reason: 'access_denied'
+  })
+  expect(unclosedProcesses.size).toBe(1)
 })

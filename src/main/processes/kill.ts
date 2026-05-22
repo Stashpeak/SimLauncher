@@ -27,7 +27,7 @@ import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
 
-interface KillAttemptResult {
+export interface KillAttemptResult {
   processName: string
   success: boolean
   appPath?: string
@@ -304,7 +304,7 @@ function registerUnclosedProcess(attempt: KillAttemptResult) {
   })
 }
 
-export function pruneUnclosedProcesses(processNames: Set<string>) {
+export function pruneUnclosedProcesses(processNames: Set<string>): void {
   unclosedProcesses.forEach((entry, key) => {
     if (!processNames.has(getExeName(entry.path))) {
       unclosedProcesses.delete(key)
@@ -330,7 +330,7 @@ function hasProcessNameMismatchWarning(gameKey?: string) {
   )
 }
 
-async function finalizeKillAttempts(
+export async function finalizeKillAttempts(
   attempts: KillAttemptResult[],
   gameKey?: string
 ): Promise<KillResult> {
@@ -496,7 +496,7 @@ function getProfileCompanionTargets(gameKey?: string) {
   return companionTargets
 }
 
-export async function killLaunchedApps(gameKey?: string) {
+export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
   const companionTargets = getProfileCompanionTargets(gameKey)
   const killTasks: Promise<KillAttemptResult>[] = []
@@ -532,7 +532,7 @@ export async function killLaunchedApps(gameKey?: string) {
   return result
 }
 
-export async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
+export async function killProfileApps(gameKey: string, appPathsToKill: string[]): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
