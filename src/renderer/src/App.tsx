@@ -204,6 +204,7 @@ function AppContent() {
       )}
 
       <SettingsProvider
+        key={refreshKey}
         onDirtyChange={reportSettingsDirty}
         shouldSaveTrigger={saveRequested}
         onConfigImported={handleConfigImported}
