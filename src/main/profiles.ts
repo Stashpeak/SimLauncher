@@ -1,6 +1,6 @@
 import type { ProfileLaunchEntry } from './processes/types'
 import { getStoredStringRecord, store } from './store'
-import { isRecord, isValidExePath } from './utils'
+import { isRecord, isValidExePath, normalizePathForComparison } from './utils'
 
 export interface StoredProfile extends Record<string, unknown> {
   utilities?: StoredProfileUtility[]
@@ -254,9 +254,9 @@ export function getProfileTrackablePaths(
   const seen = new Set<string>()
 
   return trackablePaths.filter((trackablePath) => {
-    const key = trackablePath.toLowerCase()
+    const key = normalizePathForComparison(trackablePath)
 
-    if (seen.has(key)) {
+    if (!key || seen.has(key)) {
       return false
     }
 

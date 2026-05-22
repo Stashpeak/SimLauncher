@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 
 import { getStoredStringRecord } from '../store'
+import { normalizePathForComparison } from '../utils'
 
 let genericIconFingerprint: string | null | undefined
 let genericIconFingerprintPromise: Promise<string | null> | null = null
@@ -15,13 +16,18 @@ const recentlyBrowsedPaths = new Set<string>()
  * dialog. This grants `get-file-icon` permission to read its icon before the
  * path has been persisted to the store, so freshly picked executables show
  * their icon immediately in Settings rather than only after an app restart.
+ *
+ * Paths are stored canonicalised so case/slash variants of the same file
+ * collapse to one entry (see `normalizePathForComparison`).
  */
 export function markRecentlyBrowsedPath(filePath: string) {
   if (typeof filePath !== 'string' || !filePath) return
-  if (recentlyBrowsedPaths.has(filePath)) {
-    recentlyBrowsedPaths.delete(filePath)
+  const key = normalizePathForComparison(filePath)
+  if (!key) return
+  if (recentlyBrowsedPaths.has(key)) {
+    recentlyBrowsedPaths.delete(key)
   }
-  recentlyBrowsedPaths.add(filePath)
+  recentlyBrowsedPaths.add(key)
   while (recentlyBrowsedPaths.size > RECENTLY_BROWSED_PATH_LIMIT) {
     const oldest = recentlyBrowsedPaths.values().next().value
     if (oldest === undefined) break
@@ -104,11 +110,20 @@ export function registerIconHandlers() {
   })
 
   ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
-    const storedPaths = [
-      ...Object.values(getStoredStringRecord('gamePaths')),
-      ...Object.values(getStoredStringRecord('appPaths'))
-    ]
-    if (!storedPaths.includes(filePath) && !recentlyBrowsedPaths.has(filePath)) return null
+    const storedPathKeys = new Set(
+      [
+        ...Object.values(getStoredStringRecord('gamePaths')),
+        ...Object.values(getStoredStringRecord('appPaths'))
+      ]
+        .map(normalizePathForComparison)
+        .filter((key) => key.length > 0)
+    )
+    const filePathKey = normalizePathForComparison(filePath)
+    if (
+      !filePathKey ||
+      (!storedPathKeys.has(filePathKey) && !recentlyBrowsedPaths.has(filePathKey))
+    )
+      return null
 
     try {
       const icon = await app.getFileIcon(filePath, { size: 'normal' })
