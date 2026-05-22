@@ -1,15 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useDirtyTracking } from '../../hooks/useDirtyTracking'
-import { DEFAULT_ACCENT_COLOR, getUtilities, type Profiles } from '../../lib/config'
+import { getUtilities } from '../../lib/config'
 import {
   browsePath,
   getFileIcon,
@@ -25,15 +16,11 @@ import { AppsContext, type AppsContextValue } from './AppsContext'
 import { BehaviorContext, type BehaviorContextValue } from './BehaviorContext'
 import { GamesContext, type GamesContextValue } from './GamesContext'
 import { SettingsMetaContext, type SettingsMetaContextValue } from './SettingsMetaContext'
-import {
-  createSettingsObjectVersions,
-  type SettingsObjectField,
-  type SettingsObjectRecords
-} from './saveRace'
 import { useConfigIO } from './useConfigIO'
 import { useCustomSlots } from './useCustomSlots'
 import { useSettingsLoad } from './useSettingsLoad'
 import { useSettingsSave } from './useSettingsSave'
+import { useSettingsState } from './useSettingsState'
 
 export function SettingsProvider({
   children,
@@ -52,97 +39,61 @@ export function SettingsProvider({
   const theme = useTheme()
   const themeRef = useRef(theme)
   themeRef.current = theme
-  const [loading, setLoading] = useState(true)
 
-  const [appPaths, setAppPaths] = useState<Record<string, string>>({})
-  const [appNames, setAppNames] = useState<Record<string, string>>({})
-  const [appArgs, setAppArgs] = useState<Record<string, string>>({})
-  const [profiles, setProfiles] = useState<Profiles>({})
-  const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
-  const [customSlots, setCustomSlots] = useState(1)
-  const [accentPreset, setAccentPreset] = useState<string>(DEFAULT_ACCENT_COLOR)
-  const [accentCustom, setAccentCustom] = useState<string>('')
-  const [accentBgTint, setAccentBgTint] = useState<boolean>(false)
-  const [themeMode, setThemeMode] = useState<ThemeMode>('dark')
-  const [focusActiveTitle, setFocusActiveTitle] = useState<boolean>(true)
-  const [launchDelayMs, setLaunchDelayMs] = useState<number>(1000)
-  const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
-  const [startMinimized, setStartMinimized] = useState<boolean>(false)
-  const [minimizeToTray, setMinimizeToTray] = useState<boolean>(false)
-  const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
-  const [zoomFactor, setZoomFactor] = useState<number>(1.0)
-
-  const [isCustomColor, setIsCustomColor] = useState(false)
-  const [appIcons, setAppIcons] = useState<Record<string, string>>({})
-  const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
-  const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
-  const settingsObjectEditVersions = useRef(createSettingsObjectVersions())
-  const latestSettingsObjects = useRef<SettingsObjectRecords>({
-    appPaths,
-    appNames,
-    appArgs,
-    gamePaths
-  })
-
-  const updateSettingsObject = useCallback(
-    (
-      field: SettingsObjectField,
-      setter: Dispatch<SetStateAction<Record<string, string>>>,
-      updater: (current: Record<string, string>) => Record<string, string>
-    ) => {
-      settingsObjectEditVersions.current[field] += 1
-      setter((current) => {
-        const next = updater(current)
-        latestSettingsObjects.current = {
-          ...latestSettingsObjects.current,
-          [field]: next
-        }
-        return next
-      })
+  const {
+    state: {
+      loading,
+      appPaths,
+      appNames,
+      appArgs,
+      profiles,
+      gamePaths,
+      customSlots,
+      accentPreset,
+      accentCustom,
+      accentBgTint,
+      themeMode,
+      focusActiveTitle,
+      launchDelayMs,
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      autoCheckUpdates,
+      zoomFactor,
+      isCustomColor,
+      appIcons,
+      gameIcons,
+      iconLoadErrors
     },
-    []
-  )
-
-  const currentSettingsState = useMemo(
-    () => ({
-      appPaths,
-      appNames,
-      appArgs,
-      profiles,
-      gamePaths,
-      customSlots,
-      accentPreset,
-      accentCustom,
-      accentBgTint,
-      themeMode,
-      focusActiveTitle,
-      launchDelayMs,
-      startWithWindows,
-      startMinimized,
-      minimizeToTray,
-      autoCheckUpdates,
-      zoomFactor
-    }),
-    [
-      appPaths,
-      appNames,
-      appArgs,
-      profiles,
-      gamePaths,
-      customSlots,
-      accentPreset,
-      accentCustom,
-      accentBgTint,
-      themeMode,
-      focusActiveTitle,
-      launchDelayMs,
-      startWithWindows,
-      startMinimized,
-      minimizeToTray,
-      autoCheckUpdates,
-      zoomFactor
-    ]
-  )
+    setters: {
+      setLoading,
+      setAppPaths,
+      setAppNames,
+      setAppArgs,
+      setProfiles,
+      setGamePaths,
+      setCustomSlots,
+      setAccentPreset,
+      setAccentCustom,
+      setAccentBgTint,
+      setThemeMode,
+      setFocusActiveTitle,
+      setLaunchDelayMs,
+      setStartWithWindows,
+      setStartMinimized,
+      setMinimizeToTray,
+      setAutoCheckUpdates,
+      setZoomFactor,
+      setIsCustomColor,
+      setAppIcons,
+      setGameIcons,
+      setIconLoadErrors
+    },
+    updateSettingsObject,
+    settingsObjectEditVersions,
+    latestSettingsObjects,
+    currentSettingsState
+  } = useSettingsState()
 
   const { isDirty, resetDirty } = useDirtyTracking(currentSettingsState, loading)
 
@@ -197,7 +148,7 @@ export function SettingsProvider({
         theme.setAccentPreset(presetHex)
       }
     },
-    [theme]
+    [theme, setAccentPreset, setIsCustomColor]
   )
 
   const handleCustomColorChange = useCallback(
@@ -205,7 +156,7 @@ export function SettingsProvider({
       setAccentCustom(hex)
       theme.setAccentCustom(hex)
     },
-    [theme]
+    [theme, setAccentCustom]
   )
 
   const handleAccentBgTintChange = useCallback(
@@ -213,7 +164,7 @@ export function SettingsProvider({
       setAccentBgTint(checked)
       theme.setAccentBgTint(checked)
     },
-    [theme]
+    [theme, setAccentBgTint]
   )
 
   const handleThemeModeChange = useCallback(
@@ -221,18 +172,24 @@ export function SettingsProvider({
       setThemeMode(mode)
       theme.setThemeMode(mode)
     },
-    [theme]
+    [theme, setThemeMode]
   )
 
-  const handleZoomFactorChange = useCallback((factor: number) => {
-    setZoomFactor(factor)
-    setZoom(factor)
-  }, [])
+  const handleZoomFactorChange = useCallback(
+    (factor: number) => {
+      setZoomFactor(factor)
+      setZoom(factor)
+    },
+    [setZoomFactor]
+  )
 
-  const handleStartWithWindowsChange = useCallback((checked: boolean) => {
-    setStartWithWindows(checked)
-    setLoginItem(checked)
-  }, [])
+  const handleStartWithWindowsChange = useCallback(
+    (checked: boolean) => {
+      setStartWithWindows(checked)
+      setLoginItem(checked)
+    },
+    [setStartWithWindows]
+  )
 
   const handleBrowse = useCallback(
     async (key: string, isGame: boolean) => {
@@ -263,14 +220,14 @@ export function SettingsProvider({
         }
       }
     },
-    [updateSettingsObject]
+    [updateSettingsObject, setGamePaths, setAppPaths, setAppIcons, setIconLoadErrors]
   )
 
   const handleGamePathChange = useCallback(
     (key: string, path: string) => {
       updateSettingsObject('gamePaths', setGamePaths, (prev) => ({ ...prev, [key]: path }))
     },
-    [updateSettingsObject]
+    [updateSettingsObject, setGamePaths]
   )
 
   const handleAppPathChange = useCallback(
@@ -284,26 +241,29 @@ export function SettingsProvider({
         })
       }
     },
-    [updateSettingsObject]
+    [updateSettingsObject, setAppPaths, setAppIcons]
   )
 
   const handleAppNameChange = useCallback(
     (key: string, name: string) => {
       updateSettingsObject('appNames', setAppNames, (prev) => ({ ...prev, [key]: name }))
     },
-    [updateSettingsObject]
+    [updateSettingsObject, setAppNames]
   )
 
   const handleAppArgsChange = useCallback(
     (key: string, args: string) => {
       updateSettingsObject('appArgs', setAppArgs, (prev) => ({ ...prev, [key]: args }))
     },
-    [updateSettingsObject]
+    [updateSettingsObject, setAppArgs]
   )
 
-  const handleIconLoadError = useCallback((key: string) => {
-    setIconLoadErrors((prev) => new Set([...prev, key]))
-  }, [])
+  const handleIconLoadError = useCallback(
+    (key: string) => {
+      setIconLoadErrors((prev) => new Set([...prev, key]))
+    },
+    [setIconLoadErrors]
+  )
 
   const { handleAddCustomSlot, handleRemoveCustomSlot, customSlotRemoveDialog } = useCustomSlots({
     appNames,
@@ -389,7 +349,8 @@ export function SettingsProvider({
       handleCustomColorChange,
       handleAccentBgTintChange,
       handleThemeModeChange,
-      handleZoomFactorChange
+      handleZoomFactorChange,
+      setFocusActiveTitle
     ]
   )
 
@@ -451,7 +412,16 @@ export function SettingsProvider({
       onMinimizeToTrayChange: setMinimizeToTray,
       onLaunchDelayMsChange: setLaunchDelayMs
     }),
-    [startWithWindows, startMinimized, minimizeToTray, launchDelayMs, handleStartWithWindowsChange]
+    [
+      startWithWindows,
+      startMinimized,
+      minimizeToTray,
+      launchDelayMs,
+      handleStartWithWindowsChange,
+      setStartMinimized,
+      setMinimizeToTray,
+      setLaunchDelayMs
+    ]
   )
 
   const settingsMetaValue: SettingsMetaContextValue = useMemo(
@@ -474,7 +444,8 @@ export function SettingsProvider({
       importingConfig,
       handleExportConfig,
       handleImportConfig,
-      handleSave
+      handleSave,
+      setAutoCheckUpdates
     ]
   )
 
