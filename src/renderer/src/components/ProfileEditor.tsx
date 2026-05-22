@@ -1,18 +1,52 @@
+import { useEffect } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ProfileBehaviorSection } from './profile-editor/ProfileBehaviorSection'
 import { ProfileEditorActions } from './profile-editor/ProfileEditorActions'
 import { ProfileNameSection } from './profile-editor/ProfileNameSection'
 import { ProfileUtilitiesSection } from './profile-editor/ProfileUtilitiesSection'
 import { ProcessTrackingSection } from './profile-editor/ProcessTrackingSection'
+import { StickySaveBar } from './StickySaveBar'
+import { useAppDirty } from '../contexts/AppDirtyContext'
 import { useProfileEditor, type ProfileEditorProps } from '../hooks/useProfileEditor'
 
 export function ProfileEditor(props: ProfileEditorProps) {
   const editor = useProfileEditor(props)
+  const { reportProfileEditorDirty, registerSaveHandler, registerDiscardHandler } = useAppDirty()
+  const scopeId = `${props.gameKey}:${props.activeProfileId}`
+  const { onClose } = props
+  const { isDirty, handleSave } = editor
+
+  useEffect(() => {
+    reportProfileEditorDirty(scopeId, isDirty)
+    return () => {
+      reportProfileEditorDirty(scopeId, false)
+    }
+  }, [scopeId, isDirty, reportProfileEditorDirty])
+
+  useEffect(() => {
+    if (!isDirty) {
+      registerSaveHandler('profile-editor', null)
+      return
+    }
+    registerSaveHandler('profile-editor', () => handleSave(false))
+    return () => {
+      registerSaveHandler('profile-editor', null)
+    }
+  }, [isDirty, handleSave, registerSaveHandler])
+
+  useEffect(() => {
+    registerDiscardHandler('profile-editor', () => {
+      onClose()
+    })
+    return () => {
+      registerDiscardHandler('profile-editor', null)
+    }
+  }, [onClose, registerDiscardHandler])
 
   if (editor.loading) return null
 
   return (
-    <div className="glass-surface-elevated animate-fade-slide rounded-[20px] p-5">
+    <div className="glass-surface-elevated animate-fade-slide relative rounded-[20px] p-5">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-(--text-primary)">Edit Profile</h2>
       </div>
@@ -69,6 +103,12 @@ export function ProfileEditor(props: ProfileEditorProps) {
           onDeleteProfile={editor.handleDeleteProfile}
         />
       </div>
+
+      <StickySaveBar
+        isDirty={editor.isDirty}
+        onSave={() => void editor.handleSave(false)}
+        ariaLabel="Unsaved profile changes"
+      />
 
       <ConfirmDialog
         isOpen={editor.showConfirm}

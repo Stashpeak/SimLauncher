@@ -10,6 +10,8 @@ import { SettingsSection } from './settings/SettingsSection'
 import { useSettingsMeta } from './settings/SettingsMetaContext'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
+import { StickySaveBar } from './StickySaveBar'
+import { useAppDirty } from '../contexts/AppDirtyContext'
 
 export function SettingsView({
   onClose,
@@ -30,6 +32,7 @@ function SettingsViewContent({
 }) {
   const { notify } = useNotify()
   const { loading, isDirty, saveSettings } = useSettingsMeta()
+  const { registerSaveHandler, registerDiscardHandler } = useAppDirty()
   const [expandedSections, setExpandedSections] = useState({
     about: true,
     appearance: true,
@@ -54,10 +57,27 @@ function SettingsViewContent({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
+  useEffect(() => {
+    registerSaveHandler('settings', isDirty ? saveSettings : null)
+    return () => {
+      registerSaveHandler('settings', null)
+    }
+  }, [registerSaveHandler, isDirty, saveSettings])
+
+  useEffect(() => {
+    // Settings discard is handled at the App level by re-syncing theme and
+    // re-mounting the settings provider via refreshKey, so a no-op handler is
+    // sufficient here. We still register so the discard pipeline is complete.
+    registerDiscardHandler('settings', () => {})
+    return () => {
+      registerDiscardHandler('settings', null)
+    }
+  }, [registerDiscardHandler])
+
   if (loading) return null
 
   return (
-    <div className="animate-fade-slide space-y-8 pb-10">
+    <div className="animate-fade-slide relative space-y-8 pb-2">
       <SettingsSection
         title="About"
         open={expandedSections.about}
@@ -135,6 +155,12 @@ function SettingsViewContent({
           Back to Games
         </button>
       </div>
+
+      <StickySaveBar
+        isDirty={isDirty}
+        onSave={() => void saveSettings()}
+        ariaLabel="Unsaved settings"
+      />
     </div>
   )
 }

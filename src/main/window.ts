@@ -1,7 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, type OpenDialogOptions } from 'electron'
 import path from 'path'
 
-import { getIsQuitting, setIsQuitting } from './app-state'
+import {
+  getIsQuitting,
+  getPendingMinimizeToTray,
+  getRendererDirty,
+  setIsQuitting,
+  setPendingMinimizeToTray,
+  setRendererDirty
+} from './app-state'
 import { markRecentlyBrowsedPath } from './ipc/icons'
 import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
 import { checkForUpdates, registerUpdaterEvents } from './updater'
@@ -118,9 +125,20 @@ export function createWindow() {
 
     store.set('windowBounds', mainWindow.getBounds())
 
-    const minimizeToTray = store.get('minimizeToTray') === true
+    if (!getIsQuitting() && getRendererDirty()) {
+      event.preventDefault()
+      mainWindow.webContents.send('close-requested')
+      return
+    }
 
-    if (!getIsQuitting() && minimizeToTray) {
+    // Honour the renderer's pending tray preference (e.g. when the user toggled
+    // Minimize-to-tray but has not saved yet) so the close button respects the
+    // user's current intent rather than the last persisted value.
+    const pendingMinimizeToTray = getPendingMinimizeToTray()
+    const effectiveMinimizeToTray =
+      pendingMinimizeToTray === null ? store.get('minimizeToTray') === true : pendingMinimizeToTray
+
+    if (!getIsQuitting() && effectiveMinimizeToTray) {
       event.preventDefault()
       mainWindow.hide()
     }
@@ -212,10 +230,32 @@ export function registerWindowHandlers() {
   })
 
   ipcMain.handle('window-close', () => {
-    if (store.get('minimizeToTray') !== true) {
+    const pendingMinimizeToTray = getPendingMinimizeToTray()
+    const effectiveMinimizeToTray =
+      pendingMinimizeToTray === null ? store.get('minimizeToTray') === true : pendingMinimizeToTray
+
+    if (!effectiveMinimizeToTray && !getRendererDirty()) {
       setIsQuitting(true)
     }
 
+    mainWindow?.close()
+  })
+
+  ipcMain.handle('set-renderer-dirty', (_event, value: unknown) => {
+    setRendererDirty(value === true)
+  })
+
+  ipcMain.handle('set-pending-minimize-to-tray', (_event, value: unknown) => {
+    if (value === null || typeof value === 'boolean') {
+      setPendingMinimizeToTray(value)
+    } else {
+      setPendingMinimizeToTray(null)
+    }
+  })
+
+  ipcMain.handle('force-close-window', () => {
+    setIsQuitting(true)
+    setRendererDirty(false)
     mainWindow?.close()
   })
 

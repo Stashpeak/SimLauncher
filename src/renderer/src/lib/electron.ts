@@ -8,6 +8,11 @@ export const onProcessNameMismatchWarning = window.electronAPI.onProcessNameMism
 export const minimize = () => window.electronAPI.minimize()
 export const maximize = () => window.electronAPI.maximize()
 export const close = () => window.electronAPI.close()
+export const forceClose = () => window.electronAPI.forceClose()
+export const setRendererDirty = (isDirty: boolean) => window.electronAPI.setRendererDirty(isDirty)
+export const setPendingMinimizeToTray = (value: boolean | null) =>
+  window.electronAPI.setPendingMinimizeToTray(value)
+export const onCloseRequested = window.electronAPI.onCloseRequested
 export const restartApp = () => window.electronAPI.restartApp()
 export const getRunningApps = () => window.electronAPI.getRunningApps()
 export const subscribeRunningApps = () => window.electronAPI.subscribeRunningApps()
