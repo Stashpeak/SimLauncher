@@ -49,6 +49,7 @@ export type ProfileLaunchInput = string | ProfileLaunchEntry
 
 export interface RunningProcessEntry {
   process: ChildProcess
+  path: string
   name: string
   gameKey: string
   isGame: boolean

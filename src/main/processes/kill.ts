@@ -8,7 +8,13 @@ import {
   isUtilityEnabled
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getErrorMessage, getExeName, isValidExePath } from '../utils'
+import {
+  getErrorMessage,
+  getExeName,
+  isValidExePath,
+  normalizePathForComparison,
+  pathsEqual
+} from '../utils'
 
 import {
   processNameMismatchWarnings,
@@ -306,10 +312,6 @@ export function pruneUnclosedProcesses(processNames: Set<string>) {
   })
 }
 
-function normalizePathForComparison(appPath: string) {
-  return path.resolve(appPath.trim()).toLowerCase()
-}
-
 function getStoredAppPathTargets() {
   const storedAppPaths = getStoredStringRecord('appPaths')
 
@@ -407,12 +409,13 @@ async function finalizeKillAttempts(
     }
 
     clearUnclosedProcess(attempt.gameKey, attempt.appPath, attempt.processName)
-    runningProcesses.forEach((_appProcess, runningPath) => {
+    const attemptKey = attempt.appPath ? normalizePathForComparison(attempt.appPath) : ''
+    runningProcesses.forEach((appProcess, runningKey) => {
       if (
-        (attempt.appPath && runningPath.toLowerCase() === attempt.appPath.toLowerCase()) ||
-        getExeName(runningPath) === attempt.processName
+        (attemptKey && runningKey === attemptKey) ||
+        getExeName(appProcess.path) === attempt.processName
       ) {
-        runningProcesses.delete(runningPath)
+        runningProcesses.delete(runningKey)
       }
     })
   })
@@ -498,12 +501,12 @@ export async function killLaunchedApps(gameKey?: string) {
   const companionTargets = getProfileCompanionTargets(gameKey)
   const killTasks: Promise<KillAttemptResult>[] = []
 
-  runningProcesses.forEach(({ process: child }, appPath) => {
-    const appProcess = runningProcesses.get(appPath)
-    if (gameKey && appProcess?.gameKey !== gameKey) {
+  runningProcesses.forEach((appProcess, runningKey) => {
+    const { process: child, path: appPath } = appProcess
+    if (gameKey && appProcess.gameKey !== gameKey) {
       return
     }
-    if (appProcess?.isGame) {
+    if (appProcess.isGame) {
       return
     }
 
@@ -512,9 +515,9 @@ export async function killLaunchedApps(gameKey?: string) {
 
     if (processNames.has(processName)) {
       suppressProcessNameMismatchWarning(appPath)
-      killTasks.push(killProcessTree(child, appPath, appProcess?.gameKey))
+      killTasks.push(killProcessTree(child, appPath, appProcess.gameKey))
     } else {
-      runningProcesses.delete(appPath)
+      runningProcesses.delete(runningKey)
     }
   })
 
@@ -532,7 +535,7 @@ export async function killLaunchedApps(gameKey?: string) {
 export async function killProfileApps(gameKey: string, appPathsToKill: string[]) {
   const { processNames } = await readRunningProcessNames()
   const gamePaths = getStoredStringRecord('gamePaths')
-  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const gamePath = gamePaths?.[gameKey]
   const storedAppPathTargets = getStoredAppPathTargets()
   const validAppPathsToKill: string[] = []
   const killTasks: Promise<KillAttemptResult>[] = []
@@ -556,22 +559,16 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
   }
 
   validAppPathsToKill.forEach((appPath) => {
-    if (gamePath && appPath.toLowerCase() === gamePath) {
+    if (gamePath && pathsEqual(appPath, gamePath)) {
       return
     }
     if (!processNames.has(getExeName(appPath))) {
       return
     }
 
-    const runningAppEntry = Array.from(runningProcesses.entries()).find(
-      ([runningPath, runningApp]) =>
-        runningPath.toLowerCase() === appPath.toLowerCase() &&
-        runningApp.gameKey === gameKey &&
-        !runningApp.isGame
-    )
+    const runningApp = runningProcesses.get(normalizePathForComparison(appPath))
 
-    if (runningAppEntry) {
-      const [, runningApp] = runningAppEntry
+    if (runningApp && runningApp.gameKey === gameKey && !runningApp.isGame) {
       suppressProcessNameMismatchWarning(appPath)
       killTasks.push(killProcessTree(runningApp.process, appPath, runningApp.gameKey))
       killedExeNames.add(getExeName(appPath))
@@ -580,7 +577,7 @@ export async function killProfileApps(gameKey: string, appPathsToKill: string[])
   })
 
   validAppPathsToKill.forEach((appPath) => {
-    if (gamePath && appPath.toLowerCase() === gamePath) {
+    if (gamePath && pathsEqual(appPath, gamePath)) {
       return
     }
 

@@ -4,7 +4,15 @@ import fs from 'fs'
 import path from 'path'
 
 import { getStoredStringRecord, store } from '../store'
-import { getErrorCode, getErrorMessage, getExeName, isValidExePath, wait } from '../utils'
+import {
+  getErrorCode,
+  getErrorMessage,
+  getExeName,
+  isValidExePath,
+  normalizePathForComparison,
+  pathsEqual,
+  wait
+} from '../utils'
 
 import {
   consumeProcessNameMismatchWarningSuppression,
@@ -40,7 +48,7 @@ export async function launchProfileApps(
   activeLaunches.add(gameKey)
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = getStoredStringRecord('gamePaths')
-  const gamePath = gamePaths?.[gameKey]?.toLowerCase()
+  const gamePath = gamePaths?.[gameKey]
   const { processNames } = await readRunningProcessNames()
   const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
   const validApps = normalizedEntries.filter((entry) => {
@@ -199,10 +207,7 @@ function getAppArgs(appKey: string) {
 
 function resolveAppKeyFromPath(appPath: string): string | undefined {
   const appPaths = getStoredStringRecord('appPaths')
-  const normalizedAppPath = appPath.trim().toLowerCase()
-  const appEntry = Object.entries(appPaths).find(
-    ([, value]) => value.trim().toLowerCase() === normalizedAppPath
-  )
+  const appEntry = Object.entries(appPaths).find(([, value]) => pathsEqual(value, appPath))
   return appEntry?.[0]
 }
 
@@ -213,10 +218,7 @@ function normalizeLaunchInput(input: ProfileLaunchInput, gameKey: string): Profi
 
   const gamePaths = getStoredStringRecord('gamePaths')
   const matchingGamePath = gamePaths?.[gameKey]
-  if (
-    typeof matchingGamePath === 'string' &&
-    matchingGamePath.trim().toLowerCase() === input.trim().toLowerCase()
-  ) {
+  if (typeof matchingGamePath === 'string' && pathsEqual(matchingGamePath, input)) {
     return { key: gameKey, path: input }
   }
 
@@ -319,11 +321,13 @@ function spawnDetachedApp(
     try {
       const args = getAppArgs(appKey)
       const child = spawn(appPath, args, { detached: true, stdio: 'ignore' })
-      runningProcesses.set(appPath, {
+      const runningKey = normalizePathForComparison(appPath)
+      runningProcesses.set(runningKey, {
         process: child,
+        path: appPath,
         name: path.basename(appPath),
         gameKey,
-        isGame: !!gamePath && appPath.toLowerCase() === gamePath
+        isGame: !!gamePath && pathsEqual(appPath, gamePath)
       })
 
       child.once('spawn', () => {
@@ -336,7 +340,7 @@ function spawnDetachedApp(
       })
 
       child.once('error', async (err) => {
-        runningProcesses.delete(appPath)
+        runningProcesses.delete(runningKey)
         if (fallbackTimer) {
           clearTimeout(fallbackTimer)
         }
@@ -357,16 +361,16 @@ function spawnDetachedApp(
       })
 
       child.once('exit', () => {
-        const processEntry = runningProcesses.get(appPath)
+        const processEntry = runningProcesses.get(runningKey)
         const wasGame = processEntry?.isGame ?? false
-        runningProcesses.delete(appPath)
+        runningProcesses.delete(runningKey)
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
         if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add that executable to this slot under tracked processes. Right-click the icon to dismiss this warning.`
 
-          processNameMismatchWarnings.set(appPath.toLowerCase(), {
+          processNameMismatchWarnings.set(normalizePathForComparison(appPath), {
             path: appPath,
             name: path.basename(appPath),
             gameKey,
