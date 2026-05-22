@@ -186,5 +186,9 @@ export interface ElectronAPI {
   getAssetData: (filename: string) => Promise<string | null>
   getFileIcon: (filePath: string) => Promise<string | null>
   getVersion: () => Promise<string>
-  showAppContextMenu: (appPath: string, gameKey: string) => Promise<void>
+  showAppContextMenu: (
+    appPath: string,
+    gameKey: string,
+    options?: { tracked?: boolean; name?: string }
+  ) => Promise<void>
 }

@@ -13,6 +13,7 @@ export type RunningApp = {
   gameKey: string
   warning?: string
   elevated?: boolean
+  tracked?: boolean
 }
 
 export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | 'config' | 'scan'
