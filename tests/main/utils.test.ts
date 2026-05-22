@@ -18,7 +18,7 @@ describe('normalizePathForComparison', () => {
 
   test('produces a consistent canonical form for an absolute path', () => {
     const normalized = normalizePathForComparison('C:\\Apps\\foo.exe')
-    expect(normalized).toBe(path.resolve('C:\\Apps\\foo.exe').toLowerCase())
+    expect(normalized).toBe(path.win32.resolve('C:\\Apps\\foo.exe').toLowerCase())
     expect(normalized).toMatch(/foo\.exe$/)
   })
 
@@ -36,7 +36,7 @@ describe('normalizePathForComparison', () => {
 
   test('resolves mixed separators and parent segments', () => {
     const normalized = normalizePathForComparison('C:\\A\\..\\B\\x.exe')
-    expect(normalized).toBe(path.resolve('C:\\B\\x.exe').toLowerCase())
+    expect(normalized).toBe(path.win32.resolve('C:\\B\\x.exe').toLowerCase())
     expect(normalized).toMatch(/[\\/]b[\\/]x\.exe$/)
   })
 })
