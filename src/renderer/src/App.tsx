@@ -37,14 +37,7 @@ function AppContent() {
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   const [saveRequested, setSaveRequested] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
-  const {
-    isAnyDirty,
-    isSettingsDirty,
-    isProfileEditorDirty,
-    reportSettingsDirty,
-    requestSaveAll,
-    requestDiscardAll
-  } = useAppDirty()
+  const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
 
   useEffect(() => {
     runStartupMigrations()
@@ -125,25 +118,21 @@ function AppContent() {
   }
 
   const handleConfirmSave = useCallback(async () => {
-    // If only the profile editor is dirty, trigger its save handler and pivot.
-    if (isProfileEditorDirty && !isSettingsDirty) {
-      const success = await requestSaveAll()
-      if (!success) {
-        // Keep the dialog open so the user can retry or discard; the failed
-        // save handler already surfaced its own error toast.
-        return
-      }
-      if (pendingView) {
-        setView(pendingView)
-        setPendingView(null)
-      }
+    // Save every dirty scope through the aggregator, not just the settings
+    // pipeline. If both Settings and the Profile Editor were dirty, routing
+    // through the settings-only trigger would have left profile edits unsaved
+    // even though the unified confirm dialog promised to save everything.
+    const success = await requestSaveAll()
+    if (!success) {
+      // Keep the dialog open so the user can retry or discard; the failed
+      // save handler already surfaced its own error toast.
       return
     }
-    // Otherwise let the settings save pipeline run via its existing trigger.
-    // The pendingView pivot happens in SettingsProvider's onSaved callback,
-    // which is only allowed to navigate when the save reports success.
-    setSaveRequested(true)
-  }, [isProfileEditorDirty, isSettingsDirty, pendingView, requestSaveAll])
+    if (pendingView) {
+      setView(pendingView)
+      setPendingView(null)
+    }
+  }, [pendingView, requestSaveAll])
 
   const handleCloseConfirmSave = useCallback(async () => {
     let success: boolean
