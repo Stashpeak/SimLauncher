@@ -14,7 +14,7 @@ import {
   unsubscribeRunningApps
 } from '../processes'
 import { KNOWN_GAME_KEYS, getStoredStringRecord } from '../store'
-import { getExeName } from '../utils'
+import { getExeName, normalizePathForComparison, pathsEqual } from '../utils'
 
 /**
  * Identifier used to diff profile-switch targets. Two entries match only when
@@ -25,7 +25,7 @@ import { getExeName } from '../utils'
  * a stop + relaunch with the new args.
  */
 export function getProfileLaunchEntryId(entry: ProfileLaunchEntry) {
-  return `${entry.key} ${entry.path.toLowerCase()}`
+  return `${entry.key} ${normalizePathForComparison(entry.path)}`
 }
 
 export function validateGameKey(gameKey: unknown) {
@@ -105,12 +105,12 @@ export function registerLaunchHandlers() {
       }
 
       const gamePaths = getStoredStringRecord('gamePaths')
-      const gamePath = gamePaths[gameKey]?.toLowerCase()
+      const gamePath = gamePaths[gameKey]
       const { processNames } = await readRunningProcessNames()
 
       const utilityEntries = (profileId: string) =>
         buildNamedProfileLaunchEntries(gameKey, profileId).filter(
-          (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
+          (entry) => !gamePath || !pathsEqual(entry.path, gamePath)
         )
 
       const fromEntries = utilityEntries(fromProfileId)
@@ -156,13 +156,13 @@ export function registerLaunchHandlers() {
       }
 
       const gamePaths = getStoredStringRecord('gamePaths')
-      const gamePath = gamePaths[gameKey]?.toLowerCase()
+      const gamePath = gamePaths[gameKey]
 
       const fromEntries = buildNamedProfileLaunchEntries(gameKey, fromProfileId).filter(
-        (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
+        (entry) => !gamePath || !pathsEqual(entry.path, gamePath)
       )
       const toEntries = buildNamedProfileLaunchEntries(gameKey, toProfileId).filter(
-        (entry) => !gamePath || entry.path.toLowerCase() !== gamePath
+        (entry) => !gamePath || !pathsEqual(entry.path, gamePath)
       )
       // Match on `{key, path}` rather than path alone. After the #357
       // key-based arg refactor, `customapp1` and `customapp2` pointing at

@@ -74,9 +74,19 @@ vi.mock('../../src/main/processes', () => ({
   unsubscribeRunningApps: vi.fn()
 }))
 
-vi.mock('../../src/main/utils', () => ({
-  getExeName: (p: string) => p.split(/[\\/]/).pop()?.toLowerCase() ?? ''
-}))
+vi.mock('../../src/main/utils', () => {
+  const normalizePathForComparison = (p: unknown) =>
+    typeof p === 'string' ? p.trim().toLowerCase().replace(/\\/g, '/') : ''
+  return {
+    getExeName: (p: string) => p.split(/[\\/]/).pop()?.toLowerCase() ?? '',
+    normalizePathForComparison,
+    pathsEqual: (a: unknown, b: unknown) => {
+      const normA = normalizePathForComparison(a)
+      const normB = normalizePathForComparison(b)
+      return normA.length > 0 && normB.length > 0 && normA === normB
+    }
+  }
+})
 
 beforeEach(async () => {
   vi.resetModules()

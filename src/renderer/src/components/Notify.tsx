@@ -9,6 +9,7 @@ import {
   useState
 } from 'react'
 import { createPortal } from 'react-dom'
+import { getPathDisplayName } from '../../../shared/path'
 import { isRecord } from '../lib/config'
 import { onAppLaunchError, onProcessNameMismatchWarning } from '../lib/electron'
 import { CheckIcon, WarningTriangleIcon, ErrorIcon } from './icons'
@@ -36,17 +37,13 @@ const TOAST_PROGRESS_CLASSES: Record<ToastType, string> = {
 
 let toastId = 0
 
-function getPathName(filePath: string) {
-  return filePath.split(/[\\/]/).pop() || filePath
-}
-
 function formatLaunchErrorToast(data: unknown) {
   if (!isRecord(data)) {
     return 'App launch failed'
   }
 
   const { app, error } = data
-  const appName = typeof app === 'string' ? getPathName(app) : 'App'
+  const appName = typeof app === 'string' ? getPathDisplayName(app) : 'App'
   const errorMessage =
     typeof error === 'string' && error.trim().length > 0 ? error : 'Unknown launch error'
 

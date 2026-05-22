@@ -1,6 +1,6 @@
 import Store from 'electron-store'
 
-import { clamp, isRecord } from './utils'
+import { clamp, isRecord, normalizePathForComparison } from './utils'
 
 export const DEFAULT_ZOOM_FACTOR = 1.0
 export const MIN_ZOOM_FACTOR = 0.5
@@ -308,7 +308,7 @@ function sanitizeTrackedProcessPaths(value: unknown) {
 
   value.slice(0, MAX_TRACKED_PROCESS_PATHS).forEach((entry) => {
     const safePath = getImportableExePath(entry)
-    const key = safePath?.toLowerCase()
+    const key = safePath ? normalizePathForComparison(safePath) : ''
 
     if (safePath && key && !seen.has(key)) {
       safePaths.push(safePath)
