@@ -8,7 +8,7 @@ import {
   getStoredProfiles
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath } from '../utils'
+import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
 import { pruneUnclosedProcesses } from './kill'
 import {
@@ -115,7 +115,7 @@ async function getTrackedRunningApps(
 
     pathsToTrack.forEach((trackedPath) => {
       const processName = getExeName(trackedPath)
-      const dedupeKey = `${gameKey}:${trackedPath.toLowerCase()}`
+      const dedupeKey = `${gameKey}:${normalizePathForComparison(trackedPath)}`
 
       if (processNames.has(processName) && !seen.has(dedupeKey)) {
         trackedApps.push({
@@ -143,8 +143,8 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   }
   pruneExpiredProcessNameMismatchWarnings()
 
-  const launchedApps = Array.from(runningProcesses.entries()).map(([appPath, appProcess]) => ({
-    path: appPath,
+  const launchedApps = Array.from(runningProcesses.values()).map((appProcess) => ({
+    path: appProcess.path,
     name: appProcess.name,
     gameKey: appProcess.gameKey,
     tracked: false
@@ -170,14 +170,16 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       warning: entry.warning
     }))
   const warningKeys = new Set(
-    mismatchWarnings.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+    mismatchWarnings.map(
+      (appProcess) => `${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`
+    )
   )
   const launchedKeys = new Set(
-    surfacedApps.map((appProcess) => `${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+    surfacedApps.map(
+      (appProcess) => `${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`
+    )
   )
-  const launchedExeNames = new Set(
-    surfacedApps.map((appProcess) => path.basename(appProcess.path).toLowerCase())
-  )
+  const launchedExeNames = new Set(surfacedApps.map((appProcess) => getExeName(appProcess.path)))
   const profiles = getStoredProfiles()
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
@@ -201,17 +203,19 @@ export async function getRunningApps(): Promise<RunningApp[]> {
     )
   ).filter(
     (appProcess) =>
-      !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`) &&
-      !launchedExeNames.has(path.basename(appProcess.path).toLowerCase())
+      !launchedKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`) &&
+      !launchedExeNames.has(getExeName(appProcess.path))
   )
 
   return [
     ...surfacedApps,
     ...mismatchWarnings.filter(
-      (appProcess) => !launchedKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+      (appProcess) =>
+        !launchedKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     ),
     ...trackedApps.filter(
-      (appProcess) => !warningKeys.has(`${appProcess.gameKey}:${appProcess.path.toLowerCase()}`)
+      (appProcess) =>
+        !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     )
   ]
 }

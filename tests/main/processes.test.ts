@@ -636,6 +636,47 @@ test('process mismatch warnings persist until manually dismissed (#360)', async 
   dateNow.mockRestore()
 })
 
+// Regression for PR B of #362: the wrapper-mismatch warning is written using
+// the launched (mixed-case, forward-slash) path, and dismissAppIcon is later
+// called with a differently-cased / different-separator string from the
+// renderer. Both sites must canonicalise via normalizePathForComparison so the
+// delete finds the entry — pre-migration this silently failed because writes
+// used `appPath.toLowerCase()` while reads built a key the same way only when
+// the casing happened to line up.
+test('dismissAppIcon clears a wrapper warning regardless of casing or separators (#362)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  // Launched path uses forward slashes + mixed case.
+  markExistingPath('C:/Program Files/Cheat Engine/Cheat Engine.exe')
+  const { dismissAppIcon, launchProfileApps, processNameMismatchWarnings } =
+    await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Program Files/Cheat Engine/Cheat Engine.exe'
+  ])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  processNames.delete('cheat engine.exe')
+  childHandlers.get('exit')?.()
+  expect(processNameMismatchWarnings.size).toBe(1)
+
+  // Dismiss with backslash separators and a different casing — the renderer
+  // can hand us any form of the same path.
+  dismissAppIcon('c:\\Program Files\\CHEAT ENGINE\\Cheat Engine.exe', 'ac')
+  expect(processNameMismatchWarnings.size).toBe(0)
+})
+
 test('wrapper exit warning tells the user tracking is lost and how to fix it (#402)', async () => {
   const childHandlers = new Map<string, (...args: unknown[]) => void>()
   const child = {
@@ -1004,7 +1045,7 @@ test('launchProfileApps reports synchronous spawn failures without tracking the 
     launchedCount: 0,
     failedCount: 1
   })
-  expect(runningProcesses.has('C:/Tools/Broken.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\tools\\broken.exe')).toBe(false)
 })
 
 test('launchProfileApps emits late launch errors to the renderer after initial spawn success', async () => {
@@ -1266,8 +1307,9 @@ test('killLaunchedApps keeps elevated access-denied app unclosed when path reche
   processNames.add('simhub.exe')
   accessDeniedPids.add('1234')
   inaccessibleExecutablePathProcesses.add('simhub.exe')
-  runningProcesses.set('C:/Tools/SimHub.exe', {
+  runningProcesses.set('c:\\tools\\simhub.exe', {
     process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
     name: 'SimHub.exe',
     gameKey: 'ac',
     isGame: false
@@ -1280,7 +1322,7 @@ test('killLaunchedApps keeps elevated access-denied app unclosed when path reche
     failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'access_denied' })]
   })
 
-  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+  expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
     path: 'C:/Tools/SimHub.exe',
     gameKey: 'ac',
     reason: 'access_denied',
@@ -1321,12 +1363,12 @@ test('killLaunchedApps marks not-found full-path app as elevated when image stil
     failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'access_denied' })]
   })
 
-  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+  expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
     path: 'C:/Tools/SimHub.exe',
     reason: 'access_denied',
     elevated: true
   })
-  expect(runningProcesses.has('C:/Tools/SimHub.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\tools\\simhub.exe')).toBe(false)
 })
 
 test('killLaunchedApps treats not-found full-path app as closed when image no longer exists', async () => {
@@ -1353,7 +1395,7 @@ test('killLaunchedApps treats not-found full-path app as closed when image no lo
     failures: []
   })
 
-  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
 })
 
 test('killLaunchedApps treats stale taskkill PID responses as closed', async () => {
@@ -1383,7 +1425,7 @@ test('killLaunchedApps treats stale taskkill PID responses as closed', async () 
     failures: []
   })
   expect(result.error).toBeUndefined()
-  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
   expect(execFileCalls).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ command: 'taskkill', args: ['/PID', '4321', '/T', '/F'] })
@@ -1412,7 +1454,7 @@ test('killLaunchedApps keeps stale taskkill attempts failed when a replacement p
     failedCount: 1,
     failures: [expect.objectContaining({ appPath: 'C:/Tools/SimHub.exe', reason: 'still_running' })]
   })
-  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+  expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
     path: 'C:/Tools/SimHub.exe',
     reason: 'still_running'
   })
@@ -1478,7 +1520,7 @@ test('killLaunchedApps registers elevated utility companion when image-name fall
 
 test('pruneUnclosedProcesses removes stale entries and keeps running entries', async () => {
   const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
-  unclosedProcesses.set('ac:c:/tools/stale.exe', {
+  unclosedProcesses.set('ac:c:\\tools\\stale.exe', {
     path: 'C:/Tools/Stale.exe',
     name: 'Stale.exe',
     gameKey: 'ac',
@@ -1486,7 +1528,7 @@ test('pruneUnclosedProcesses removes stale entries and keeps running entries', a
     reason: 'still_running',
     elevated: false
   })
-  unclosedProcesses.set('ac:c:/tools/simhub.exe', {
+  unclosedProcesses.set('ac:c:\\tools\\simhub.exe', {
     path: 'C:/Tools/SimHub.exe',
     name: 'SimHub.exe',
     gameKey: 'ac',
@@ -1497,8 +1539,8 @@ test('pruneUnclosedProcesses removes stale entries and keeps running entries', a
 
   pruneUnclosedProcesses(new Set(['simhub.exe']))
 
-  expect(unclosedProcesses.has('ac:c:/tools/stale.exe')).toBe(false)
-  expect(unclosedProcesses.get('ac:c:/tools/simhub.exe')).toMatchObject({
+  expect(unclosedProcesses.has('ac:c:\\tools\\stale.exe')).toBe(false)
+  expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
     path: 'C:/Tools/SimHub.exe',
     elevated: true
   })
@@ -1533,13 +1575,14 @@ test('killProfileApps clears previous unclosed and running state after successfu
     await loadProcessModulesWithStore({
       appPaths: { simhub: 'C:/Tools/SimHub.exe' }
     })
-  runningProcesses.set('C:/Tools/SimHub.exe', {
+  runningProcesses.set('c:\\tools\\simhub.exe', {
     process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
     name: 'SimHub.exe',
     gameKey: 'ac',
     isGame: false
   })
-  unclosedProcesses.set('ac:c:/tools/simhub.exe', {
+  unclosedProcesses.set('ac:c:\\tools\\simhub.exe', {
     path: 'C:/Tools/SimHub.exe',
     name: 'SimHub.exe',
     gameKey: 'ac',
@@ -1559,8 +1602,8 @@ test('killProfileApps clears previous unclosed and running state after successfu
       expect.objectContaining({ command: 'taskkill', args: ['/PID', '1234', '/T', '/F'] })
     ])
   )
-  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
-  expect(runningProcesses.has('C:/Tools/SimHub.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\tools\\simhub.exe')).toBe(false)
 })
 
 test('killProfileApps suppresses wrapper warnings for SimLauncher-initiated profile switch closes', async () => {
@@ -1780,14 +1823,16 @@ test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
-  runningProcesses.set('C:/Games/AssettoCorsa.exe', {
+  runningProcesses.set('c:\\games\\assettocorsa.exe', {
     process: { pid: 9999 } as never,
+    path: 'C:/Games/AssettoCorsa.exe',
     name: 'AssettoCorsa.exe',
     gameKey: 'ac',
     isGame: true
   })
-  runningProcesses.set('C:/Tools/SimHub.exe', {
+  runningProcesses.set('c:\\tools\\simhub.exe', {
     process: { pid: 4321 } as never,
+    path: 'C:/Tools/SimHub.exe',
     name: 'SimHub.exe',
     gameKey: 'ac',
     isGame: false
@@ -1860,8 +1905,9 @@ test('killLaunchedApps should skip game processes during kill (#350)', async () 
     },
     gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
   })
-  runningProcesses.set('C:/Games/AssettoCorsa.exe', {
+  runningProcesses.set('c:\\games\\assettocorsa.exe', {
     process: { pid: 9999 } as never,
+    path: 'C:/Games/AssettoCorsa.exe',
     name: 'AssettoCorsa.exe',
     gameKey: 'ac',
     isGame: true
@@ -1991,7 +2037,7 @@ test('finalize keeps stale-only attempts closed when image is gone (staleTask pr
     failedCount: 0,
     failures: []
   })
-  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
 })
 
 test('killLaunchedApps non-full-path utility companion with replacement is reported unclosed (#326, #345)', async () => {
@@ -2053,7 +2099,7 @@ test('WMI returning 0 PIDs after taskkill is treated as closed (genuine exit) (#
     failedCount: 0,
     failures: []
   })
-  expect(unclosedProcesses.has('ac:c:/tools/simhub.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
   // Critically: no taskkill /PID call should have run for this companion -
   // the WMI lookup returned 0 PIDs so the elevated/exited branch was taken.
   expect(execFileCalls).not.toEqual(
@@ -2106,7 +2152,7 @@ test('pruneUnclosedProcesses removes entries whose image is no longer active (#3
   // names, it should be removed so it does not surface in getRunningApps.
   const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
 
-  unclosedProcesses.set('ac:c:/tools/active.exe', {
+  unclosedProcesses.set('ac:c:\\tools\\active.exe', {
     path: 'C:/Tools/Active.exe',
     name: 'Active.exe',
     gameKey: 'ac',
@@ -2114,7 +2160,7 @@ test('pruneUnclosedProcesses removes entries whose image is no longer active (#3
     reason: 'access_denied',
     elevated: true
   })
-  unclosedProcesses.set('ac:c:/tools/inactive.exe', {
+  unclosedProcesses.set('ac:c:\\tools\\inactive.exe', {
     path: 'C:/Tools/Inactive.exe',
     name: 'Inactive.exe',
     gameKey: 'ac',
@@ -2122,7 +2168,7 @@ test('pruneUnclosedProcesses removes entries whose image is no longer active (#3
     reason: 'still_running',
     elevated: false
   })
-  unclosedProcesses.set('ac:c:/tools/also-inactive.exe', {
+  unclosedProcesses.set('ac:c:\\tools\\also-inactive.exe', {
     path: 'C:/Tools/Also-Inactive.exe',
     name: 'Also-Inactive.exe',
     gameKey: 'ac',
@@ -2133,9 +2179,9 @@ test('pruneUnclosedProcesses removes entries whose image is no longer active (#3
 
   pruneUnclosedProcesses(new Set(['active.exe']))
 
-  expect(unclosedProcesses.has('ac:c:/tools/active.exe')).toBe(true)
-  expect(unclosedProcesses.has('ac:c:/tools/inactive.exe')).toBe(false)
-  expect(unclosedProcesses.has('ac:c:/tools/also-inactive.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\active.exe')).toBe(true)
+  expect(unclosedProcesses.has('ac:c:\\tools\\inactive.exe')).toBe(false)
+  expect(unclosedProcesses.has('ac:c:\\tools\\also-inactive.exe')).toBe(false)
 })
 
 test('kill is reported successful when the launched exe is gone from tasklist even if taskkill complained (#390)', async () => {
@@ -2176,7 +2222,9 @@ test('kill is reported successful when the launched exe is gone from tasklist ev
     failures: []
   })
   expect(
-    unclosedProcesses.has('ac:c:/users/test/appdata/local/programs/perplexity/perplexity.exe')
+    unclosedProcesses.has(
+      'ac:c:\\users\\test\\appdata\\local\\programs\\perplexity\\perplexity.exe'
+    )
   ).toBe(false)
 })
 
@@ -2222,5 +2270,5 @@ test('kill is NOT reported successful when taskkill failed and the post-kill tas
   })
   // The unclosed-process entry must be registered so the UI surfaces the
   // failure rather than silently clearing it.
-  expect(unclosedProcesses.has('ac:c:/tools/access-denied-app.exe')).toBe(true)
+  expect(unclosedProcesses.has('ac:c:\\tools\\access-denied-app.exe')).toBe(true)
 })
