@@ -10,6 +10,7 @@ import {
   getUpdateInfo,
   onCloseRequested,
   onUpdateAvailable,
+  setPendingMinimizeToTray,
   setRendererDirty
 } from './lib/electron'
 import { runStartupMigrations } from './lib/migrations'
@@ -105,6 +106,13 @@ function AppContent() {
   const handleConfirmDiscard = useCallback(() => {
     requestDiscardAll()
     reportSettingsDirty(false)
+    // Reset main-process state that the renderer had forwarded ahead of save.
+    // Currently this covers the pending Minimize-to-tray toggle: without
+    // clearing it, the close handler would still follow the discarded value.
+    void setPendingMinimizeToTray(null)
+    // Remount the SettingsProvider so it reloads UI state from the store
+    // (otherwise discarded toggles would still appear as enabled in the UI).
+    setRefreshKey((k) => k + 1)
     syncThemeFromStore()
     if (pendingView) {
       setView(pendingView)
