@@ -56,7 +56,17 @@ function AppContent() {
 
   useEffect(() => {
     const unsubscribe = onCloseRequested(() => {
-      setCloseConfirmOpen(true)
+      // Avoid stacking the close dialog on top of the tab-switch dialog —
+      // two simultaneous confirms attach independent Enter/Escape handlers
+      // and a single keypress would trigger conflicting save/discard flows.
+      // The tab-switch flow is more contextual (user just clicked a tab),
+      // so let them finish it first.
+      setPendingView((current) => {
+        if (current === null) {
+          setCloseConfirmOpen(true)
+        }
+        return current
+      })
     })
     return () => {
       unsubscribe()

@@ -35,13 +35,21 @@ export function ProfileEditor(props: ProfileEditorProps) {
   }, [isDirty, handleSave, registerSaveHandler])
 
   useEffect(() => {
+    // Only register the discard handler when this editor actually has dirty
+    // state. Otherwise a Settings-scope discard would invoke onClose() here
+    // and close a clean-but-open profile editor in the hidden Games pane,
+    // dropping user context for no reason.
+    if (!isDirty) {
+      registerDiscardHandler('profile-editor', null)
+      return
+    }
     registerDiscardHandler('profile-editor', () => {
       onClose()
     })
     return () => {
       registerDiscardHandler('profile-editor', null)
     }
-  }, [onClose, registerDiscardHandler])
+  }, [isDirty, onClose, registerDiscardHandler])
 
   if (editor.loading) return null
 
