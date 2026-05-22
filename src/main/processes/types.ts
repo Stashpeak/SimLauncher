@@ -34,6 +34,19 @@ export type AppLaunchResult =
   | { status: 'elevated'; appPath: string; warning: string }
   | { status: 'failed'; appPath: string; error: string }
 
+export interface ProfileLaunchEntry {
+  /**
+   * Utility key (e.g. `simhub`, `customapp1`, `customapp20`) or the game key when
+   * the entry represents the game executable itself. Used to look up per-slot
+   * launch arguments so two custom-app slots that share the same exe still get
+   * their own args (#357).
+   */
+  key: string
+  path: string
+}
+
+export type ProfileLaunchInput = string | ProfileLaunchEntry
+
 export interface RunningProcessEntry {
   process: ChildProcess
   name: string
