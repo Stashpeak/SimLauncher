@@ -2343,6 +2343,73 @@ test('spawnDetachedApp emits a process-name-mismatch warning when the wrapper ex
   expect(processNameMismatchWarnings.size).toBe(1)
 })
 
+test('spawnDetachedApp exit handler does not wipe a new entry installed under the same canonical key', async () => {
+  // Two slots can share a canonical runningKey (#357: same exe path, different
+  // appArgs). If the old child's 'exit' event arrives AFTER a fresh spawn has
+  // re-`set` the entry under the same key (realistic during a profile switch
+  // that kills the old child and immediately spawns the new one), the late
+  // delete must be a no-op — otherwise the new running process disappears
+  // from runningProcesses and the UI loses track of it.
+  const oldHandlers = new Map<string, (...args: unknown[]) => void>()
+  const oldChild = {
+    pid: 1111,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      oldHandlers.set(event, handler)
+      return oldChild
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  const newHandlers = new Map<string, (...args: unknown[]) => void>()
+  const newChild = {
+    pid: 2222,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      newHandlers.set(event, handler)
+      return newChild
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Apps/Shared.exe')
+  const { spawnDetachedApp, runningProcesses } = await loadProcessModules()
+  const spawnMock = vi.mocked(await import('child_process')).spawn
+  spawnMock.mockReturnValueOnce(oldChild as never).mockReturnValueOnce(newChild as never)
+
+  const oldLaunch = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Shared.exe' },
+    undefined
+  )
+  oldHandlers.get('spawn')?.()
+  await oldLaunch
+
+  // Simulate the kill that runs before the profile switches: it removes the
+  // old entry the same way kill.ts:418 does. The 'exit' event has not fired
+  // yet — that's the whole point of the race.
+  const runningKey = 'c:\\apps\\shared.exe'
+  expect(runningProcesses.has(runningKey)).toBe(true)
+  runningProcesses.delete(runningKey)
+
+  const newLaunch = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp2', path: 'C:/Apps/Shared.exe' },
+    undefined
+  )
+  newHandlers.get('spawn')?.()
+  await newLaunch
+
+  expect(runningProcesses.get(runningKey)?.process).toBe(newChild)
+
+  // Late exit of the OLD child arrives. With the identity guard it must be a
+  // no-op; without the guard it would wipe the new entry.
+  oldHandlers.get('exit')?.()
+
+  expect(runningProcesses.get(runningKey)?.process).toBe(newChild)
+})
+
 test('spawnDetachedApp returns elevated when the OS rejects the spawn with EACCES', async () => {
   markExistingPath('C:/Apps/Elevated.exe')
   spawnErrors.set('C:/Apps/Elevated.exe', makeAccessDeniedError())
@@ -2481,6 +2548,46 @@ test('finalizeKillAttempts flags an elevated-inconclusive attempt as still runni
   // The triple-predicate flips accessDenied to true, so the failure must
   // surface as `access_denied` (matches what the UI shows for elevated
   // processes that SimLauncher can't terminate).
+  expect(result.failures[0]).toMatchObject({
+    appName: 'Elevated.exe',
+    reason: 'access_denied'
+  })
+  expect(unclosedProcesses.size).toBe(1)
+})
+
+test('finalizeKillAttempts treats a notFound elevated-suspect attempt as still running when the post-kill tasklist read failed', async () => {
+  // Companion regression to the access-denied + tasklist-failed test (#399):
+  // when WMI returns 0 PIDs (notFound=true, success=true — the
+  // findProcessIdsByExecutablePath elevated-invisible branch) AND the
+  // post-kill tasklist read itself fails, the empty processNamesAfterKill
+  // Set must NOT be read as evidence-of-exit. Without the gate, the
+  // isElevatedInconclusive predicate short-circuits to false and the attempt
+  // is silently cleared as success. Be conservative: treat as inconclusive.
+  const { finalizeKillAttempts, unclosedProcesses } = await loadProcessModules()
+
+  markExistingPath('C:/Apps/Elevated.exe')
+  // Pre-kill tasklist scan succeeds; post-kill recheck fails. The attempt is
+  // synthesised directly (notFound=true models WMI returning 0 PIDs for an
+  // elevated process), so we only need the post-kill tasklist branch to fail.
+  tasklistReadShouldFail = true
+
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'elevated.exe',
+        appPath: 'C:/Apps/Elevated.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true,
+        accessDenied: false
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(false)
+  expect(result.failedCount).toBe(1)
+  expect(result.closedCount).toBe(0)
   expect(result.failures[0]).toMatchObject({
     appName: 'Elevated.exe',
     reason: 'access_denied'

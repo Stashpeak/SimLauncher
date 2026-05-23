@@ -340,7 +340,10 @@ export function spawnDetachedApp(
       })
 
       child.once('error', async (err) => {
-        runningProcesses.delete(runningKey)
+        const processEntry = runningProcesses.get(runningKey)
+        if (processEntry?.process === child) {
+          runningProcesses.delete(runningKey)
+        }
         if (fallbackTimer) {
           clearTimeout(fallbackTimer)
         }
@@ -363,7 +366,13 @@ export function spawnDetachedApp(
       child.once('exit', () => {
         const processEntry = runningProcesses.get(runningKey)
         const wasGame = processEntry?.isGame ?? false
-        runningProcesses.delete(runningKey)
+        // Only drop the entry if it is still ours. Two slots can share a
+        // canonical key (#357), and a late exit event for an already-killed
+        // child must not wipe an entry that a subsequent spawn has just
+        // installed (profile-switch path is the realistic trigger).
+        if (processEntry?.process === child) {
+          runningProcesses.delete(runningKey)
+        }
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
