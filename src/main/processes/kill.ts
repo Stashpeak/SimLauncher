@@ -374,18 +374,23 @@ export async function finalizeKillAttempts(
           attempt.processName,
           attempt.appPath
         )
+        // When the post-kill tasklist read failed, treat any unverified
+        // "process gone" signal as inconclusive rather than success: a
+        // notFound result from WMI/taskkill could mean either truly exited
+        // or elevated-invisible, and the empty processNamesAfterKill Set
+        // can't distinguish them. Same for the access-denied recheck.
         isElevatedInconclusive =
           !imageGoneFromTasklist &&
           attempt.notFound === true &&
           attempt.staleTask !== true &&
-          processNamesAfterKill.has(attempt.processName)
+          (processNamesAfterKill.has(attempt.processName) || !tasklistReadSucceeded)
         stillRunning =
           !imageGoneFromTasklist &&
           (processIds.length > 0 ||
             isElevatedInconclusive ||
             (attempt.accessDenied === true &&
               !attempt.notFound &&
-              processNamesAfterKill.has(attempt.processName)))
+              (processNamesAfterKill.has(attempt.processName) || !tasklistReadSucceeded)))
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
       }
