@@ -174,6 +174,13 @@ function AppContent() {
   const handleCloseConfirmDiscard = useCallback(async () => {
     requestDiscardAll()
     reportSettingsDirty(false)
+    // Mirror the tab-switch discard: clear any pending Minimize-to-tray
+    // override and remount the SettingsProvider so a discarded tray toggle
+    // doesn't keep steering the main process on the next close. Matters most
+    // in minimize mode — the renderer stays alive in the tray, so a stale
+    // pending value would otherwise leak into the next close cycle.
+    void setPendingMinimizeToTray(null)
+    setRefreshKey((k) => k + 1)
     setCloseConfirmOpen(false)
     await (closeConfirmMinimizeMode ? forceMinimizeToTray() : forceClose())
   }, [closeConfirmMinimizeMode, reportSettingsDirty, requestDiscardAll])
