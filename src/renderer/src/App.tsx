@@ -167,6 +167,10 @@ function AppContent() {
       notify('Failed to save changes. Window not closed.', 'error', 4000)
       return
     }
+    // Mirror handleConfirmSave: remount provider so cached settings-derived
+    // state (game list paths, etc.) reloads from store. Matters in minimize
+    // mode where the renderer keeps living; harmless on the force-close path.
+    setRefreshKey((k) => k + 1)
     setCloseConfirmOpen(false)
     await (closeConfirmMinimizeMode ? forceMinimizeToTray() : forceClose())
   }, [closeConfirmMinimizeMode, notify, requestSaveAll])
@@ -175,15 +179,19 @@ function AppContent() {
     requestDiscardAll()
     reportSettingsDirty(false)
     // Mirror the tab-switch discard: clear any pending Minimize-to-tray
-    // override and remount the SettingsProvider so a discarded tray toggle
-    // doesn't keep steering the main process on the next close. Matters most
-    // in minimize mode — the renderer stays alive in the tray, so a stale
-    // pending value would otherwise leak into the next close cycle.
+    // override, remount the SettingsProvider, and re-sync theme so a
+    // discarded tray/theme/accent toggle doesn't keep steering the main
+    // process or leak visually after the user picked Discard. Matters most
+    // in minimize mode — the renderer stays alive in the tray, so any
+    // stale state would otherwise surface on the next show.
     void setPendingMinimizeToTray(null)
     setRefreshKey((k) => k + 1)
+    syncThemeFromStore().catch((err) => {
+      console.error('Failed to re-sync theme after discard', err)
+    })
     setCloseConfirmOpen(false)
     await (closeConfirmMinimizeMode ? forceMinimizeToTray() : forceClose())
-  }, [closeConfirmMinimizeMode, reportSettingsDirty, requestDiscardAll])
+  }, [closeConfirmMinimizeMode, reportSettingsDirty, requestDiscardAll, syncThemeFromStore])
 
   const handleCloseConfirmCancel = () => {
     setCloseConfirmOpen(false)
