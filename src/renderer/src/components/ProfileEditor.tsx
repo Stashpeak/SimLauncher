@@ -5,9 +5,14 @@ import { ProfileEditorActions } from './profile-editor/ProfileEditorActions'
 import { ProfileNameSection } from './profile-editor/ProfileNameSection'
 import { ProfileUtilitiesSection } from './profile-editor/ProfileUtilitiesSection'
 import { ProcessTrackingSection } from './profile-editor/ProcessTrackingSection'
-import { StickySaveBar } from './StickySaveBar'
 import { useAppDirty } from '../contexts/AppDirtyContext'
 import { useProfileEditor, type ProfileEditorProps } from '../hooks/useProfileEditor'
+
+// The unsaved-changes bar lives at the App level now (#423) so it can pin to
+// the viewport bottom even when the editor card itself doesn't overflow the
+// scroll container. ProfileEditor's dirty state still flows into
+// AppDirtyContext via reportProfileEditorDirty, and the app-level bar reacts
+// to that.
 
 export function ProfileEditor(props: ProfileEditorProps): ReactNode {
   const editor = useProfileEditor(props)
@@ -129,12 +134,6 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
           onDeleteProfile={editor.handleDeleteProfile}
         />
       </div>
-
-      <StickySaveBar
-        isDirty={editor.isDirty}
-        onSave={() => void editor.handleSave(false)}
-        ariaLabel="Unsaved profile changes"
-      />
 
       <ConfirmDialog
         isOpen={editor.showConfirm}

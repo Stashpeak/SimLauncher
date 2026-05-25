@@ -4,6 +4,7 @@ import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { StickySaveBar } from './components/StickySaveBar'
 import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import {
   forceClose,
@@ -252,7 +253,9 @@ function AppContent() {
                 : 'opacity-0 scale-95 pointer-events-none'
             }`}
           >
-            <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
+            <div
+              className={`flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
+            >
               <GameList key={refreshKey} onNavigate={handleNavigate} />
             </div>
           </div>
@@ -265,12 +268,16 @@ function AppContent() {
                 : 'opacity-0 scale-95 pointer-events-none'
             }`}
           >
-            <div className="flex-1 overflow-y-auto pt-16 px-4 custom-scrollbar">
+            <div
+              className={`flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
+            >
               <SettingsView onClose={() => handleNavigate('games')} updateInfo={updateInfo} />
             </div>
           </div>
         </main>
       </SettingsProvider>
+
+      <StickySaveBar />
 
       <ConfirmDialog
         isOpen={pendingView !== null}
