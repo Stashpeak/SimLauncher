@@ -10,8 +10,12 @@ import { SettingsSection } from './settings/SettingsSection'
 import { useSettingsMeta } from './settings/SettingsMetaContext'
 import type { UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
-import { StickySaveBar } from './StickySaveBar'
 import { useAppDirty } from '../contexts/AppDirtyContext'
+
+// The unsaved-changes bar is rendered at the App level now (#423) so it pins
+// to the viewport bottom regardless of which view is active or whether the
+// scroll container has overflowed. Settings dirty state still flows into
+// AppDirtyContext via the SettingsContext onDirtyChange chain.
 
 export function SettingsView({
   onClose,
@@ -155,12 +159,6 @@ function SettingsViewContent({
           Back to Games
         </button>
       </div>
-
-      <StickySaveBar
-        isDirty={isDirty}
-        onSave={() => void saveSettings()}
-        ariaLabel="Unsaved settings"
-      />
     </div>
   )
 }
