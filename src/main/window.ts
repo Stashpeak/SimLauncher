@@ -16,6 +16,45 @@ import { clamp } from './utils'
 
 let mainWindow: BrowserWindow | null = null
 
+export type CloseAction = 'quit' | 'hide' | 'confirm-close' | 'confirm-minimize'
+
+/**
+ * Decide what the window's 'close' event should do based on the three inputs
+ * that govern its behavior. Pure function so the precedence rules are easy to
+ * unit-test and review.
+ *
+ * Precedence: explicit quit > unsaved changes > tray preference. Dirty must
+ * always win over tray so the user explicitly chooses what happens to their
+ * pending edits (the previous design silently minimized to tray and left
+ * changes "preserved in memory" — invisible to the user, and lost if they
+ * later quit from the tray menu).
+ */
+export function decideCloseAction(opts: {
+  isQuitting: boolean
+  isDirty: boolean
+  effectiveMinimizeToTray: boolean
+}): CloseAction {
+  if (opts.isQuitting) {
+    return 'quit'
+  }
+  if (opts.isDirty) {
+    return opts.effectiveMinimizeToTray ? 'confirm-minimize' : 'confirm-close'
+  }
+  if (opts.effectiveMinimizeToTray) {
+    return 'hide'
+  }
+  return 'quit'
+}
+
+/**
+ * Resolve the tray preference the user *currently intends*, falling back to the
+ * persisted store value when no pending toggle is in flight.
+ */
+function getEffectiveMinimizeToTray(): boolean {
+  const pending = getPendingMinimizeToTray()
+  return pending === null ? store.get('minimizeToTray') === true : pending
+}
+
 function getInitialWindowBounds() {
   const defaultBounds = { width: 800, height: 600 }
   const savedBounds = store.get('windowBounds')
@@ -125,26 +164,25 @@ export function createWindow(): void {
 
     store.set('windowBounds', mainWindow.getBounds())
 
-    // Honour the renderer's pending tray preference (e.g. when the user toggled
-    // Minimize-to-tray but has not saved yet) so the close button respects the
-    // user's current intent rather than the last persisted value.
-    const pendingMinimizeToTray = getPendingMinimizeToTray()
-    const effectiveMinimizeToTray =
-      pendingMinimizeToTray === null ? store.get('minimizeToTray') === true : pendingMinimizeToTray
+    const action = decideCloseAction({
+      isQuitting: getIsQuitting(),
+      isDirty: getRendererDirty(),
+      effectiveMinimizeToTray: getEffectiveMinimizeToTray()
+    })
 
-    // Tray takes precedence over the dirty-changes prompt: hiding to tray
-    // keeps the renderer alive so unsaved data is preserved. The unsaved-
-    // changes confirm only matters when the close would actually quit.
-    if (!getIsQuitting() && effectiveMinimizeToTray) {
-      event.preventDefault()
-      mainWindow.hide()
+    if (action === 'quit') {
       return
     }
 
-    if (!getIsQuitting() && getRendererDirty()) {
-      event.preventDefault()
-      mainWindow.webContents.send('close-requested')
+    event.preventDefault()
+    if (action === 'hide') {
+      mainWindow.hide()
+      return
     }
+    // Confirm dialog: tell the renderer whether picking Save/Discard should
+    // minimize (tray enabled) or fully close, so dialog labels and the final
+    // action both match the user's tray preference.
+    mainWindow.webContents.send('close-requested', { minimizeMode: action === 'confirm-minimize' })
   })
 
   // Show window once ready, or keep it hidden when starting minimized to tray.
@@ -233,11 +271,7 @@ export function registerWindowHandlers(): void {
   })
 
   ipcMain.handle('window-close', () => {
-    const pendingMinimizeToTray = getPendingMinimizeToTray()
-    const effectiveMinimizeToTray =
-      pendingMinimizeToTray === null ? store.get('minimizeToTray') === true : pendingMinimizeToTray
-
-    if (!effectiveMinimizeToTray && !getRendererDirty()) {
+    if (!getEffectiveMinimizeToTray() && !getRendererDirty()) {
       setIsQuitting(true)
     }
 
@@ -260,6 +294,13 @@ export function registerWindowHandlers(): void {
     setIsQuitting(true)
     setRendererDirty(false)
     mainWindow?.close()
+  })
+
+  ipcMain.handle('force-minimize-to-tray', () => {
+    // Renderer already ran its save/discard pipeline before invoking us; the
+    // dirty state in the renderer will propagate to false on next render. Do
+    // NOT setIsQuitting — the window keeps living in the tray.
+    mainWindow?.hide()
   })
 
   ipcMain.handle('restart-app', () => {

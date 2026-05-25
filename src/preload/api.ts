@@ -151,9 +151,10 @@ export interface ElectronAPI {
   maximize: () => Promise<void>
   close: () => Promise<void>
   forceClose: () => Promise<void>
+  forceMinimizeToTray: () => Promise<void>
   setRendererDirty: (isDirty: boolean) => Promise<void>
   setPendingMinimizeToTray: (value: boolean | null) => Promise<void>
-  onCloseRequested: (cb: () => void) => Unsubscribe
+  onCloseRequested: (cb: (payload: { minimizeMode: boolean }) => void) => Unsubscribe
   restartApp: () => Promise<void>
   getRunningApps: () => Promise<RunningApp[]>
   subscribeRunningApps: () => Promise<RunningAppsChangedPayload>

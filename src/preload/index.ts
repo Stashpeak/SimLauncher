@@ -33,11 +33,13 @@ const electronAPI: ElectronAPI = {
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
   forceClose: () => ipcRenderer.invoke('force-close-window'),
+  forceMinimizeToTray: () => ipcRenderer.invoke('force-minimize-to-tray'),
   setRendererDirty: (isDirty: boolean) => ipcRenderer.invoke('set-renderer-dirty', isDirty),
   setPendingMinimizeToTray: (value: boolean | null) =>
     ipcRenderer.invoke('set-pending-minimize-to-tray', value),
-  onCloseRequested: (cb: () => void) => {
-    const handler = () => cb()
+  onCloseRequested: (cb: (payload: { minimizeMode: boolean }) => void) => {
+    const handler = (_: unknown, payload: { minimizeMode: boolean } | undefined) =>
+      cb(payload ?? { minimizeMode: false })
     ipcRenderer.on('close-requested', handler)
     return () => ipcRenderer.removeListener('close-requested', handler)
   },

@@ -88,3 +88,51 @@ test('force-close-window sets quitting and clears renderer dirty flag (Closes #3
   expect(appState.getIsQuitting()).toBe(true)
   expect(appState.getRendererDirty()).toBe(false)
 })
+
+test('force-minimize-to-tray does NOT set quitting (renderer keeps living in tray, refs #424)', async () => {
+  await loadWindowModule()
+  const appState = await import('../../src/main/app-state')
+
+  await invokeWindowHandler('set-renderer-dirty', {}, true)
+  expect(appState.getRendererDirty()).toBe(true)
+  expect(appState.getIsQuitting()).toBe(false)
+
+  await invokeWindowHandler('force-minimize-to-tray', {})
+
+  // Quitting must stay false: the renderer keeps running in the tray and the
+  // dirty flag will propagate to false on the next render after the save or
+  // discard handler completes. We must NOT clear it here, otherwise a later
+  // tray menu "Quit" would lose any state that hadn't been propagated yet.
+  expect(appState.getIsQuitting()).toBe(false)
+  expect(appState.getRendererDirty()).toBe(true)
+})
+
+test('decideCloseAction: dirty takes precedence over tray (covers #424 scenarios 2 & 4)', async () => {
+  const { decideCloseAction } = await import('../../src/main/window')
+
+  // Scenario 1: tray off + dirty → confirm-close
+  expect(
+    decideCloseAction({ isQuitting: false, isDirty: true, effectiveMinimizeToTray: false })
+  ).toBe('confirm-close')
+
+  // Scenarios 2 & 4: tray on (persisted or pending) + dirty → confirm-minimize
+  // (previously: silent hide bypassed dirty confirm)
+  expect(
+    decideCloseAction({ isQuitting: false, isDirty: true, effectiveMinimizeToTray: true })
+  ).toBe('confirm-minimize')
+
+  // Clean state + tray on → silent hide (correct existing behavior)
+  expect(
+    decideCloseAction({ isQuitting: false, isDirty: false, effectiveMinimizeToTray: true })
+  ).toBe('hide')
+
+  // Clean state + tray off → quit
+  expect(
+    decideCloseAction({ isQuitting: false, isDirty: false, effectiveMinimizeToTray: false })
+  ).toBe('quit')
+
+  // Explicit quit short-circuits everything (force-close-window path)
+  expect(
+    decideCloseAction({ isQuitting: true, isDirty: true, effectiveMinimizeToTray: true })
+  ).toBe('quit')
+})
