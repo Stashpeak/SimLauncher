@@ -11,10 +11,15 @@ import { useProfileEditor, type ProfileEditorProps } from '../hooks/useProfileEd
 
 export function ProfileEditor(props: ProfileEditorProps): ReactNode {
   const editor = useProfileEditor(props)
-  const { reportProfileEditorDirty, registerSaveHandler, registerDiscardHandler } = useAppDirty()
+  const {
+    reportProfileEditorDirty,
+    registerSaveHandler,
+    registerDiscardHandler,
+    registerProfileEditorCloseRequestHandler
+  } = useAppDirty()
   const scopeId = `${props.gameKey}:${props.activeProfileId}`
   const { onClose } = props
-  const { isDirty, handleSave } = editor
+  const { isDirty, handleSave, handleCloseAttempt } = editor
 
   useEffect(() => {
     reportProfileEditorDirty(scopeId, isDirty)
@@ -50,6 +55,19 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
       registerDiscardHandler('profile-editor', null)
     }
   }, [isDirty, onClose, registerDiscardHandler])
+
+  useEffect(() => {
+    // Always route external close requests (GameRow toggle X, etc.) through
+    // handleCloseAttempt so the editor's own dirty-confirm dialog fires when
+    // there are unsaved edits. Without this the X button just unmounts the
+    // editor and silently drops user changes (#427).
+    registerProfileEditorCloseRequestHandler(() => {
+      handleCloseAttempt()
+    })
+    return () => {
+      registerProfileEditorCloseRequestHandler(null)
+    }
+  }, [handleCloseAttempt, registerProfileEditorCloseRequestHandler])
 
   if (editor.loading) return null
 

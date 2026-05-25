@@ -32,6 +32,14 @@ export interface AppDirtyContextValue {
    */
   requestSaveAll: () => Promise<boolean>
   requestDiscardAll: () => void
+  /**
+   * Routes external "close the profile editor" requests (e.g. the toggle X
+   * button in GameRowActions) through the editor's own dirty-confirm flow,
+   * instead of letting the caller unmount the editor and lose unsaved edits.
+   * When no handler is registered (no editor open), the call is a no-op.
+   */
+  registerProfileEditorCloseRequestHandler: (handler: (() => void) | null) => void
+  requestProfileEditorClose: () => boolean
 }
 
 const AppDirtyContext = createContext<AppDirtyContextValue | null>(null)
@@ -48,6 +56,7 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
   const profileSaveHandlerRef = useRef<SaveHandler | null>(null)
   const settingsDiscardHandlerRef = useRef<(() => void) | null>(null)
   const profileDiscardHandlerRef = useRef<(() => void) | null>(null)
+  const profileCloseRequestHandlerRef = useRef<(() => void) | null>(null)
 
   const reportSettingsDirty = useCallback((isDirty: boolean) => {
     setIsSettingsDirty(isDirty)
@@ -108,6 +117,19 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
     settingsDiscardHandlerRef.current?.()
   }, [])
 
+  const registerProfileEditorCloseRequestHandler = useCallback((handler: (() => void) | null) => {
+    profileCloseRequestHandlerRef.current = handler
+  }, [])
+
+  const requestProfileEditorClose = useCallback((): boolean => {
+    const handler = profileCloseRequestHandlerRef.current
+    if (!handler) {
+      return false
+    }
+    handler()
+    return true
+  }, [])
+
   const value = useMemo<AppDirtyContextValue>(
     () => ({
       isAnyDirty: isSettingsDirty || profileEditorDirtyScope !== null,
@@ -119,7 +141,9 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
       registerSaveHandler,
       registerDiscardHandler,
       requestSaveAll,
-      requestDiscardAll
+      requestDiscardAll,
+      registerProfileEditorCloseRequestHandler,
+      requestProfileEditorClose
     }),
     [
       isSettingsDirty,
@@ -129,7 +153,9 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
       registerSaveHandler,
       registerDiscardHandler,
       requestSaveAll,
-      requestDiscardAll
+      requestDiscardAll,
+      registerProfileEditorCloseRequestHandler,
+      requestProfileEditorClose
     ]
   )
 
