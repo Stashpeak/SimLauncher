@@ -7,6 +7,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import {
   forceClose,
+  forceMinimizeToTray,
   getUpdateInfo,
   onCloseRequested,
   onUpdateAvailable,
@@ -36,6 +37,10 @@ function AppContent() {
   const [showImportWarning, setShowImportWarning] = useState(false)
   const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
+  // When true, the close dialog's actions minimize to tray instead of fully
+  // quitting. Set from the `close-requested` payload so the dialog labels and
+  // the terminal IPC call both match the user's current tray preference.
+  const [closeConfirmMinimizeMode, setCloseConfirmMinimizeMode] = useState(false)
   const [saveRequested, setSaveRequested] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
@@ -49,7 +54,7 @@ function AppContent() {
   }, [isAnyDirty])
 
   useEffect(() => {
-    const unsubscribe = onCloseRequested(() => {
+    const unsubscribe = onCloseRequested(({ minimizeMode }: { minimizeMode: boolean }) => {
       // Avoid stacking the close dialog on top of the tab-switch dialog —
       // two simultaneous confirms attach independent Enter/Escape handlers
       // and a single keypress would trigger conflicting save/discard flows.
@@ -57,6 +62,7 @@ function AppContent() {
       // so let them finish it first.
       setPendingView((current) => {
         if (current === null) {
+          setCloseConfirmMinimizeMode(minimizeMode)
           setCloseConfirmOpen(true)
         }
         return current
@@ -161,16 +167,31 @@ function AppContent() {
       notify('Failed to save changes. Window not closed.', 'error', 4000)
       return
     }
+    // Mirror handleConfirmSave: remount provider so cached settings-derived
+    // state (game list paths, etc.) reloads from store. Matters in minimize
+    // mode where the renderer keeps living; harmless on the force-close path.
+    setRefreshKey((k) => k + 1)
     setCloseConfirmOpen(false)
-    await forceClose()
-  }, [notify, requestSaveAll])
+    await (closeConfirmMinimizeMode ? forceMinimizeToTray() : forceClose())
+  }, [closeConfirmMinimizeMode, notify, requestSaveAll])
 
   const handleCloseConfirmDiscard = useCallback(async () => {
     requestDiscardAll()
     reportSettingsDirty(false)
+    // Mirror the tab-switch discard: clear any pending Minimize-to-tray
+    // override, remount the SettingsProvider, and re-sync theme so a
+    // discarded tray/theme/accent toggle doesn't keep steering the main
+    // process or leak visually after the user picked Discard. Matters most
+    // in minimize mode — the renderer stays alive in the tray, so any
+    // stale state would otherwise surface on the next show.
+    void setPendingMinimizeToTray(null)
+    setRefreshKey((k) => k + 1)
+    syncThemeFromStore().catch((err) => {
+      console.error('Failed to re-sync theme after discard', err)
+    })
     setCloseConfirmOpen(false)
-    await forceClose()
-  }, [reportSettingsDirty, requestDiscardAll])
+    await (closeConfirmMinimizeMode ? forceMinimizeToTray() : forceClose())
+  }, [closeConfirmMinimizeMode, reportSettingsDirty, requestDiscardAll, syncThemeFromStore])
 
   const handleCloseConfirmCancel = () => {
     setCloseConfirmOpen(false)
@@ -265,9 +286,13 @@ function AppContent() {
       <ConfirmDialog
         isOpen={closeConfirmOpen}
         title="Unsaved Changes"
-        message="You have unsaved changes. Save them before closing SimLauncher?"
-        saveLabel="Save & Close"
-        discardLabel="Discard & Close"
+        message={
+          closeConfirmMinimizeMode
+            ? 'You have unsaved changes. Save them before minimizing SimLauncher to the tray?'
+            : 'You have unsaved changes. Save them before closing SimLauncher?'
+        }
+        saveLabel={closeConfirmMinimizeMode ? 'Save & Minimize' : 'Save & Close'}
+        discardLabel={closeConfirmMinimizeMode ? 'Discard & Minimize' : 'Discard & Close'}
         onSave={() => {
           void handleCloseConfirmSave()
         }}

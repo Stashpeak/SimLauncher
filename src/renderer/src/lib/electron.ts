@@ -9,6 +9,7 @@ export const minimize = () => window.electronAPI.minimize()
 export const maximize = () => window.electronAPI.maximize()
 export const close = () => window.electronAPI.close()
 export const forceClose = () => window.electronAPI.forceClose()
+export const forceMinimizeToTray = () => window.electronAPI.forceMinimizeToTray()
 export const setRendererDirty = (isDirty: boolean) => window.electronAPI.setRendererDirty(isDirty)
 export const setPendingMinimizeToTray = (value: boolean | null) =>
   window.electronAPI.setPendingMinimizeToTray(value)
