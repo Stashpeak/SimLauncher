@@ -41,11 +41,15 @@ export function StickySaveBar(): ReactNode {
       const ok = await requestSaveAll()
       if (!ok) {
         notify('Failed to save changes.', 'error', 4000)
-        setIsSaving(false)
       }
     } catch (err) {
       console.error('Sticky save handler threw', err)
       notify('Failed to save changes.', 'error', 4000)
+    } finally {
+      // Always reset the local flag — don't rely on isAnyDirty cascading to
+      // false. A successful save where another scope is still dirty (or the
+      // user edited again during an in-flight save) would otherwise leave
+      // the button permanently disabled.
       setIsSaving(false)
     }
   }
