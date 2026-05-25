@@ -216,6 +216,22 @@ export function SettingsProvider({
               next.delete(key)
               return next
             })
+          } else {
+            // The new exe has no extractable icon — drop any stale icon from a
+            // previous Browse pick on this slot so the initial-letter fallback
+            // renders instead of the old app's icon bleeding through (#428).
+            setAppIcons((prev) => {
+              if (!(key in prev)) return prev
+              const next = { ...prev }
+              delete next[key]
+              return next
+            })
+            setIconLoadErrors((prev) => {
+              if (!prev.has(key)) return prev
+              const next = new Set(prev)
+              next.delete(key)
+              return next
+            })
           }
         }
       }
