@@ -125,7 +125,7 @@ export async function launchProfileApps(
       elevatedResults.length === 1
         ? elevatedResults[0].warning
         : elevatedResults.length > 1
-          ? `${elevatedResults.length} apps requested administrator permission. SimLauncher cannot track or close elevated apps after launch.`
+          ? `${elevatedResults.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
           : undefined
 
     return {
@@ -289,7 +289,7 @@ function launchElevated(appPath: string, args: string[] = []) {
         resolve({
           status: 'elevated',
           appPath,
-          warning: `${path.basename(appPath)} requested administrator permission. SimLauncher cannot track or close elevated apps after launch.`
+          warning: `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
         })
       }
     )
