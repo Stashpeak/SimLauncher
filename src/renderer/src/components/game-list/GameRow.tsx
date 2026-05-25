@@ -21,6 +21,7 @@ import { GameIcon } from './GameIcon'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
 import { GameRowActions } from './GameRowActions'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { useAppDirty } from '../../contexts/AppDirtyContext'
 
 const POST_LAUNCH_BLOCK_MS = 10000
 
@@ -297,8 +298,16 @@ export function GameRow({
   }
 
   const rowRef = useRef<HTMLDivElement | null>(null)
+  const { requestProfileEditorClose } = useAppDirty()
 
   const handleToggle = () => {
+    // Closing: route through the editor's own dirty-confirm flow so unsaved
+    // edits aren't silently dropped when the user clicks the X (#427). When
+    // no editor is registered (clean / wrong row), the call returns false
+    // and we fall through to the plain toggle.
+    if (isActive && requestProfileEditorClose()) {
+      return
+    }
     onToggleEditor()
     if (!isActive && rowRef.current) {
       setTimeout(() => {
