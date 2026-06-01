@@ -130,14 +130,6 @@ export function getEnabledUtilityEntries(
   return entries
 }
 
-export function getEnabledUtilityPaths(
-  profile: StoredProfile,
-  appPaths: Record<string, string>,
-  customSlots: unknown
-): string[] {
-  return getEnabledUtilityEntries(profile, appPaths, customSlots).map((entry) => entry.path)
-}
-
 export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchEntry[] {
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
@@ -152,10 +144,6 @@ export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchE
   getEnabledUtilityEntries(profile, appPaths, customSlots).forEach((entry) => entries.push(entry))
 
   return entries
-}
-
-export function buildActiveProfileLaunchPaths(gameKey: string): string[] {
-  return buildActiveProfileLaunchEntries(gameKey).map((entry) => entry.path)
 }
 
 export function buildNamedProfileLaunchEntries(
@@ -175,10 +163,6 @@ export function buildNamedProfileLaunchEntries(
   getEnabledUtilityEntries(profile, appPaths, customSlots).forEach((entry) => entries.push(entry))
 
   return entries
-}
-
-export function buildNamedProfileLaunchPaths(gameKey: string, profileId: string): string[] {
-  return buildNamedProfileLaunchEntries(gameKey, profileId).map((entry) => entry.path)
 }
 
 export function getUtilityKeys(customSlots: unknown): string[] {

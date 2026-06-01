@@ -340,7 +340,7 @@ export async function finalizeKillAttempts(
     return {
       success: true,
       message: hasMismatchWarnings
-        ? 'No closable companion apps found. Some apps may be running under a different process name; add the shown process under tracked processes to manage it.'
+        ? 'No closable companion apps found. Some apps may be running under a different process name; add the shown process under "Secondary executables to watch" in the profile editor to manage it.'
         : 'No running companion apps to close.',
       closedCount: 0,
       failedCount: 0,
