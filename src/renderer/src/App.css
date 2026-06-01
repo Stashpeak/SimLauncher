@@ -36,10 +36,10 @@
   --launcher-play: #48c774;
   --header-glass-bg: rgba(18, 18, 18, 0.7);
   --header-glass-border: rgba(255, 255, 255, 0.05);
-  /* Shared frosted material for floating overlays (sticky save bar + dropdown
-     menus). Aliases the header glass so all three read as one material; resolves
-     per-theme via the themed --header-glass-bg (#439). */
-  --overlay-glass-bg: var(--header-glass-bg);
+  /* Frosted material for floating overlays (sticky save bar + dropdown menus).
+     More opaque than the header so busy content behind doesn't bleed through;
+     the blur keeps it reading as glass rather than a flat panel (#439). */
+  --overlay-glass-bg: rgba(18, 18, 18, 0.9);
   --surface-recessed-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.24), rgba(8, 8, 11, 0.16));
   --surface-recessed-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -10px 24px rgba(0, 0, 0, 0.12),
@@ -96,6 +96,7 @@
   --status-running: #16a34a;
   --header-glass-bg: rgba(252, 252, 254, 0.75);
   --header-glass-border: rgba(20, 20, 24, 0.08);
+  --overlay-glass-bg: rgba(252, 252, 254, 0.92);
   --surface-recessed-bg: linear-gradient(
     180deg,
     rgba(235, 232, 242, 0.65),
