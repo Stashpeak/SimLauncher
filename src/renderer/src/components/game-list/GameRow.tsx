@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -133,25 +133,33 @@ export function GameRow({
     notify(`Created profile ${newProfile.name}`, 'success')
   }
 
-  // Wraps the editor close: if a "+" profile is still pending (never kept),
-  // remove it and restore the previously-active profile before closing (#453).
-  const handleEditorClose = async () => {
-    const pending = pendingNewProfileRef.current
-    if (pending) {
-      pendingNewProfileRef.current = null
-      const latest = await getProfileRuntimeConfig()
-      if (latest.profiles.some((profile) => profile.id === pending.newProfileId)) {
-        const remaining = latest.profiles.filter((profile) => profile.id !== pending.newProfileId)
-        if (remaining.length > 0) {
-          const restoreId = remaining.some((p) => p.id === pending.previousActiveProfileId)
-            ? pending.previousActiveProfileId
-            : remaining[0].id
-          await saveProfileSet({ activeProfileId: restoreId, profiles: remaining })
-        }
-      }
+  // When this row's editor closes for ANY reason -- explicit close / discard, or
+  // being collapsed because another row's (or Settings') editor was opened -- a
+  // still-pending "+" profile (never kept) is removed and the previously-active
+  // profile restored, so create-then-discard leaves no orphan (#453). Living in
+  // an isActive effect rather than the close handler so it also catches the
+  // close-by-opening-another-row path, which never routes through onClose.
+  useEffect(() => {
+    if (isActive || !pendingNewProfileRef.current) {
+      return
     }
-    onCloseEditor()
-  }
+    const pending = pendingNewProfileRef.current
+    pendingNewProfileRef.current = null
+    void (async () => {
+      const latest = await getProfileRuntimeConfig()
+      if (!latest.profiles.some((profile) => profile.id === pending.newProfileId)) {
+        return
+      }
+      const remaining = latest.profiles.filter((profile) => profile.id !== pending.newProfileId)
+      if (remaining.length === 0) {
+        return
+      }
+      const restoreId = remaining.some((profile) => profile.id === pending.previousActiveProfileId)
+        ? pending.previousActiveProfileId
+        : remaining[0].id
+      await saveProfileSet({ activeProfileId: restoreId, profiles: remaining })
+    })()
+  }, [isActive, getProfileRuntimeConfig, saveProfileSet])
 
   const switchToProfile = async (nextProfileId: string, skipRunningConfirm = false) => {
     if (nextProfileId === '__new__') {
@@ -440,7 +448,7 @@ export function GameRow({
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
-                onClose={handleEditorClose}
+                onClose={onCloseEditor}
                 onCreateProfile={() =>
                   void handleCreateProfile('New Profile', { trackAsPending: true })
                 }
