@@ -377,7 +377,7 @@ export function spawnDetachedApp(
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
         if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
-          const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add that executable to this slot under tracked processes. Right-click the icon to dismiss this warning.`
+          const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
 
           processNameMismatchWarnings.set(normalizePathForComparison(appPath), {
             path: appPath,
