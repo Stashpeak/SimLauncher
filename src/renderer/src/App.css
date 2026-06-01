@@ -36,6 +36,10 @@
   --launcher-play: #48c774;
   --header-glass-bg: rgba(18, 18, 18, 0.7);
   --header-glass-border: rgba(255, 255, 255, 0.05);
+  /* Shared frosted material for floating overlays (sticky save bar + dropdown
+     menus). Aliases the header glass so all three read as one material; resolves
+     per-theme via the themed --header-glass-bg (#439). */
+  --overlay-glass-bg: var(--header-glass-bg);
   --surface-recessed-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.24), rgba(8, 8, 11, 0.16));
   --surface-recessed-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -10px 24px rgba(0, 0, 0, 0.12),
@@ -486,6 +490,18 @@ textarea {
 .dropdown-surface {
   background: var(--surface-floating-bg);
   box-shadow: var(--surface-floating-shadow);
+}
+
+/* Unified frosted glass for floating overlays so the sticky save bar and the
+   profile dropdown read as the same material — neither the near-transparent
+   glass-bg nor the near-opaque surface-floating-bg (#439). Unlayered so its
+   background/blur win over both the utility `backdrop-blur-*` and the
+   `glass-surface-*` blur(5px); applied alongside those classes (later source
+   order) on each surface. */
+.overlay-glass {
+  background: var(--overlay-glass-bg);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
 }
 
 .dropdown-trigger-surface {
