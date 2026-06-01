@@ -109,22 +109,27 @@ function AppContent() {
     setView(nextView)
   }
 
-  const handleConfirmDiscard = useCallback(() => {
+  const handleDiscardAll = useCallback(() => {
     requestDiscardAll()
     reportSettingsDirty(false)
-    // Reset main-process state that the renderer had forwarded ahead of save.
-    // Currently this covers the pending Minimize-to-tray toggle: without
-    // clearing it, the close handler would still follow the discarded value.
+    // Reset main-process state the renderer forwarded ahead of save (the pending
+    // Minimize-to-tray toggle), remount the SettingsProvider so discarded toggles
+    // reload from the store, and re-sync theme so a discarded theme/accent preview
+    // reverts.
     void setPendingMinimizeToTray(null)
-    // Remount the SettingsProvider so it reloads UI state from the store
-    // (otherwise discarded toggles would still appear as enabled in the UI).
     setRefreshKey((k) => k + 1)
-    syncThemeFromStore()
+    syncThemeFromStore().catch((err) => {
+      console.error('Failed to re-sync theme after discard', err)
+    })
+  }, [reportSettingsDirty, requestDiscardAll, syncThemeFromStore])
+
+  const handleConfirmDiscard = useCallback(() => {
+    handleDiscardAll()
     if (pendingView) {
       setView(pendingView)
       setPendingView(null)
     }
-  }, [pendingView, reportSettingsDirty, requestDiscardAll, syncThemeFromStore])
+  }, [handleDiscardAll, pendingView])
 
   const handleConfirmCancel = () => {
     setPendingView(null)
@@ -266,7 +271,7 @@ function AppContent() {
         </main>
       </SettingsProvider>
 
-      <StickySaveBar />
+      <StickySaveBar onDiscard={handleDiscardAll} />
 
       <ConfirmDialog
         isOpen={pendingView !== null}
