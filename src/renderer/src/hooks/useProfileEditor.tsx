@@ -28,6 +28,7 @@ export interface ProfileEditorProps {
   activeProfileId: string
   onProfilesChanged: () => Promise<unknown>
   onClose: () => void
+  onCreateProfile?: () => void
   onLaunchRequest?: (handleLaunch: () => void) => void
   onLaunchStart?: () => void
   onLaunchEnd?: (cooldownMs: number) => void
@@ -57,6 +58,8 @@ export interface UseProfileEditorResult {
   fetchingIcons: boolean
   showConfirm: boolean
   setShowConfirm: Dispatch<SetStateAction<boolean>>
+  showNewProfileConfirm: boolean
+  setShowNewProfileConfirm: Dispatch<SetStateAction<boolean>>
   showLaunchConfirm: boolean
   setShowLaunchConfirm: Dispatch<SetStateAction<boolean>>
   profileDeleteConfirm: { profileId: string; profileName: string } | null
@@ -67,6 +70,7 @@ export interface UseProfileEditorResult {
   setDropTarget: Dispatch<SetStateAction<{ id: string; placement: 'before' | 'after' } | null>>
   isDirty: boolean
   handleCloseAttempt: () => void
+  handleCreateProfileAttempt: () => void
   handleToggleUtility: (key: string) => void
   moveEnabledUtility: (draggedId: string, targetId: string, placement: 'before' | 'after') => void
   startUtilityDrag: (event: DragEvent<HTMLDivElement>, utilityKey: string) => void
@@ -77,6 +81,7 @@ export interface UseProfileEditorResult {
   handleLaunch: () => Promise<void>
   handleDiscardAndLaunch: () => void
   handleSave: (shouldLaunch?: boolean) => Promise<boolean>
+  handleSaveOnly: () => Promise<boolean>
   handleDeleteProfile: () => Promise<void>
   confirmDeleteProfile: () => Promise<void>
   utilityByKey: Map<string, Utility>
@@ -90,6 +95,7 @@ export function useProfileEditor({
   activeProfileId,
   onProfilesChanged,
   onClose,
+  onCreateProfile,
   onLaunchRequest,
   onLaunchStart,
   onLaunchEnd
@@ -121,6 +127,7 @@ export function useProfileEditor({
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
   const [fetchingIcons, setFetchingIcons] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showNewProfileConfirm, setShowNewProfileConfirm] = useState(false)
   const [showLaunchConfirm, setShowLaunchConfirm] = useState(false)
   const [profileDeleteConfirm, setProfileDeleteConfirm] = useState<{
     profileId: string
@@ -251,6 +258,22 @@ export function useProfileEditor({
       onClose()
     }
   }, [isDirty, onClose])
+
+  // Invoked by the "+" (New Profile) button in ProfileNameSection.
+  // If the editor has unsaved changes we show a dedicated confirm dialog first
+  // (separate from the close-confirm) so the user can save or discard before
+  // the active profile switches to the new one. Only fires if onCreateProfile
+  // is provided by the parent (GameRow).
+  const handleCreateProfileAttempt = useCallback(() => {
+    if (!onCreateProfile) {
+      return
+    }
+    if (isDirty) {
+      setShowNewProfileConfirm(true)
+    } else {
+      onCreateProfile()
+    }
+  }, [isDirty, onCreateProfile])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -445,6 +468,53 @@ export function useProfileEditor({
     }
   }
 
+  // Saves the current profile without closing the editor. Used by the
+  // "Save & Create New" path so the editor can stay open and reload onto
+  // the newly created profile.
+  const handleSaveOnly = async (): Promise<boolean> => {
+    try {
+      const allProfiles = await getProfiles()
+      const profileSet = normalizeGameProfileSet(
+        allProfiles[gameKey] as Profiles[string] | undefined
+      )
+      const activeProfile =
+        profileSet.profiles.find((profile) => profile.id === activeProfileId) ||
+        getActiveGameProfile(profileSet)
+      const normalizedProfileName = profileName.trim() || activeProfile.name
+
+      const updatedProfile = {
+        ...activeProfile,
+        name: normalizedProfileName,
+        utilities: profileUtilities.map((utility) => ({
+          id: utility.id,
+          enabled: utility.enabled
+        })),
+        launchAutomatically,
+        trackingEnabled,
+        killControlsEnabled,
+        relaunchControlsEnabled,
+        trackedProcessPaths: trackedProcessPaths.filter(
+          (processPath) => processPath.trim().length > 0
+        )
+      }
+
+      await saveProfile(gameKey, {
+        activeProfileId: updatedProfile.id,
+        profiles: profileSet.profiles.map((profile) =>
+          profile.id === updatedProfile.id ? updatedProfile : profile
+        )
+      })
+      await onProfilesChanged()
+      resetDirty()
+      notify('Profile saved!', 'success', 2500)
+      return true
+    } catch (err) {
+      console.error('Failed to save profile', err)
+      notify('Failed to save profile', 'error')
+      return false
+    }
+  }
+
   const handleDiscardAndLaunch = () => {
     executeLaunch()
   }
@@ -530,6 +600,8 @@ export function useProfileEditor({
     fetchingIcons,
     showConfirm,
     setShowConfirm,
+    showNewProfileConfirm,
+    setShowNewProfileConfirm,
     showLaunchConfirm,
     setShowLaunchConfirm,
     profileDeleteConfirm,
@@ -538,6 +610,7 @@ export function useProfileEditor({
     setDropTarget,
     isDirty,
     handleCloseAttempt,
+    handleCreateProfileAttempt,
     handleToggleUtility,
     moveEnabledUtility,
     startUtilityDrag,
@@ -549,6 +622,7 @@ export function useProfileEditor({
     handleLaunch,
     handleDiscardAndLaunch,
     handleSave,
+    handleSaveOnly,
     handleDeleteProfile,
     confirmDeleteProfile,
     utilityByKey,
