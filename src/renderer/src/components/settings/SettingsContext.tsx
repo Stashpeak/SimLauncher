@@ -111,7 +111,9 @@ export function SettingsProvider({
       ]),
       games: getDirtySubset(['gamePaths']),
       apps: getDirtySubset(['appPaths', 'appNames', 'appArgs', 'customSlots', 'profiles']),
-      config: getDirtySubset(['autoCheckUpdates'])
+      // The auto-check-updates toggle lives in the About section (not Config,
+      // which only has export/import actions and never goes dirty).
+      about: getDirtySubset(['autoCheckUpdates'])
     }),
     [getDirtySubset]
   )

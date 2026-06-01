@@ -8,7 +8,7 @@ export interface SettingsMetaContextValue {
     behavior: boolean
     games: boolean
     apps: boolean
-    config: boolean
+    about: boolean
   }
   saveSettings: () => Promise<boolean>
   exportingConfig: boolean

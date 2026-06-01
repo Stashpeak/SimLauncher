@@ -86,6 +86,7 @@ function SettingsViewContent({
         title="About"
         open={expandedSections.about}
         onOpenChange={(open) => setSectionOpen('about', open)}
+        dirty={dirtySections.about}
       >
         <AboutSection
           appVersion={updateStatus.appVersion}
@@ -121,7 +122,6 @@ function SettingsViewContent({
         title="Config"
         open={expandedSections.config}
         onOpenChange={(open) => setSectionOpen('config', open)}
-        dirty={dirtySections.config}
       >
         <ConfigSection />
       </SettingsSection>
