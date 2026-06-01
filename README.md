@@ -87,6 +87,62 @@ SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus 20 custom ap
 
 ---
 
+## Troubleshooting
+
+### "Windows protected your PC" (SmartScreen)
+
+The installer isn't code-signed yet, so SmartScreen may warn on first launch. Click **More info → Run anyway**.
+
+### A game won't launch
+
+- Check that the executable path in Settings points to the correct `.exe`.
+- Make sure the game isn't already running.
+- If the game needs elevated permissions, try running SimLauncher as Administrator.
+
+### A utility isn't detected as running
+
+- Some utilities (e.g. SimHub) take longer to start — increase the launch delay in Settings.
+- Process detection matches by executable name, so custom-named copies won't be detected.
+
+### Auto-updater isn't working
+
+- Make sure your firewall/proxy allows `github.com` and `objects.githubusercontent.com`.
+- If an update hangs, restart SimLauncher — it retries on the next launch.
+
+---
+
+## Building from source
+
+SimLauncher is a standard Electron + electron-vite project. You need [Node.js](https://nodejs.org/) (LTS) and npm.
+
+```bash
+git clone https://github.com/Stashpeak/SimLauncher.git
+cd SimLauncher
+npm install
+npm run dev        # run in development
+npm run dist:win   # build a Windows installer into dist/
+```
+
+Other useful scripts: `npm test` (unit tests), `npm run lint`, and `npm run typecheck`.
+
+---
+
+## Trust & transparency
+
+- **The source is public** and licensed under **GPL-3.0** — you can read every line, the full commit history, issues, pull requests, and CI runs before trusting a binary.
+- **You can build it yourself** from source (see above) instead of running the published installer.
+- **Releases are built in CI** from tagged commits, and each release's notes link the issues and PRs behind every change.
+- **Development is AI-assisted** (Claude Code) with human review on every change, disclosed openly in the commit history.
+- **Security issues** should be reported privately — see [Security](#security).
+
+---
+
+## Security
+
+Please **don't** open a public issue for security vulnerabilities. Report them privately via [GitHub Security Advisories](https://github.com/Stashpeak/SimLauncher/security/advisories/new). More detail is in [SECURITY.md](SECURITY.md).
+
+---
+
 ## Support
 
 If SimLauncher saves you time on race day, a small tip is appreciated: [paypal.me/shieldxx](https://paypal.me/shieldxx)
