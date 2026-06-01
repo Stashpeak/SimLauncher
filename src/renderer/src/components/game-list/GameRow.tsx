@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -87,12 +87,42 @@ export function GameRow({
   // purpose (saved / launched / switched-away-from). If the editor is closed
   // while this is set, the profile is removed and the previously-active profile
   // is restored, so create-then-discard leaves no orphan (#453). A ref (not
-  // state) so the close handler reads the latest value synchronously and a
-  // deliberate save can clear it before its own onClose fires.
+  // state) so the cleanup reads the latest value synchronously and a deliberate
+  // commit can clear it before the close fires.
   const pendingNewProfileRef = useRef<{
     newProfileId: string
     previousActiveProfileId: string
   } | null>(null)
+  // Mirror of isActive readable from async tails (handleCreateProfile) where the
+  // captured prop would be stale.
+  const isActiveRef = useRef(isActive)
+  useEffect(() => {
+    isActiveRef.current = isActive
+  }, [isActive])
+
+  // Removes a still-pending "+" profile and restores the previously-active one.
+  // Clears the ref up front so the two callers (the close effect and the
+  // post-save guard) can't double-run, and reads the store fresh so it reflects
+  // a just-completed create.
+  const discardPendingProfile = useCallback(async () => {
+    const pending = pendingNewProfileRef.current
+    if (!pending) {
+      return
+    }
+    pendingNewProfileRef.current = null
+    const latest = await getProfileRuntimeConfig()
+    if (!latest.profiles.some((profile) => profile.id === pending.newProfileId)) {
+      return
+    }
+    const remaining = latest.profiles.filter((profile) => profile.id !== pending.newProfileId)
+    if (remaining.length === 0) {
+      return
+    }
+    const restoreId = remaining.some((profile) => profile.id === pending.previousActiveProfileId)
+      ? pending.previousActiveProfileId
+      : remaining[0].id
+    await saveProfileSet({ activeProfileId: restoreId, profiles: remaining })
+  }, [getProfileRuntimeConfig, saveProfileSet])
 
   const handleCreateProfile = async (name: string, options?: { trackAsPending?: boolean }) => {
     const trimmedName = name.trim()
@@ -127,39 +157,30 @@ export function GameRow({
     }
 
     await saveProfileSet(updatedProfileSet)
-    pendingNewProfileRef.current = options?.trackAsPending
-      ? { newProfileId: newProfile.id, previousActiveProfileId }
-      : null
+    if (options?.trackAsPending) {
+      pendingNewProfileRef.current = { newProfileId: newProfile.id, previousActiveProfileId }
+      // If the editor was closed while this save was in flight, the close effect
+      // already ran while the ref was still null and won't re-fire, so discard
+      // the freshly-persisted profile now that the store is consistent (#453).
+      if (!isActiveRef.current) {
+        void discardPendingProfile()
+      }
+    } else {
+      pendingNewProfileRef.current = null
+    }
     notify(`Created profile ${newProfile.name}`, 'success')
   }
 
   // When this row's editor closes for ANY reason -- explicit close / discard, or
-  // being collapsed because another row's (or Settings') editor was opened -- a
-  // still-pending "+" profile (never kept) is removed and the previously-active
-  // profile restored, so create-then-discard leaves no orphan (#453). Living in
-  // an isActive effect rather than the close handler so it also catches the
-  // close-by-opening-another-row path, which never routes through onClose.
+  // being collapsed because another row's (or Settings') editor was opened --
+  // discard a still-pending "+" profile. Living in an isActive effect rather
+  // than the close handler so it also catches the close-by-opening-another-row
+  // path, which never routes through onClose (#453).
   useEffect(() => {
-    if (isActive || !pendingNewProfileRef.current) {
-      return
+    if (!isActive) {
+      void discardPendingProfile()
     }
-    const pending = pendingNewProfileRef.current
-    pendingNewProfileRef.current = null
-    void (async () => {
-      const latest = await getProfileRuntimeConfig()
-      if (!latest.profiles.some((profile) => profile.id === pending.newProfileId)) {
-        return
-      }
-      const remaining = latest.profiles.filter((profile) => profile.id !== pending.newProfileId)
-      if (remaining.length === 0) {
-        return
-      }
-      const restoreId = remaining.some((profile) => profile.id === pending.previousActiveProfileId)
-        ? pending.previousActiveProfileId
-        : remaining[0].id
-      await saveProfileSet({ activeProfileId: restoreId, profiles: remaining })
-    })()
-  }, [isActive, getProfileRuntimeConfig, saveProfileSet])
+  }, [isActive, discardPendingProfile])
 
   const switchToProfile = async (nextProfileId: string, skipRunningConfirm = false) => {
     if (nextProfileId === '__new__') {
