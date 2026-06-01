@@ -5,13 +5,15 @@ interface SettingsSectionProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   children: ReactNode
+  dirty?: boolean
 }
 
 export function SettingsSection({
   title,
   open,
   onOpenChange,
-  children
+  children,
+  dirty
 }: SettingsSectionProps): ReactNode {
   return (
     <section className="space-y-4">
@@ -21,8 +23,15 @@ export function SettingsSection({
         className="flex w-full cursor-pointer items-center gap-2 px-1"
         aria-expanded={open}
       >
-        <h3 className="flex-1 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">
+        <h3 className="flex flex-1 items-center gap-2 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">
           {title}
+          {dirty && (
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent)"
+              title="Unsaved changes"
+              aria-label="Unsaved changes in this section"
+            />
+          )}
         </h3>
         <svg
           width="14"

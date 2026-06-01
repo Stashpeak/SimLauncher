@@ -91,7 +91,30 @@ export function SettingsProvider({
     currentSettingsState
   } = useSettingsState()
 
-  const { isDirty, resetDirty } = useDirtyTracking(currentSettingsState, loading)
+  const { isDirty, resetDirty, getDirtySubset } = useDirtyTracking(currentSettingsState, loading)
+
+  const dirtySections = useMemo(
+    () => ({
+      appearance: getDirtySubset([
+        'accentPreset',
+        'accentCustom',
+        'accentBgTint',
+        'themeMode',
+        'focusActiveTitle',
+        'zoomFactor'
+      ]),
+      behavior: getDirtySubset([
+        'startWithWindows',
+        'startMinimized',
+        'minimizeToTray',
+        'launchDelayMs'
+      ]),
+      games: getDirtySubset(['gamePaths']),
+      apps: getDirtySubset(['appPaths', 'appNames', 'appArgs', 'customSlots', 'profiles']),
+      config: getDirtySubset(['autoCheckUpdates'])
+    }),
+    [getDirtySubset]
+  )
 
   useSettingsLoad({
     themeRef,
@@ -438,6 +461,7 @@ export function SettingsProvider({
     () => ({
       loading,
       isDirty,
+      dirtySections,
       saveSettings: handleSave,
       exportingConfig,
       importingConfig,
@@ -449,6 +473,7 @@ export function SettingsProvider({
     [
       loading,
       isDirty,
+      dirtySections,
       autoCheckUpdates,
       exportingConfig,
       importingConfig,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * A simple hook to track if a state object has changed from its initial value.
@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 export interface UseDirtyTrackingResult<T> {
   isDirty: boolean
   resetDirty: (newState?: T) => void
+  getDirtySubset: (keys: (keyof T)[]) => boolean
 }
 
 export function useDirtyTracking<T>(
@@ -34,5 +35,16 @@ export function useDirtyTracking<T>(
     setIsDirty(false)
   }
 
-  return { isDirty, resetDirty }
+  // Whether any of the given top-level keys differ from the captured baseline.
+  // Powers per-section dirty indicators (#279) off the same baseline as isDirty.
+  const getDirtySubset = useCallback(
+    (keys: (keyof T)[]): boolean => {
+      if (initialSnapshot.current === null) return false
+      const baseline = JSON.parse(initialSnapshot.current) as T
+      return keys.some((key) => JSON.stringify(currentState[key]) !== JSON.stringify(baseline[key]))
+    },
+    [currentState]
+  )
+
+  return { isDirty, resetDirty, getDirtySubset }
 }
