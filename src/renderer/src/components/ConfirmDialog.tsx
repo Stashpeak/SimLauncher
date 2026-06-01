@@ -32,12 +32,18 @@ export function ConfirmDialog({
     if (!isOpen) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Enter') return
+      // Consume Enter/Escape so background window keydown handlers (Settings and
+      // the profile editor both close-on-Escape) don't also fire and stack
+      // another dialog behind this one. Capture phase + stopImmediatePropagation
+      // is required because those listeners were registered earlier on window.
+      e.stopImmediatePropagation()
       if (e.key === 'Escape') onCancel()
-      if (e.key === 'Enter') onSave()
+      else onSave()
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [isOpen, onCancel, onSave])
 
   if (!isOpen) return null
