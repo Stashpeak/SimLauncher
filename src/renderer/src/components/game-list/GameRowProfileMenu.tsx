@@ -73,7 +73,7 @@ export function GameRowProfileMenu({
           ref={menuRef}
           role="menu"
           onKeyDown={handleProfileMenuKeyDown}
-          className="dropdown-surface absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 backdrop-blur-xl animate-fade-slide"
+          className="dropdown-surface overlay-glass absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 animate-fade-slide"
         >
           {profileSet.profiles.map((profile) => {
             const selected = profile.id === profileSet.activeProfileId

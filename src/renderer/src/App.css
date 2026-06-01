@@ -36,6 +36,11 @@
   --launcher-play: #48c774;
   --header-glass-bg: rgba(18, 18, 18, 0.7);
   --header-glass-border: rgba(255, 255, 255, 0.05);
+  /* Frosted material for floating overlays (sticky save bar + dropdown menus).
+     More opaque than the header so busy content behind doesn't bleed through;
+     the blur keeps it reading as glass rather than a flat panel (#439).
+     Keep opacity at 0.75 so the backdrop-filter blur is actually visible. */
+  --overlay-glass-bg: rgba(18, 18, 18, 0.75);
   --surface-recessed-bg: linear-gradient(180deg, rgba(18, 18, 22, 0.24), rgba(8, 8, 11, 0.16));
   --surface-recessed-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -10px 24px rgba(0, 0, 0, 0.12),
@@ -92,6 +97,7 @@
   --status-running: #16a34a;
   --header-glass-bg: rgba(252, 252, 254, 0.75);
   --header-glass-border: rgba(20, 20, 24, 0.08);
+  --overlay-glass-bg: rgba(252, 252, 254, 0.8);
   --surface-recessed-bg: linear-gradient(
     180deg,
     rgba(235, 232, 242, 0.65),
@@ -163,7 +169,8 @@ textarea {
   border: 1px solid transparent;
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
-  will-change: transform;
+  /* will-change: transform is omitted here because promoting the element
+     to its own compositing layer breaks backdrop-filter rendering in Chromium/Electron. */
 }
 
 .header-glass {
@@ -488,6 +495,18 @@ textarea {
   box-shadow: var(--surface-floating-shadow);
 }
 
+/* Unified frosted glass for floating overlays so the sticky save bar and the
+   profile dropdown read as the same material — neither the near-transparent
+   glass-bg nor the near-opaque surface-floating-bg (#439). Unlayered so its
+   background/blur win over both the utility `backdrop-blur-*` and the
+   `glass-surface-*` blur(5px); applied alongside those classes (later source
+   order) on each surface. */
+.overlay-glass {
+  background: var(--overlay-glass-bg);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
 .dropdown-trigger-surface {
   background: var(--surface-sunken-bg);
 }
@@ -527,7 +546,7 @@ textarea {
 }
 
 .animate-fade-slide {
-  animation: fadeSlide 0.25s ease-out forwards;
+  animation: fadeSlide 0.25s ease-out backwards;
 }
 
 @keyframes fadeSlideInline {
