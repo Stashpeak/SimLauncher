@@ -386,6 +386,7 @@ export function GameRow({
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
                 onClose={onToggleEditor}
+                onCreateProfile={() => void handleCreateProfile('New Profile')}
                 onLaunchRequest={(launcher) => {
                   handleLaunchRequest.current = launcher
                 }}

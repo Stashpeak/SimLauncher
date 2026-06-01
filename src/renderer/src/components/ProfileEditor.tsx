@@ -86,6 +86,7 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
         <ProfileNameSection
           profileName={editor.profileName}
           onProfileNameChange={editor.setProfileName}
+          onCreateProfile={props.onCreateProfile ? editor.handleCreateProfileAttempt : undefined}
         />
 
         <ProfileUtilitiesSection
@@ -145,6 +146,26 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
           props.onClose()
         }}
         onCancel={() => editor.setShowConfirm(false)}
+      />
+
+      <ConfirmDialog
+        isOpen={editor.showNewProfileConfirm}
+        title="Unsaved Changes"
+        message="You have unsaved changes in this profile. Save or discard them before creating a new profile?"
+        saveLabel="Save & Create New"
+        discardLabel="Discard & Create New"
+        onSave={async () => {
+          editor.setShowNewProfileConfirm(false)
+          const saved = await editor.handleSaveOnly()
+          if (saved && props.onCreateProfile) {
+            props.onCreateProfile()
+          }
+        }}
+        onDiscard={() => {
+          editor.setShowNewProfileConfirm(false)
+          props.onCreateProfile?.()
+        }}
+        onCancel={() => editor.setShowNewProfileConfirm(false)}
       />
 
       <ConfirmDialog
