@@ -7,21 +7,37 @@ import { registerContentSecurityPolicy } from './security'
 import { createTray } from './tray'
 import { createWindow, getAppIconPath, showMainWindow } from './window'
 
-app.on('before-quit', () => {
-  setIsQuitting(true)
-})
+// Prevent multiple instances: the first instance acquires the lock; any
+// subsequent launch is redirected to focus the already-running window.
+const gotTheLock = app.requestSingleInstanceLock()
 
-app.whenReady().then(() => {
-  registerContentSecurityPolicy()
-  migrateProfilesToNamedSets()
-  registerHandlers()
-  createTray({
-    getIconPath: getAppIconPath,
-    showMainWindow,
-    quitApp: () => {
-      setIsQuitting(true)
-      app.quit()
-    }
+if (!gotTheLock) {
+  // This is a second (or later) instance — quit immediately so the user sees
+  // the existing window pop to the front instead of a duplicate starting up.
+  app.quit()
+} else {
+  // First instance: listen for future launch attempts and bring our window
+  // to the foreground when they occur.
+  app.on('second-instance', () => {
+    showMainWindow()
   })
-  createWindow()
-})
+
+  app.on('before-quit', () => {
+    setIsQuitting(true)
+  })
+
+  app.whenReady().then(() => {
+    registerContentSecurityPolicy()
+    migrateProfilesToNamedSets()
+    registerHandlers()
+    createTray({
+      getIconPath: getAppIconPath,
+      showMainWindow,
+      quitApp: () => {
+        setIsQuitting(true)
+        app.quit()
+      }
+    })
+    createWindow()
+  })
+}
