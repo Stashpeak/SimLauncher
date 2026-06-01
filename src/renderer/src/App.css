@@ -214,15 +214,6 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
-.launcher-play-mark {
-  /* display:block takes the SVG out of the inline baseline so it's centered
-     purely by the parent flex (items-center), instead of a hard-coded
-     translateY nudge that rounded to different physical pixels at each
-     Chromium zoom factor and drifted up/down except at 125% (#367). */
-  display: block;
-  transform: skewX(-10deg);
-}
-
 /* 2026 Design Overhaul Utils */
 .bg-tinted {
   background:

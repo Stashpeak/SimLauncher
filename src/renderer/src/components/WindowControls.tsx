@@ -1,6 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { minimize, maximize, close } from '../lib/electron'
-import { PlayMarkIcon, SettingsIcon, MinimizeIcon, MaximizeIcon, CloseWindowIcon } from './icons'
+import {
+  BrandWordmarkIcon,
+  SettingsIcon,
+  MinimizeIcon,
+  MaximizeIcon,
+  CloseWindowIcon
+} from './icons'
 
 interface WindowControlsProps {
   view: 'games' | 'settings'
@@ -30,24 +36,17 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           type="button"
           onClick={() => onNavigate('games')}
           className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
+          title="SimLauncher"
+          aria-label="SimLauncher"
         >
-          <span className="select-none font-black italic uppercase text-sm leading-none flex items-center">
-            <span className="tracking-tight text-(--text-primary)">Sim</span>
-            <span
-              className={`transition-colors flex items-center ${
-                view === 'games'
-                  ? 'tracking-[0.01em] text-(--accent)'
-                  : 'tracking-[0.01em] text-(--text-muted) group-hover:text-(--accent)'
-              }`}
-            >
-              {'Launcher'}
-              <PlayMarkIcon
-                width={16}
-                height={16}
-                className="launcher-play-mark -ml-[2px] shrink-0"
-              />
-            </span>
-          </span>
+          <BrandWordmarkIcon
+            aria-hidden="true"
+            className={`launcher-wordmark h-[15px] w-auto shrink-0 select-none transition-colors ${
+              view === 'games'
+                ? 'text-(--accent)'
+                : 'text-(--text-muted) group-hover:text-(--accent)'
+            }`}
+          />
         </button>
 
         {/* Divider */}
