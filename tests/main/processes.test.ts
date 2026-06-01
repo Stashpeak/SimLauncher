@@ -713,11 +713,11 @@ test('wrapper exit warning tells the user tracking is lost and how to fix it (#4
   const payload = mismatchCall?.[1] as { app: string; warning: string }
   expect(payload.app).toBe('C:/Tools/Perplexity.exe')
   // Wording must (a) name the exited wrapper, (b) state SimLauncher loses
-  // tracking, (c) point the user at Task Manager + tracked processes to fix.
+  // tracking, (c) point the user at Task Manager + the profile editor control to fix.
   expect(payload.warning).toContain('Perplexity.exe')
   expect(payload.warning).toMatch(/no longer detect when you close it/i)
   expect(payload.warning).toMatch(/task manager/i)
-  expect(payload.warning).toMatch(/tracked processes/i)
+  expect(payload.warning).toMatch(/Secondary executables to watch/i)
 
   // Persistent strip warning carries the same actionable copy so the user
   // doesn't only see it during the 5s toast window.
