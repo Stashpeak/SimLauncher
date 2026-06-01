@@ -14,7 +14,7 @@ import { useNotify } from './Notify'
  * usually shorter than the viewport, so sticky never pinned and the bar sat
  * at the natural end of the card (out of sight after any scroll, #423).
  */
-export function StickySaveBar(): ReactNode {
+export function StickySaveBar({ onRequestDiscard }: { onRequestDiscard: () => void }): ReactNode {
   const { isAnyDirty, requestSaveAll } = useAppDirty()
   const { notify } = useNotify()
   const [isSaving, setIsSaving] = useState(false)
@@ -68,6 +68,14 @@ export function StickySaveBar(): ReactNode {
         <span className="min-w-0 flex-1 text-xs font-medium text-(--text-secondary)">
           You have unsaved changes.
         </span>
+        <button
+          type="button"
+          onClick={onRequestDiscard}
+          disabled={isSaving}
+          className="neutral-action action-hover-scale cursor-pointer rounded-xl px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Discard
+        </button>
         <button
           type="button"
           onClick={() => void handleSave()}
