@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type MutableRefObject } from 'react'
+import { useCallback, type MutableRefObject } from 'react'
 import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
 import type { Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
@@ -69,8 +69,6 @@ interface UseSettingsSaveArgs {
   setGamePaths: (gamePaths: Record<string, string>) => void
   setAppArgs: (appArgs: Record<string, string>) => void
   setLaunchDelayMs: (launchDelayMs: number) => void
-  shouldSaveTrigger?: boolean
-  onSaved?: (success: boolean) => void
 }
 
 export function useSettingsSave({
@@ -99,9 +97,7 @@ export function useSettingsSave({
   setAppPaths,
   setGamePaths,
   setAppArgs,
-  setLaunchDelayMs,
-  shouldSaveTrigger,
-  onSaved
+  setLaunchDelayMs
 }: UseSettingsSaveArgs): { handleSave: () => Promise<boolean> } {
   const handleSave = useCallback(async (): Promise<boolean> => {
     try {
@@ -193,14 +189,6 @@ export function useSettingsSave({
     setAppArgs,
     setLaunchDelayMs
   ])
-
-  useEffect(() => {
-    if (shouldSaveTrigger) {
-      handleSave().then((success) => {
-        onSaved?.(success)
-      })
-    }
-  }, [handleSave, onSaved, shouldSaveTrigger])
 
   return { handleSave }
 }

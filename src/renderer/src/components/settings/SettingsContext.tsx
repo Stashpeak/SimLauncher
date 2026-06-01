@@ -25,14 +25,10 @@ import { useSettingsState } from './useSettingsState'
 export function SettingsProvider({
   children,
   onDirtyChange,
-  shouldSaveTrigger,
-  onSaved,
   onConfigImported
 }: {
   children: ReactNode
   onDirtyChange?: (isDirty: boolean) => void
-  shouldSaveTrigger?: boolean
-  onSaved?: (success: boolean) => void
   onConfigImported?: () => void
 }): ReactNode {
   const { notify } = useNotify()
@@ -330,9 +326,7 @@ export function SettingsProvider({
     setAppPaths,
     setGamePaths,
     setAppArgs,
-    setLaunchDelayMs,
-    shouldSaveTrigger,
-    onSaved
+    setLaunchDelayMs
   })
 
   const utilities = useMemo(() => getUtilities(customSlots), [customSlots])
