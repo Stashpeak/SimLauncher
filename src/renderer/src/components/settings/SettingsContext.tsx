@@ -115,6 +115,9 @@ export function SettingsProvider({
       // which only has export/import actions and never goes dirty).
       about: getDirtySubset(['autoCheckUpdates'])
     }),
+    // getDirtySubset is recreated whenever currentState OR the baseline changes
+    // (the baseline resets on save), so the per-section dots clear correctly
+    // after a save without keeping stale flags (#279 Codex P2).
     [getDirtySubset]
   )
 
