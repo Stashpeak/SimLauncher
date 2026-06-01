@@ -3,6 +3,13 @@ import { createContext, useContext } from 'react'
 export interface SettingsMetaContextValue {
   loading: boolean
   isDirty: boolean
+  dirtySections: {
+    appearance: boolean
+    behavior: boolean
+    games: boolean
+    apps: boolean
+    about: boolean
+  }
   saveSettings: () => Promise<boolean>
   exportingConfig: boolean
   importingConfig: boolean

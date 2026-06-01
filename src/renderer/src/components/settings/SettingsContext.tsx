@@ -91,7 +91,35 @@ export function SettingsProvider({
     currentSettingsState
   } = useSettingsState()
 
-  const { isDirty, resetDirty } = useDirtyTracking(currentSettingsState, loading)
+  const { isDirty, resetDirty, getDirtySubset } = useDirtyTracking(currentSettingsState, loading)
+
+  const dirtySections = useMemo(
+    () => ({
+      appearance: getDirtySubset([
+        'accentPreset',
+        'accentCustom',
+        'accentBgTint',
+        'themeMode',
+        'focusActiveTitle',
+        'zoomFactor'
+      ]),
+      behavior: getDirtySubset([
+        'startWithWindows',
+        'startMinimized',
+        'minimizeToTray',
+        'launchDelayMs'
+      ]),
+      games: getDirtySubset(['gamePaths']),
+      apps: getDirtySubset(['appPaths', 'appNames', 'appArgs', 'customSlots', 'profiles']),
+      // The auto-check-updates toggle lives in the About section (not Config,
+      // which only has export/import actions and never goes dirty).
+      about: getDirtySubset(['autoCheckUpdates'])
+    }),
+    // getDirtySubset is recreated whenever currentState OR the baseline changes
+    // (the baseline resets on save), so the per-section dots clear correctly
+    // after a save without keeping stale flags (#279 Codex P2).
+    [getDirtySubset]
+  )
 
   useSettingsLoad({
     themeRef,
@@ -438,6 +466,7 @@ export function SettingsProvider({
     () => ({
       loading,
       isDirty,
+      dirtySections,
       saveSettings: handleSave,
       exportingConfig,
       importingConfig,
@@ -449,6 +478,7 @@ export function SettingsProvider({
     [
       loading,
       isDirty,
+      dirtySections,
       autoCheckUpdates,
       exportingConfig,
       importingConfig,

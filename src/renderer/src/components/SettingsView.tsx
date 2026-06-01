@@ -35,7 +35,7 @@ function SettingsViewContent({
   updateInfo: UpdateInfo
 }) {
   const { notify } = useNotify()
-  const { loading, isDirty, saveSettings } = useSettingsMeta()
+  const { loading, isDirty, dirtySections, saveSettings } = useSettingsMeta()
   const { registerSaveHandler, registerDiscardHandler } = useAppDirty()
   const [expandedSections, setExpandedSections] = useState({
     about: true,
@@ -86,6 +86,7 @@ function SettingsViewContent({
         title="About"
         open={expandedSections.about}
         onOpenChange={(open) => setSectionOpen('about', open)}
+        dirty={dirtySections.about}
       >
         <AboutSection
           appVersion={updateStatus.appVersion}
@@ -103,6 +104,7 @@ function SettingsViewContent({
         title="Appearance"
         open={expandedSections.appearance}
         onOpenChange={(open) => setSectionOpen('appearance', open)}
+        dirty={dirtySections.appearance}
       >
         <AppearanceSection />
       </SettingsSection>
@@ -111,6 +113,7 @@ function SettingsViewContent({
         title="Behavior"
         open={expandedSections.behavior}
         onOpenChange={(open) => setSectionOpen('behavior', open)}
+        dirty={dirtySections.behavior}
       >
         <BehaviorSection />
       </SettingsSection>
@@ -127,6 +130,7 @@ function SettingsViewContent({
         title="Games"
         open={expandedSections.games}
         onOpenChange={(open) => setSectionOpen('games', open)}
+        dirty={dirtySections.games}
       >
         <GamesSection />
       </SettingsSection>
@@ -135,6 +139,7 @@ function SettingsViewContent({
         title="Utility Apps"
         open={expandedSections.apps}
         onOpenChange={(open) => setSectionOpen('apps', open)}
+        dirty={dirtySections.apps}
       >
         <AppsSection />
       </SettingsSection>
