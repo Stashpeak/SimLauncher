@@ -29,6 +29,10 @@ export interface ProfileEditorProps {
   onProfilesChanged: () => Promise<unknown>
   onClose: () => void
   onCreateProfile?: () => void
+  // Signals the parent that the active profile was deliberately kept (saved,
+  // launched, or deleted) so a freshly-created "+" profile is no longer a
+  // discard-on-close candidate (#453).
+  onProfileCommitted?: () => void
   onLaunchRequest?: (handleLaunch: () => void) => void
   onLaunchStart?: () => void
   onLaunchEnd?: (cooldownMs: number) => void
@@ -96,6 +100,7 @@ export function useProfileEditor({
   onProfilesChanged,
   onClose,
   onCreateProfile,
+  onProfileCommitted,
   onLaunchRequest,
   onLaunchStart,
   onLaunchEnd
@@ -390,6 +395,7 @@ export function useProfileEditor({
 
   const executeLaunch = useCallback(async () => {
     setShowLaunchConfirm(false)
+    onProfileCommitted?.()
     onClose()
     onLaunchStart?.()
     let cooldownMs = 0
@@ -411,7 +417,15 @@ export function useProfileEditor({
     } finally {
       onLaunchEnd?.(cooldownMs)
     }
-  }, [gameKey, notify, onClose, onLaunchEnd, onLaunchStart, setShowLaunchConfirm])
+  }, [
+    gameKey,
+    notify,
+    onClose,
+    onLaunchEnd,
+    onLaunchStart,
+    onProfileCommitted,
+    setShowLaunchConfirm
+  ])
 
   const handleLaunch = useCallback(async () => {
     if (isDirty) {
@@ -457,6 +471,7 @@ export function useProfileEditor({
       })
       await onProfilesChanged()
       resetDirty()
+      onProfileCommitted?.()
 
       notify('Profile saved!', 'success', 2500)
 
@@ -511,6 +526,7 @@ export function useProfileEditor({
       })
       await onProfilesChanged()
       resetDirty()
+      onProfileCommitted?.()
       notify('Profile saved!', 'success', 2500)
       return true
     } catch (err) {
@@ -564,6 +580,7 @@ export function useProfileEditor({
     setProfileDeleteConfirm(null)
     await onProfilesChanged()
     notify('Profile deleted', 'warn', 2500)
+    onProfileCommitted?.()
     onClose()
   }
 

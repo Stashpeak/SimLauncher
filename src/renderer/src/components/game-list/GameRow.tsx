@@ -78,7 +78,18 @@ export function GameRow({
   const { profileSet, profileState, loadProfileSet, getProfileRuntimeConfig, saveProfileSet } =
     useGameProfile(game.key, isActive)
 
-  const handleCreateProfile = async (name: string) => {
+  // Tracks a profile created by the editor "+" that has not yet been kept on
+  // purpose (saved / launched / switched-away-from). If the editor is closed
+  // while this is set, the profile is removed and the previously-active profile
+  // is restored, so create-then-discard leaves no orphan (#453). A ref (not
+  // state) so the close handler reads the latest value synchronously and a
+  // deliberate save can clear it before its own onClose fires.
+  const pendingNewProfileRef = useRef<{
+    newProfileId: string
+    previousActiveProfileId: string
+  } | null>(null)
+
+  const handleCreateProfile = async (name: string, options?: { trackAsPending?: boolean }) => {
     const trimmedName = name.trim()
 
     if (trimmedName.length === 0) {
@@ -87,6 +98,19 @@ export function GameRow({
 
     const nextProfileSet = await getProfileRuntimeConfig()
     const activeProfile = getActiveGameProfile(nextProfileSet)
+
+    // If a previous editor "+" creation is still pending (never kept), drop it
+    // so chaining "Discard & Create New" doesn't leak an orphan, and carry its
+    // original previous-active id forward so discarding the new profile still
+    // restores the profile the user actually started from (#453).
+    const existingPending = options?.trackAsPending ? pendingNewProfileRef.current : null
+    const baseProfiles = existingPending
+      ? nextProfileSet.profiles.filter((profile) => profile.id !== existingPending.newProfileId)
+      : nextProfileSet.profiles
+    const previousActiveProfileId = existingPending
+      ? existingPending.previousActiveProfileId
+      : nextProfileSet.activeProfileId
+
     const newProfile: NamedGameProfile = {
       ...JSON.parse(JSON.stringify(activeProfile)),
       id: createProfileId(),
@@ -94,11 +118,34 @@ export function GameRow({
     }
     const updatedProfileSet = {
       activeProfileId: newProfile.id,
-      profiles: [...nextProfileSet.profiles, newProfile]
+      profiles: [...baseProfiles, newProfile]
     }
 
     await saveProfileSet(updatedProfileSet)
+    pendingNewProfileRef.current = options?.trackAsPending
+      ? { newProfileId: newProfile.id, previousActiveProfileId }
+      : null
     notify(`Created profile ${newProfile.name}`, 'success')
+  }
+
+  // Wraps the editor close: if a "+" profile is still pending (never kept),
+  // remove it and restore the previously-active profile before closing (#453).
+  const handleEditorClose = async () => {
+    const pending = pendingNewProfileRef.current
+    if (pending) {
+      pendingNewProfileRef.current = null
+      const latest = await getProfileRuntimeConfig()
+      if (latest.profiles.some((profile) => profile.id === pending.newProfileId)) {
+        const remaining = latest.profiles.filter((profile) => profile.id !== pending.newProfileId)
+        if (remaining.length > 0) {
+          const restoreId = remaining.some((p) => p.id === pending.previousActiveProfileId)
+            ? pending.previousActiveProfileId
+            : remaining[0].id
+          await saveProfileSet({ activeProfileId: restoreId, profiles: remaining })
+        }
+      }
+    }
+    onToggleEditor()
   }
 
   const switchToProfile = async (nextProfileId: string, skipRunningConfirm = false) => {
@@ -174,6 +221,9 @@ export function GameRow({
       }
 
       await saveProfileSet(updatedProfileSet)
+      // Switching to another profile keeps the pending "+" profile on purpose,
+      // so it's no longer a discard-on-close candidate (#453).
+      pendingNewProfileRef.current = null
       closeProfileMenu(true)
       notify(
         switchWarning || `Switched to ${nextProfile.name}`,
@@ -385,8 +435,13 @@ export function GameRow({
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
-                onClose={onToggleEditor}
-                onCreateProfile={() => void handleCreateProfile('New Profile')}
+                onClose={handleEditorClose}
+                onCreateProfile={() =>
+                  void handleCreateProfile('New Profile', { trackAsPending: true })
+                }
+                onProfileCommitted={() => {
+                  pendingNewProfileRef.current = null
+                }}
                 onLaunchRequest={(launcher) => {
                   handleLaunchRequest.current = launcher
                 }}
