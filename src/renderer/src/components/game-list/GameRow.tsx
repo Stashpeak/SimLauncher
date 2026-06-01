@@ -38,6 +38,7 @@ export function GameRow({
   onLaunchEnd,
   onRunningStateRefresh,
   onToggleEditor,
+  onCloseEditor,
   cacheInitialized
 }: {
   game: Game
@@ -52,6 +53,10 @@ export function GameRow({
   onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
   onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
+  // Explicit close for this row's editor (key-guarded functional update) so the
+  // async discard path can close without a stale toggle reopening/closing the
+  // wrong row if the user opens another editor mid-await (#453 Codex P2).
+  onCloseEditor: () => void
   cacheInitialized: boolean
 }): ReactNode {
   const { notify } = useNotify()
@@ -145,7 +150,7 @@ export function GameRow({
         }
       }
     }
-    onToggleEditor()
+    onCloseEditor()
   }
 
   const switchToProfile = async (nextProfileId: string, skipRunningConfirm = false) => {
