@@ -212,7 +212,19 @@ export function useProfileEditor({
   const currentProfileState = useMemo(
     () => ({
       profileName,
-      profileUtilities: profileUtilities.map((u) => ({ id: u.id, enabled: u.enabled })),
+      // Normalise for value-equality dirty tracking (#438):
+      // enabled utilities keep their user-defined launch order;
+      // disabled utilities are sorted by id so that toggling a utility
+      // off and back on (which changes its array position) doesn't leave
+      // a spurious dirty=true when the enabled/disabled state is identical
+      // to the last-saved snapshot.
+      profileUtilities: [
+        ...profileUtilities.filter((u) => u.enabled).map((u) => ({ id: u.id, enabled: true })),
+        ...profileUtilities
+          .filter((u) => !u.enabled)
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map((u) => ({ id: u.id, enabled: false }))
+      ],
       launchAutomatically,
       trackingEnabled,
       killControlsEnabled,
