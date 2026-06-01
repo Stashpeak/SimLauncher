@@ -101,12 +101,18 @@ export function useGameProfile(
     }
   }, [activeProfileId, applyProfileSet, isActive, readProfileSet])
 
-  const getProfileRuntimeConfig = async (): Promise<GameProfileSet> => readProfileSet()
+  const getProfileRuntimeConfig = useCallback(
+    async (): Promise<GameProfileSet> => readProfileSet(),
+    [readProfileSet]
+  )
 
-  const saveProfileSet = async (nextProfileSet: GameProfileSet) => {
-    await saveProfile(gameKey, nextProfileSet)
-    applyProfileSet(nextProfileSet)
-  }
+  const saveProfileSet = useCallback(
+    async (nextProfileSet: GameProfileSet) => {
+      await saveProfile(gameKey, nextProfileSet)
+      applyProfileSet(nextProfileSet)
+    },
+    [applyProfileSet, gameKey]
+  )
 
   return { profileSet, profileState, loadProfileSet, getProfileRuntimeConfig, saveProfileSet }
 }

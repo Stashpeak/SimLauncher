@@ -153,7 +153,10 @@ export function GameList({
               onLaunchEnd={handleLaunchEnd}
               onRunningStateRefresh={refreshRunningState}
               onToggleEditor={() =>
-                setActiveEditorKey(activeEditorKey === game.key ? null : game.key)
+                setActiveEditorKey((current) => (current === game.key ? null : game.key))
+              }
+              onCloseEditor={() =>
+                setActiveEditorKey((current) => (current === game.key ? null : current))
               }
               cacheInitialized={true}
             />
