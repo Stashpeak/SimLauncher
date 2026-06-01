@@ -42,7 +42,6 @@ function AppContent() {
   // quitting. Set from the `close-requested` payload so the dialog labels and
   // the terminal IPC call both match the user's current tray preference.
   const [closeConfirmMinimizeMode, setCloseConfirmMinimizeMode] = useState(false)
-  const [saveRequested, setSaveRequested] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
 
@@ -129,7 +128,6 @@ function AppContent() {
 
   const handleConfirmCancel = () => {
     setPendingView(null)
-    setSaveRequested(false)
   }
 
   const handleConfirmSave = useCallback(async () => {
@@ -233,16 +231,7 @@ function AppContent() {
       <SettingsProvider
         key={refreshKey}
         onDirtyChange={reportSettingsDirty}
-        shouldSaveTrigger={saveRequested}
         onConfigImported={handleConfigImported}
-        onSaved={(success) => {
-          setSaveRequested(false)
-          setRefreshKey((k) => k + 1)
-          if (success && pendingView) {
-            setView(pendingView)
-            setPendingView(null)
-          }
-        }}
       >
         <main className="h-full relative overflow-hidden">
           {/* Games View */}
