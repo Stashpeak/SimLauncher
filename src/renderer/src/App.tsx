@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { NotifyProvider, useNotify } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
@@ -43,7 +43,19 @@ function AppContent() {
   // the terminal IPC call both match the user's current tray preference.
   const [closeConfirmMinimizeMode, setCloseConfirmMinimizeMode] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  // App-level discard confirm, opened by the sticky bar's Discard button. Lifted
+  // here (rather than living inside StickySaveBar) so the OS close-request
+  // handler can avoid stacking it with the close dialog — two open ConfirmDialogs
+  // would both bind global Enter/Escape and a single keypress could fire both.
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
+
+  // Mirror so the once-registered close-request handler reads the latest value
+  // without re-subscribing.
+  const discardConfirmOpenRef = useRef(false)
+  useEffect(() => {
+    discardConfirmOpenRef.current = discardConfirmOpen
+  }, [discardConfirmOpen])
 
   useEffect(() => {
     runStartupMigrations()
@@ -55,13 +67,13 @@ function AppContent() {
 
   useEffect(() => {
     const unsubscribe = onCloseRequested(({ minimizeMode }: { minimizeMode: boolean }) => {
-      // Avoid stacking the close dialog on top of the tab-switch dialog —
-      // two simultaneous confirms attach independent Enter/Escape handlers
-      // and a single keypress would trigger conflicting save/discard flows.
-      // The tab-switch flow is more contextual (user just clicked a tab),
-      // so let them finish it first.
+      // Avoid stacking the close dialog on top of the tab-switch OR discard
+      // confirm — two simultaneous confirms attach independent Enter/Escape
+      // handlers and a single keypress would trigger conflicting flows. Those
+      // flows are more contextual (the user just clicked a tab / Discard), so
+      // let them finish first.
       setPendingView((current) => {
-        if (current === null) {
+        if (current === null && !discardConfirmOpenRef.current) {
           setCloseConfirmMinimizeMode(minimizeMode)
           setCloseConfirmOpen(true)
         }
@@ -271,7 +283,7 @@ function AppContent() {
         </main>
       </SettingsProvider>
 
-      <StickySaveBar onDiscard={handleDiscardAll} />
+      <StickySaveBar onRequestDiscard={() => setDiscardConfirmOpen(true)} />
 
       <ConfirmDialog
         isOpen={pendingView !== null}
@@ -301,6 +313,22 @@ function AppContent() {
           void handleCloseConfirmDiscard()
         }}
         onCancel={handleCloseConfirmCancel}
+      />
+
+      <ConfirmDialog
+        isOpen={discardConfirmOpen}
+        title="Discard changes?"
+        message="This reverts all unsaved changes across Settings and any open profile editor. This can't be undone."
+        saveLabel="Discard Changes"
+        discardLabel="Keep Editing"
+        saveClassName="danger-action"
+        discardClassName="neutral-action"
+        onSave={() => {
+          setDiscardConfirmOpen(false)
+          handleDiscardAll()
+        }}
+        onDiscard={() => setDiscardConfirmOpen(false)}
+        onCancel={() => setDiscardConfirmOpen(false)}
       />
     </div>
   )
