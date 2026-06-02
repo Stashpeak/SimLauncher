@@ -55,7 +55,7 @@ test('sanitizeImportedConfig sanitizes scalar settings and clamps numeric values
   expect(
     sanitizeImportedConfig({
       customSlots: 999,
-      launchDelayMs: 9999.7,
+      launchDelayMs: 99999.7,
       zoomFactor: 99,
       themeMode: 'invalid',
       accentCustom: ' #AABBCC ',
@@ -65,7 +65,7 @@ test('sanitizeImportedConfig sanitizes scalar settings and clamps numeric values
     })
   ).toEqual({
     customSlots: MAX_CUSTOM_SLOTS,
-    launchDelayMs: 5000,
+    launchDelayMs: 30000,
     zoomFactor: 3,
     accentCustom: '#AABBCC',
     accentPreset: '',

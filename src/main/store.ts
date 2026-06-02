@@ -66,7 +66,7 @@ export const store = new StoreConstructor({
     accentBgTint: { type: 'boolean', default: false },
     themeMode: { type: 'string', default: 'dark', enum: ['light', 'dark', 'system'] },
     focusActiveTitle: { type: 'boolean', default: true },
-    launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 5000 },
+    launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 30000 },
     startWithWindows: { type: 'boolean', default: false },
     startMinimized: { type: 'boolean', default: false },
     minimizeToTray: { type: 'boolean', default: false },
@@ -215,7 +215,7 @@ function getSafeLaunchDelayMs(value: unknown) {
     return undefined
   }
 
-  return clamp(Math.round(value), 0, 5000)
+  return clamp(Math.round(value), 0, 30000)
 }
 
 function getSafeThemeMode(value: unknown) {

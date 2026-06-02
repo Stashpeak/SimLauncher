@@ -154,7 +154,7 @@ function getLaunchDelayMs() {
     return 1000
   }
 
-  return Math.min(Math.max(Math.round(value), 0), 5000)
+  return Math.min(Math.max(Math.round(value), 0), 30000)
 }
 
 export function isRunningExePath(processNames: Set<string>, appPath: string): boolean {

@@ -57,7 +57,7 @@ In that case, your current setup is already simple enough.
 - Integrated auto-updates to stay current with the latest features
 - Optional auto-launch of the game itself
 - 1–20 configurable custom app slots with editable names
-- Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 5s)
+- Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 30s)
 - Automotive-themed accent color presets and a custom color picker
 - Light, dark, and system theme modes
 - Kill and relaunch controls for running companion apps
