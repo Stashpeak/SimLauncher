@@ -33,6 +33,7 @@
   "author": "Stashpeak",
   "license": "GPL-3.0-only",
   "dependencies": {
+    "@floating-ui/react": "^0.27.19",
     "@tailwindcss/vite": "^4.3.0",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.3.0",

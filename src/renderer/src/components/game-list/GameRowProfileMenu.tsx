@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { Dispatch, KeyboardEvent, MutableRefObject, ReactNode, SetStateAction } from 'react'
 import type { GameProfileSet, NamedGameProfile } from '../../lib/config'
 import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
+import { Tooltip } from '../Tooltip'
 
 export interface GameRowProfileMenuProps {
   profileSet: GameProfileSet
@@ -45,32 +46,33 @@ export function GameRowProfileMenu({
   const menuId = useId()
   return (
     <div ref={profileMenuRef} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          if (profileMenuOpen) {
-            closeProfileMenu(false)
-          } else {
-            openProfileMenu(false)
-          }
-        }}
-        onKeyDown={handleProfileMenuTriggerKeyDown}
-        className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-all hover:text-(--text-primary)"
-        aria-haspopup="menu"
-        aria-expanded={profileMenuOpen}
-        aria-controls={profileMenuOpen ? menuId : undefined}
-        aria-label={`${gameName} profile: ${activeProfile.name}`}
-        title={activeProfile.name}
-      >
-        <ChevronDownIcon
-          width={10}
-          height={10}
-          className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
-        />
-        <span className="min-w-0 truncate">{activeProfile.name}</span>
-      </button>
+      <Tooltip label={activeProfile.name} placement="bottom">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            if (profileMenuOpen) {
+              closeProfileMenu(false)
+            } else {
+              openProfileMenu(false)
+            }
+          }}
+          onKeyDown={handleProfileMenuTriggerKeyDown}
+          className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-all hover:text-(--text-primary)"
+          aria-haspopup="menu"
+          aria-expanded={profileMenuOpen}
+          aria-controls={profileMenuOpen ? menuId : undefined}
+          aria-label={`${gameName} profile: ${activeProfile.name}`}
+        >
+          <ChevronDownIcon
+            width={10}
+            height={10}
+            className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
+          />
+          <span className="min-w-0 truncate">{activeProfile.name}</span>
+        </button>
+      </Tooltip>
       {profileMenuOpen && (
         <div
           ref={menuRef}
@@ -124,15 +126,16 @@ export function GameRowProfileMenu({
                 className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-1.5 text-xs font-semibold text-(--text-primary) outline-none placeholder:text-(--text-subtle) focus:border-(--accent)"
                 aria-label="New profile name"
               />
-              <button
-                type="submit"
-                disabled={newProfileName.trim().length === 0}
-                className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md"
-                aria-label="Create profile"
-                title="Create profile"
-              >
-                <CheckIcon width={13} height={13} />
-              </button>
+              <Tooltip label="Create profile">
+                <button
+                  type="submit"
+                  disabled={newProfileName.trim().length === 0}
+                  className="accent-action flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md"
+                  aria-label="Create profile"
+                >
+                  <CheckIcon width={13} height={13} />
+                </button>
+              </Tooltip>
             </form>
           ) : (
             <button

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { MAX_CUSTOM_SLOTS } from '../../lib/config'
 import { useAppsSettings } from './AppsContext'
 import { ChevronDownIcon } from '../icons'
+import { Tooltip } from '../Tooltip'
 
 function getInitials(label: string) {
   const words = label.trim().split(/\s+/).filter(Boolean)
@@ -78,15 +79,16 @@ export function AppsSection(): ReactNode {
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                   </svg>
-                  <input
-                    type="text"
-                    value={appNames[utility.key] || utility.name}
-                    onChange={(e) => onAppNameChange(utility.key, e.target.value)}
-                    className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold normal-case tracking-wide text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
-                    placeholder="App Name"
-                    aria-label={`${utility.name} name`}
-                    title="Editable app name"
-                  />
+                  <Tooltip label="Editable app name">
+                    <input
+                      type="text"
+                      value={appNames[utility.key] || utility.name}
+                      onChange={(e) => onAppNameChange(utility.key, e.target.value)}
+                      className="min-w-0 flex-1 rounded-md border border-(--glass-border) bg-(--glass-bg) px-2 py-0.5 text-[10px] font-semibold normal-case tracking-wide text-(--text-secondary) outline-none transition-colors focus:border-(--accent) focus:text-(--text-primary)"
+                      placeholder="App Name"
+                      aria-label={`${utility.name} name`}
+                    />
+                  </Tooltip>
                 </div>
               ) : (
                 utility.name
@@ -121,12 +123,11 @@ export function AppsSection(): ReactNode {
                 onError={() => onIconLoadError(utility.key)}
               />
             ) : (
-              <div
-                className="fallback-initial-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black"
-                title={`${appNames[utility.key] || utility.name} icon fallback`}
-              >
-                {getInitials(appNames[utility.key] || utility.name)}
-              </div>
+              <Tooltip label={`${appNames[utility.key] || utility.name} icon fallback`}>
+                <div className="fallback-initial-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black">
+                  {getInitials(appNames[utility.key] || utility.name)}
+                </div>
+              </Tooltip>
             )}
 
             <input
@@ -139,32 +140,33 @@ export function AppsSection(): ReactNode {
             />
 
             {utility.isCustom && (
-              <button
-                type="button"
-                onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
-                disabled={customSlots <= 1}
-                className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
-                title={`Remove ${appNames[utility.key] || utility.name}`}
-                aria-label={`Remove ${appNames[utility.key] || utility.name}`}
-              >
-                <svg
-                  aria-hidden="true"
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              <Tooltip label={`Remove ${appNames[utility.key] || utility.name}`}>
+                <button
+                  type="button"
+                  onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
+                  disabled={customSlots <= 1}
+                  className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
+                  aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                 >
-                  <path d="M3 6h18" />
-                  <path d="M8 6V4h8v2" />
-                  <path d="M19 6l-1 14H6L5 6" />
-                  <path d="M10 11v5" />
-                  <path d="M14 11v5" />
-                </svg>
-              </button>
+                  <svg
+                    aria-hidden="true"
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v5" />
+                    <path d="M14 11v5" />
+                  </svg>
+                </button>
+              </Tooltip>
             )}
             <button
               onClick={() => onBrowse(utility.key, false)}

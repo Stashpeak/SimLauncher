@@ -1,6 +1,7 @@
 import type { DragEvent, ReactNode } from 'react'
 import type { ProfileUtility, Utility } from '../../lib/config'
 import { Toggle } from '../Toggle'
+import { Tooltip } from '../Tooltip'
 
 interface ProfileUtilitiesSectionProps {
   appPaths: Record<string, string>
@@ -114,20 +115,21 @@ function renderUtilityRow(
             {orderIndex + 1}
           </span>
         )}
-        <div
-          className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''}`}
-          title="Drag to reorder"
-          aria-hidden="true"
-        >
-          <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
-            <circle cx="3" cy="3" r="1.2" />
-            <circle cx="9" cy="3" r="1.2" />
-            <circle cx="3" cy="8" r="1.2" />
-            <circle cx="9" cy="8" r="1.2" />
-            <circle cx="3" cy="13" r="1.2" />
-            <circle cx="9" cy="13" r="1.2" />
-          </svg>
-        </div>
+        <Tooltip label="Drag to reorder">
+          <div
+            className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''}`}
+            aria-hidden="true"
+          >
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+              <circle cx="3" cy="3" r="1.2" />
+              <circle cx="9" cy="3" r="1.2" />
+              <circle cx="3" cy="8" r="1.2" />
+              <circle cx="9" cy="8" r="1.2" />
+              <circle cx="3" cy="13" r="1.2" />
+              <circle cx="9" cy="13" r="1.2" />
+            </svg>
+          </div>
+        </Tooltip>
         <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
           {icon && !props.failedIcons[utility.key] ? (
             <img
