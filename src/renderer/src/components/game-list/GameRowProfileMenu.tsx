@@ -66,7 +66,7 @@ export function GameRowProfileMenu({
           height={10}
           className={`shrink-0 text-(--text-muted) transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`}
         />
-        <span className="min-w-0 select-none truncate">{activeProfile.name}</span>
+        <span className="min-w-0 truncate">{activeProfile.name}</span>
       </button>
       {profileMenuOpen && (
         <div

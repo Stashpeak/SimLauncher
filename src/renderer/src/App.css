@@ -150,6 +150,21 @@ body {
     sans-serif;
 }
 
+/* Desktop-app convention: text is not selectable by default (#359).
+   Re-enable selection only for native editable controls below; opt back in
+   elsewhere with Tailwind's `select-text` where copy-paste is useful. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 * {
   box-sizing: border-box;
 }

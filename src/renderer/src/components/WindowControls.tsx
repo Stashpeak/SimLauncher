@@ -41,7 +41,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
         >
           <BrandWordmarkIcon
             aria-hidden="true"
-            className={`launcher-wordmark h-[15px] w-auto shrink-0 select-none transition-colors ${
+            className={`launcher-wordmark h-[15px] w-auto shrink-0 transition-colors ${
               view === 'games'
                 ? 'text-(--accent)'
                 : 'text-(--text-muted) group-hover:text-(--accent)'
