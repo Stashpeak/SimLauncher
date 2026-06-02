@@ -37,7 +37,7 @@ export function RunningAppsStrip({
             <img
               key={i}
               src={app.icon ?? undefined}
-              alt={app.warning ? `${app.name} (warning)` : ''}
+              alt={app.warning ? `${app.name}: ${app.warning}` : ''}
               title={app.warning || app.name}
               className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
               onError={() =>
