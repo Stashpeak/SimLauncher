@@ -51,12 +51,13 @@ export function AppearanceSection(): ReactNode {
     <>
       <div className="settings-row settings-row-responsive">
         <label className="settings-label text-(--text-secondary)">Theme</label>
-        <div className="settings-control">
+        <div className="settings-control" role="group" aria-label="Theme">
           {THEME_MODE_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => onThemeModeChange(option.value)}
+              aria-pressed={themeMode === option.value}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${
                 themeMode === option.value
                   ? 'selected-surface text-(--text-primary)'
@@ -71,12 +72,14 @@ export function AppearanceSection(): ReactNode {
 
       <div className="settings-row settings-row-responsive">
         <label className="settings-label text-(--text-secondary)">Accent Color</label>
-        <div className="settings-control">
+        <div className="settings-control" role="group" aria-label="Accent color">
           {ACCENT_PRESETS.map((preset) => (
             <button
               key={preset.hex}
               type="button"
               onClick={() => onAccentChange(preset.hex)}
+              aria-label={`Accent color ${preset.name}`}
+              aria-pressed={accentPreset === preset.hex}
               className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
               style={{ '--preset-color': preset.hex } as CSSProperties}
               title={preset.name}
@@ -90,6 +93,11 @@ export function AppearanceSection(): ReactNode {
                 setShowPicker(!showPicker)
                 if (!isCustomColor) onAccentChange('custom')
               }}
+              aria-label="Custom accent color"
+              aria-haspopup="dialog"
+              aria-expanded={showPicker}
+              aria-controls={showPicker ? 'accent-color-picker' : undefined}
+              aria-pressed={isCustomColor}
               className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
                 isCustomColor ? 'scale-110' : ''
               }`}
@@ -97,6 +105,7 @@ export function AppearanceSection(): ReactNode {
             >
               {/* Background gradient/color */}
               <div
+                aria-hidden="true"
                 className="absolute inset-0 rounded-full"
                 style={{
                   background: isCustomColor
@@ -107,11 +116,15 @@ export function AppearanceSection(): ReactNode {
 
               {/* Glass overlay for unselected state */}
               {!isCustomColor && (
-                <div className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none" />
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none"
+                />
               )}
 
               {/* Border to match presets */}
               <div
+                aria-hidden="true"
                 className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
               />
             </button>
@@ -148,11 +161,12 @@ export function AppearanceSection(): ReactNode {
 
       <div className="settings-row settings-row-responsive">
         <label className="settings-label text-(--text-secondary)">UI Scale</label>
-        <div className="settings-control">
+        <div className="settings-control" role="group" aria-label="UI scale">
           {ZOOM_PRESETS.map((preset) => (
             <button
               key={preset.factor}
               onClick={() => onZoomFactorChange(preset.factor)}
+              aria-pressed={zoomFactor === preset.factor}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${
                 zoomFactor === preset.factor
                   ? 'selected-surface text-(--text-primary)'

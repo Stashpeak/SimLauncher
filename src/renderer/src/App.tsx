@@ -228,7 +228,11 @@ function AppContent() {
       </div>
 
       {showImportWarning && (
-        <div className="glass-surface absolute! left-4 right-4 top-16 z-30 mx-auto flex max-w-3xl animate-fade-slide items-center gap-3 rounded-2xl border border-(--warning-border) px-4 py-3 text-xs font-medium text-(--warning-text) shadow-[0_12px_30px_#00000040] [--glass-surface-fill:color-mix(in_srgb,var(--warning-surface),var(--glass-bg-elevated))]!">
+        <div
+          role="status"
+          aria-live="polite"
+          className="glass-surface absolute! left-4 right-4 top-16 z-30 mx-auto flex max-w-3xl animate-fade-slide items-center gap-3 rounded-2xl border border-(--warning-border) px-4 py-3 text-xs font-medium text-(--warning-text) shadow-[0_12px_30px_#00000040] [--glass-surface-fill:color-mix(in_srgb,var(--warning-surface),var(--glass-bg-elevated))]!"
+        >
           <WarningTriangleIcon width={17} height={17} className="shrink-0" />
           <span className="min-w-0 flex-1">
             Config imported. Executable paths from your previous device may need to be updated.

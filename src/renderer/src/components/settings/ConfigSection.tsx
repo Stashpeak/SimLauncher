@@ -23,6 +23,7 @@ export function ConfigSection(): ReactNode {
             className="accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
           >
             <svg
+              aria-hidden="true"
               width="14"
               height="14"
               viewBox="0 0 24 24"
@@ -45,6 +46,7 @@ export function ConfigSection(): ReactNode {
             className="accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
           >
             <svg
+              aria-hidden="true"
               width="14"
               height="14"
               viewBox="0 0 24 24"

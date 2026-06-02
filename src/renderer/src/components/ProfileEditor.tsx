@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { ProfileBehaviorSection } from './profile-editor/ProfileBehaviorSection'
 import { ProfileEditorActions } from './profile-editor/ProfileEditorActions'
@@ -74,12 +74,20 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
     }
   }, [handleCloseAttempt, registerProfileEditorCloseRequestHandler])
 
+  const headingId = useId()
+
   if (editor.loading) return null
 
   return (
-    <div className="glass-surface-elevated animate-fade-slide relative rounded-[20px] p-5">
+    <div
+      role="region"
+      aria-labelledby={headingId}
+      className="glass-surface-elevated animate-fade-slide relative rounded-[20px] p-5"
+    >
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-(--text-primary)">Edit Profile</h2>
+        <h2 id={headingId} className="text-lg font-semibold text-(--text-primary)">
+          Edit Profile
+        </h2>
       </div>
 
       <div className="space-y-5">

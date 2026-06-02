@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 export interface ConfigImportPreviewSummary {
   changedKeys: string[]
@@ -53,6 +53,8 @@ export function ImportPreviewDialog({
   onImport,
   onCancel
 }: ImportPreviewDialogProps): ReactNode {
+  const titleId = useId()
+  const descId = useId()
   if (!isOpen || !summary) return null
 
   const previewCount =
@@ -63,11 +65,19 @@ export function ImportPreviewDialog({
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
-      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+      <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
-      <div className="glass-surface-elevated animate-fade-slide relative w-full max-w-2xl rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto">
-        <h2 className="mb-2 text-lg font-bold text-(--text-primary)">Trust Imported Config</h2>
-        <p className="mb-4 text-sm leading-relaxed text-(--text-secondary)">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descId}
+        className="glass-surface-elevated animate-fade-slide relative w-full max-w-2xl rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto"
+      >
+        <h2 id={titleId} className="mb-2 text-lg font-bold text-(--text-primary)">
+          Trust Imported Config
+        </h2>
+        <p id={descId} className="mb-4 text-sm leading-relaxed text-(--text-secondary)">
           Review executable paths and custom arguments before replacing your current settings.
         </p>
 

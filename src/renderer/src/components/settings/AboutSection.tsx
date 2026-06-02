@@ -46,7 +46,11 @@ export function AboutSection({
         />
       </div>
 
-      <div className="flex flex-col gap-2 p-5 border-t border-(--header-glass-border)">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex flex-col gap-2 p-5 border-t border-(--header-glass-border)"
+      >
         {updateInfo ? (
           <button
             onClick={onInstallUpdate}

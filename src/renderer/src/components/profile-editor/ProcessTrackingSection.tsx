@@ -65,12 +65,14 @@ export function ProcessTrackingSection({
                   type="text"
                   value={processPath}
                   readOnly
+                  aria-label={`Secondary executable ${index + 1}`}
                   placeholder="No secondary executable selected"
                   className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
                 />
                 <button
                   type="button"
                   onClick={() => onBrowseTrackedProcess(index)}
+                  aria-label={`Browse for secondary executable ${index + 1}`}
                   className="accent-surface-action action-hover-scale cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                 >
                   Browse
@@ -78,6 +80,7 @@ export function ProcessTrackingSection({
                 <button
                   type="button"
                   onClick={() => onRemoveTrackedProcess(index)}
+                  aria-label={`Remove secondary executable ${index + 1}`}
                   className="danger-action action-hover-scale cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold"
                 >
                   Remove

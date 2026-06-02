@@ -19,6 +19,7 @@ export function ProfileToggleRow({
     <div
       role="switch"
       aria-checked={checked ? 'true' : 'false'}
+      aria-label={label}
       tabIndex={0}
       onClick={onToggle}
       onKeyDown={(event) => {
@@ -31,7 +32,7 @@ export function ProfileToggleRow({
     >
       <span className="text-sm font-medium text-(--text-secondary)">{label}</span>
       <span onClick={(event) => event.stopPropagation()}>
-        <Toggle checked={checked} onChange={onChange} aria-label={label} />
+        <Toggle checked={checked} onChange={onChange} aria-label={label} presentational />
       </span>
     </div>
   )

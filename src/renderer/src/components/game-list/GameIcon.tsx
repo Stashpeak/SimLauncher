@@ -24,13 +24,15 @@ export function GameIcon({ game, isRunning, iconUrl }: GameIconProps): ReactNode
           onError={() => setIconLoadFailed(true)}
         />
       ) : !iconLoadFailed ? (
-        <div className="h-12 w-12 skeleton-icon animate-pulse" />
+        <div aria-hidden="true" className="h-12 w-12 skeleton-icon animate-pulse" />
       ) : null}
       {isRunning && (
         <div
           className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]"
           title="Running"
-        />
+        >
+          <span className="sr-only">{game.name} is running</span>
+        </div>
       )}
     </div>
   )

@@ -37,7 +37,7 @@ export function RunningAppsStrip({
             <img
               key={i}
               src={app.icon ?? undefined}
-              alt=""
+              alt={app.warning ? `${app.name} (warning)` : ''}
               title={app.warning || app.name}
               className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
               onError={() =>
@@ -57,12 +57,14 @@ export function RunningAppsStrip({
         }
 
         if (app.icon === null && !isFailed && !cacheInitialized) {
-          return <div key={i} className="h-4 w-4 skeleton-icon animate-pulse" />
+          return <div key={i} aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
         }
 
         return (
           <div
             key={i}
+            role="img"
+            aria-label={app.warning ? `${app.name}: ${app.warning}` : app.name}
             className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
             title={app.warning || app.name}
             onContextMenu={(e) => {
@@ -85,10 +87,13 @@ export function RunningAppsStrip({
 
       {hasElevated && (
         <div
+          role="img"
+          aria-label="Some companion apps run elevated and cannot be closed by SimLauncher"
           title="SimLauncher cannot close elevated companion apps."
           className="flex items-center"
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

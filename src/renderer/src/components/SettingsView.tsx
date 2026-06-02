@@ -147,10 +147,14 @@ function SettingsViewContent({
       <div className="flex gap-4 pt-4 px-1">
         <button
           onClick={() => void saveSettings()}
+          aria-label={isDirty ? 'Save Changes (unsaved changes)' : 'Save Changes'}
           className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-3 text-sm font-semibold relative overflow-hidden"
         >
           {isDirty && (
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
+            <span
+              aria-hidden="true"
+              className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2"
+            >
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-(--accent) opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-(--accent)"></span>
             </span>

@@ -80,9 +80,13 @@ export function ColorPickerPopover({
   return createPortal(
     <div className="fixed inset-0 z-50">
       {/* Backdrop dismisses the picker on click without affecting underlying layout. */}
-      <div className="absolute inset-0" onClick={onClose} />
+      <div aria-hidden="true" className="absolute inset-0" onClick={onClose} />
       <div
         ref={popoverRef}
+        id="accent-color-picker"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose color"
         style={position ?? { visibility: 'hidden', width: POPOVER_WIDTH }}
         className="glass-surface-elevated fixed flex flex-col items-center gap-3 overflow-hidden rounded-2xl px-4 pb-4 shadow-[0_12px_30px_#00000040] backdrop-blur-xl animate-fade-slide"
       >
@@ -94,6 +98,7 @@ export function ColorPickerPopover({
           </span>
           <input
             type="text"
+            aria-label="Hex color value"
             value={color.toUpperCase()}
             onChange={(e) => {
               let val = e.target.value

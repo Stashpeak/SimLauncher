@@ -110,11 +110,14 @@ function ToastCard({
   return (
     <button
       type="button"
+      aria-label={`Dismiss notification: ${toast.message}`}
       className={`toast-card glass-surface overflow-hidden relative rounded-[18px] text-left px-[16px] py-[14px] min-w-[280px] max-w-[400px] shadow-[0_8px_30px_#00000050] transition-all duration-250 ease-out ${TOAST_STYLES[toast.type]} ${isDismissing ? 'toast-card-dismissing opacity-0 translate-x-5 scale-95' : 'opacity-100 translate-x-0 scale-100'}`}
       onClick={() => onDismiss(toast.id)}
     >
       <div className="flex items-start gap-3.5">
-        <span className="shrink-0 mt-0.5 opacity-90">{TOAST_ICONS[toast.type]}</span>
+        <span aria-hidden="true" className="shrink-0 mt-0.5 opacity-90">
+          {TOAST_ICONS[toast.type]}
+        </span>
         <span className="flex-1 text-[13px] font-medium leading-tight">{toast.message}</span>
       </div>
       <span
@@ -202,7 +205,12 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
     <NotifyContext.Provider value={value}>
       {children}
       {createPortal(
-        <div className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-9999">
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="false"
+          className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-9999"
+        >
           {toasts.map((toast) => (
             <ToastCard
               key={toast.id}

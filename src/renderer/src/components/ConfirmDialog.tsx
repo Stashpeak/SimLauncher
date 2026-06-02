@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 interface ConfirmDialogProps {
@@ -46,17 +46,30 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [isOpen, onCancel, onSave])
 
+  const titleId = useId()
+  const msgId = useId()
+
   if (!isOpen) return null
 
   return createPortal(
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
       {/* Backdrop overlay */}
-      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
+      <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
       {/* Dialog container */}
-      <div className="glass-surface-elevated animate-fade-slide relative w-full max-w-sm rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto">
-        <h2 className="text-lg font-bold text-(--text-primary) mb-2">{title}</h2>
-        <p className="text-sm text-(--text-secondary) mb-8 leading-relaxed">{message}</p>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={msgId}
+        className="glass-surface-elevated animate-fade-slide relative w-full max-w-sm rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto"
+      >
+        <h2 id={titleId} className="text-lg font-bold text-(--text-primary) mb-2">
+          {title}
+        </h2>
+        <p id={msgId} className="text-sm text-(--text-secondary) mb-8 leading-relaxed">
+          {message}
+        </p>
 
         <div className="flex flex-col gap-2">
           <button

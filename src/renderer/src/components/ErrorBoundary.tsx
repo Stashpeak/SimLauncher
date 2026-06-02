@@ -56,7 +56,10 @@ export class ErrorBoundary extends Component<Props, State> {
             {/* Decorative background glow */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-(--accent-glow) rounded-full blur-[120px] pointer-events-none opacity-50" />
 
-            <div className="relative glass-surface-elevated max-w-2xl w-full rounded-2xl p-10 flex flex-col items-center gap-8 shadow-2xl animate-fade-slide">
+            <div
+              role="alert"
+              className="relative glass-surface-elevated max-w-2xl w-full rounded-2xl p-10 flex flex-col items-center gap-8 shadow-2xl animate-fade-slide"
+            >
               {/* Warning Icon Container */}
               <div className="relative">
                 <div className="absolute inset-0 bg-red-500/20 rounded-full blur-2xl animate-pulse" />

@@ -64,6 +64,7 @@ export function AppsSection(): ReactNode {
               {utility.isCustom ? (
                 <div className="flex items-center gap-2">
                   <svg
+                    aria-hidden="true"
                     width="11"
                     height="11"
                     viewBox="0 0 24 24"
@@ -98,6 +99,7 @@ export function AppsSection(): ReactNode {
               className="group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-(--glass-bg)"
               aria-label={`Toggle custom arguments for ${utility.name}`}
               aria-expanded={isArgsVisible(utility.key)}
+              aria-controls={isArgsVisible(utility.key) ? `args-${utility.key}` : undefined}
             >
               <span className="text-[9px] font-bold tracking-tight text-(--text-subtle) uppercase opacity-60 transition-opacity group-hover:opacity-80">
                 Custom Args
@@ -132,6 +134,7 @@ export function AppsSection(): ReactNode {
               value={appPaths[utility.key] || ''}
               onChange={(e) => onAppPathChange(utility.key, e.target.value)}
               placeholder="No executable path set"
+              aria-label={`${appNames[utility.key] || utility.name} executable path`}
               className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus:text-(--text-primary)"
             />
 
@@ -145,6 +148,7 @@ export function AppsSection(): ReactNode {
                 aria-label={`Remove ${appNames[utility.key] || utility.name}`}
               >
                 <svg
+                  aria-hidden="true"
                   width="15"
                   height="15"
                   viewBox="0 0 24 24"
@@ -164,6 +168,7 @@ export function AppsSection(): ReactNode {
             )}
             <button
               onClick={() => onBrowse(utility.key, false)}
+              aria-label={`Browse for ${appNames[utility.key] || utility.name} executable`}
               className="accent-surface-action action-hover-scale cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
             >
               Browse
@@ -172,6 +177,7 @@ export function AppsSection(): ReactNode {
 
           {isArgsVisible(utility.key) && (
             <input
+              id={`args-${utility.key}`}
               type="text"
               value={appArgs[utility.key] || ''}
               onChange={(e) => onAppArgsChange(utility.key, e.target.value)}
@@ -190,6 +196,7 @@ export function AppsSection(): ReactNode {
           className="accent-surface-action action-hover-scale flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold"
         >
           <svg
+            aria-hidden="true"
             width="15"
             height="15"
             viewBox="0 0 24 24"
