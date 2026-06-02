@@ -26,6 +26,7 @@ interface SettingsStateSnapshot {
   startWithWindows: boolean
   startMinimized: boolean
   minimizeToTray: boolean
+  showTrayIcon: boolean
   autoCheckUpdates: boolean
   zoomFactor: number
 }
@@ -57,6 +58,7 @@ interface UseSettingsSaveArgs {
   launchDelayMs: number
   startMinimized: boolean
   minimizeToTray: boolean
+  showTrayIcon: boolean
   autoCheckUpdates: boolean
   startWithWindows: boolean
   zoomFactor: number
@@ -86,6 +88,7 @@ export function useSettingsSave({
   launchDelayMs,
   startMinimized,
   minimizeToTray,
+  showTrayIcon,
   autoCheckUpdates,
   startWithWindows,
   zoomFactor,
@@ -128,6 +131,7 @@ export function useSettingsSave({
           launchDelayMs: normalizedLaunchDelayMs,
           startMinimized,
           minimizeToTray,
+          showTrayIcon,
           autoCheckUpdates,
           startWithWindows,
           zoomFactor
@@ -175,6 +179,7 @@ export function useSettingsSave({
     gamePaths,
     launchDelayMs,
     minimizeToTray,
+    showTrayIcon,
     notify,
     profiles,
     resetDirty,

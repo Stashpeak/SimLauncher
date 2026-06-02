@@ -17,6 +17,7 @@ import {
   store
 } from '../store'
 import { isRecord } from '../utils'
+import { applyTrayVisibility } from '../tray'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
 const STORE_CONFIG_CHANGED_CHANNEL = 'store-config-changed'
@@ -190,11 +191,13 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
     setStoreEntries(supportedConfig)
     migrateProfilesToNamedSets()
     applyRuntimeConfigSettings()
+    applyTrayVisibility(store.get('showTrayIcon') !== false)
     notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
   } catch (err) {
     store.clear()
     setStoreEntries(snapshot)
     applyRuntimeConfigSettings()
+    applyTrayVisibility(store.get('showTrayIcon') !== false)
     throw err
   }
 }
@@ -436,6 +439,7 @@ export function registerConfigHandlers(): void {
       startWithWindows: store.get('startWithWindows'),
       startMinimized: store.get('startMinimized'),
       minimizeToTray: store.get('minimizeToTray'),
+      showTrayIcon: store.get('showTrayIcon'),
       autoCheckUpdates: store.get('autoCheckUpdates'),
       zoomFactor: getStoredZoomFactor()
     }
@@ -447,6 +451,9 @@ export function registerConfigHandlers(): void {
     const changedKeys = Object.keys(safe)
     if (changedKeys.length > 0) {
       setStoreEntries(safe)
+      if (changedKeys.includes('showTrayIcon')) {
+        applyTrayVisibility(store.get('showTrayIcon') !== false)
+      }
       notifyStoreConfigChanged({ reason: 'save-settings', keys: changedKeys })
     }
   })

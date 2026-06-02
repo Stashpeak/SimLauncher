@@ -15,10 +15,12 @@ export function BehaviorSection(): ReactNode {
     startWithWindows,
     startMinimized,
     minimizeToTray,
+    showTrayIcon,
     launchDelayMs,
     onStartWithWindowsChange,
     onStartMinimizedChange,
     onMinimizeToTrayChange,
+    onShowTrayIconChange,
     onLaunchDelayMsChange
   } = useBehaviorSettings()
   const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
@@ -38,6 +40,17 @@ export function BehaviorSection(): ReactNode {
       </div>
       <div className="settings-row">
         <div className="settings-label-group">
+          <span className="settings-label">Show tray icon</span>
+          <span className="settings-sublabel">Keep a SimLauncher icon in the system tray</span>
+        </div>
+        <Toggle
+          checked={showTrayIcon}
+          onChange={onShowTrayIconChange}
+          aria-label="Show tray icon"
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-label-group">
           <span className="settings-label">Start minimized</span>
           <span className="settings-sublabel">Start hidden in the system tray</span>
         </div>
@@ -45,6 +58,7 @@ export function BehaviorSection(): ReactNode {
           checked={startMinimized}
           onChange={onStartMinimizedChange}
           aria-label="Start minimized"
+          disabled={!showTrayIcon}
         />
       </div>
       <div className="settings-row">
@@ -58,6 +72,7 @@ export function BehaviorSection(): ReactNode {
           checked={minimizeToTray}
           onChange={onMinimizeToTrayChange}
           aria-label="Minimize to tray on close"
+          disabled={!showTrayIcon}
         />
       </div>
       <div className="settings-row settings-row-responsive">

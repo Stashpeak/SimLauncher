@@ -49,8 +49,10 @@ export function decideCloseAction(opts: {
 /**
  * Resolve the tray preference the user *currently intends*, falling back to the
  * persisted store value when no pending toggle is in flight.
+ * When showTrayIcon is off there is no tray to minimize to, so always return false.
  */
 function getEffectiveMinimizeToTray(): boolean {
+  if (store.get('showTrayIcon') === false) return false
   const pending = getPendingMinimizeToTray()
   return pending === null ? store.get('minimizeToTray') === true : pending
 }
@@ -186,9 +188,12 @@ export function createWindow(): void {
   })
 
   // Show window once ready, or keep it hidden when starting minimized to tray.
+  // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the
+  // window would be stranded with no way to restore it.
   mainWindow.once('ready-to-show', () => {
     const startMinimized = getStoredBoolean('startMinimized')
-    if (!startMinimized) {
+    const showTrayIcon = getStoredBoolean('showTrayIcon', true)
+    if (!startMinimized || !showTrayIcon) {
       mainWindow!.show()
     }
   })
