@@ -1,21 +1,27 @@
 # SimLauncher
 
+[![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher)](../../releases)
+[![Downloads](https://img.shields.io/github/downloads/Stashpeak/SimLauncher/total)](../../releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/Stashpeak/SimLauncher/ci.yml?branch=main&label=CI)](../../actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/github/license/Stashpeak/SimLauncher)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+
 One-click startup for your entire sim racing setup.
 
-Launch iRacing, Assetto Corsa, ACC and other sims together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software automatically.
+Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software — automatically.
 
 <table>
   <tr>
-    <td><img alt="Launcher Tab" src="docs/screenshots/Launcher Tab.png" /></td>
-    <td><img alt="Profile Editor" src="docs/screenshots/Launcher Tab - Profile Editor.png" /></td>
+    <td><img alt="Launcher Tab" src="docs/screenshots/Launcher%20Tab.png" /></td>
+    <td><img alt="Profile Editor" src="docs/screenshots/Launcher%20Tab%20-%20Profile%20Editor.png" /></td>
   </tr>
   <tr>
-    <td><img alt="Settings - Appearance" src="docs/screenshots/Settings - Appearance.png" /></td>
-    <td><img alt="Settings - Games" src="docs/screenshots/Settings - Games.png" /></td>
+    <td><img alt="Settings - Appearance" src="docs/screenshots/Settings%20-%20Appearance.png" /></td>
+    <td><img alt="Settings - Games" src="docs/screenshots/Settings%20-%20Games.png" /></td>
   </tr>
   <tr>
-    <td><img alt="Settings - Apps" src="docs/screenshots/Settings - Apps.png" /></td>
-    <td><img alt="No Games Configured" src="docs/screenshots/Launcher Tab - No Games Configured.png" /></td>
+    <td><img alt="Settings - Apps" src="docs/screenshots/Settings%20-%20Apps.png" /></td>
+    <td><img alt="No Games Configured" src="docs/screenshots/Launcher%20Tab%20-%20No%20Games%20Configured.png" /></td>
   </tr>
 </table>
 
@@ -51,7 +57,7 @@ In that case, your current setup is already simple enough.
 - Integrated auto-updates to stay current with the latest features
 - Optional auto-launch of the game itself
 - 1–20 configurable custom app slots with editable names
-- Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 30s)
+- Configurable launch delay between apps (1s / 1.5s / 2s presets, or custom up to 5s)
 - Automotive-themed accent color presets and a custom color picker
 - Light, dark, and system theme modes
 - Kill and relaunch controls for running companion apps
@@ -73,7 +79,7 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ## Supported Utilities
 
-SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus 20 custom app slots
+SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus up to 20 user-added custom app slots
 
 ---
 
@@ -96,13 +102,13 @@ The installer isn't code-signed yet, so SmartScreen may warn on first launch. Cl
 ### A game won't launch
 
 - Check that the executable path in Settings points to the correct `.exe`.
-- Make sure the game isn't already running.
+- If the game is already running, SimLauncher intentionally skips re-launching it (reported as "skipped — already running"), so this is expected rather than a failure. Close it first if you want a fresh launch.
 - If the game needs elevated permissions, try running SimLauncher as Administrator.
 
 ### A utility isn't detected as running
 
 - Some utilities (e.g. SimHub) take longer to start — increase the launch delay in Settings.
-- Process detection matches by executable name, so custom-named copies won't be detected.
+- Process detection matches by the executable's file name (not the full path), so a renamed copy you've configured _is_ detected. Detection can fail when the app launches a differently-named child or wrapper process — add that process name under "Secondary executables to watch" in the profile editor — or when two different files share the same `.exe` name.
 
 ### Auto-updater isn't working
 
@@ -113,7 +119,7 @@ The installer isn't code-signed yet, so SmartScreen may warn on first launch. Cl
 
 ## Building from source
 
-SimLauncher is a standard Electron + electron-vite project. You need [Node.js](https://nodejs.org/) (LTS) and npm.
+SimLauncher is a standard Electron + electron-vite project. You need [Node.js](https://nodejs.org/) 24 or newer and npm.
 
 ```bash
 git clone https://github.com/Stashpeak/SimLauncher.git
@@ -139,7 +145,7 @@ Other useful scripts: `npm test` (unit tests), `npm run lint`, and `npm run type
 
 ## Security
 
-Please **don't** open a public issue for security vulnerabilities. Report them privately via [GitHub Security Advisories](https://github.com/Stashpeak/SimLauncher/security/advisories/new). More detail is in [SECURITY.md](SECURITY.md).
+Please **don't** open a public issue for security vulnerabilities. Report them privately via [GitHub Security Advisories](../../security/advisories/new). More detail is in [SECURITY.md](SECURITY.md).
 
 ---
 

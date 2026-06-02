@@ -3,6 +3,17 @@
   "version": "0.9.8",
   "description": "SimLauncher - Multi app launcher for simracing",
   "main": "out/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Stashpeak/SimLauncher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Stashpeak/SimLauncher/issues"
+  },
+  "homepage": "https://simlauncher.com/",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "test": "vitest run",
