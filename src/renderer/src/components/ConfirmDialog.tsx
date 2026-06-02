@@ -57,9 +57,12 @@ export function ConfirmDialog({
       <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
       {/* Dialog container */}
+      {/* role + labelledby/describedby announce the dialog and its content.
+          aria-modal is intentionally omitted until real focus trapping /
+          background inerting exists — claiming modal without it misleads AT
+          (Codex P2 on #462). Tracked as a follow-up. */}
       <div
         role="alertdialog"
-        aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={msgId}
         className="glass-surface-elevated animate-fade-slide relative w-full max-w-sm rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto"

@@ -67,9 +67,9 @@ export function ImportPreviewDialog({
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
       <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
+      {/* aria-modal omitted until focus trapping/inerting exists (see ConfirmDialog). */}
       <div
         role="alertdialog"
-        aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
         className="glass-surface-elevated animate-fade-slide relative w-full max-w-2xl rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto"
