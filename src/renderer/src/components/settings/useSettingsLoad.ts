@@ -39,6 +39,7 @@ interface UseSettingsLoadArgs {
   setStartWithWindows: (startWithWindows: boolean) => void
   setStartMinimized: (startMinimized: boolean) => void
   setMinimizeToTray: (minimizeToTray: boolean) => void
+  setShowTrayIcon: (showTrayIcon: boolean) => void
   setAutoCheckUpdates: (autoCheckUpdates: boolean) => void
   setZoomFactor: (zoomFactor: number) => void
   setIsCustomColor: (isCustomColor: boolean) => void
@@ -66,6 +67,7 @@ export function useSettingsLoad({
   setStartWithWindows,
   setStartMinimized,
   setMinimizeToTray,
+  setShowTrayIcon,
   setAutoCheckUpdates,
   setZoomFactor,
   setIsCustomColor,
@@ -108,6 +110,7 @@ export function useSettingsLoad({
     setStartWithWindows(settings.startWithWindows || false)
     setStartMinimized(settings.startMinimized || false)
     setMinimizeToTray(settings.minimizeToTray || false)
+    setShowTrayIcon(settings.showTrayIcon ?? true)
     setAutoCheckUpdates(settings.autoCheckUpdates !== false)
     setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
 
@@ -155,6 +158,7 @@ export function useSettingsLoad({
     setLaunchDelayMs,
     setLoading,
     setMinimizeToTray,
+    setShowTrayIcon,
     setProfiles,
     setStartMinimized,
     setStartWithWindows,

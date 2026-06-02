@@ -4,7 +4,8 @@ import { setIsQuitting } from './app-state'
 import { registerHandlers } from './ipc'
 import { migrateProfilesToNamedSets } from './migrator'
 import { registerContentSecurityPolicy } from './security'
-import { createTray } from './tray'
+import { store } from './store'
+import { configureTray, createTray } from './tray'
 import { createWindow, getAppIconPath, showMainWindow } from './window'
 
 // Prevent multiple instances: the first instance acquires the lock; any
@@ -30,7 +31,7 @@ if (!gotTheLock) {
     registerContentSecurityPolicy()
     migrateProfilesToNamedSets()
     registerHandlers()
-    createTray({
+    configureTray({
       getIconPath: getAppIconPath,
       showMainWindow,
       quitApp: () => {
@@ -38,6 +39,9 @@ if (!gotTheLock) {
         app.quit()
       }
     })
+    if (store.get('showTrayIcon') !== false) {
+      createTray()
+    }
     createWindow()
   })
 }

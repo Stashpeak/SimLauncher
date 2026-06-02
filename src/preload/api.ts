@@ -15,6 +15,7 @@ export interface Settings {
   startWithWindows: boolean
   startMinimized: boolean
   minimizeToTray: boolean
+  showTrayIcon: boolean
   autoCheckUpdates: boolean
   zoomFactor: number
 }

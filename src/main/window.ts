@@ -47,12 +47,21 @@ export function decideCloseAction(opts: {
 }
 
 /**
- * Resolve the tray preference the user *currently intends*, falling back to the
- * persisted store value when no pending toggle is in flight.
+ * Resolve the tray preference the user *currently intends*.
+ *
+ * When a settings edit is in flight the renderer forwards the EFFECTIVE pending
+ * value — already gated by the unsaved `showTrayIcon` (so it's false when the
+ * tray is being turned off, true when it's being turned on alongside
+ * minimize-to-tray) — so we honour that directly. With no edit in flight we fall
+ * back to the persisted values, where minimize-to-tray only applies if the tray
+ * icon is actually enabled (no tray ⇒ nothing to minimize to).
  */
 function getEffectiveMinimizeToTray(): boolean {
   const pending = getPendingMinimizeToTray()
-  return pending === null ? store.get('minimizeToTray') === true : pending
+  if (pending !== null) {
+    return pending
+  }
+  return store.get('showTrayIcon') !== false && store.get('minimizeToTray') === true
 }
 
 function getInitialWindowBounds() {
@@ -186,9 +195,12 @@ export function createWindow(): void {
   })
 
   // Show window once ready, or keep it hidden when starting minimized to tray.
+  // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the
+  // window would be stranded with no way to restore it.
   mainWindow.once('ready-to-show', () => {
     const startMinimized = getStoredBoolean('startMinimized')
-    if (!startMinimized) {
+    const showTrayIcon = getStoredBoolean('showTrayIcon', true)
+    if (!startMinimized || !showTrayIcon) {
       mainWindow!.show()
     }
   })
@@ -300,6 +312,18 @@ export function registerWindowHandlers(): void {
     // Renderer already ran its save/discard pipeline before invoking us; the
     // dirty state in the renderer will propagate to false on next render. Do
     // NOT setIsQuitting — the window keeps living in the tray.
+    //
+    // Safety net: the close dialog's minimize-vs-close mode is decided up-front
+    // from the (possibly unsaved) tray preference, but Save and Discard can land
+    // here with a different *persisted* tray state — e.g. the user enables the
+    // tray unsaved, the dialog opens in minimize mode, then they Discard, which
+    // reverts showTrayIcon back to off. Hiding with no tray icon would strand
+    // the only window, so fall back to a recoverable taskbar minimize whenever
+    // the tray isn't actually on.
+    if (store.get('showTrayIcon') === false) {
+      mainWindow?.minimize()
+      return
+    }
     mainWindow?.hide()
   })
 

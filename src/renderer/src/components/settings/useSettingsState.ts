@@ -34,6 +34,7 @@ export interface SettingsStateBundle {
     startWithWindows: boolean
     startMinimized: boolean
     minimizeToTray: boolean
+    showTrayIcon: boolean
     autoCheckUpdates: boolean
     zoomFactor: number
     isCustomColor: boolean
@@ -58,6 +59,7 @@ export interface SettingsStateBundle {
     setStartWithWindows: Dispatch<SetStateAction<boolean>>
     setStartMinimized: Dispatch<SetStateAction<boolean>>
     setMinimizeToTray: Dispatch<SetStateAction<boolean>>
+    setShowTrayIcon: Dispatch<SetStateAction<boolean>>
     setAutoCheckUpdates: Dispatch<SetStateAction<boolean>>
     setZoomFactor: Dispatch<SetStateAction<number>>
     setIsCustomColor: Dispatch<SetStateAction<boolean>>
@@ -88,6 +90,7 @@ export interface SettingsStateBundle {
     startWithWindows: boolean
     startMinimized: boolean
     minimizeToTray: boolean
+    showTrayIcon: boolean
     autoCheckUpdates: boolean
     zoomFactor: number
   }
@@ -111,6 +114,7 @@ export function useSettingsState(): SettingsStateBundle {
   const [startWithWindows, setStartWithWindows] = useState<boolean>(false)
   const [startMinimized, setStartMinimized] = useState<boolean>(false)
   const [minimizeToTray, setMinimizeToTray] = useState<boolean>(false)
+  const [showTrayIcon, setShowTrayIcon] = useState<boolean>(true)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
   const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
@@ -162,6 +166,7 @@ export function useSettingsState(): SettingsStateBundle {
       startWithWindows,
       startMinimized,
       minimizeToTray,
+      showTrayIcon,
       autoCheckUpdates,
       zoomFactor
     }),
@@ -181,6 +186,7 @@ export function useSettingsState(): SettingsStateBundle {
       startWithWindows,
       startMinimized,
       minimizeToTray,
+      showTrayIcon,
       autoCheckUpdates,
       zoomFactor
     ]
@@ -204,6 +210,7 @@ export function useSettingsState(): SettingsStateBundle {
       startWithWindows,
       startMinimized,
       minimizeToTray,
+      showTrayIcon,
       autoCheckUpdates,
       zoomFactor,
       isCustomColor,
@@ -228,6 +235,7 @@ export function useSettingsState(): SettingsStateBundle {
       setStartWithWindows,
       setStartMinimized,
       setMinimizeToTray,
+      setShowTrayIcon,
       setAutoCheckUpdates,
       setZoomFactor,
       setIsCustomColor,
