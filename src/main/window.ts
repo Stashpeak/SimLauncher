@@ -47,14 +47,21 @@ export function decideCloseAction(opts: {
 }
 
 /**
- * Resolve the tray preference the user *currently intends*, falling back to the
- * persisted store value when no pending toggle is in flight.
- * When showTrayIcon is off there is no tray to minimize to, so always return false.
+ * Resolve the tray preference the user *currently intends*.
+ *
+ * When a settings edit is in flight the renderer forwards the EFFECTIVE pending
+ * value — already gated by the unsaved `showTrayIcon` (so it's false when the
+ * tray is being turned off, true when it's being turned on alongside
+ * minimize-to-tray) — so we honour that directly. With no edit in flight we fall
+ * back to the persisted values, where minimize-to-tray only applies if the tray
+ * icon is actually enabled (no tray ⇒ nothing to minimize to).
  */
 function getEffectiveMinimizeToTray(): boolean {
-  if (store.get('showTrayIcon') === false) return false
   const pending = getPendingMinimizeToTray()
-  return pending === null ? store.get('minimizeToTray') === true : pending
+  if (pending !== null) {
+    return pending
+  }
+  return store.get('showTrayIcon') !== false && store.get('minimizeToTray') === true
 }
 
 function getInitialWindowBounds() {
