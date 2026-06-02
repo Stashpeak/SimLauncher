@@ -112,11 +112,8 @@ const electronAPI: ElectronAPI = {
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),
   getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath),
   getVersion: () => ipcRenderer.invoke('get-version'),
-  showAppContextMenu: (
-    appPath: string,
-    gameKey: string,
-    options?: { tracked?: boolean; name?: string }
-  ) => ipcRenderer.invoke('show-app-context-menu', appPath, gameKey, options)
+  dismissAppIcon: (appPath: string, gameKey: string) =>
+    ipcRenderer.invoke('dismiss-app-icon', appPath, gameKey)
 }
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI)

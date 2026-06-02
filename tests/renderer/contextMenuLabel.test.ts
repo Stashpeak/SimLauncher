@@ -1,19 +1,5 @@
-import { describe, expect, test, vi } from 'vitest'
-
-// The module under test imports from '../processes', which transitively loads
-// Electron. Stub both before importing so the suite runs in a plain Node env.
-vi.mock('electron', () => ({
-  BrowserWindow: { fromWebContents: vi.fn() },
-  Menu: { buildFromTemplate: vi.fn() },
-  ipcMain: { handle: vi.fn() }
-}))
-
-vi.mock('../../src/main/processes', () => ({
-  dismissAppIcon: vi.fn(),
-  publishRunningApps: vi.fn(() => Promise.resolve())
-}))
-
-import { buildDismissLabel } from '../../src/main/ipc/context-menu'
+import { describe, expect, test } from 'vitest'
+import { buildDismissLabel } from '../../src/renderer/src/lib/contextMenuLabel'
 
 describe('buildDismissLabel', () => {
   test('untracked mismatch uses "Dismiss Icon"', () => {
@@ -46,12 +32,12 @@ describe('buildDismissLabel', () => {
     expect(buildDismissLabel('', { name: '' })).toBe('Dismiss Icon')
   })
 
-  test('escapes ampersands so Electron does not treat them as mnemonics', () => {
+  test('keeps single ampersand verbatim since HTML renders it natively', () => {
     expect(buildDismissLabel('C:/games/sim/AT&T.exe', { tracked: false })).toBe(
-      'Dismiss Icon for AT&&T'
+      'Dismiss Icon for AT&T'
     )
     expect(
       buildDismissLabel('C:/games/sim/utility.exe', { tracked: true, name: 'Foo & Bar' })
-    ).toBe('Dismiss Warning for Foo && Bar')
+    ).toBe('Dismiss Warning for Foo & Bar')
   })
 })

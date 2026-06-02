@@ -1,6 +1,19 @@
-import { useState, type ReactNode } from 'react'
-import { showAppContextMenu } from '../../lib/electron'
+import { useState, type ReactNode, type ReactElement } from 'react'
+import { dismissAppIcon } from '../../lib/electron'
 import { Tooltip } from '../Tooltip'
+import { buildDismissLabel } from '../../lib/contextMenuLabel'
+import {
+  autoUpdate,
+  flip,
+  FloatingFocusManager,
+  FloatingPortal,
+  offset,
+  shift,
+  useDismiss,
+  useFloating,
+  useInteractions,
+  useRole
+} from '@floating-ui/react'
 
 export interface RunningAppIcon {
   icon: string | null
@@ -15,6 +28,131 @@ export interface RunningAppIcon {
 interface RunningAppsStripProps {
   runningAppIcons: RunningAppIcon[]
   cacheInitialized: boolean
+}
+
+interface RunningAppIconItemProps {
+  app: RunningAppIcon
+  isAvailable: boolean
+  isFailed: boolean
+  cacheInitialized: boolean
+  onError: () => void
+}
+
+function RunningAppIconItem({
+  app,
+  isAvailable,
+  isFailed,
+  cacheInitialized,
+  onError
+}: RunningAppIconItemProps): ReactNode {
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  const { refs, floatingStyles, context } = useFloating({
+    open: isMenuOpen,
+    onOpenChange: setIsMenuOpen,
+    placement: 'bottom-start',
+    middleware: [offset(4), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate
+  })
+
+  const dismiss = useDismiss(context)
+  const role = useRole(context, { role: 'menu' })
+  const { getReferenceProps, getFloatingProps } = useInteractions([dismiss, role])
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (app.warning) {
+      e.preventDefault()
+      setIsMenuOpen(true)
+    }
+  }
+
+  const handleDismissClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    // For untracked apps, the icon is unmounted when warning clears;
+    // for tracked apps, the icon remains, so close the menu explicitly.
+    setIsMenuOpen(false)
+    try {
+      await dismissAppIcon(app.path, app.gameKey)
+    } catch (err) {
+      console.error('Failed to dismiss app warning:', err)
+    }
+  }
+
+  // Accessibility trigger attributes composition
+  const triggerProps = getReferenceProps({
+    onContextMenu: handleContextMenu,
+    'aria-haspopup': app.warning ? ('menu' as const) : undefined,
+    'aria-expanded': app.warning ? isMenuOpen : undefined
+  })
+
+  const dismissLabel = buildDismissLabel(app.path, {
+    tracked: app.tracked,
+    name: app.name
+  })
+
+  let content: ReactElement<Record<string, unknown>>
+
+  if (isAvailable) {
+    content = (
+      <img
+        ref={refs.setReference}
+        src={app.icon ?? undefined}
+        alt={app.warning ? `${app.name}: ${app.warning}` : ''}
+        className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'cursor-pointer rounded-sm ring-1 ring-(--warning-text)' : ''}`}
+        onError={onError}
+        {...triggerProps}
+      />
+    )
+  } else if (app.icon === null && !isFailed && !cacheInitialized) {
+    return <div aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
+  } else {
+    content = (
+      <div
+        ref={refs.setReference}
+        role="img"
+        aria-label={app.warning ? `${app.name}: ${app.warning}` : app.name}
+        className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'cursor-pointer ring-1 ring-(--warning-text)' : ''}`}
+        {...triggerProps}
+      >
+        {app.name
+          .replace(/\.exe$/i, '')
+          .slice(0, 2)
+          .toUpperCase()}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <Tooltip label={app.warning || app.name} disabled={isMenuOpen}>
+        {content}
+      </Tooltip>
+
+      {isMenuOpen && (
+        <FloatingPortal>
+          <FloatingFocusManager context={context} modal={false}>
+            <div
+              ref={refs.setFloating}
+              style={floatingStyles}
+              {...getFloatingProps()}
+              className="z-9999"
+            >
+              <div className="dropdown-surface overlay-glass rounded-xl p-1 border border-(--glass-border) shadow-(--surface-floating-shadow) animate-fade-slide min-w-[180px]">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleDismissClick}
+                  className="dropdown-item flex w-full cursor-pointer items-center rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold"
+                >
+                  {dismissLabel}
+                </button>
+              </div>
+            </div>
+          </FloatingFocusManager>
+        </FloatingPortal>
+      )}
+    </>
+  )
 }
 
 export function RunningAppsStrip({
@@ -33,56 +171,15 @@ export function RunningAppsStrip({
         const isAvailable = !!app.icon && !failedRunningIcons[app.icon]
         const isFailed = failedRunningIcons[app.icon!]
 
-        if (isAvailable) {
-          return (
-            <Tooltip key={i} label={app.warning || app.name}>
-              <img
-                src={app.icon ?? undefined}
-                alt={app.warning ? `${app.name}: ${app.warning}` : ''}
-                className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
-                onError={() =>
-                  setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))
-                }
-                onContextMenu={(e) => {
-                  if (app.warning) {
-                    e.preventDefault()
-                    showAppContextMenu(app.path, app.gameKey, {
-                      tracked: app.tracked,
-                      name: app.name
-                    })
-                  }
-                }}
-              />
-            </Tooltip>
-          )
-        }
-
-        if (app.icon === null && !isFailed && !cacheInitialized) {
-          return <div key={i} aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
-        }
-
         return (
-          <Tooltip key={i} label={app.warning || app.name}>
-            <div
-              role="img"
-              aria-label={app.warning ? `${app.name}: ${app.warning}` : app.name}
-              className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
-              onContextMenu={(e) => {
-                if (app.warning) {
-                  e.preventDefault()
-                  showAppContextMenu(app.path, app.gameKey, {
-                    tracked: app.tracked,
-                    name: app.name
-                  })
-                }
-              }}
-            >
-              {app.name
-                .replace(/\.exe$/i, '')
-                .slice(0, 2)
-                .toUpperCase()}
-            </div>
-          </Tooltip>
+          <RunningAppIconItem
+            key={i}
+            app={app}
+            isAvailable={isAvailable}
+            isFailed={isFailed}
+            cacheInitialized={cacheInitialized}
+            onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
+          />
         )
       })}
 
