@@ -8,6 +8,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { HexColorPicker } from 'react-colorful'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 interface ColorPickerPopoverProps {
   color: string
@@ -29,6 +30,9 @@ export function ColorPickerPopover({
 }: ColorPickerPopoverProps): ReactNode {
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
+
+  // This component is only mounted while the picker is open, so active is always true.
+  useFocusTrap(true, popoverRef)
 
   useLayoutEffect(() => {
     const updatePosition = () => {
@@ -85,6 +89,7 @@ export function ColorPickerPopover({
         ref={popoverRef}
         id="accent-color-picker"
         role="dialog"
+        aria-modal="true"
         aria-label="Choose color"
         style={position ?? { visibility: 'hidden', width: POPOVER_WIDTH }}
         className="glass-surface-elevated fixed flex flex-col items-center gap-3 overflow-hidden rounded-2xl px-4 pb-4 shadow-[0_12px_30px_#00000040] backdrop-blur-xl animate-fade-slide"

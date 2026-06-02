@@ -1,4 +1,6 @@
-import { useId, type ReactNode } from 'react'
+import { useId, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 
 export interface ConfigImportPreviewSummary {
   changedKeys: string[]
@@ -55,6 +57,9 @@ export function ImportPreviewDialog({
 }: ImportPreviewDialogProps): ReactNode {
   const titleId = useId()
   const descId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(isOpen && !!summary, dialogRef)
+
   if (!isOpen || !summary) return null
 
   const previewCount =
@@ -63,13 +68,15 @@ export function ImportPreviewDialog({
     summary.trackedProcessPaths.length +
     summary.customAppArgs.length
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
       <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
-      {/* aria-modal omitted until focus trapping/inerting exists (see ConfirmDialog). */}
+      {/* Focus is trapped and the background is inerted via useFocusTrap, so aria-modal is honest here. */}
       <div
+        ref={dialogRef}
         role="alertdialog"
+        aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
         className="glass-surface-elevated animate-fade-slide relative w-full max-w-2xl rounded-[24px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto"
@@ -131,6 +138,7 @@ export function ImportPreviewDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
