@@ -1,4 +1,4 @@
-import { useState, type ReactElement, type ReactNode } from 'react'
+import { cloneElement, useState, type ReactElement, type ReactNode, type Ref } from 'react'
 import {
   autoUpdate,
   flip,
@@ -59,22 +59,28 @@ export function Tooltip({ label, children, placement = 'top', disabled }: Toolti
 
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, focus, role, dismiss])
 
-  // Merge our setReference with any ref the child already has so children
-  // that carry an existing ref (e.g. customSwatchRef, triggerRef) keep it.
-  const childRef = (children as { ref?: React.Ref<unknown> }).ref
-  const mergedRef = useMergeRefs([refs.setReference, childRef ?? null])
+  // React 19 stores ref as a regular prop, so read it from children.props (the
+  // children.ref accessor is deprecated) and merge it with floating-ui's
+  // reference ref. Children that already carry a ref — customSwatchRef (the
+  // color-picker anchor) and triggerRef (the dropdown's focus-return) — must
+  // keep it, or those features break.
+  const childRef = (children.props as { ref?: Ref<unknown> }).ref ?? null
+  const mergedRef = useMergeRefs([refs.setReference, childRef])
 
   // If label is empty or disabled, render child without any tooltip machinery.
   if (!label || disabled) {
     return children
   }
 
-  const referenceProps = getReferenceProps()
-
   return (
     <>
-      {/* React 19: ref is a regular prop; we spread it together with interaction handlers */}
-      {<children.type {...children.props} ref={mergedRef} {...referenceProps} />}
+      {/* Pass children.props INTO getReferenceProps so floating-ui COMPOSES the
+          child's own event handlers with its hover/focus/dismiss handlers rather
+          than overwriting them; cloneElement then applies the merged ref. */}
+      {cloneElement(children, {
+        ...getReferenceProps(children.props as Parameters<typeof getReferenceProps>[0]),
+        ref: mergedRef
+      })}
 
       {isOpen && (
         <FloatingPortal>
