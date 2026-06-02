@@ -31,9 +31,10 @@ export function ProfileToggleRow({
       className="accent-subtle-hover group flex cursor-pointer items-center justify-between rounded-xl bg-(--glass-bg) p-3"
     >
       <span className="text-sm font-medium text-(--text-secondary)">{label}</span>
-      <span onClick={(event) => event.stopPropagation()}>
-        <Toggle checked={checked} onChange={onChange} aria-label={label} presentational />
-      </span>
+      {/* The native checkbox is inert (disabled + aria-hidden + tabIndex -1) and
+          only drives the visual track. The click bubbles to the row's onToggle,
+          so no stopPropagation wrapper and no double toggle. */}
+      <Toggle checked={checked} onChange={onChange} aria-label={label} presentational />
     </div>
   )
 }
