@@ -101,7 +101,7 @@ function renderUtilityRow(
         props.onDragUtilityIdChange(null)
         props.onDropTargetChange(null)
       }}
-      className={`accent-subtle-hover group relative flex select-none items-center justify-between rounded-xl bg-(--glass-bg) p-3 ${isEnabled ? 'cursor-grab active:cursor-grabbing' : 'opacity-55'} ${props.dragUtilityId === utility.key ? 'ring-1 ring-(--accent)/35 shadow-[0_0_18px_-14px_var(--accent)]' : ''}`}
+      className={`accent-subtle-hover group relative flex items-center justify-between rounded-xl bg-(--glass-bg) p-3 ${isEnabled ? 'cursor-grab active:cursor-grabbing' : 'opacity-55'} ${props.dragUtilityId === utility.key ? 'ring-1 ring-(--accent)/35 shadow-[0_0_18px_-14px_var(--accent)]' : ''}`}
     >
       {dropPlacement && (
         <span

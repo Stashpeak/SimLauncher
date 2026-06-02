@@ -31,7 +31,7 @@ export function AboutSection({
     <>
       <div className="settings-row">
         <span className="settings-label text-(--text-secondary)">Installed Version</span>
-        <span className="text-xs font-mono text-(--text-muted)">v{appVersion}</span>
+        <span className="select-text text-xs font-mono text-(--text-muted)">v{appVersion}</span>
       </div>
 
       <div className="settings-row">
