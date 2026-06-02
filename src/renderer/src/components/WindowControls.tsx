@@ -38,6 +38,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
           title="SimLauncher"
           aria-label="SimLauncher"
+          aria-current={view === 'games' ? 'page' : undefined}
         >
           <BrandWordmarkIcon
             aria-hidden="true"
@@ -60,6 +61,8 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             view === 'settings' ? 'icon-action-active' : ''
           }`}
           title="Settings"
+          aria-label="Settings"
+          aria-current={view === 'settings' ? 'page' : undefined}
         >
           <SettingsIcon width={13} height={13} />
         </button>
@@ -72,7 +75,10 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           onClick={handleInstallUpdate}
           className="accent-surface-action no-drag animate-fade-slide rounded-full flex items-center px-3 py-1.5 gap-2 cursor-pointer border border-(--accent)/30"
         >
-          <div className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]" />
+          <div
+            aria-hidden="true"
+            className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]"
+          />
           <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent)">
             Update v{updateInfo.version} Available
           </span>
@@ -89,6 +95,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           onClick={handleMinimize}
           className="icon-action cursor-pointer rounded-full p-2"
           title="Minimize"
+          aria-label="Minimize"
         >
           <MinimizeIcon width={14} height={14} />
         </button>
@@ -97,6 +104,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           onClick={handleMaximize}
           className="icon-action cursor-pointer rounded-full p-2"
           title={isMaximized ? 'Restore' : 'Maximize'}
+          aria-label={isMaximized ? 'Restore' : 'Maximize'}
         >
           <MaximizeIcon width={14} height={14} />
         </button>
@@ -105,6 +113,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
           onClick={handleClose}
           className="icon-action danger-action cursor-pointer rounded-full p-2"
           title="Close"
+          aria-label="Close"
         >
           <CloseWindowIcon width={14} height={14} />
         </button>

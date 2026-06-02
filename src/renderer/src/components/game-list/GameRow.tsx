@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -381,6 +381,9 @@ export function GameRow({
     }
   }
 
+  const reactId = useId()
+  const editorId = `profile-editor-${game.key || reactId}`
+
   const rowRef = useRef<HTMLDivElement | null>(null)
   const { requestProfileEditorClose } = useAppDirty()
 
@@ -435,6 +438,8 @@ export function GameRow({
           onKill={handleKill}
           onRelaunchMissing={handleRelaunchMissing}
           onToggleEditor={handleToggle}
+          gameName={game.name}
+          editorId={editorId}
           profileMenuProps={{
             profileSet,
             activeProfile,
@@ -458,6 +463,7 @@ export function GameRow({
       </div>
 
       <div
+        id={editorId}
         className={`profile-editor-wrapper relative z-0 ${isActive ? 'profile-editor-open' : 'profile-editor-closed'}`}
       >
         <div className="overflow-hidden">
