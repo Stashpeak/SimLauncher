@@ -13,6 +13,8 @@ export interface GameRowActionsProps {
   onKill: () => void
   onRelaunchMissing: () => void
   onToggleEditor: () => void
+  gameName: string
+  editorId: string
   profileMenuProps: GameRowProfileMenuProps
 }
 
@@ -26,6 +28,8 @@ export function GameRowActions({
   onKill,
   onRelaunchMissing,
   onToggleEditor,
+  gameName,
+  editorId,
   profileMenuProps
 }: GameRowActionsProps): ReactNode {
   const primaryAction = canKill ? onKill : onPrimary
@@ -42,7 +46,7 @@ export function GameRowActions({
             disabled={isLaunchBlocked}
             className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
             title="Relaunch missing apps"
-            aria-label="Relaunch missing apps"
+            aria-label={`Relaunch missing apps for ${gameName}`}
           >
             <RefreshIcon
               width={18}
@@ -65,7 +69,14 @@ export function GameRowActions({
           disabled={isLaunchBlocked && !canKill}
           className={`launcher-play-btn group/btn flex h-9 w-[54px] shrink-0 cursor-pointer items-center justify-center rounded-r-full transition-all ${primaryButtonClass}`}
           title={primaryTitle}
-          aria-label={primaryTitle}
+          aria-label={
+            isLaunching && !canKill
+              ? `Launching ${gameName}`
+              : canKill
+                ? `Close companion apps for ${gameName}`
+                : `Launch ${gameName}`
+          }
+          aria-busy={isLaunching && !canKill ? true : undefined}
         >
           {isLaunching && !canKill ? (
             <RefreshIcon
@@ -100,7 +111,11 @@ export function GameRowActions({
             : 'icon-action opacity-40 group-hover/row:opacity-100 group-hover/row:bg-(--glass-bg)'
         }`}
         title={isActive ? 'Close Profile Settings' : 'Profile Settings'}
-        aria-label={isActive ? 'Close Profile Settings' : 'Profile Settings'}
+        aria-label={
+          isActive ? `Close profile settings for ${gameName}` : `Profile settings for ${gameName}`
+        }
+        aria-expanded={isActive ? 'true' : 'false'}
+        aria-controls={editorId}
       >
         {isActive ? (
           <KillIcon width={18} height={18} className="transition-transform hover:scale-110" />

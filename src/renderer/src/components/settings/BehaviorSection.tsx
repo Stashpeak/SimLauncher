@@ -65,11 +65,12 @@ export function BehaviorSection(): ReactNode {
           <span className="settings-label">Launch delay between apps</span>
           <span className="settings-sublabel">Wait time before starting the next app</span>
         </div>
-        <div className="settings-control">
+        <div className="settings-control" role="group" aria-label="Launch delay between apps">
           {DELAY_PRESETS.map((preset) => (
             <button
               key={preset.value}
               onClick={() => onLaunchDelayMsChange(preset.value)}
+              aria-pressed={launchDelayMs === preset.value}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${
                 launchDelayMs === preset.value
                   ? 'selected-surface text-(--text-primary)'
@@ -85,6 +86,7 @@ export function BehaviorSection(): ReactNode {
             }`}
           >
             <svg
+              aria-hidden="true"
               width="8"
               height="8"
               viewBox="0 0 24 24"
@@ -102,6 +104,7 @@ export function BehaviorSection(): ReactNode {
               min="0"
               max="30"
               step="0.1"
+              aria-label="Custom launch delay in seconds"
               value={Number.isFinite(launchDelayMs) ? launchDelayMs / 1000 : ''}
               onChange={(e) => {
                 const val = parseFloat(e.target.value)

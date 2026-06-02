@@ -59,9 +59,13 @@ export function StickySaveBar({ onRequestDiscard }: { onRequestDiscard: () => vo
       className="fixed bottom-4 left-4 right-4 z-30 animate-fade-slide"
       role="region"
       aria-label="Unsaved changes"
+      aria-live="polite"
     >
       <div className="glass-surface-elevated overlay-glass mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-(--glass-border) p-3 shadow-[0_12px_30px_#00000040]">
-        <span className="relative flex h-2 w-2 shrink-0 items-center justify-center">
+        <span
+          aria-hidden="true"
+          className="relative flex h-2 w-2 shrink-0 items-center justify-center"
+        >
           <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-(--accent) opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-(--accent)" />
         </span>

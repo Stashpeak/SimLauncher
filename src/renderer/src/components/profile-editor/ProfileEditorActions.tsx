@@ -20,10 +20,14 @@ export function ProfileEditorActions({
       <button
         type="button"
         onClick={onSave}
+        aria-label={isDirty ? 'Save Profile (unsaved changes)' : 'Save Profile'}
         className="accent-surface-action action-hover-scale flex-1 cursor-pointer rounded-xl py-2.5 text-sm relative overflow-hidden"
       >
         {isDirty && (
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2">
+          <span
+            aria-hidden="true"
+            className="absolute left-3 top-1/2 -translate-y-1/2 flex h-2 w-2"
+          >
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-(--accent) opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-(--accent)"></span>
           </span>
@@ -46,6 +50,7 @@ export function ProfileEditorActions({
           aria-label="Delete profile"
         >
           <svg
+            aria-hidden="true"
             width="16"
             height="16"
             viewBox="0 0 24 24"

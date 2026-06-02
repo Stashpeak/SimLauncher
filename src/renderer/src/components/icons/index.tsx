@@ -3,7 +3,7 @@ import type { ReactNode, SVGProps } from 'react'
 type IconProps = SVGProps<SVGSVGElement>
 
 function Icon(props: IconProps) {
-  return <svg {...props} />
+  return <svg aria-hidden="true" {...props} />
 }
 
 export function WarningTriangleIcon(props: IconProps): ReactNode {

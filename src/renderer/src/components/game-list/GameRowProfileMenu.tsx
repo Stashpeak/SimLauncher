@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { Dispatch, KeyboardEvent, MutableRefObject, ReactNode, SetStateAction } from 'react'
 import type { GameProfileSet, NamedGameProfile } from '../../lib/config'
 import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
@@ -41,6 +42,7 @@ export function GameRowProfileMenu({
   onProfileSelect,
   onNewProfileSubmit
 }: GameRowProfileMenuProps): ReactNode {
+  const menuId = useId()
   return (
     <div ref={profileMenuRef} className="relative">
       <button
@@ -58,7 +60,8 @@ export function GameRowProfileMenu({
         className="dropdown-trigger-surface group/dropdown flex h-9 w-[120px] cursor-pointer items-center gap-1.5 rounded-l-full py-2 pl-3 pr-2.5 text-[10px] font-semibold text-(--text-secondary) transition-all hover:text-(--text-primary)"
         aria-haspopup="menu"
         aria-expanded={profileMenuOpen}
-        aria-label={`${gameName} profile`}
+        aria-controls={profileMenuOpen ? menuId : undefined}
+        aria-label={`${gameName} profile: ${activeProfile.name}`}
         title={activeProfile.name}
       >
         <ChevronDownIcon
@@ -71,7 +74,9 @@ export function GameRowProfileMenu({
       {profileMenuOpen && (
         <div
           ref={menuRef}
+          id={menuId}
           role="menu"
+          aria-label={`${gameName} profiles`}
           onKeyDown={handleProfileMenuKeyDown}
           className="dropdown-surface overlay-glass absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 animate-fade-slide"
         >

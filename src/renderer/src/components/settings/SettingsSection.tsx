@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 interface SettingsSectionProps {
   title: string
@@ -15,6 +15,7 @@ export function SettingsSection({
   children,
   dirty
 }: SettingsSectionProps): ReactNode {
+  const regionId = useId()
   return (
     <section className="space-y-4">
       <button
@@ -22,6 +23,7 @@ export function SettingsSection({
         onClick={() => onOpenChange(!open)}
         className="flex w-full cursor-pointer items-center gap-2 px-1"
         aria-expanded={open}
+        aria-controls={regionId}
       >
         <h3 className="flex flex-1 items-center gap-2 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">
           {title}
@@ -49,6 +51,9 @@ export function SettingsSection({
         </svg>
       </button>
       <div
+        id={regionId}
+        role="region"
+        aria-label={title}
         className={`grid transition-all duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         <div className={open ? undefined : 'overflow-hidden'} inert={open ? undefined : true}>

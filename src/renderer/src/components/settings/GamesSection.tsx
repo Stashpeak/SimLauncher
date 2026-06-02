@@ -27,6 +27,7 @@ export function GamesSection(): ReactNode {
             ) : (
               <div className="w-8 h-8 rounded shrink-0 bg-(--glass-bg) border border-(--glass-border) flex items-center justify-center text-(--text-subtle)">
                 <svg
+                  aria-hidden="true"
                   width="14"
                   height="14"
                   viewBox="0 0 24 24"
@@ -46,11 +47,13 @@ export function GamesSection(): ReactNode {
               value={gamePaths[game.key] || ''}
               onChange={(e) => onGamePathChange(game.key, e.target.value)}
               placeholder="No game path set"
+              aria-label={`${game.name} executable path`}
               className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus:text-(--text-primary)"
             />
 
             <button
               onClick={() => onBrowse(game.key, true)}
+              aria-label={`Browse for ${game.name} executable`}
               className="accent-surface-action action-hover-scale cursor-pointer shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
             >
               Browse

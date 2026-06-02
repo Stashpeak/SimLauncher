@@ -46,11 +46,16 @@ export function AboutSection({
         />
       </div>
 
-      <div className="flex flex-col gap-2 p-5 border-t border-(--header-glass-border)">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex flex-col gap-2 p-5 border-t border-(--header-glass-border)"
+      >
         {updateInfo ? (
           <button
             onClick={onInstallUpdate}
             disabled={installingUpdate}
+            aria-live="off"
             className="accent-surface-action action-hover-scale w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
           >
             {installingUpdate
@@ -63,6 +68,7 @@ export function AboutSection({
           <button
             onClick={onManualCheck}
             disabled={checkingUpdate}
+            aria-live="off"
             className="accent-surface-action action-hover-scale w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
           >
             {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
