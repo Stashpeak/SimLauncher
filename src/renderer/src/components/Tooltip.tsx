@@ -84,14 +84,27 @@ export function Tooltip({ label, children, placement = 'top', disabled }: Toolti
 
       {isOpen && (
         <FloatingPortal>
-          {/* style is required: @floating-ui/react writes dynamic x/y/transform position values */}
+          {/*
+            Outer wrapper handles absolute positioning and event composition from floating-ui.
+            Keep it visually unstyled to prevent CSS transforms from promoting this element
+            to a separate compositing layer, which breaks `backdrop-filter` (blur) in Chromium.
+          */}
           <div
             ref={refs.setFloating}
             style={floatingStyles}
             {...getFloatingProps()}
-            className="pointer-events-none z-9999 max-w-xs rounded-lg border border-(--glass-border) bg-(--surface-floating-bg) px-2.5 py-1.5 text-xs font-medium text-(--text-primary) shadow-(--surface-floating-shadow) backdrop-blur-md animate-fade-slide"
+            className="pointer-events-none z-9999"
           >
-            {label}
+            {/*
+              Inner container holds the actual visuals and entrance animation.
+              - Uses `overlay-glass` to match other floating surfaces (frosted glass look).
+              - Uses `animate-tooltip-in` (snappy fade/scale) to eliminate vertical bounciness.
+              - Since this element has no persistent position transforms, the backdrop-filter
+                (blur) renders at 100% fidelity.
+            */}
+            <div className="max-w-xs rounded-lg border border-(--glass-border) overlay-glass shadow-(--surface-floating-shadow) px-2.5 py-1.5 text-xs font-medium text-(--text-primary) animate-tooltip-in">
+              {label}
+            </div>
           </div>
         </FloatingPortal>
       )}

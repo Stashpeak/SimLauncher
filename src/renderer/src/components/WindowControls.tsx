@@ -33,23 +33,24 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
       {/* Pill: branding + settings gear */}
       <div className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden">
         {/* Launcher branding */}
-        <button
-          type="button"
-          onClick={() => onNavigate('games')}
-          className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
-          title="SimLauncher"
-          aria-label="SimLauncher"
-          aria-current={view === 'games' ? 'page' : undefined}
-        >
-          <BrandWordmarkIcon
-            aria-hidden="true"
-            className={`launcher-wordmark h-[15px] w-auto shrink-0 transition-colors ${
-              view === 'games'
-                ? 'text-(--accent)'
-                : 'text-(--text-muted) group-hover:text-(--accent)'
-            }`}
-          />
-        </button>
+        <Tooltip label="SimLauncher" placement="bottom">
+          <button
+            type="button"
+            onClick={() => onNavigate('games')}
+            className="group cursor-pointer flex items-center rounded-l-full py-1.5 pl-3 pr-2"
+            aria-label="SimLauncher"
+            aria-current={view === 'games' ? 'page' : undefined}
+          >
+            <BrandWordmarkIcon
+              aria-hidden="true"
+              className={`launcher-wordmark h-[15px] w-auto shrink-0 transition-colors ${
+                view === 'games'
+                  ? 'text-(--accent)'
+                  : 'text-(--text-muted) group-hover:text-(--accent)'
+              }`}
+            />
+          </button>
+        </Tooltip>
 
         {/* Divider */}
         <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-35" />
