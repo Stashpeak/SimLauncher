@@ -160,10 +160,15 @@ export function SettingsProvider({
   // process so the window close handler honours unsaved toggle changes
   // (Closes #387). When dirty we forward the in-flight value; otherwise we
   // clear the pending preference so main falls back to the persisted setting.
+  // Forward the EFFECTIVE intent: with the tray icon turned off there is no
+  // tray to minimize to, so an unsaved `showTrayIcon: false` must make the
+  // pending minimize preference false too — otherwise the close dialog enters
+  // minimize mode and "Save & Minimize" would hide the only window with no tray
+  // left to restore it (#391).
   useEffect(() => {
     if (loading) return
-    void setPendingMinimizeToTray(isDirty ? minimizeToTray : null)
-  }, [isDirty, loading, minimizeToTray])
+    void setPendingMinimizeToTray(isDirty ? minimizeToTray && showTrayIcon : null)
+  }, [isDirty, loading, minimizeToTray, showTrayIcon])
 
   const handleAccentChange = useCallback(
     (presetHex: string) => {
