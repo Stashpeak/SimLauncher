@@ -312,6 +312,18 @@ export function registerWindowHandlers(): void {
     // Renderer already ran its save/discard pipeline before invoking us; the
     // dirty state in the renderer will propagate to false on next render. Do
     // NOT setIsQuitting — the window keeps living in the tray.
+    //
+    // Safety net: the close dialog's minimize-vs-close mode is decided up-front
+    // from the (possibly unsaved) tray preference, but Save and Discard can land
+    // here with a different *persisted* tray state — e.g. the user enables the
+    // tray unsaved, the dialog opens in minimize mode, then they Discard, which
+    // reverts showTrayIcon back to off. Hiding with no tray icon would strand
+    // the only window, so fall back to a recoverable taskbar minimize whenever
+    // the tray isn't actually on.
+    if (store.get('showTrayIcon') === false) {
+      mainWindow?.minimize()
+      return
+    }
     mainWindow?.hide()
   })
 
