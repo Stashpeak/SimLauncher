@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { showAppContextMenu } from '../../lib/electron'
+import { Tooltip } from '../Tooltip'
 
 export interface RunningAppIcon {
   icon: string | null
@@ -34,15 +35,38 @@ export function RunningAppsStrip({
 
         if (isAvailable) {
           return (
-            <img
-              key={i}
-              src={app.icon ?? undefined}
-              alt={app.warning ? `${app.name}: ${app.warning}` : ''}
-              title={app.warning || app.name}
-              className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
-              onError={() =>
-                setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))
-              }
+            <Tooltip key={i} label={app.warning || app.name}>
+              <img
+                src={app.icon ?? undefined}
+                alt={app.warning ? `${app.name}: ${app.warning}` : ''}
+                className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'rounded-sm ring-1 ring-(--warning-text)' : ''}`}
+                onError={() =>
+                  setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))
+                }
+                onContextMenu={(e) => {
+                  if (app.warning) {
+                    e.preventDefault()
+                    showAppContextMenu(app.path, app.gameKey, {
+                      tracked: app.tracked,
+                      name: app.name
+                    })
+                  }
+                }}
+              />
+            </Tooltip>
+          )
+        }
+
+        if (app.icon === null && !isFailed && !cacheInitialized) {
+          return <div key={i} aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
+        }
+
+        return (
+          <Tooltip key={i} label={app.warning || app.name}>
+            <div
+              role="img"
+              aria-label={app.warning ? `${app.name}: ${app.warning}` : app.name}
+              className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
               onContextMenu={(e) => {
                 if (app.warning) {
                   e.preventDefault()
@@ -52,61 +76,39 @@ export function RunningAppsStrip({
                   })
                 }
               }}
-            />
-          )
-        }
-
-        if (app.icon === null && !isFailed && !cacheInitialized) {
-          return <div key={i} aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
-        }
-
-        return (
-          <div
-            key={i}
-            role="img"
-            aria-label={app.warning ? `${app.name}: ${app.warning}` : app.name}
-            className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'ring-1 ring-(--warning-text)' : ''}`}
-            title={app.warning || app.name}
-            onContextMenu={(e) => {
-              if (app.warning) {
-                e.preventDefault()
-                showAppContextMenu(app.path, app.gameKey, {
-                  tracked: app.tracked,
-                  name: app.name
-                })
-              }
-            }}
-          >
-            {app.name
-              .replace(/\.exe$/i, '')
-              .slice(0, 2)
-              .toUpperCase()}
-          </div>
+            >
+              {app.name
+                .replace(/\.exe$/i, '')
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+          </Tooltip>
         )
       })}
 
       {hasElevated && (
-        <div
-          role="img"
-          aria-label="Some companion apps run elevated and cannot be closed by SimLauncher"
-          title="SimLauncher cannot close elevated companion apps."
-          className="flex items-center"
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-(--warning-text) opacity-80 shrink-0 w-3.5 h-3.5"
+        <Tooltip label="SimLauncher cannot close elevated companion apps.">
+          <div
+            role="img"
+            aria-label="Some companion apps run elevated and cannot be closed by SimLauncher"
+            className="flex items-center"
           >
-            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-            <path d="M12 9v4" />
-            <path d="M12 17h.01" />
-          </svg>
-        </div>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-(--warning-text) opacity-80 shrink-0 w-3.5 h-3.5"
+            >
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+            </svg>
+          </div>
+        </Tooltip>
       )}
     </div>
   )

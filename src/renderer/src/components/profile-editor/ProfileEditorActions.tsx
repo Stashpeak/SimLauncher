@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Tooltip } from '../Tooltip'
 
 interface ProfileEditorActionsProps {
   isDirty: boolean
@@ -42,31 +43,32 @@ export function ProfileEditorActions({
         Cancel
       </button>
       {canDeleteProfile && (
-        <button
-          type="button"
-          onClick={onDeleteProfile}
-          className="danger-action action-hover-scale flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
-          title="Delete profile"
-          aria-label="Delete profile"
-        >
-          <svg
-            aria-hidden="true"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <Tooltip label="Delete profile">
+          <button
+            type="button"
+            onClick={onDeleteProfile}
+            className="danger-action action-hover-scale flex h-11 w-11 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
+            aria-label="Delete profile"
           >
-            <path d="M3 6h18" />
-            <path d="M8 6V4h8v2" />
-            <path d="M19 6l-1 14H6L5 6" />
-            <path d="M10 11v5" />
-            <path d="M14 11v5" />
-          </svg>
-        </button>
+            <svg
+              aria-hidden="true"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 6h18" />
+              <path d="M8 6V4h8v2" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v5" />
+              <path d="M14 11v5" />
+            </svg>
+          </button>
+        </Tooltip>
       )}
     </div>
   )

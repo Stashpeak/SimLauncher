@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Tooltip } from '../Tooltip'
 
 interface ProfileNameSectionProps {
   profileName: string
@@ -25,27 +26,28 @@ export function ProfileNameSection({
           aria-label="Profile name"
         />
         {onCreateProfile !== undefined && (
-          <button
-            type="button"
-            onClick={onCreateProfile}
-            className="accent-surface-action action-hover-scale cursor-pointer flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all"
-            title="New profile"
-            aria-label="New profile"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <Tooltip label="New profile">
+            <button
+              type="button"
+              onClick={onCreateProfile}
+              className="accent-surface-action action-hover-scale cursor-pointer flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all"
+              aria-label="New profile"
             >
-              <path d="M12 5v14" />
-              <path d="M5 12h14" />
-            </svg>
-          </button>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>

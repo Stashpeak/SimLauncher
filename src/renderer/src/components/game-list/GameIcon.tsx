@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Game } from '../../lib/config'
+import { Tooltip } from '../Tooltip'
 
 interface GameIconProps {
   game: Game
@@ -27,12 +28,11 @@ export function GameIcon({ game, isRunning, iconUrl }: GameIconProps): ReactNode
         <div aria-hidden="true" className="h-12 w-12 skeleton-icon animate-pulse" />
       ) : null}
       {isRunning && (
-        <div
-          className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]"
-          title="Running"
-        >
-          <span className="sr-only">{game.name} is running</span>
-        </div>
+        <Tooltip label="Running">
+          <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]">
+            <span className="sr-only">{game.name} is running</span>
+          </div>
+        </Tooltip>
       )}
     </div>
   )

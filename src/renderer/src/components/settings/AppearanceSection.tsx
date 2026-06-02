@@ -4,6 +4,7 @@ import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
 import { ColorPickerPopover } from '../ColorPickerPopover'
 import { useAppearanceSettings } from './AppearanceContext'
+import { Tooltip } from '../Tooltip'
 
 const ZOOM_PRESETS = [
   { label: '100%', factor: 1.0 },
@@ -74,60 +75,61 @@ export function AppearanceSection(): ReactNode {
         <label className="settings-label text-(--text-secondary)">Accent Color</label>
         <div className="settings-control" role="group" aria-label="Accent color">
           {ACCENT_PRESETS.map((preset) => (
-            <button
-              key={preset.hex}
-              type="button"
-              onClick={() => onAccentChange(preset.hex)}
-              aria-label={`Accent color ${preset.name}`}
-              aria-pressed={accentPreset === preset.hex}
-              className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
-              style={{ '--preset-color': preset.hex } as CSSProperties}
-              title={preset.name}
-            />
+            <Tooltip key={preset.hex} label={preset.name}>
+              <button
+                type="button"
+                onClick={() => onAccentChange(preset.hex)}
+                aria-label={`Accent color ${preset.name}`}
+                aria-pressed={accentPreset === preset.hex}
+                className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
+                style={{ '--preset-color': preset.hex } as CSSProperties}
+              />
+            </Tooltip>
           ))}
           <div className="relative">
-            <button
-              ref={customSwatchRef}
-              type="button"
-              onClick={() => {
-                setShowPicker(!showPicker)
-                if (!isCustomColor) onAccentChange('custom')
-              }}
-              aria-label="Custom accent color"
-              aria-haspopup="dialog"
-              aria-expanded={showPicker}
-              aria-controls={showPicker ? 'accent-color-picker' : undefined}
-              aria-pressed={isCustomColor}
-              className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
-                isCustomColor ? 'scale-110' : ''
-              }`}
-              title="Custom Color"
-            >
-              {/* Background gradient/color */}
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: isCustomColor
-                    ? accentCustom || '#ad46ff'
-                    : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
+            <Tooltip label="Custom Color">
+              <button
+                ref={customSwatchRef}
+                type="button"
+                onClick={() => {
+                  setShowPicker(!showPicker)
+                  if (!isCustomColor) onAccentChange('custom')
                 }}
-              />
-
-              {/* Glass overlay for unselected state */}
-              {!isCustomColor && (
+                aria-label="Custom accent color"
+                aria-haspopup="dialog"
+                aria-expanded={showPicker}
+                aria-controls={showPicker ? 'accent-color-picker' : undefined}
+                aria-pressed={isCustomColor}
+                className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
+                  isCustomColor ? 'scale-110' : ''
+                }`}
+              >
+                {/* Background gradient/color */}
                 <div
                   aria-hidden="true"
-                  className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none"
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    background: isCustomColor
+                      ? accentCustom || '#ad46ff'
+                      : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
+                  }}
                 />
-              )}
 
-              {/* Border to match presets */}
-              <div
-                aria-hidden="true"
-                className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
-              />
-            </button>
+                {/* Glass overlay for unselected state */}
+                {!isCustomColor && (
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded-full bg-white/10 dark:bg-black/10 pointer-events-none"
+                  />
+                )}
+
+                {/* Border to match presets */}
+                <div
+                  aria-hidden="true"
+                  className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
+                />
+              </button>
+            </Tooltip>
 
             {showPicker && (
               <ColorPickerPopover
