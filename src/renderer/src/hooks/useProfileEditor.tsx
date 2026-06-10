@@ -19,7 +19,7 @@ import {
 } from '../lib/config'
 import { useNotify } from '../components/Notify'
 import { getSettings, getProfiles, saveProfile } from '../lib/store'
-import { getFileIcon, browsePath } from '../lib/electron'
+import { getFileIcon, browsePath, launchProfile } from '../lib/electron'
 import { useAppsSettings } from '../components/settings/AppsContext'
 import { syncProfileUtilitiesWithSettings } from '../lib/profileEditorSettingsSync'
 
@@ -400,7 +400,6 @@ export function useProfileEditor({
     onLaunchStart?.()
     let cooldownMs = 0
     try {
-      const { launchProfile } = await import('../lib/electron')
       const result = await launchProfile(gameKey)
       cooldownMs = result.launchedCount === 0 ? 0 : 10000
       if (!result.success) {
