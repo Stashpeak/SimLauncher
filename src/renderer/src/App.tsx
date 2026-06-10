@@ -121,8 +121,11 @@ function AppContent() {
     setView(nextView)
   }
 
-  const handleDiscardAll = useCallback(() => {
-    requestDiscardAll()
+  const handleDiscardAll = useCallback(async () => {
+    // Await the discard pipeline BEFORE remounting: GameRow's pending "+"
+    // profile cleanup writes to the store, and bumping refreshKey first would
+    // tear the row down mid-cleanup and reload the orphan from the store (#478).
+    await requestDiscardAll()
     reportSettingsDirty(false)
     // Reset main-process state the renderer forwarded ahead of save (the pending
     // Minimize-to-tray toggle), remount the SettingsProvider so discarded toggles
@@ -135,8 +138,8 @@ function AppContent() {
     })
   }, [reportSettingsDirty, requestDiscardAll, syncThemeFromStore])
 
-  const handleConfirmDiscard = useCallback(() => {
-    handleDiscardAll()
+  const handleConfirmDiscard = useCallback(async () => {
+    await handleDiscardAll()
     if (pendingView) {
       setView(pendingView)
       setPendingView(null)
@@ -192,7 +195,9 @@ function AppContent() {
   }, [closeConfirmMinimizeMode, notify, requestSaveAll])
 
   const handleCloseConfirmDiscard = useCallback(async () => {
-    requestDiscardAll()
+    // Await async discard work (pending "+" profile removal, #478) before the
+    // remount and the close/minimize IPC tear the renderer state down.
+    await requestDiscardAll()
     reportSettingsDirty(false)
     // Mirror the tab-switch discard: clear any pending Minimize-to-tray
     // override, remount the SettingsProvider, and re-sync theme so a
@@ -256,7 +261,11 @@ function AppContent() {
       >
         <main className="h-full relative overflow-hidden">
           {/* Games View */}
+          {/* `inert` removes the hidden view from the Tab order and the a11y
+              tree — pointer-events-none only blocks the mouse, so without it
+              keyboard users tab through invisible controls (#479). */}
           <div
+            inert={view !== 'games'}
             className={`h-full flex flex-col transition-all duration-300 ${
               view === 'games'
                 ? 'opacity-100 scale-100 pointer-events-auto'
@@ -272,6 +281,7 @@ function AppContent() {
 
           {/* Settings View */}
           <div
+            inert={view !== 'settings'}
             className={`absolute inset-0 z-10 h-full flex flex-col transition-all duration-300 ${
               view === 'settings'
                 ? 'opacity-100 scale-100 pointer-events-auto'
@@ -296,7 +306,9 @@ function AppContent() {
         onSave={() => {
           void handleConfirmSave()
         }}
-        onDiscard={handleConfirmDiscard}
+        onDiscard={() => {
+          void handleConfirmDiscard()
+        }}
         onCancel={handleConfirmCancel}
       />
 
@@ -329,7 +341,7 @@ function AppContent() {
         discardClassName="neutral-action"
         onSave={() => {
           setDiscardConfirmOpen(false)
-          handleDiscardAll()
+          void handleDiscardAll()
         }}
         onDiscard={() => setDiscardConfirmOpen(false)}
         onCancel={() => setDiscardConfirmOpen(false)}

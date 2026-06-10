@@ -12,6 +12,7 @@ import { getProfiles, getSettings, onStoreConfigChanged } from '../../lib/store'
 import { normalizeThemeMode, type ThemeMode } from '../../lib/theme'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 import type { SettingsObjectRecords } from './saveRace'
+import type { SettingsStateSnapshot } from './useSettingsState'
 
 type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] extends (
   payload: infer Payload
@@ -22,7 +23,7 @@ type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] exten
 interface UseSettingsLoadArgs {
   themeRef: MutableRefObject<{ setThemeMode: (mode: ThemeMode) => void }>
   latestSettingsObjects: MutableRefObject<SettingsObjectRecords>
-  resetDirty: () => void
+  resetDirty: (state?: SettingsStateSnapshot) => void
   setLoading: (loading: boolean) => void
   setAppPaths: (appPaths: Record<string, string>) => void
   setAppNames: (appNames: Record<string, string>) => void
@@ -73,46 +74,68 @@ export function useSettingsLoad({
   setIsCustomColor,
   setAppIcons,
   setGameIcons
-}: UseSettingsLoadArgs): { loadSettingsFromStore: () => Promise<void> } {
-  const loadSettingsFromStore = useCallback(async () => {
+}: UseSettingsLoadArgs): { loadSettingsFromStore: () => Promise<SettingsStateSnapshot> } {
+  const loadSettingsFromStore = useCallback(async (): Promise<SettingsStateSnapshot> => {
     const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
     const typedProfiles = normalizeProfiles(savedProfiles)
+    const loadedThemeMode = normalizeThemeMode(settings.themeMode)
 
-    latestSettingsObjects.current = {
+    // Snapshot of exactly what lands in state below. Key order mirrors the
+    // currentSettingsState memo in useSettingsState — the dirty baseline is a
+    // JSON string compare, so a re-ordered snapshot would read as permanently
+    // dirty (#480).
+    const snapshot: SettingsStateSnapshot = {
       appPaths: settings.appPaths,
       appNames: settings.appNames,
       appArgs: settings.appArgs,
-      gamePaths: settings.gamePaths
-    }
-
-    setAppPaths(settings.appPaths)
-    setAppNames(settings.appNames)
-    setAppArgs(settings.appArgs)
-    setProfiles(typedProfiles)
-    setGamePaths(settings.gamePaths)
-    setCustomSlots(
-      resolveCustomSlots(
+      profiles: typedProfiles,
+      gamePaths: settings.gamePaths,
+      customSlots: resolveCustomSlots(
         settings.customSlots,
         settings.appPaths,
         settings.appNames,
         ...Object.values(typedProfiles).filter(isRecord)
-      )
-    )
-    const loadedThemeMode = normalizeThemeMode(settings.themeMode)
+      ),
+      accentPreset: settings.accentPreset || DEFAULT_ACCENT_COLOR,
+      accentCustom: settings.accentCustom || '',
+      accentBgTint: settings.accentBgTint || false,
+      themeMode: loadedThemeMode,
+      focusActiveTitle: settings.focusActiveTitle !== false,
+      launchDelayMs: normalizeLaunchDelayMs(settings.launchDelayMs),
+      startWithWindows: settings.startWithWindows || false,
+      startMinimized: settings.startMinimized || false,
+      minimizeToTray: settings.minimizeToTray || false,
+      showTrayIcon: settings.showTrayIcon ?? true,
+      autoCheckUpdates: settings.autoCheckUpdates !== false,
+      zoomFactor: Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0
+    }
 
-    setAccentPreset(settings.accentPreset || DEFAULT_ACCENT_COLOR)
-    setAccentCustom(settings.accentCustom || '')
-    setAccentBgTint(settings.accentBgTint || false)
-    setThemeMode(loadedThemeMode)
-    themeRef.current.setThemeMode(loadedThemeMode)
-    setFocusActiveTitle(settings.focusActiveTitle !== false)
-    setLaunchDelayMs(normalizeLaunchDelayMs(settings.launchDelayMs))
-    setStartWithWindows(settings.startWithWindows || false)
-    setStartMinimized(settings.startMinimized || false)
-    setMinimizeToTray(settings.minimizeToTray || false)
-    setShowTrayIcon(settings.showTrayIcon ?? true)
-    setAutoCheckUpdates(settings.autoCheckUpdates !== false)
-    setZoomFactor(Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0)
+    latestSettingsObjects.current = {
+      appPaths: snapshot.appPaths,
+      appNames: snapshot.appNames,
+      appArgs: snapshot.appArgs,
+      gamePaths: snapshot.gamePaths
+    }
+
+    setAppPaths(snapshot.appPaths)
+    setAppNames(snapshot.appNames)
+    setAppArgs(snapshot.appArgs)
+    setProfiles(snapshot.profiles)
+    setGamePaths(snapshot.gamePaths)
+    setCustomSlots(snapshot.customSlots)
+    setAccentPreset(snapshot.accentPreset)
+    setAccentCustom(snapshot.accentCustom)
+    setAccentBgTint(snapshot.accentBgTint)
+    setThemeMode(snapshot.themeMode)
+    themeRef.current.setThemeMode(snapshot.themeMode)
+    setFocusActiveTitle(snapshot.focusActiveTitle)
+    setLaunchDelayMs(snapshot.launchDelayMs)
+    setStartWithWindows(snapshot.startWithWindows)
+    setStartMinimized(snapshot.startMinimized)
+    setMinimizeToTray(snapshot.minimizeToTray)
+    setShowTrayIcon(snapshot.showTrayIcon)
+    setAutoCheckUpdates(snapshot.autoCheckUpdates)
+    setZoomFactor(snapshot.zoomFactor)
 
     setIsCustomColor(settings.accentPreset === 'custom')
 
@@ -140,6 +163,7 @@ export function useSettingsLoad({
     setGameIcons(gIcons)
 
     setLoading(false)
+    return snapshot
   }, [
     latestSettingsObjects,
     setAccentBgTint,
@@ -168,13 +192,21 @@ export function useSettingsLoad({
   ])
 
   useEffect(() => {
-    loadSettingsFromStore()
+    void loadSettingsFromStore()
   }, [loadSettingsFromStore])
 
   useEffect(() => {
     return onStoreConfigChanged((payload: StoreConfigChangePayload) => {
+      // Skip only the bulk writes this provider itself performs on save.
+      // 'save-profile' (singular, the per-game editor/GameRow save) must keep
+      // reloading: it refreshes our profiles copy (which the settings save
+      // writes back to the store) so it can't resurrect deleted profiles.
       if (payload.reason === 'save-settings' || payload.reason === 'save-profiles') return
-      void loadSettingsFromStore().then(() => resetDirty())
+      // Re-baseline from the EXACT snapshot that was loaded. resetDirty()
+      // without arguments would serialize a previous render's currentState and
+      // leave a phantom dirty diff on whatever the reload changed — that was
+      // the ghost "Utility Apps" dot after every profile save (#480).
+      void loadSettingsFromStore().then((snapshot) => resetDirty(snapshot))
     })
   }, [loadSettingsFromStore, resetDirty])
 
