@@ -182,6 +182,21 @@ export function GameRow({
     }
   }, [isActive, discardPendingProfile])
 
+  // Safety net for unmount paths that never flip isActive — e.g. the
+  // refreshKey remount after a config import. Fire-and-forget through a
+  // latest-value ref so the empty-deps cleanup can't go stale; double-runs
+  // with the discard pipeline (#478) are no-ops because discardPendingProfile
+  // clears its ref up front.
+  const discardPendingProfileRef = useRef(discardPendingProfile)
+  useEffect(() => {
+    discardPendingProfileRef.current = discardPendingProfile
+  }, [discardPendingProfile])
+  useEffect(() => {
+    return () => {
+      void discardPendingProfileRef.current()
+    }
+  }, [])
+
   const switchToProfile = async (nextProfileId: string, skipRunningConfirm = false) => {
     if (nextProfileId === '__new__') {
       setNewProfileFormOpen(true)
@@ -480,6 +495,7 @@ export function GameRow({
                 onProfileCommitted={() => {
                   pendingNewProfileRef.current = null
                 }}
+                onDiscarded={discardPendingProfile}
                 onLaunchRequest={(launcher) => {
                   handleLaunchRequest.current = launcher
                 }}

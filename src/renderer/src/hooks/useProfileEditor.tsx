@@ -33,6 +33,10 @@ export interface ProfileEditorProps {
   // launched, or deleted) so a freshly-created "+" profile is no longer a
   // discard-on-close candidate (#453).
   onProfileCommitted?: () => void
+  // Awaited by the app-level discard pipeline after the editor closes, so the
+  // owner can finish async cleanup (delete a pending "+" profile) before the
+  // caller remounts views that reload from the store (#478).
+  onDiscarded?: () => Promise<void> | void
   onLaunchRequest?: (handleLaunch: () => void) => void
   onLaunchStart?: () => void
   onLaunchEnd?: (cooldownMs: number) => void

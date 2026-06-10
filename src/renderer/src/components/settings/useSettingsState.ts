@@ -96,6 +96,11 @@ export interface SettingsStateBundle {
   }
 }
 
+// The dirty-tracking baseline is a JSON string compare against
+// currentSettingsState, so anything passed to resetDirty must carry these keys
+// in this exact order (see the currentSettingsState memo below).
+export type SettingsStateSnapshot = SettingsStateBundle['currentSettingsState']
+
 export function useSettingsState(): SettingsStateBundle {
   const [loading, setLoading] = useState(true)
 

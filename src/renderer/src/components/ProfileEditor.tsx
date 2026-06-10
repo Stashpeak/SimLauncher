@@ -23,7 +23,7 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
     registerProfileEditorCloseRequestHandler
   } = useAppDirty()
   const scopeId = `${props.gameKey}:${props.activeProfileId}`
-  const { onClose } = props
+  const { onClose, onDiscarded } = props
   const { isDirty, handleSave, handleCloseAttempt } = editor
 
   useEffect(() => {
@@ -53,13 +53,18 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
       registerDiscardHandler('profile-editor', null)
       return
     }
-    registerDiscardHandler('profile-editor', () => {
+    registerDiscardHandler('profile-editor', async () => {
       onClose()
+      // Chain the owner's async discard work (removing a pending "+" profile
+      // from the store, #478) so requestDiscardAll resolves only after the
+      // store has settled — the App-level discard bumps refreshKey right
+      // after, and the remounted GameList must not reload the orphan.
+      await onDiscarded?.()
     })
     return () => {
       registerDiscardHandler('profile-editor', null)
     }
-  }, [isDirty, onClose, registerDiscardHandler])
+  }, [isDirty, onClose, onDiscarded, registerDiscardHandler])
 
   useEffect(() => {
     // Always route external close requests (GameRow toggle X, etc.) through

@@ -12,6 +12,8 @@ export type DirtyScopeId = 'settings' | string
 
 export type SaveHandler = () => Promise<boolean> | boolean
 
+export type DiscardHandler = () => Promise<void> | void
+
 export interface AppDirtyContextValue {
   isAnyDirty: boolean
   isSettingsDirty: boolean
@@ -22,7 +24,7 @@ export interface AppDirtyContextValue {
   registerSaveHandler: (scope: 'settings' | 'profile-editor', handler: SaveHandler | null) => void
   registerDiscardHandler: (
     scope: 'settings' | 'profile-editor',
-    handler: (() => void) | null
+    handler: DiscardHandler | null
   ) => void
   /**
    * Runs every registered save handler in turn and returns `true` only if every
@@ -31,7 +33,13 @@ export interface AppDirtyContextValue {
    * can keep dirty UI/dialogs open and surface an error toast.
    */
   requestSaveAll: () => Promise<boolean>
-  requestDiscardAll: () => void
+  /**
+   * Runs every registered discard handler and resolves once their async work
+   * (e.g. removing a pending "+" profile from the store, #478) has completed.
+   * Callers that remount state afterwards (refreshKey bump) must await this so
+   * the remounted views reload a store the discards have already settled.
+   */
+  requestDiscardAll: () => Promise<void>
   /**
    * Routes external "close the profile editor" requests (e.g. the toggle X
    * button in GameRowActions) through the editor's own dirty-confirm flow,
@@ -54,8 +62,8 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
   // `handleSave` from a hook).
   const settingsSaveHandlerRef = useRef<SaveHandler | null>(null)
   const profileSaveHandlerRef = useRef<SaveHandler | null>(null)
-  const settingsDiscardHandlerRef = useRef<(() => void) | null>(null)
-  const profileDiscardHandlerRef = useRef<(() => void) | null>(null)
+  const settingsDiscardHandlerRef = useRef<DiscardHandler | null>(null)
+  const profileDiscardHandlerRef = useRef<DiscardHandler | null>(null)
   const profileCloseRequestHandlerRef = useRef<(() => void) | null>(null)
 
   const reportSettingsDirty = useCallback((isDirty: boolean) => {
@@ -83,7 +91,7 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
   )
 
   const registerDiscardHandler = useCallback(
-    (scope: 'settings' | 'profile-editor', handler: (() => void) | null) => {
+    (scope: 'settings' | 'profile-editor', handler: DiscardHandler | null) => {
       if (scope === 'settings') {
         settingsDiscardHandlerRef.current = handler
       } else {
@@ -112,9 +120,19 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
     return profileOk && settingsOk
   }, [runHandler])
 
-  const requestDiscardAll = useCallback(() => {
-    profileDiscardHandlerRef.current?.()
-    settingsDiscardHandlerRef.current?.()
+  const requestDiscardAll = useCallback(async (): Promise<void> => {
+    // A throwing discard handler must not block the other scope's discard —
+    // mirror runHandler's containment, but there is no success to report.
+    try {
+      await profileDiscardHandlerRef.current?.()
+    } catch (err) {
+      console.error('Profile discard handler threw', err)
+    }
+    try {
+      await settingsDiscardHandlerRef.current?.()
+    } catch (err) {
+      console.error('Settings discard handler threw', err)
+    }
   }, [])
 
   const registerProfileEditorCloseRequestHandler = useCallback((handler: (() => void) | null) => {
