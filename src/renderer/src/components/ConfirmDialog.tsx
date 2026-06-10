@@ -42,8 +42,20 @@ export function ConfirmDialog({
       // another dialog behind this one. Capture phase + stopImmediatePropagation
       // is required because those listeners were registered earlier on window.
       e.stopImmediatePropagation()
-      if (e.key === 'Escape') onCancel()
-      else onSave()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCancel()
+        return
+      }
+      // Enter is the default-confirm shortcut only while focus is outside the
+      // dialog's buttons. On a focused button, native activation already clicks
+      // it — also calling onSave() here would run two conflicting actions (#476).
+      const target = e.target instanceof HTMLElement ? e.target : null
+      if (target && dialogRef.current?.contains(target) && target.closest('button')) {
+        return
+      }
+      e.preventDefault()
+      onSave()
     }
 
     window.addEventListener('keydown', handleKeyDown, true)
