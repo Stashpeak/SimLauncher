@@ -339,34 +339,6 @@ export function registerConfigHandlers(): void {
     }
   })
 
-  ipcMain.handle('import-config', async () => {
-    try {
-      const options: OpenDialogOptions = {
-        title: 'Import SimLauncher Config',
-        properties: ['openFile'],
-        filters: [{ name: 'JSON Files', extensions: ['json'] }]
-      }
-      const mainWindow = getMainWindow()
-      const result = mainWindow
-        ? await dialog.showOpenDialog(mainWindow, options)
-        : await dialog.showOpenDialog(options)
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, canceled: true }
-      }
-
-      const filePath = result.filePaths[0]
-      const { supportedConfig } = await readAndSanitizeConfig(filePath)
-      applySanitizedConfig(supportedConfig)
-
-      return { success: true, filePath }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error('Failed to import config:', err)
-      return { success: false, error: message }
-    }
-  })
-
   // preview-import-config → apply-import-config two-step:
   // The preview step sanitises the file and stores a short-lived token so the
   // apply step can verify it is confirming the exact config the user reviewed

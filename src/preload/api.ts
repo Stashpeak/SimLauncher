@@ -212,7 +212,6 @@ export interface ElectronAPI {
   setMigrationFlags: (patch: Partial<MigrationFlags>) => Promise<void>
   onStoreConfigChanged: (cb: (payload: StoreConfigChangePayload) => void) => Unsubscribe
   exportConfig: () => Promise<ConfigFileResult>
-  importConfig: () => Promise<ConfigFileResult>
   previewImportConfig: () => Promise<ConfigImportPreviewResult>
   applyImportConfig: (token: string) => Promise<ConfigFileResult>
   cancelImportConfig: (token: string) => Promise<ConfigFileResult>
