@@ -51,6 +51,9 @@ const execFileCalls: { command: string; args: string[]; options: Record<string, 
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
 const invalidateProcessNameCacheMock = vi.fn()
+// Paths the mocked PE-subsystem sniffer reports as console-subsystem exes —
+// those must spawn WITHOUT detached so they get a console (#486).
+const consoleExePaths = new Set<string>()
 
 type ProcessRegistryEntry = {
   pid: string
@@ -247,6 +250,15 @@ async function loadProcessModules() {
     })
   }))
 
+  const subsystemMock = {
+    isConsoleExecutable: vi.fn((exePath: string) => Promise.resolve(consoleExePaths.has(exePath)))
+  }
+  vi.doMock('./subsystem', () => subsystemMock)
+  vi.doMock('/src/main/processes/subsystem.ts', () => subsystemMock)
+  vi.doMock('../../src/main/processes/subsystem', () => subsystemMock)
+  vi.doMock('../../src/main/processes/subsystem.ts', () => subsystemMock)
+  vi.doMock('../../src/main/processes/subsystem.js', () => subsystemMock)
+
   const tasklistMock = {
     invalidateProcessNameCache: invalidateProcessNameCacheMock,
     readRunningProcessNames: vi.fn(() => {
@@ -418,6 +430,7 @@ beforeEach(async () => {
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
+  consoleExePaths.clear()
   sender.send.mockClear()
   invalidateProcessNameCacheMock.mockClear()
   processNameMismatchWarnings.clear()
@@ -1034,6 +1047,43 @@ test('launchProfileApps resolves args per utility key when two slots share the s
   expect(spawnCalls[1]).toMatchObject({
     appPath: 'C:/Tools/Shared Utility.exe',
     args: ['--mode', 'silent']
+  })
+})
+
+// Console-subsystem exes spawned with detached get DETACHED_PROCESS on
+// Windows — no console is created and e.g. powershell.exe exits 0 without
+// executing anything. They must spawn non-detached so a console is allocated;
+// children outlive the parent on Windows either way (#486).
+test('launchProfileApps spawns console-subsystem apps without detached (#486)', async () => {
+  markExistingPath('C:/Tools/TelemetryCli.exe')
+  consoleExePaths.add('C:/Tools/TelemetryCli.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Tools/TelemetryCli.exe'])
+  ).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Tools/TelemetryCli.exe',
+    options: { detached: false, stdio: 'ignore' }
+  })
+})
+
+test('launchProfileApps keeps GUI-subsystem apps detached (#486)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Tools/SimHub.exe',
+    options: { detached: true, stdio: 'ignore' }
   })
 })
 
