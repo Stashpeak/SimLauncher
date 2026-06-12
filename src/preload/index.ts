@@ -114,7 +114,6 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('store-config-changed', handler)
   },
   exportConfig: () => ipcRenderer.invoke('export-config'),
-  importConfig: () => ipcRenderer.invoke('import-config'),
   previewImportConfig: () => ipcRenderer.invoke('preview-import-config'),
   applyImportConfig: (token: string) => ipcRenderer.invoke('apply-import-config', token),
   cancelImportConfig: (token: string) => ipcRenderer.invoke('cancel-import-config', token),

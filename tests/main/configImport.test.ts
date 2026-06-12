@@ -113,13 +113,22 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-test('import-config replaces the store with the sanitized config', async () => {
+async function previewThenApply(handlers: Record<string, MockIpcHandler>) {
+  const preview = (await handlers['preview-import-config']({})) as {
+    success: boolean
+    token: string
+  }
+  expect(preview.success).toBe(true)
+  return handlers['apply-import-config']({}, preview.token)
+}
+
+test('applying an import replaces the store with the sanitized config', async () => {
   const { handlers, mockStore } = await loadConfigHandlers({
     customSlots: 5,
     gamePaths: { iracing: 'C:/Games/Old.exe' }
   })
 
-  await expect(handlers['import-config']({})).resolves.toEqual({
+  await expect(previewThenApply(handlers)).resolves.toEqual({
     success: true,
     filePath: 'C:/Backups/simlauncher-config.json'
   })
@@ -130,14 +139,14 @@ test('import-config replaces the store with the sanitized config', async () => {
 
 // Data-loss guard: a mid-apply failure leaves the store half-written unless
 // the snapshot is restored — the user's entire config is on the line.
-test('import-config rolls the store back when applying the config throws', async () => {
+test('applying an import rolls the store back when the apply throws', async () => {
   const initial = { customSlots: 5, gamePaths: { iracing: 'C:/Games/Old.exe' } }
   const { handlers, mockStore } = await loadConfigHandlers(initial)
   migrateProfilesToNamedSets.mockImplementationOnce(() => {
     throw new Error('corrupted profile set')
   })
 
-  const result = (await handlers['import-config']({})) as { success: boolean; error?: string }
+  const result = (await previewThenApply(handlers)) as { success: boolean; error?: string }
 
   expect(result.success).toBe(false)
   expect(result.error).toContain('corrupted profile set')

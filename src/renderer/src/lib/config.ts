@@ -411,5 +411,3 @@ export function getActiveGameProfile(value: StoredGameProfile | undefined): Name
     profileSet.profiles[0]
   )
 }
-
-export const UTILITIES: Utility[] = getUtilities(DEFAULT_CUSTOM_SLOTS)
