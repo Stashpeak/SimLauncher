@@ -102,16 +102,67 @@ export class BrowserWindow extends MockEventTarget {
   loadURL = vi.fn()
 }
 
+export class Tray extends MockEventTarget {
+  static instances: Tray[] = []
+
+  icon: unknown
+  tooltip = ''
+  contextMenu: unknown
+  private destroyed = false
+
+  constructor(icon: unknown) {
+    super()
+    this.icon = icon
+    Tray.instances.push(this)
+  }
+
+  setToolTip = vi.fn((tooltip: string) => {
+    this.tooltip = tooltip
+  })
+
+  setContextMenu = vi.fn((menu: unknown) => {
+    this.contextMenu = menu
+  })
+
+  destroy = vi.fn(() => {
+    this.destroyed = true
+  })
+
+  isDestroyed = vi.fn(() => this.destroyed)
+}
+
+export interface MockMenuItem {
+  label?: string
+  type?: string
+  click?: () => void
+}
+
+export const Menu = {
+  buildFromTemplate: vi.fn((template: MockMenuItem[]) => ({ template }))
+}
+
+export const nativeImage = {
+  createFromPath: vi.fn((imagePath: string) => ({ imagePath }))
+}
+
 export const screen = {
   getDisplayMatching: vi.fn(() => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }))
 }
 
-export const app = {
-  getVersion: vi.fn().mockReturnValue('1.0.0'),
-  isPackaged: false,
-  setLoginItemSettings: vi.fn(),
-  getAppPath: vi.fn().mockReturnValue(process.cwd())
+class MockApp extends MockEventTarget {
+  isPackaged = false
+  getVersion = vi.fn().mockReturnValue('1.0.0')
+  getAppPath = vi.fn().mockReturnValue(process.cwd())
+  setLoginItemSettings = vi.fn()
+  quit = vi.fn()
+  exit = vi.fn()
+  relaunch = vi.fn()
+  requestSingleInstanceLock = vi.fn(() => true)
+  whenReady = vi.fn(() => Promise.resolve())
+  getFileIcon = vi.fn(async () => ({ toDataURL: () => 'data:image/png;base64,mock' }))
 }
+
+export const app = new MockApp()
 
 export const dialog = {
   showOpenDialog: vi.fn(),
