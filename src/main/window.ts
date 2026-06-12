@@ -16,6 +16,10 @@ import { clamp } from './utils'
 
 let mainWindow: BrowserWindow | null = null
 
+// Grace period between the renderer finishing its load and force-showing the
+// window when 'ready-to-show' did not arrive (see the #382 comment below).
+const READY_TO_SHOW_FALLBACK_MS = 500
+
 export type CloseAction = 'quit' | 'hide' | 'confirm-close' | 'confirm-minimize'
 
 /**
@@ -197,12 +201,27 @@ export function createWindow(): void {
   // Show window once ready, or keep it hidden when starting minimized to tray.
   // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the
   // window would be stranded with no way to restore it.
-  mainWindow.once('ready-to-show', () => {
+  const showWindowWhenReady = () => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) {
+      return
+    }
     const startMinimized = getStoredBoolean('startMinimized')
     const showTrayIcon = getStoredBoolean('showTrayIcon', true)
     if (!startMinimized || !showTrayIcon) {
-      mainWindow!.show()
+      mainWindow.show()
     }
+  }
+
+  mainWindow.once('ready-to-show', showWindowWhenReady)
+
+  // Electron 42 regression (#382): a webContents.setZoomFactor() call landing
+  // between did-finish-load and the hidden window's first paint suppresses
+  // 'ready-to-show' permanently — and the renderer's boot does exactly that via
+  // the set-zoom IPC. The handler now skips same-value calls, but keep a
+  // fallback here so the window can never be stranded invisible if the event
+  // is lost for any other reason.
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(showWindowWhenReady, READY_TO_SHOW_FALLBACK_MS)
   })
 
   // Apply login-item setting on startup
