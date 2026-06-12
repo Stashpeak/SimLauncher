@@ -138,7 +138,7 @@ Other useful scripts: `npm test` (unit tests), `npm run lint`, and `npm run type
 - **The source is public** and licensed under **GPL-3.0** — you can read every line, the full commit history, issues, pull requests, and CI runs before trusting a binary.
 - **You can build it yourself** from source (see above) instead of running the published installer.
 - **Releases are built in CI** from tagged commits, and each release's notes link the issues and PRs behind every change.
-- **Development is AI-assisted** (Claude Code) with human review on every change, disclosed openly in the commit history.
+- **Development is AI-assisted** (Claude Code, Codex & Gemini) with human review on every change, disclosed openly in the commit history.
 - **Security issues** should be reported privately — see [Security](#security).
 
 ---
