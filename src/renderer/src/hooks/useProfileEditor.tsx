@@ -150,6 +150,8 @@ export function useProfileEditor({
   useEffect(() => {
     async function loadData() {
       setLoading(true)
+      // Settings and profiles are fetched in parallel; settings are needed to
+      // resolve the active utility list before normalising the profile utilities.
       const [settings, allProfiles] = await Promise.all([getSettings(), getProfiles()])
       const paths = settings.appPaths
       const names = settings.appNames
@@ -210,6 +212,12 @@ export function useProfileEditor({
   }, [gameKey, activeProfileId])
 
   useEffect(() => {
+    // Live-sync: when the user changes app paths/names/custom-slots in Settings
+    // while the editor is open, reconcile the utility list and preserve the
+    // current enabled/order state. syncProfileUtilitiesWithSettings is called
+    // twice intentionally: once with [] to get the updated Utility[] reference,
+    // then inside the setState updater (with the current profileUtilities) to
+    // merge the live editor choices with the new utility list.
     const { utilities: resolvedUtilities } = syncProfileUtilitiesWithSettings(
       [],
       settingsCustomSlots,
@@ -319,6 +327,9 @@ export function useProfileEditor({
       const remainingEntries = currentUtilities.filter((entry) => entry.id !== key)
 
       if (toggledEntry.enabled) {
+        // Insert newly-enabled utility after the last currently-enabled entry so
+        // it appears at the bottom of the enabled section rather than at the
+        // very end of the list (which would place it below disabled utilities).
         const lastEnabledIndex = remainingEntries.reduce(
           (latestIndex, entry, index) => (entry.enabled ? index : latestIndex),
           -1
@@ -331,6 +342,8 @@ export function useProfileEditor({
         ]
       }
 
+      // Disabled utilities are appended at the end so their relative order
+      // doesn't matter for the dirty-tracking normalisation in currentProfileState.
       return [...remainingEntries, toggledEntry]
     })
   }
@@ -375,6 +388,8 @@ export function useProfileEditor({
   const startUtilityDrag = (event: DragEvent<HTMLDivElement>, utilityKey: string) => {
     const target = event.target instanceof HTMLElement ? event.target : null
 
+    // Elements marked data-no-row-drag="true" (e.g. toggle switches, path
+    // inputs) must not initiate a drag even though the drag handle wraps them.
     if (target?.closest('[data-no-row-drag="true"]')) {
       event.preventDefault()
       return
@@ -449,6 +464,10 @@ export function useProfileEditor({
   const handleSave = async (shouldLaunch = false): Promise<boolean> => {
     if (shouldLaunch) setShowLaunchConfirm(false)
     try {
+      // Re-read the store and surgically replace only the edited profile.
+      // Sibling profiles are preserved exactly as stored — this prevents a
+      // data-loss race where another GameRow's save would overwrite profiles
+      // that this editor hasn't loaded.
       const allProfiles = await getProfiles()
       const profileSet = normalizeGameProfileSet(
         allProfiles[gameKey] as Profiles[string] | undefined
@@ -598,12 +617,18 @@ export function useProfileEditor({
   }
 
   useEffect(() => {
+    // Register the launch handler with the parent each time handleLaunch is
+    // recreated (i.e. when isDirty changes) so the parent's click handler always
+    // invokes the up-to-date version that knows whether to show the confirm dialog.
     if (onLaunchRequest) {
       onLaunchRequest(handleLaunch)
     }
   }, [onLaunchRequest, handleLaunch])
 
   const utilityByKey = new Map(utilities.map((utility) => [utility.key, utility]))
+  // A utility is "available" only when both a Utility definition exists AND an
+  // app path has been configured. Utilities without a path are not shown in the
+  // editor UI — they are excluded from both the enabled and disabled lists.
   const availableUtilityEntries = profileUtilities.filter(
     (entry) => utilityByKey.has(entry.id) && appPaths[entry.id]
   )

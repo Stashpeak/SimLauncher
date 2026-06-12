@@ -32,6 +32,9 @@ export function ColorPickerPopover({
   const [position, setPosition] = useState<CSSProperties | null>(null)
 
   // This component is only mounted while the picker is open, so active is always true.
+  // Focus is trapped here rather than via aria-modal because the popover is
+  // portalled to document.body and positioned absolutely — a real modal focus
+  // trap keeps keyboard users from tabbing into the background settings form.
   useFocusTrap(true, popoverRef)
 
   useLayoutEffect(() => {
@@ -73,6 +76,8 @@ export function ColorPickerPopover({
     }
 
     updatePosition()
+    // Capture-phase scroll listener so the position updates even when an
+    // ancestor intercepts the scroll event before it bubbles to window.
     window.addEventListener('resize', updatePosition)
     window.addEventListener('scroll', updatePosition, true)
     return () => {

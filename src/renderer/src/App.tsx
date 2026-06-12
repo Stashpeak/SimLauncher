@@ -20,6 +20,9 @@ import { useTheme } from './contexts/ThemeContext'
 import { SettingsProvider } from './components/settings/SettingsContext'
 import { AppDirtyProvider, useAppDirty } from './contexts/AppDirtyContext'
 
+// AppDirtyProvider must wrap AppContent so the dirty-state aggregator is
+// available before any child mounts and registers save/discard handlers.
+// NotifyProvider is outermost so toasts survive error states at any depth.
 export default function App(): ReactNode {
   return (
     <NotifyProvider>
@@ -57,10 +60,14 @@ function AppContent() {
     discardConfirmOpenRef.current = discardConfirmOpen
   }, [discardConfirmOpen])
 
+  // Run once on mount; migrations are idempotent, so running them again on hot
+  // reload in dev is safe and gives no false positives.
   useEffect(() => {
     runStartupMigrations()
   }, [])
 
+  // Keep the main process in sync so it can show a native "unsaved changes"
+  // prompt if the OS sends a close signal before the React dialog is open.
   useEffect(() => {
     void setRendererDirty(isAnyDirty)
   }, [isAnyDirty])
@@ -111,6 +118,9 @@ function AppContent() {
     }
   }, [syncThemeFromStore])
 
+  // Gate tab navigation behind the discard/save confirm dialog when dirty.
+  // The actual view switch is deferred to handleConfirmDiscard/Save so the
+  // user's choice (save vs discard) determines the transition.
   const handleNavigate = (nextView: 'games' | 'settings') => {
     if (view === nextView) return
 
@@ -218,6 +228,9 @@ function AppContent() {
     setCloseConfirmOpen(false)
   }
 
+  // After an import the store is completely replaced, so remount the provider
+  // subtree (refreshKey) and re-sync the theme CSS variables. The warning
+  // banner reminds the user that executable paths may need updating on this device.
   const handleConfigImported = () => {
     syncThemeFromStore()
     setRefreshKey((k) => k + 1)

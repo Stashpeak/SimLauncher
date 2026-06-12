@@ -1,3 +1,6 @@
+// These four fields are dictionary-typed (Record<string, string>) and can be
+// edited concurrently while a save is in flight. All other settings fields are
+// scalars whose last-writer-wins behaviour is acceptable, so they are not tracked.
 export const SETTINGS_OBJECT_FIELDS = ['appPaths', 'appNames', 'appArgs', 'gamePaths'] as const
 
 export type SettingsObjectField = (typeof SETTINGS_OBJECT_FIELDS)[number]
@@ -23,6 +26,17 @@ export function getSettingsObjectChangesDuringSave(
   ) as SettingsObjectChangeMap
 }
 
+/**
+ * Returns the object records that should become the new dirty-tracking baseline
+ * after a save completes.
+ *
+ * Returning `savedObjects` unconditionally is intentional: the baseline must
+ * reflect what is on disk, not the in-flight renderer state. If the user made
+ * further edits while the save was awaiting (changedDuringSave[field] === true),
+ * those edits will still appear as dirty against this baseline, which is
+ * exactly the desired behaviour. Using `latestObjects` instead would silently
+ * lose unsaved concurrent edits by making them look already-saved.
+ */
 export function resolveSettingsObjectsAfterSave({
   savedObjects
 }: {

@@ -16,6 +16,11 @@ interface WindowControlsProps {
 }
 
 export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsProps): ReactNode {
+  // Local toggle — Electron does not push a maximize/restore event to the
+  // renderer, so we track the state ourselves. This is an optimistic toggle:
+  // if the user maximizes via the OS title bar (not through this button) the
+  // icon will be wrong, but that path is blocked by the custom frameless
+  // window (no native title bar on Windows).
   const [isMaximized, setIsMaximized] = useState(false)
 
   const handleMinimize = () => minimize()
@@ -24,6 +29,8 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
     setIsMaximized((current) => !current)
   }
   const handleClose = () => close()
+  // Navigate to Settings rather than immediately installing: the About section
+  // shows update progress and the user can confirm before the restart happens.
   const handleInstallUpdate = () => {
     onNavigate('settings')
   }

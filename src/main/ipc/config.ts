@@ -20,8 +20,15 @@ import { isRecord } from '../utils'
 import { applyTrayVisibility } from '../tray'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
+// Channel name is a contract shared with preload/index.ts. Renaming either
+// side without updating the other silently breaks store-change notifications.
 const STORE_CONFIG_CHANGED_CHANNEL = 'store-config-changed'
+// 24 bytes → 32-character base64url token, which is unguessable for a
+// single-session nonce and fits comfortably in an IPC argument.
 const IMPORT_PREVIEW_TOKEN_BYTES = 24
+// 5-minute window gives the user time to review the diff UI before confirming;
+// after expiry the sanitised config is discarded and re-reading from disk is
+// required, preventing stale or swapped files from being silently applied.
 const IMPORT_PREVIEW_TTL_MS = 5 * 60 * 1000
 
 interface ConfigImportPreviewEntry {
@@ -40,6 +47,10 @@ interface ConfigImportPreviewSummary {
   warnings: string[]
 }
 
+// Module-level singleton: only one import can be in-flight at a time.
+// Starting a new preview (preview-import-config) always clears any previous
+// pending entry first, so concurrent preview requests don't leave orphaned
+// tokens that could be applied by a racing apply-import-config call.
 let pendingImport: {
   token: string
   filePath: string
@@ -183,6 +194,15 @@ async function readAndSanitizeConfig(filePath: string) {
   return { supportedConfig, summary }
 }
 
+/**
+ * Atomically replaces the entire store with `supportedConfig`. On failure the
+ * pre-import snapshot is restored so the app is never left in a half-written
+ * state. Runtime settings (zoom, tray) are re-applied in both branches so the
+ * window and tray remain consistent with whatever store state ends up active.
+ *
+ * The wildcard `keys: ['*']` signals the renderer to treat all settings as
+ * potentially dirty rather than surgically diffing individual keys.
+ */
 function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
   const snapshot = { ...store.store }
 
@@ -246,6 +266,9 @@ function getSanitizedProfileSet(gameKey: string, profileSet: unknown) {
       : 1
   // Widen the allowed slot count so a profile saved in parallel with a
   // customSlots increase isn't silently stripped before save-settings lands.
+  // For example, if the renderer increments customSlots and saves the profile
+  // in the same batch, the profile IPC arrives before save-settings; without
+  // this expansion the new slot IDs would be filtered out as out-of-range.
   const effectiveCustomSlots = Math.min(
     MAX_CUSTOM_SLOTS,
     Math.max(baseSlots, getHighestCustomSlotInProfileSet(profileSet))
@@ -284,6 +307,9 @@ function getSanitizedProfileRecord(profiles: unknown) {
 }
 
 export function registerConfigHandlers(): void {
+  // export-config: writes only the sanitised subset of the store (via
+  // getSupportedConfigValues) so internal migration flags and transient keys
+  // are never leaked into exported files.
   ipcMain.handle('export-config', async () => {
     try {
       const options = {
@@ -341,6 +367,12 @@ export function registerConfigHandlers(): void {
     }
   })
 
+  // preview-import-config → apply-import-config two-step:
+  // The preview step sanitises the file and stores a short-lived token so the
+  // apply step can verify it is confirming the exact config the user reviewed
+  // (not a different file that was swapped in on disk between the two calls).
+  // cancel-import-config lets the renderer explicitly discard the pending entry
+  // rather than waiting for the TTL, e.g. when the user closes the diff dialog.
   ipcMain.handle('preview-import-config', async () => {
     try {
       clearPendingImport()
@@ -495,6 +527,9 @@ export function registerConfigHandlers(): void {
     }
   })
 
+  // Migration flags are set by the renderer after it completes one-time data
+  // migrations. The allowlist here prevents the renderer from writing arbitrary
+  // store keys through this channel.
   ipcMain.handle('set-migration-flags', (_event, patch: unknown) => {
     if (!isRecord(patch)) return
     const MIGRATION_KEYS = [

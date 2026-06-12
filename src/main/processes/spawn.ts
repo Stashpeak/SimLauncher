@@ -25,6 +25,10 @@ import type { AppLaunchResult, LaunchResult, ProfileLaunchEntry, ProfileLaunchIn
 import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
+// After a launch completes, block further launches for this window. Apps that
+// self-relaunch under a different process name (the mismatch-warning scenario)
+// can trigger a second fast-exit within a few seconds; the block prevents a
+// race where the user clicks Launch again before the UI reflects the real state.
 const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
 let launchBlockedUntil = 0
@@ -163,6 +167,16 @@ export function isRunningExePath(processNames: Set<string>, appPath: string): bo
   return processNames.has(getExeName(appPath))
 }
 
+/**
+ * Parse a Windows-style command-line argument string into an argv array.
+ *
+ * We do not delegate to the shell (`shell: true`) because that would spawn an
+ * intermediate cmd.exe and break `detached` process-tree ownership — the child
+ * would become a grandchild of cmd.exe rather than a direct child, preventing
+ * reliable PID-based kill.  This parser handles the subset of quoting rules
+ * that users realistically enter in the Settings UI (double-quoted groups,
+ * backslash-escaped quotes).
+ */
 function parseCommandLineArgs(input: string) {
   const args: string[] = []
   let current = ''
@@ -412,6 +426,11 @@ export async function spawnDetachedApp(
             gameKey,
             warning
           })
+          // Suppress the toast notification for the game exe itself: fast-exit
+          // is the normal pattern for launcher stubs (Steam, EA App, etc.) and
+          // the warning icon in the game card is sufficient feedback. The toast
+          // is only useful for companion utilities where the user may not
+          // immediately notice the card state change.
           if (!wasGame) {
             sendProcessNameMismatchWarning(sender, appPath, warning)
           }
@@ -422,6 +441,10 @@ export async function spawnDetachedApp(
         })
       })
 
+      // The 'spawn' event fires synchronously on success for most GUI apps, but
+      // some launchers (e.g. Ubisoft Connect wrapper) can delay it. The 500 ms
+      // fallback ensures the caller is unblocked even if the event never fires
+      // (e.g. the child is already gone by the time Node processes the queue).
       fallbackTimer = setTimeout(() => resolveOnce({ status: 'launched', appPath }), 500)
     } catch (err) {
       const message = getErrorMessage(err)

@@ -1,5 +1,8 @@
 import { execFile } from 'child_process'
 
+// 500 ms is short enough that UI updates feel live (polling interval is 2 s)
+// but long enough to collapse the burst of tasklist calls that fire during a
+// multi-app launch sequence (spawn → kill verify → running-apps publish).
 const CACHE_TTL_MS = 500
 
 export interface RunningProcessNamesResult {
@@ -13,6 +16,10 @@ let inflight: Promise<RunningProcessNamesResult> | undefined
 
 function spawnTasklist(): Promise<RunningProcessNamesResult> {
   return new Promise<RunningProcessNamesResult>((resolve) => {
+    // `/fo csv` gives a stable, quote-delimited format that is safe to parse
+    // even when process names contain spaces or special characters.
+    // `/nh` suppresses the header row so we can match from line 1.
+    // `windowsHide: true` prevents a console window flashing on screen.
     execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
       if (error) {
         console.error('Failed to read running processes:', error)
@@ -32,12 +39,23 @@ function spawnTasklist(): Promise<RunningProcessNamesResult> {
   })
 }
 
+/**
+ * Return the set of currently running exe names (lowercase) from a `tasklist`
+ * snapshot.
+ *
+ * Concurrent callers within the TTL window share a single in-flight promise so
+ * that a burst of simultaneous callers (e.g. launch + publish) issues at most
+ * one `tasklist` process.  Failed reads are NOT cached so callers can retry
+ * immediately after a transient failure instead of waiting out the TTL.
+ */
 export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
   if (cachedResult && Date.now() - cachedAt < CACHE_TTL_MS) {
     return Promise.resolve(cachedResult)
   }
 
   if (inflight) {
+    // A tasklist is already in-flight; piggyback on it rather than starting
+    // a second process.
     return inflight
   }
 

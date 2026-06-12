@@ -26,6 +26,9 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('Uncaught error:', error, errorInfo)
   }
 
+  // Prefer the IPC restart so Electron re-launches cleanly (tray icon,
+  // main-process state). Fall back to a renderer-only reload if the IPC
+  // channel is unavailable (e.g. contextBridge not yet ready after a crash).
   private handleReload = async () => {
     try {
       await restartApp()

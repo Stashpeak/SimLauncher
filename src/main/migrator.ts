@@ -15,6 +15,11 @@ function getCustomSlotNumber(key: string) {
   return match ? Number(match[1]) : null
 }
 
+// Scan every record that could reference a custom app slot and return the
+// highest slot number found. Both pre-migration (flat boolean/path keys) and
+// post-migration (utilities array) shapes are checked because the store may
+// contain a mix when this runs (e.g. gamePaths is always flat; profiles may
+// already be in the new shape from a partial earlier migration attempt).
 function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
   let highestSlot = 0
 
@@ -57,6 +62,10 @@ function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefi
   return highestSlot
 }
 
+// Convert a pre-migration profile (flat boolean keys like { simhub: true })
+// into the structured utilities array ({ id, enabled }[]). If utilities already
+// exists it is kept as-is (filtered for validity). The flat boolean keys are
+// then deleted so the result is in the canonical post-migration shape.
 function normalizeStoredProfileUtilityOrder(profile: StoredProfile, utilityKeys: string[]) {
   const normalizedProfile: StoredProfile = {
     ...profile,
@@ -145,6 +154,10 @@ function normalizeStoredProfileSet(profileEntry: StoredProfileEntry, utilityKeys
 }
 
 export function migrateProfilesToNamedSets(): void {
+  // Both migration flags are gated on profileSetsMigrated so the whole
+  // pipeline only runs once. profileUtilityOrderMigrated was a predecessor
+  // one-time migration; it is set here retroactively for installs that were
+  // created after that migration landed but before this one did.
   if (store.get('profileSetsMigrated') === true) {
     return
   }
@@ -153,12 +166,18 @@ export function migrateProfilesToNamedSets(): void {
   const appPaths = getStoredStringRecord('appPaths')
 
   if (!profiles || Object.keys(profiles).length === 0) {
+    // Fresh install or fully cleared store: mark both flags so future
+    // launches skip this function immediately without touching the store.
     store.set('profileUtilityOrderMigrated', true)
     store.set('profileSetsMigrated', true)
     return
   }
 
   const savedCustomSlots = store.get('customSlots')
+  // Derive the required slot count from both the persisted setting and a scan
+  // of the actual data. A user could have configured customapp5, for example,
+  // while customSlots was still 1 (e.g. after an import or manual edit), so
+  // the data scan acts as a floor to avoid silently discarding those entries.
   const customSlots = Math.max(
     typeof savedCustomSlots === 'number' && Number.isFinite(savedCustomSlots)
       ? savedCustomSlots

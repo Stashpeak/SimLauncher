@@ -24,6 +24,9 @@ if (!gotTheLock) {
   })
 
   app.on('before-quit', () => {
+    // Covers system-level quit paths (OS shutdown, taskbar close-all, etc.) that
+    // bypass the window 'close' handler, ensuring the close interceptor in
+    // window.ts doesn't swallow the quit.
     setIsQuitting(true)
   })
 
@@ -35,6 +38,10 @@ if (!gotTheLock) {
       getIconPath: getAppIconPath,
       showMainWindow,
       quitApp: () => {
+        // Set isQuitting before app.quit() so the window 'close' interceptor
+        // does not cancel the quit triggered from the tray menu. The
+        // 'before-quit' event fires after app.quit() is called, which would be
+        // too late if the interceptor runs first.
         setIsQuitting(true)
         app.quit()
       }

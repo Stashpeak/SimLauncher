@@ -37,6 +37,8 @@ export function useProfileMenu(): UseProfileMenuResult {
   const focusSelectedOnOpenRef = useRef(false)
 
   const focusTrigger = useCallback(() => {
+    // rAF defers focus until after React has committed the close state so the
+    // trigger is visible and interactive when focus lands on it.
     window.requestAnimationFrame(() => triggerRef.current?.focus())
   }, [])
 
@@ -115,6 +117,8 @@ export function useProfileMenu(): UseProfileMenuResult {
       return
     }
 
+    // Reset the flag before the rAF so a re-render triggered by focusSelectedProfile
+    // doesn't re-fire this effect while the menu is still open.
     focusSelectedOnOpenRef.current = false
     window.requestAnimationFrame(focusSelectedProfile)
   }, [focusSelectedProfile, newProfileFormOpen, profileMenuOpen])
@@ -149,6 +153,9 @@ export function useProfileMenu(): UseProfileMenuResult {
   const handleProfileMenuKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement
+      // Text inputs inside the menu (e.g. the new-profile name field) must
+      // receive normal keyboard events. Arrow keys are only intercepted for
+      // non-text-input elements so typing in the input field still works.
       const isTextInput =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||

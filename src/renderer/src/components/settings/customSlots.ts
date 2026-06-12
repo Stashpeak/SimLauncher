@@ -7,6 +7,14 @@ import {
   type Profiles
 } from '../../lib/config'
 
+/**
+ * Shifts all custom-slot keys above `removedSlot` down by one in `record`,
+ * then deletes the last (now-vacant) key. The range of affected keys is
+ * [removedSlot, slotCount] inclusive — keys below `removedSlot` are untouched.
+ *
+ * Used to keep appPaths, appNames, and appArgs contiguous after a slot removal
+ * so that slot numbers shown in the UI always match the underlying key index.
+ */
 export const shiftCustomSlotRecord = <T>(
   record: Record<string, T>,
   removedSlot: number,
@@ -28,6 +36,14 @@ export const shiftCustomSlotRecord = <T>(
   return next
 }
 
+/**
+ * Mirrors the record-shift logic for Set members that carry a "customappN" key.
+ * Keys below the removed slot pass through unchanged; keys at the removed slot
+ * are dropped; keys above are decremented by one. Non-matching keys (built-in
+ * utility IDs) are passed through as-is.
+ *
+ * Used for iconLoadErrors, which stores keys rather than values.
+ */
 export const shiftCustomSlotSet = (
   values: Set<string>,
   removedSlot: number,
@@ -87,6 +103,13 @@ const shiftSingleProfileCustomSlots = <T extends GameProfile>(
   return shiftedProfile
 }
 
+/**
+ * Applies the slot-shift to a single game's profile entry, handling both the
+ * flat GameProfile shape and the ProfileSet shape (which nests multiple named
+ * profiles under `.profiles`). The `utilities` array inside each profile also
+ * needs its IDs renumbered so that saved launch sequences stay consistent with
+ * the shifted slot numbers in appPaths/appNames.
+ */
 export const shiftProfileCustomSlots = (
   profile: Profiles[string],
   removedSlot: number,

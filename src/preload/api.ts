@@ -20,6 +20,10 @@ export interface Settings {
   zoomFactor: number
 }
 
+// WritableSettings is a type alias rather than a distinct type so the renderer
+// can pass a Partial<WritableSettings> to saveSettings without casting, while
+// keeping the door open to narrowing it (e.g. omitting read-only computed
+// fields) without changing the Settings surface.
 export type WritableSettings = Settings
 
 export interface MigrationFlags {
@@ -37,6 +41,10 @@ export type StoreConfigChangeReason =
 
 export interface StoreConfigChangePayload {
   reason: StoreConfigChangeReason
+  /**
+   * Store keys that changed. A single-element array `['*']` means all keys
+   * should be treated as dirty (used after a full config import/replace).
+   */
   keys: string[]
 }
 
@@ -46,11 +54,23 @@ export interface RunningApp {
   path: string
   name: string
   gameKey: string
+  /** True when the process path matches a configured tracked-process entry for the game. */
   tracked?: boolean
+  /** Human-readable warning set when process name detection heuristics are uncertain. */
   warning?: string
+  /** True when the process was detected as running with elevated (admin) privileges. */
   elevated?: boolean
 }
 
+/**
+ * Describes why the running-apps list was re-published. The renderer uses this
+ * to decide animation and notification behaviour:
+ * - 'initial': first emission after subscribe, used to populate state without animation.
+ * - 'launch' / 'exit' / 'kill': explicit user actions.
+ * - 'config': store change caused the tracked-app list to differ (paths edited).
+ * - 'scan': periodic or on-demand re-evaluation of the OS process list, e.g.
+ *   after dismiss-app-icon.
+ */
 export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | 'config' | 'scan'
 
 export interface RunningAppsChangedPayload {
@@ -69,6 +89,14 @@ export interface BrowsePathResult {
   inputId: string
 }
 
+/**
+ * Reason codes for a per-process kill failure, surfaced in KillFailure so the
+ * renderer can show a specific message rather than a generic error:
+ * - 'access_denied': the process requires elevation to terminate (UAC).
+ * - 'still_running': the termination signal was sent but the process did not
+ *   exit within the expected window.
+ * - 'unknown': any other OS-level error.
+ */
 export type KillFailureReason = 'access_denied' | 'still_running' | 'unknown'
 
 export interface KillFailure {
@@ -122,6 +150,11 @@ export interface ConfigImportPreviewSummary {
 }
 
 export interface ConfigImportPreviewResult extends ConfigFileResult {
+  /**
+   * Opaque single-use token generated server-side. Must be passed back to
+   * `applyImportConfig` or `cancelImportConfig` to complete or discard the
+   * pending import. The token expires after 5 minutes.
+   */
   token?: string
   summary?: ConfigImportPreviewSummary
 }

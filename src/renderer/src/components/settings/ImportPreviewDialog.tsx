@@ -2,6 +2,12 @@ import { useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 
+/**
+ * Summary produced by the main process during the import-preview step.
+ * Only entries that contain executable paths or command-line arguments are
+ * surfaced here — the user must explicitly trust these before the import is
+ * applied, because they could point to arbitrary binaries.
+ */
 export interface ConfigImportPreviewSummary {
   changedKeys: string[]
   gamePaths: Array<{ key: string; path?: string; args?: string }>
@@ -58,6 +64,9 @@ export function ImportPreviewDialog({
   const titleId = useId()
   const descId = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
+  // The trap is conditional on `summary` being present because the dialog may
+  // briefly be `isOpen: true` while the summary is still loading — activating
+  // the trap on an empty container would immediately focus the wrong element.
   useFocusTrap(isOpen && !!summary, dialogRef)
 
   if (!isOpen || !summary) return null

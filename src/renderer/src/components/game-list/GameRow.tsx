@@ -23,6 +23,9 @@ import { GameRowActions } from './GameRowActions'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { useAppDirty } from '../../contexts/AppDirtyContext'
 
+// How long to block a second launch attempt after apps have been started.
+// Gives processes time to register before another launch would duplicate them.
+// Cooldown is skipped (0 ms) when no apps were actually launched.
 const POST_LAUNCH_BLOCK_MS = 10000
 
 export function GameRow({
@@ -311,6 +314,10 @@ export function GameRow({
     closeProfileMenu(true)
   }
 
+  // When the profile editor is open and its own launch button is pressed, the
+  // editor registers its launcher here so the GameRow's launch path (keyboard
+  // shortcut, row button) delegates to the same flow — ensuring the editor's
+  // dirty-check confirm fires before the launch instead of being bypassed.
   const handleLaunchRequest = useRef<(() => void) | null>(null)
 
   const handleLaunch = async () => {
@@ -396,6 +403,9 @@ export function GameRow({
     }
   }
 
+  // Stable, human-readable id for the editor panel — used by aria-controls on
+  // the toggle button. Prefer game.key (always present in production) and fall
+  // back to the React-generated id only as a safety net in tests / edge cases.
   const reactId = useId()
   const editorId = `profile-editor-${game.key || reactId}`
 
@@ -412,6 +422,8 @@ export function GameRow({
     }
     onToggleEditor()
     if (!isActive && rowRef.current) {
+      // Defer one tick so the editor panel has started its CSS expand
+      // transition before scrollIntoView measures the row's new height.
       setTimeout(() => {
         rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 50)

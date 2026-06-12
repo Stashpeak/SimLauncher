@@ -15,9 +15,15 @@ type ProfileState = {
 const FOCUS_DEBOUNCE_MS = 300
 const PROFILE_FOCUS_EVENT = 'simlauncher:profile-focus-reload'
 
+// Module-level singleton: the focus listener is registered once for the entire
+// renderer lifetime. Multiple useGameProfile instances share it through the
+// custom event, so the store is read at most once per focus regain regardless
+// of how many game rows are mounted.
 let focusListenerActive = false
 let focusDebounceTimer: ReturnType<typeof setTimeout> | undefined
 
+// Debounce is needed because the OS can fire the window focus event multiple
+// times in rapid succession (e.g. Windows switching away and back).
 function ensureFocusListener() {
   if (focusListenerActive) {
     return
@@ -93,14 +99,20 @@ export function useGameProfile(
 
     load()
     ensureFocusListener()
+    // Re-read the store whenever the app regains focus in case an external
+    // tool (or another SimLauncher window) modified the profile on disk.
     window.addEventListener(PROFILE_FOCUS_EVENT, load)
 
     return () => {
       mounted = false
       window.removeEventListener(PROFILE_FOCUS_EVENT, load)
     }
+    // activeProfileId and isActive are included so that switching the active
+    // profile or deactivating the game row re-triggers the load.
   }, [activeProfileId, applyProfileSet, isActive, readProfileSet])
 
+  // Reads the store fresh at call time rather than returning the cached React
+  // state, so callers (launch path) see any changes made after the last render.
   const getProfileRuntimeConfig = useCallback(
     async (): Promise<GameProfileSet> => readProfileSet(),
     [readProfileSet]

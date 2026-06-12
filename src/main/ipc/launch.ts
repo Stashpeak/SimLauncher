@@ -28,6 +28,16 @@ export function getProfileLaunchEntryId(entry: ProfileLaunchEntry): string {
   return `${entry.key} ${normalizePathForComparison(entry.path)}`
 }
 
+/**
+ * Returns an error payload when `gameKey` is not a recognised game identifier,
+ * or `undefined` when the key is valid. The undefined-on-success convention
+ * lets callers short-circuit with `if (err) return err` without a dedicated
+ * result wrapper type.
+ *
+ * IPC inputs are always untrusted: a compromised or misbehaving renderer could
+ * send any string. The KNOWN_GAME_KEYS allowlist ensures only pre-declared
+ * keys can reach process-management code.
+ */
 export function validateGameKey(gameKey: unknown): { success: false; error: string } | undefined {
   if (typeof gameKey !== 'string') {
     return { success: false, error: 'Invalid argument' }
@@ -40,6 +50,12 @@ export function validateGameKey(gameKey: unknown): { success: false; error: stri
   return undefined
 }
 
+/**
+ * Returns an error payload when any of the supplied profile IDs are not
+ * strings, or `undefined` when all are valid. Profile IDs are free-form
+ * user-defined names so they cannot be checked against an allowlist; type
+ * validation is the only gate here.
+ */
 export function validateProfileIds(
   ...profileIds: unknown[]
 ): { success: false; error: string } | undefined {
@@ -66,6 +82,9 @@ export function registerLaunchHandlers(): void {
     return launchProfileApps(event.sender, gameKey, profileApps)
   })
 
+  // relaunch-missing-profile: re-launches only the subset of profile apps that
+  // are not currently running. Useful after a crash or manual close of a single
+  // companion app without wanting to restart the entire profile.
   ipcMain.handle('relaunch-missing-profile', async (event, gameKey: string) => {
     const validationError = validateGameKey(gameKey)
     if (validationError) {
@@ -110,6 +129,9 @@ export function registerLaunchHandlers(): void {
       const gamePath = gamePaths[gameKey]
       const { processNames } = await readRunningProcessNames()
 
+      // The game executable itself is excluded from the diff: it is always
+      // left running across a profile switch because the switch only concerns
+      // companion utilities (SimHub, CrewChief, etc.), not the game itself.
       const utilityEntries = (profileId: string) =>
         buildNamedProfileLaunchEntries(gameKey, profileId).filter(
           (entry) => !gamePath || !pathsEqual(entry.path, gamePath)
@@ -226,6 +248,9 @@ export function registerLaunchHandlers(): void {
     return getRunningApps()
   })
 
+  // subscribe-running-apps / unsubscribe-running-apps use event.sender as the
+  // subscriber identity so the processes module can push updates to the correct
+  // WebContents without holding a direct reference to the window object.
   ipcMain.handle('subscribe-running-apps', async (event) => {
     return subscribeRunningApps(event.sender)
   })

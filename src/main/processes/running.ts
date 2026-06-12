@@ -43,6 +43,17 @@ let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
 let lastRunningAppsSnapshot = ''
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
 
+/**
+ * Identify game keys whose configured game exe is running externally (i.e. the
+ * user launched the game outside of SimLauncher) so their companion apps can
+ * still be surfaced in the UI.
+ *
+ * Adoption is intentionally restricted to the case where `owners.size === 1`:
+ * if two profiles share the same game exe (e.g. two editions of the same game
+ * pointing at the same binary) it is ambiguous which profile owns the running
+ * process, so we adopt neither rather than guess and surface the wrong profile's
+ * companion utilities.
+ */
 function getExternallyAdoptableGameKeys(
   processNames: Set<string>,
   profiles: Record<string, StoredProfileEntry> | undefined,
@@ -160,6 +171,10 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       elevated: appProcess.elevated ?? appProcess.reason === 'access_denied'
     }))
   const surfacedApps = [...launchedApps, ...unclosedApps]
+  // Mismatch-warning entries are shown only when the ORIGINAL exe is NOT in
+  // the tasklist (i.e. only the child process survives). If the original exe
+  // were still running it would appear in `surfacedApps` and no warning is
+  // needed — the user can see and track it normally.
   const mismatchWarnings = Array.from(processNameMismatchWarnings.values())
     .filter((entry) => !processNames.has(getExeName(entry.path)))
     .map((entry) => ({
@@ -239,6 +254,9 @@ function removeRunningAppsSubscriber(webContents: WebContents) {
   if (runningAppsSubscribers.size === 0 && runningAppsMonitor) {
     clearInterval(runningAppsMonitor)
     runningAppsMonitor = undefined
+    // Reset the snapshot so the first emission after the next subscriber
+    // re-subscribes is always sent regardless of whether the app list changed
+    // while there were no subscribers.
     lastRunningAppsSnapshot = ''
   }
 }
@@ -274,6 +292,14 @@ async function publishRunningAppsInternal(
   return payload
 }
 
+/**
+ * Schedule a running-apps broadcast, serializing calls so that concurrent
+ * triggers (e.g. a spawn 'spawn' event races the periodic scanner) do not
+ * issue parallel tasklist reads that could produce out-of-order snapshots on
+ * the renderer. Each call chains its own invocation (with its own reason)
+ * onto the previous promise, so every trigger still publishes — just in
+ * arrival order.
+ */
 export function publishRunningApps(
   reason: RunningAppsChangeReason = 'scan'
 ): Promise<RunningAppsChangedPayload | null> {

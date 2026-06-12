@@ -9,6 +9,11 @@ import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
 
+// Case-insensitive path comparison — Windows paths are case-insensitive but
+// the main process may return them in any case (e.g. from process snapshots
+// vs. settings-stored paths). Without normalization, `C:\foo` and `c:\foo`
+// would be treated as different entries and the game's own executable would
+// appear as a companion app in the running strip.
 const normalizePath = (path: string) => path.toLowerCase()
 
 export function GameList({
@@ -18,6 +23,10 @@ export function GameList({
 }): ReactNode {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  // Only one profile editor is open at a time: opening a row closes any other.
+  // This is enforced here (single activeEditorKey) rather than in GameRow so
+  // closing-by-opening-another-row can still trigger the pending-profile
+  // discard effect inside the collapsing row (#453).
   const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null)
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
@@ -50,6 +59,9 @@ export function GameList({
     }
   }, [])
 
+  // Lazy-load Windows shell icons for newly-seen running app paths. Uses the
+  // undefined sentinel (vs '' for "loaded but no icon") so re-fetching on
+  // every render is avoided while still retrying if the cache entry is missing.
   useEffect(() => {
     let mounted = true
     const pathsToLoad = Array.from(
@@ -125,6 +137,9 @@ export function GameList({
         .map(({ game }) => {
           const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
           const gamePathLower = gamePaths[game.key] ? normalizePath(gamePaths[game.key]) : undefined
+          // Exclude the game's own executable so it doesn't appear as a
+          // companion app in the running strip — the green dot on GameIcon
+          // already communicates that the game itself is running.
           const appsForGame = runningApps.filter(
             (a) => a.gameKey === game.key && normalizePath(a.path) !== gamePathLower
           )

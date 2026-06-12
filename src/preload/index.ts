@@ -7,6 +7,15 @@ import type {
   StoreConfigChangePayload
 } from './api'
 
+// The channel strings used in ipcRenderer.invoke / ipcRenderer.on must match
+// the ipcMain.handle / sendToRenderer calls in src/main/ipc exactly.
+// Renaming a channel in either direction silently breaks the feature — there
+// is no compile-time contract between the two sides.
+
+// Each `on*` subscription returns an Unsubscribe function so callers can call
+// ipcRenderer.removeListener when the React component unmounts, avoiding
+// duplicate-event delivery after hot reloads or re-mounts.
+
 const electronAPI: ElectronAPI = {
   // launch
   launchProfile: (gameKey: string) => ipcRenderer.invoke('launch-profile', gameKey),

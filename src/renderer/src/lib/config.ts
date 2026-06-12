@@ -14,6 +14,9 @@ export interface ProfileUtility {
 }
 export type GamePosition = 'first' | 'last'
 export interface GameProfile {
+  // Index signature preserved so that legacy flat keys (e.g. 'simhub': true)
+  // can coexist with the typed properties during migration. Any code reading a
+  // known key should use the typed property, not the index signature.
   [key: string]: unknown
   utilities?: ProfileUtility[]
   launchAutomatically?: boolean
@@ -31,6 +34,9 @@ export interface GameProfileSet {
   activeProfileId: string
   profiles: NamedGameProfile[]
 }
+// The on-disk representation can be either the old flat-profile format
+// (GameProfile) or the newer profile-set format (GameProfileSet). Callers
+// should normalise through normalizeGameProfileSet before operating on profiles.
 export type StoredGameProfile = GameProfile | GameProfileSet
 export type Profiles = Record<string, StoredGameProfile>
 
@@ -94,6 +100,9 @@ export function getCustomUtilityKey(index: number): string {
   return `customapp${index}`
 }
 
+// A custom-app slot is considered "in use" when the stored value is either a
+// non-empty string (a configured path or name) or a boolean true (legacy enabled
+// flag). Other falsy values mean the slot is unconfigured.
 function hasCustomSlotValue(value: unknown) {
   if (value === true) {
     return true
@@ -111,6 +120,15 @@ function getCustomSlotNumberFromKey(key: string) {
   return match ? Number(match[1]) : null
 }
 
+/**
+ * Scans one or more records (settings, profiles, or nested profile objects) and
+ * returns the highest custom-app slot number that is actively in use.
+ *
+ * The scan is recursive for the special keys 'profiles' (array of named
+ * profiles) and 'utilities' (ProfileUtility[] inside a profile) so that enabled
+ * slots buried inside a GameProfileSet are found without callers flattening
+ * the structure first. Returns 0 when no custom slot is found.
+ */
 export function getHighestCustomSlot(
   ...records: Array<Record<string, unknown> | undefined>
 ): number {
@@ -158,6 +176,12 @@ export function getHighestCustomSlot(
   return highestSlot
 }
 
+/**
+ * Returns the effective custom-slot count: at least as large as the stored
+ * setting and at least as large as the highest slot already in use across the
+ * provided records. This prevents the UI from silently dropping custom-app data
+ * when the stored slot count is lower than the actual configured slots.
+ */
 export function resolveCustomSlots(
   value: unknown,
   ...records: Array<Record<string, unknown> | undefined>
@@ -194,6 +218,20 @@ export function isProfileUtility(value: unknown): value is ProfileUtility {
   return typeof value.id === 'string' && typeof value.enabled === 'boolean'
 }
 
+/**
+ * Returns a canonical ProfileUtility[] for the given profile, aligned to the
+ * current utility list.
+ *
+ * Ordering contract (#438, #480):
+ *  - Entries already stored in the profile are emitted first, in their stored
+ *    order (preserving the user's drag-reorder choices).
+ *  - Unknown or duplicate ids are dropped.
+ *  - Utilities not yet in the profile (e.g. newly added custom slots) are
+ *    appended at the end with enabled derived from the legacy flat boolean key
+ *    (profile[utility.key] === true) so that old data round-trips correctly.
+ *
+ * The result is used as the dirty-tracking baseline — key order is load-bearing.
+ */
 export function normalizeProfileUtilities(
   profile: GameProfile | undefined,
   utilities: Utility[]
@@ -235,6 +273,15 @@ export function getEnabledProfileUtilities(
   return normalizeProfileUtilities(profile, utilities).filter((utility) => utility.enabled)
 }
 
+/**
+ * One-time migration that converts a flat-boolean profile (legacy format where
+ * each utility is stored as `{ simhub: true, crewchief: false, ... }`) to the
+ * ordered `utilities` array format.
+ *
+ * After calling this, the flat boolean keys are deleted so the profile does not
+ * carry both representations. Only called from migrateFromLocalStorage — do not
+ * use for live editor state.
+ */
 export function migrateProfileToUtilityOrder(
   profile: GameProfile,
   utilities: Utility[]
@@ -275,6 +322,11 @@ export function normalizeProfiles(value: unknown): Profiles {
   return profiles
 }
 
+/**
+ * Generates a collision-resistant profile id.
+ * The timestamp component prevents collisions across sessions; the random
+ * suffix handles the (very unlikely) same-millisecond case within a session.
+ */
 export function createProfileId(): string {
   return `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -304,6 +356,19 @@ export function createDefaultProfile(profile: GameProfile = {}): NamedGameProfil
   }
 }
 
+/**
+ * Ensures the stored value is a valid GameProfileSet regardless of its format.
+ *
+ * Handles three cases:
+ *  1. Already a GameProfileSet — sanitises duplicate ids, fills missing names,
+ *     and falls back to profiles[0] when the stored activeProfileId is stale.
+ *  2. A bare GameProfile (legacy format) — wraps it in a single-profile set
+ *     using DEFAULT_PROFILE_ID and DEFAULT_PROFILE_NAME.
+ *  3. undefined / null / invalid — returns a fresh default profile set.
+ *
+ * The guarantee: the returned set always has at least one profile and a valid
+ * activeProfileId that points to an existing profile.
+ */
 export function normalizeGameProfileSet(value: StoredGameProfile | undefined): GameProfileSet {
   if (isGameProfileSet(value)) {
     const seenIds = new Set<string>()

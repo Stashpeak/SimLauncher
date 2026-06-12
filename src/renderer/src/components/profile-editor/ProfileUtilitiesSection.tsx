@@ -56,6 +56,9 @@ export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): Re
   )
 }
 
+// Extracted as a plain function (not a component) to avoid React treating each
+// drag-and-drop row re-render as a remount, which would cancel any in-progress
+// drag. The props object is passed explicitly so there's no closure staleness.
 function renderUtilityRow(
   props: ProfileUtilitiesSectionProps,
   entry: ProfileUtility,
@@ -86,6 +89,9 @@ function renderUtilityRow(
         }
       }}
       onDragLeave={(event) => {
+        // Only clear when the pointer actually leaves this row's subtree.
+        // Without the contains() check, dragging over a child element (e.g.
+        // the icon) fires dragLeave on the row and flickers the drop indicator.
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           props.onDropTargetChange(props.dropTarget?.id === utility.key ? null : props.dropTarget)
         }
