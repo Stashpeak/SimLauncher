@@ -9,6 +9,7 @@
 git clone https://github.com/Stashpeak/SimLauncher
 cd SimLauncher
 npm install
+npx install-electron   # Electron >=42 no longer downloads its binary via postinstall
 npm run dev
 ```
 
