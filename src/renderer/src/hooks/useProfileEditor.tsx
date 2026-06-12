@@ -13,6 +13,7 @@ import {
   getUtilities,
   normalizeGameProfileSet,
   normalizeProfileUtilities,
+  type GamePosition,
   type ProfileUtility,
   type Profiles,
   type Utility
@@ -53,6 +54,8 @@ export interface UseProfileEditorResult {
   dropTarget: { id: string; placement: 'before' | 'after' } | null
   launchAutomatically: boolean
   setLaunchAutomatically: Dispatch<SetStateAction<boolean>>
+  gamePosition: GamePosition
+  setGamePosition: Dispatch<SetStateAction<GamePosition>>
   trackingEnabled: boolean
   setTrackingEnabled: Dispatch<SetStateAction<boolean>>
   killControlsEnabled: boolean
@@ -128,6 +131,7 @@ export function useProfileEditor({
     placement: 'before' | 'after'
   } | null>(null)
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
+  const [gamePosition, setGamePosition] = useState<GamePosition>('first')
   const [trackingEnabled, setTrackingEnabled] = useState(true)
   const [killControlsEnabled, setKillControlsEnabled] = useState(false)
   const [relaunchControlsEnabled, setRelaunchControlsEnabled] = useState(false)
@@ -172,6 +176,8 @@ export function useProfileEditor({
       setProfileUtilities(normalizeProfileUtilities(profile, resolvedUtilities))
       // Default auto-launch to true unless explicitly disabled
       setLaunchAutomatically(profile.launchAutomatically !== false)
+      // Anything other than an explicit 'last' means game-first (#471)
+      setGamePosition(profile.gamePosition === 'last' ? 'last' : 'first')
       setTrackingEnabled(profile.trackingEnabled !== false)
       setKillControlsEnabled(profile.killControlsEnabled === true)
       setRelaunchControlsEnabled(profile.relaunchControlsEnabled === true)
@@ -242,6 +248,7 @@ export function useProfileEditor({
           .map((u) => ({ id: u.id, enabled: false }))
       ],
       launchAutomatically,
+      gamePosition,
       trackingEnabled,
       killControlsEnabled,
       relaunchControlsEnabled,
@@ -251,6 +258,7 @@ export function useProfileEditor({
       profileName,
       profileUtilities,
       launchAutomatically,
+      gamePosition,
       trackingEnabled,
       killControlsEnabled,
       relaunchControlsEnabled,
@@ -458,6 +466,7 @@ export function useProfileEditor({
           enabled: utility.enabled
         })),
         launchAutomatically,
+        gamePosition,
         trackingEnabled,
         killControlsEnabled,
         relaunchControlsEnabled,
@@ -513,6 +522,7 @@ export function useProfileEditor({
           enabled: utility.enabled
         })),
         launchAutomatically,
+        gamePosition,
         trackingEnabled,
         killControlsEnabled,
         relaunchControlsEnabled,
@@ -612,6 +622,8 @@ export function useProfileEditor({
     dropTarget,
     launchAutomatically,
     setLaunchAutomatically,
+    gamePosition,
+    setGamePosition,
     trackingEnabled,
     setTrackingEnabled,
     killControlsEnabled,

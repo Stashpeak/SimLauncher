@@ -124,8 +124,10 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
 
         <ProfileBehaviorSection
           launchAutomatically={editor.launchAutomatically}
+          gamePosition={editor.gamePosition}
           trackingEnabled={editor.trackingEnabled}
           onLaunchAutomaticallyChange={editor.setLaunchAutomatically}
+          onGamePositionChange={editor.setGamePosition}
           onTrackingEnabledChange={editor.setTrackingEnabled}
         />
 

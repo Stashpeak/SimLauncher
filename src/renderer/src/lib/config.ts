@@ -12,10 +12,12 @@ export interface ProfileUtility {
   id: string
   enabled: boolean
 }
+export type GamePosition = 'first' | 'last'
 export interface GameProfile {
   [key: string]: unknown
   utilities?: ProfileUtility[]
   launchAutomatically?: boolean
+  gamePosition?: GamePosition
   trackingEnabled?: boolean
   killControlsEnabled?: boolean
   relaunchControlsEnabled?: boolean

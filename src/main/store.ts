@@ -377,6 +377,12 @@ function sanitizeProfileFields(profile: Record<string, unknown>, utilityKeys: Se
     }
   })
 
+  // Only the two known positions survive; anything else (absent, legacy,
+  // corrupted) is stripped so readers fall back to game-first (#471).
+  if (profile.gamePosition === 'first' || profile.gamePosition === 'last') {
+    safeProfile.gamePosition = profile.gamePosition
+  }
+
   const utilities = sanitizeProfileUtilities(profile.utilities, utilityKeys)
   if (utilities) {
     safeProfile.utilities = utilities
