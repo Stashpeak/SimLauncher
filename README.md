@@ -75,7 +75,7 @@ In that case, your current setup is already simple enough.
 
 ## Supported Games
 
-Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rally, Automobilista, Automobilista 2, BeamNG, DCS World, Dirt Rally, Dirt Rally 2.0, EA WRC, F1 24, F1 25, iRacing, Le Mans Ultimate, Project Motor Racing, RaceRoom Racing Experience, Richard Burns Rally, Rennsport, rFactor, rFactor 2
+Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rally, Aerofly FS 4, Automobilista, Automobilista 2, BeamNG, DCS World, Dirt Rally, Dirt Rally 2.0, EA WRC, F1 24, F1 25, IL-2 Sturmovik: Great Battles, iRacing, Le Mans Ultimate, Microsoft Flight Simulator 2020, Microsoft Flight Simulator 2024, Prepar3D, Project Motor Racing, RaceRoom Racing Experience, Richard Burns Rally, Rennsport, rFactor, rFactor 2, X-Plane 12
 
 ## Supported Utilities
 
