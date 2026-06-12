@@ -19,6 +19,7 @@ async function loadStoreModule() {
   return {
     getStoredBoolean: storeModule.getStoredBoolean,
     getStoredStringRecord: storeModule.getStoredStringRecord,
+    EXPECTED_CONFIG_KEYS: storeModule.EXPECTED_CONFIG_KEYS,
     MAX_CUSTOM_SLOTS: storeModule.MAX_CUSTOM_SLOTS,
     sanitizeSettingsPatch: storeModule.sanitizeSettingsPatch,
     sanitizeImportedConfig: storeModule.sanitizeImportedConfig,
@@ -142,6 +143,70 @@ test('sanitizeSettingsPatch filters object settings like config import', async (
     appNames: { simhub: 'SimHub', customapp2: 'Overlay' },
     appArgs: { customapp2: '--safe' }
   })
+})
+
+// Data-loss guard: 'save-settings' runs every patch through
+// sanitizeSettingsPatch. If profiles/windowBounds/migration flags ever slip
+// through, a settings save would clobber the user's profiles wholesale.
+test('sanitizeSettingsPatch strips profiles, windowBounds, and migration flags', async () => {
+  const { sanitizeSettingsPatch } = await loadStoreModule()
+
+  expect(
+    sanitizeSettingsPatch({
+      themeMode: 'light',
+      profiles: { iracing: { activeProfileId: 'default', profiles: [] } },
+      windowBounds: { x: 0, y: 0, width: 800, height: 600 },
+      migrated: true,
+      profileSetsMigrated: true,
+      profileUtilityOrderMigrated: true
+    })
+  ).toEqual({ themeMode: 'light' })
+})
+
+// Drift alarm: every Settings key must survive sanitization round-trip with a
+// valid value. When a new key is added to EXPECTED_CONFIG_KEYS, this test
+// fails until a sample value is added here AND getSupportedConfigValues
+// actually handles the key — catching the "key added but silently dropped on
+// save" failure mode.
+test('sanitizeSettingsPatch round-trips every settings key with valid values', async () => {
+  const { EXPECTED_CONFIG_KEYS, sanitizeSettingsPatch } = await loadStoreModule()
+
+  const NON_SETTINGS_KEYS = new Set([
+    'profiles',
+    'windowBounds',
+    'profileUtilityOrderMigrated',
+    'profileSetsMigrated',
+    'migrated'
+  ])
+  const sampleValues: Record<string, unknown> = {
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingSim64DX11.exe' },
+    appNames: { simhub: 'SimHub' },
+    appArgs: { customapp1: '--safe' },
+    customSlots: 2,
+    accentPreset: 'ocean',
+    accentCustom: '#AABBCC',
+    accentBgTint: true,
+    themeMode: 'light',
+    focusActiveTitle: false,
+    launchDelayMs: 2000,
+    startWithWindows: true,
+    startMinimized: true,
+    minimizeToTray: true,
+    showTrayIcon: false,
+    autoCheckUpdates: false,
+    zoomFactor: 1.5
+  }
+
+  const settingsKeys = [...EXPECTED_CONFIG_KEYS].filter((key) => !NON_SETTINGS_KEYS.has(key))
+  const missingSamples = settingsKeys.filter(
+    (key) => !Object.prototype.hasOwnProperty.call(sampleValues, key)
+  )
+  expect(missingSamples, 'add a sample value for every new settings key').toEqual([])
+
+  const patch = Object.fromEntries(settingsKeys.map((key) => [key, sampleValues[key]]))
+
+  expect(sanitizeSettingsPatch(patch)).toEqual(patch)
 })
 
 test('profile sanitization keeps a valid gamePosition and strips invalid values (#471)', async () => {
