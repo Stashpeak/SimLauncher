@@ -5,8 +5,20 @@ import { isRecord, isValidExePath, normalizePathForComparison } from './utils'
 export interface StoredProfile extends Record<string, unknown> {
   utilities?: StoredProfileUtility[]
   launchAutomatically?: boolean
+  gamePosition?: GamePosition
   trackingEnabled?: boolean
   trackedProcessPaths?: string[]
+}
+
+export type GamePosition = 'first' | 'last'
+
+/**
+ * Resolve where the game sits in the launch sequence. Anything other than an
+ * explicit 'last' (absent, legacy, corrupted) means 'first' — the behavior
+ * every profile had before #471.
+ */
+export function getGamePosition(profile: StoredProfile): GamePosition {
+  return profile.gamePosition === 'last' ? 'last' : 'first'
 }
 
 export interface StoredNamedProfile extends StoredProfile {
@@ -130,39 +142,38 @@ export function getEnabledUtilityEntries(
   return entries
 }
 
-export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchEntry[] {
+function buildProfileLaunchEntries(gameKey: string, profile: StoredNamedProfile) {
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
-  const profiles = getStoredProfiles()
   const customSlots = store.get('customSlots')
-  const profile = resolveActiveProfile(profiles[gameKey])
   const entries: ProfileLaunchEntry[] = []
+  const gameEntry =
+    profile.launchAutomatically !== false && gamePaths[gameKey]
+      ? { key: gameKey, path: gamePaths[gameKey] }
+      : undefined
 
-  if (profile.launchAutomatically !== false && gamePaths[gameKey]) {
-    entries.push({ key: gameKey, path: gamePaths[gameKey] })
+  if (gameEntry && getGamePosition(profile) === 'first') {
+    entries.push(gameEntry)
   }
   getEnabledUtilityEntries(profile, appPaths, customSlots).forEach((entry) => entries.push(entry))
+  if (gameEntry && getGamePosition(profile) === 'last') {
+    entries.push(gameEntry)
+  }
 
   return entries
+}
+
+export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchEntry[] {
+  const profiles = getStoredProfiles()
+  return buildProfileLaunchEntries(gameKey, resolveActiveProfile(profiles[gameKey]))
 }
 
 export function buildNamedProfileLaunchEntries(
   gameKey: string,
   profileId: string
 ): ProfileLaunchEntry[] {
-  const appPaths = getStoredStringRecord('appPaths')
-  const gamePaths = getStoredStringRecord('gamePaths')
   const profiles = getStoredProfiles()
-  const customSlots = store.get('customSlots')
-  const profile = resolveNamedProfile(profiles[gameKey], profileId)
-  const entries: ProfileLaunchEntry[] = []
-
-  if (profile.launchAutomatically !== false && gamePaths[gameKey]) {
-    entries.push({ key: gameKey, path: gamePaths[gameKey] })
-  }
-  getEnabledUtilityEntries(profile, appPaths, customSlots).forEach((entry) => entries.push(entry))
-
-  return entries
+  return buildProfileLaunchEntries(gameKey, resolveNamedProfile(profiles[gameKey], profileId))
 }
 
 export function getUtilityKeys(customSlots: unknown): string[] {

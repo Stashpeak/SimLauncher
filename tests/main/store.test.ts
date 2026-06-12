@@ -144,6 +144,30 @@ test('sanitizeSettingsPatch filters object settings like config import', async (
   })
 })
 
+test('profile sanitization keeps a valid gamePosition and strips invalid values (#471)', async () => {
+  const { sanitizeImportedConfig } = await loadStoreModule()
+  const sanitized = sanitizeImportedConfig({
+    customSlots: 1,
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          { id: 'default', name: 'Default', gamePosition: 'last' },
+          { id: 'second', name: 'Second', gamePosition: 'banana' },
+          { id: 'third', name: 'Third', gamePosition: 42 }
+        ]
+      }
+    }
+  }) as {
+    profiles: { ac: { profiles: Array<Record<string, unknown>> } }
+  }
+
+  const [first, second, third] = sanitized.profiles.ac.profiles
+  expect(first.gamePosition).toBe('last')
+  expect(second).not.toHaveProperty('gamePosition')
+  expect(third).not.toHaveProperty('gamePosition')
+})
+
 test('sanitizeImportedConfig sanitizes profile sets and tracked process paths', async () => {
   const { sanitizeImportedConfig } = await loadStoreModule()
   expect(
