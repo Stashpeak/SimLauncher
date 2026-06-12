@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   applyImportConfig,
   cancelImportConfig,
@@ -34,6 +34,20 @@ export function useConfigIO({ notify, onConfigImported }: UseConfigIOArgs): UseC
     filePath?: string
     summary: ConfigImportPreviewSummary
   } | null>(null)
+
+  // Unmount with the preview dialog still open (e.g. the SettingsProvider
+  // remounts) would otherwise leave the token armed main-side until its TTL
+  // expires — release it eagerly (#500). Ref mirror because the unmount
+  // cleanup closes over the first render's state.
+  const importPreviewTokenRef = useRef<string | null>(null)
+  importPreviewTokenRef.current = importPreview?.token ?? null
+  useEffect(() => {
+    return () => {
+      if (importPreviewTokenRef.current) {
+        void cancelImportConfig(importPreviewTokenRef.current)
+      }
+    }
+  }, [])
 
   const handleExportConfig = useCallback(async () => {
     setExportingConfig(true)

@@ -53,6 +53,11 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('close-requested', handler)
   },
   restartApp: () => ipcRenderer.invoke('restart-app'),
+  onWindowMaximizedChanged: (cb: (isMaximized: boolean) => void) => {
+    const handler = (_: unknown, isMaximized: boolean) => cb(isMaximized)
+    ipcRenderer.on('window-maximized-changed', handler)
+    return () => ipcRenderer.removeListener('window-maximized-changed', handler)
+  },
 
   // process monitoring
   getRunningApps: () => ipcRenderer.invoke('get-running-apps'),

@@ -25,24 +25,3 @@ export function getSettingsObjectChangesDuringSave(
     SETTINGS_OBJECT_FIELDS.map((field) => [field, currentVersions[field] !== versionsAtSave[field]])
   ) as SettingsObjectChangeMap
 }
-
-/**
- * Returns the object records that should become the new dirty-tracking baseline
- * after a save completes.
- *
- * Returning `savedObjects` unconditionally is intentional: the baseline must
- * reflect what is on disk, not the in-flight renderer state. If the user made
- * further edits while the save was awaiting (changedDuringSave[field] === true),
- * those edits will still appear as dirty against this baseline, which is
- * exactly the desired behaviour. Using `latestObjects` instead would silently
- * lose unsaved concurrent edits by making them look already-saved.
- */
-export function resolveSettingsObjectsAfterSave({
-  savedObjects
-}: {
-  savedObjects: SettingsObjectRecords
-  latestObjects: SettingsObjectRecords
-  changedDuringSave: SettingsObjectChangeMap
-}): SettingsObjectRecords {
-  return savedObjects
-}

@@ -363,7 +363,6 @@ export function SettingsProvider({
     zoomFactor,
     currentSettingsState,
     settingsObjectEditVersions,
-    latestSettingsObjects,
     notify,
     resetDirty,
     setAppPaths,

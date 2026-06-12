@@ -277,6 +277,20 @@ test('window-close IPC keeps the app alive when minimize-to-tray is on', async (
   expect(appState.getIsQuitting()).toBe(false)
 })
 
+// OS paths (Win+Up, aero-snap) maximize a frameless window without the
+// titlebar button — the renderer's icon state relies on this push (#500).
+test('maximize and unmaximize events push the window state to the renderer', async () => {
+  const { createWindow } = await loadWindowModuleForCreate()
+  createWindow()
+  const win = await getCreatedWindow()
+
+  win.emit('maximize')
+  expect(win.webContents.send).toHaveBeenCalledWith('window-maximized-changed', true)
+
+  win.emit('unmaximize')
+  expect(win.webContents.send).toHaveBeenCalledWith('window-maximized-changed', false)
+})
+
 test('createWindow pins the renderer security hardening', async () => {
   const { createWindow } = await loadWindowModuleForCreate()
   createWindow()
