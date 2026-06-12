@@ -954,7 +954,7 @@ test('launchProfileApps uses encoded PowerShell command for elevated launches wi
   const decodedCommand = Buffer.from(elevatedCall!.args[3], 'base64').toString('utf16le')
   expect(decodedCommand).toContain("$payload = ConvertFrom-Json @'")
   expect(decodedCommand).toContain(
-    'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
+    'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -WorkingDirectory $payload.workingDirectory -Verb RunAs'
   )
   expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toEqual({
     filePath: 'C:/Tools/Admin Tool.exe',
@@ -963,7 +963,8 @@ test('launchProfileApps uses encoded PowerShell command for elevated launches wi
       'C:/Users/Driver/Sim Configs',
       '--literal',
       "$(Start-Process calc); 'single' & value"
-    ]
+    ],
+    workingDirectory: 'C:/Tools'
   })
 })
 
@@ -988,11 +989,14 @@ test('launchProfileApps omits PowerShell ArgumentList for elevated launches with
   })
 
   const decodedCommand = Buffer.from(elevatedCall!.args[3], 'base64').toString('utf16le')
-  expect(decodedCommand).toContain('Start-Process -FilePath $payload.filePath -Verb RunAs')
+  expect(decodedCommand).toContain(
+    'Start-Process -FilePath $payload.filePath -WorkingDirectory $payload.workingDirectory -Verb RunAs'
+  )
   expect(decodedCommand).not.toContain('-ArgumentList')
   expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toEqual({
     filePath: 'C:/Tools/Admin Tool.exe',
-    args: []
+    args: [],
+    workingDirectory: 'C:/Tools'
   })
 })
 
@@ -1030,6 +1034,47 @@ test('launchProfileApps resolves args per utility key when two slots share the s
   expect(spawnCalls[1]).toMatchObject({
     appPath: 'C:/Tools/Shared Utility.exe',
     args: ['--mode', 'silent']
+  })
+})
+
+// Apps like iOverlay resolve asset paths relative to their CWD; inheriting
+// SimLauncher's CWD makes every WIC sprite load fail (hr=0x80070003) and the
+// failed render loop leaks memory until OOM. The launcher must always start
+// an app in its own folder, the same way Explorer/Steam/DisplayMagician do.
+test('launchProfileApps starts each app with its own folder as the working directory (#483)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  expect(spawnCalls[0]).toMatchObject({
+    appPath: 'C:/Tools/SimHub.exe',
+    options: { cwd: 'C:/Tools', detached: true, stdio: 'ignore' }
+  })
+})
+
+test('elevated launches pass the app folder as -WorkingDirectory (#483)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+  const { launchProfileApps } = await loadProcessModules()
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])).resolves.toMatchObject(
+    {
+      success: true,
+      launchedCount: 1,
+      elevatedCount: 1
+    }
+  )
+
+  const elevatedCall = execFileCalls.find((call) => call.command === 'powershell.exe')
+  const decodedCommand = Buffer.from(elevatedCall!.args[3], 'base64').toString('utf16le')
+  expect(decodedCommand).toContain('-WorkingDirectory $payload.workingDirectory')
+  expect(JSON.parse(decodedCommand.split("@'\n")[1].split("\n'@")[0])).toMatchObject({
+    filePath: 'C:/Tools/Admin Tool.exe',
+    workingDirectory: 'C:/Tools'
   })
 })
 

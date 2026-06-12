@@ -250,11 +250,18 @@ function encodePowerShellCommand(command: string) {
 }
 
 function createElevatedLaunchCommand(appPath: string, args: string[]) {
-  const payload = JSON.stringify({ filePath: appPath, args })
+  // -WorkingDirectory mirrors the non-elevated cwd fix (#483). Best effort:
+  // Windows may not propagate it across the elevation boundary, but stating
+  // the intent is harmless and covers configurations where it does.
+  const payload = JSON.stringify({
+    filePath: appPath,
+    args,
+    workingDirectory: path.dirname(appPath)
+  })
   const startProcessCommand =
     args.length > 0
-      ? 'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -Verb RunAs'
-      : 'Start-Process -FilePath $payload.filePath -Verb RunAs'
+      ? 'Start-Process -FilePath $payload.filePath -ArgumentList $payload.args -WorkingDirectory $payload.workingDirectory -Verb RunAs'
+      : 'Start-Process -FilePath $payload.filePath -WorkingDirectory $payload.workingDirectory -Verb RunAs'
 
   return encodePowerShellCommand(
     [
@@ -320,7 +327,15 @@ export function spawnDetachedApp(
 
     try {
       const args = getAppArgs(appKey)
-      const child = spawn(appPath, args, { detached: true, stdio: 'ignore' })
+      // Always start an app in its own folder, the way Explorer/Steam do.
+      // Apps that resolve assets relative to their CWD (e.g. iOverlay's WIC
+      // sprite loads) break — and can leak memory until OOM — when they
+      // inherit SimLauncher's CWD instead (#483).
+      const child = spawn(appPath, args, {
+        cwd: path.dirname(appPath),
+        detached: true,
+        stdio: 'ignore'
+      })
       const runningKey = normalizePathForComparison(appPath)
       runningProcesses.set(runningKey, {
         process: child,
