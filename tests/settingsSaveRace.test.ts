@@ -3,88 +3,38 @@ import { test } from 'vitest'
 
 import {
   createSettingsObjectVersions,
-  getSettingsObjectChangesDuringSave,
-  resolveSettingsObjectsAfterSave,
-  type SettingsObjectRecords
+  getSettingsObjectChangesDuringSave
 } from '../src/renderer/src/components/settings/saveRace'
 
-const savedObjects: SettingsObjectRecords = {
-  appPaths: { crewChief: 'C:\\Apps\\CrewChief.exe' },
-  appNames: { custom1: 'Spotter' },
-  appArgs: { custom1: '--old' },
-  gamePaths: { ams2: 'C:\\Games\\AMS2.exe' }
-}
+// The change map drives which object records are pushed back into renderer
+// state after a save: a field edited while the save was in flight must NOT be
+// overwritten with the pre-save trimmed copy (see useSettingsSave). The dirty
+// baseline itself always uses the saved records, so concurrent edits stay
+// visibly dirty.
 
-const latestObjects: SettingsObjectRecords = {
-  appPaths: { crewChief: 'D:\\Apps\\CrewChief.exe' },
-  appNames: { custom1: 'Telemetry' },
-  appArgs: { custom1: '--new' },
-  gamePaths: { ams2: 'D:\\Games\\AMS2.exe' }
-}
-
-test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when nothing changed during save', () => {
+test('no edits during save reports every field unchanged', () => {
   const versionsAtSave = createSettingsObjectVersions()
-  const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, versionsAtSave)
 
-  const resolved = resolveSettingsObjectsAfterSave({
-    savedObjects,
-    latestObjects,
-    changedDuringSave
+  assert.deepEqual(getSettingsObjectChangesDuringSave(versionsAtSave, versionsAtSave), {
+    appPaths: false,
+    appNames: false,
+    appArgs: false,
+    gamePaths: false
   })
-
-  assert.deepEqual(resolved.appPaths, savedObjects.appPaths)
-  assert.deepEqual(resolved.appNames, savedObjects.appNames)
-  assert.deepEqual(resolved.appArgs, savedObjects.appArgs)
-  assert.deepEqual(resolved.gamePaths, savedObjects.gamePaths)
 })
 
-test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when app paths changed during save', () => {
-  const versionsAtSave = createSettingsObjectVersions()
-  const currentVersions = { ...versionsAtSave, appPaths: versionsAtSave.appPaths + 1 }
-  const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
-
-  const resolved = resolveSettingsObjectsAfterSave({
-    savedObjects,
-    latestObjects,
-    changedDuringSave
-  })
-
-  assert.deepEqual(resolved.appPaths, savedObjects.appPaths)
-  assert.deepEqual(resolved.appNames, savedObjects.appNames)
-  assert.deepEqual(resolved.appArgs, savedObjects.appArgs)
-  assert.deepEqual(resolved.gamePaths, savedObjects.gamePaths)
-})
-
-test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when game paths changed during save', () => {
-  const versionsAtSave = createSettingsObjectVersions()
-  const currentVersions = { ...versionsAtSave, gamePaths: versionsAtSave.gamePaths + 1 }
-  const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
-
-  const resolved = resolveSettingsObjectsAfterSave({
-    savedObjects,
-    latestObjects,
-    changedDuringSave
-  })
-
-  assert.deepEqual(resolved.gamePaths, savedObjects.gamePaths)
-  assert.deepEqual(resolved.appPaths, savedObjects.appPaths)
-})
-
-test('resolveSettingsObjectsAfterSave returns savedObjects as dirty baseline when all fields changed during save', () => {
+test('only the fields edited during the save are flagged as changed', () => {
   const versionsAtSave = createSettingsObjectVersions()
   const currentVersions = {
+    ...versionsAtSave,
     appPaths: versionsAtSave.appPaths + 1,
-    appNames: versionsAtSave.appNames + 1,
-    appArgs: versionsAtSave.appArgs + 1,
-    gamePaths: versionsAtSave.gamePaths + 1
+    gamePaths: versionsAtSave.gamePaths + 2
   }
-  const changedDuringSave = getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions)
 
-  const resolved = resolveSettingsObjectsAfterSave({
-    savedObjects,
-    latestObjects,
-    changedDuringSave
+  assert.deepEqual(getSettingsObjectChangesDuringSave(versionsAtSave, currentVersions), {
+    appPaths: true,
+    appNames: false,
+    appArgs: false,
+    gamePaths: true
   })
-
-  assert.deepEqual(resolved, savedObjects)
 })

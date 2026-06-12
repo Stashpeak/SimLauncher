@@ -198,6 +198,13 @@ export function createWindow(): void {
     mainWindow.webContents.send('close-requested', { minimizeMode: action === 'confirm-minimize' })
   })
 
+  // Keep the renderer's maximize/restore icon in sync with reality: OS paths
+  // (Win+Up, aero-snap drag, taskbar double-click) maximize a frameless window
+  // without going through the titlebar button, so the renderer cannot track
+  // this state on its own (#500).
+  mainWindow.on('maximize', () => sendToRenderer('window-maximized-changed', true))
+  mainWindow.on('unmaximize', () => sendToRenderer('window-maximized-changed', false))
+
   // Show window once ready, or keep it hidden when starting minimized to tray.
   // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the
   // window would be stranded with no way to restore it.

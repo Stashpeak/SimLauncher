@@ -13,6 +13,9 @@ export interface RunningProcessNamesResult {
 let cachedResult: RunningProcessNamesResult | undefined
 let cachedAt = 0
 let inflight: Promise<RunningProcessNamesResult> | undefined
+// Bumped on every invalidation so an in-flight read can tell whether the
+// process set changed while it was running (see readRunningProcessNames).
+let generation = 0
 
 function spawnTasklist(): Promise<RunningProcessNamesResult> {
   return new Promise<RunningProcessNamesResult>((resolve) => {
@@ -59,12 +62,16 @@ export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
     return inflight
   }
 
+  const generationAtStart = generation
   inflight = spawnTasklist()
     .then((result) => {
       // Only cache successful reads so a transient tasklist failure doesn't
       // poison subsequent calls for the full TTL window and so callers can
-      // distinguish "process is gone" from "we don't know".
-      if (result.succeeded) {
+      // distinguish "process is gone" from "we don't know". The generation
+      // check keeps a read that was already in flight when an invalidation
+      // happened (a launch/exit changed the process set) from re-populating
+      // the cache with its now-stale snapshot (#500).
+      if (result.succeeded && generation === generationAtStart) {
         cachedResult = result
         cachedAt = Date.now()
       }
@@ -78,6 +85,7 @@ export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
 }
 
 export function invalidateProcessNameCache(): void {
+  generation += 1
   cachedResult = undefined
   cachedAt = 0
 }

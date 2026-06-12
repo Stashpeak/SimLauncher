@@ -2,12 +2,7 @@ import { useCallback, type MutableRefObject } from 'react'
 import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
 import type { Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
-import {
-  getSettingsObjectChangesDuringSave,
-  resolveSettingsObjectsAfterSave,
-  type SettingsObjectRecords,
-  type SettingsObjectVersions
-} from './saveRace'
+import { getSettingsObjectChangesDuringSave, type SettingsObjectVersions } from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 
 interface SettingsStateSnapshot {
@@ -69,7 +64,6 @@ interface UseSettingsSaveArgs {
   zoomFactor: number
   currentSettingsState: SettingsStateSnapshot
   settingsObjectEditVersions: MutableRefObject<SettingsObjectVersions>
-  latestSettingsObjects: MutableRefObject<SettingsObjectRecords>
   notify: (message: string, type: 'success' | 'error' | 'warn', duration?: number) => void
   resetDirty: (state?: SettingsStateSnapshot) => void
   setAppPaths: (appPaths: Record<string, string>) => void
@@ -99,7 +93,6 @@ export function useSettingsSave({
   zoomFactor,
   currentSettingsState,
   settingsObjectEditVersions,
-  latestSettingsObjects,
   notify,
   resetDirty,
   setAppPaths,
@@ -149,11 +142,6 @@ export function useSettingsSave({
         settingsObjectEditVersionsAtSave,
         settingsObjectEditVersions.current
       )
-      const resetSettingsObjects = resolveSettingsObjectsAfterSave({
-        savedObjects: savedSettingsObjects,
-        latestObjects: latestSettingsObjects.current,
-        changedDuringSave
-      })
 
       // Only push the trimmed value back into state when the user hasn't edited
       // the field since the save started — avoids overwriting a concurrent edit
@@ -164,9 +152,13 @@ export function useSettingsSave({
 
       setLaunchDelayMs(normalizedLaunchDelayMs)
       notify('Settings saved!', 'success', 2500)
+      // The new dirty baseline uses the SAVED object records, not the live
+      // renderer state: the baseline must reflect what is on disk, so edits
+      // made while the save was awaiting stay visibly dirty (re-saveable)
+      // instead of silently looking already-saved.
       resetDirty({
         ...currentSettingsState,
-        ...resetSettingsObjects,
+        ...savedSettingsObjects,
         launchDelayMs: normalizedLaunchDelayMs
       })
       return true
@@ -198,7 +190,6 @@ export function useSettingsSave({
     themeMode,
     zoomFactor,
     settingsObjectEditVersions,
-    latestSettingsObjects,
     setAppPaths,
     setGamePaths,
     setAppArgs,
