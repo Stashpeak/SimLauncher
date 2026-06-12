@@ -148,7 +148,8 @@ export async function launchProfileApps(
   }
 }
 
-function getLaunchDelayMs() {
+// Exported for unit tests only — not part of the processes barrel surface.
+export function getLaunchDelayMs(): number {
   const value = store.get('launchDelayMs')
 
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -212,7 +213,11 @@ function resolveAppKeyFromPath(appPath: string): string | undefined {
   return appEntry?.[0]
 }
 
-function normalizeLaunchInput(input: ProfileLaunchInput, gameKey: string): ProfileLaunchEntry {
+// Exported for unit tests only — not part of the processes barrel surface.
+export function normalizeLaunchInput(
+  input: ProfileLaunchInput,
+  gameKey: string
+): ProfileLaunchEntry {
   if (typeof input !== 'string') {
     return { key: input.key, path: input.path }
   }
