@@ -190,6 +190,7 @@ export interface ElectronAPI {
   setPendingMinimizeToTray: (value: boolean | null) => Promise<void>
   onCloseRequested: (cb: (payload: { minimizeMode: boolean }) => void) => Unsubscribe
   restartApp: () => Promise<void>
+  onWindowMaximizedChanged: (cb: (isMaximized: boolean) => void) => Unsubscribe
   getRunningApps: () => Promise<RunningApp[]>
   subscribeRunningApps: () => Promise<RunningAppsChangedPayload>
   unsubscribeRunningApps: () => Promise<void>

@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { minimize, maximize, close } from '../lib/electron'
+import { useEffect, useState, type ReactNode } from 'react'
+import { minimize, maximize, close, onWindowMaximizedChanged } from '../lib/electron'
 import {
   BrandWordmarkIcon,
   SettingsIcon,
@@ -16,12 +16,13 @@ interface WindowControlsProps {
 }
 
 export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsProps): ReactNode {
-  // Local toggle — Electron does not push a maximize/restore event to the
-  // renderer, so we track the state ourselves. This is an optimistic toggle:
-  // if the user maximizes via the OS title bar (not through this button) the
-  // icon will be wrong, but that path is blocked by the custom frameless
-  // window (no native title bar on Windows).
+  // Optimistic toggle for instant button feedback, corrected by the main
+  // process's maximize/unmaximize push — OS paths (Win+Up, aero-snap drag)
+  // maximize a frameless window without going through this button, so local
+  // state alone would drift (#500).
   const [isMaximized, setIsMaximized] = useState(false)
+
+  useEffect(() => onWindowMaximizedChanged(setIsMaximized), [])
 
   const handleMinimize = () => minimize()
   const handleMaximize = () => {

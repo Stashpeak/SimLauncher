@@ -15,6 +15,7 @@ export const setPendingMinimizeToTray = (value: boolean | null) =>
   window.electronAPI.setPendingMinimizeToTray(value)
 export const onCloseRequested = window.electronAPI.onCloseRequested
 export const restartApp = () => window.electronAPI.restartApp()
+export const onWindowMaximizedChanged = window.electronAPI.onWindowMaximizedChanged
 export const getRunningApps = () => window.electronAPI.getRunningApps()
 export const subscribeRunningApps = () => window.electronAPI.subscribeRunningApps()
 export const unsubscribeRunningApps = () => window.electronAPI.unsubscribeRunningApps()
