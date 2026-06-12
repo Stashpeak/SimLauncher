@@ -72,6 +72,60 @@ test('normalizeLaunchInput resolves a plain game path to the game key', async ()
   })
 })
 
+test('parseCommandLineArgs splits plain and double-quoted arguments', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('--fullscreen -w 1920')).toEqual(['--fullscreen', '-w', '1920'])
+  expect(parseCommandLineArgs('--config "C:\\My Path\\settings.ini"')).toEqual([
+    '--config',
+    'C:\\My Path\\settings.ini'
+  ])
+  expect(parseCommandLineArgs('--title \\"quoted\\"')).toEqual(['--title', '"quoted"'])
+})
+
+// The #504 edge: a quoted path with a trailing backslash must close the quote
+// instead of swallowing the rest of the line into one argument.
+test('parseCommandLineArgs handles quoted paths ending in a backslash (#504)', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('"C:\\My Path\\" --flag')).toEqual(['C:\\My Path\\', '--flag'])
+  // The strict Windows-convention spelling of the same intent.
+  expect(parseCommandLineArgs('"C:\\My Path\\\\" --flag')).toEqual(['C:\\My Path\\', '--flag'])
+  // A trailing-backslash path as the final token.
+  expect(parseCommandLineArgs('--out "D:\\Logs\\"')).toEqual(['--out', 'D:\\Logs\\'])
+})
+
+// Codex P2 on #508: an escaped quote before whitespace inside a NON-path
+// quoted value keeps the strict Windows behaviour (one argument containing a
+// literal quote) — only path-looking tokens get the closing deviation.
+test('parseCommandLineArgs keeps escaped quotes in non-path quoted values', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('--title "Lap \\" time"')).toEqual(['--title', 'Lap " time'])
+  expect(parseCommandLineArgs('"say \\" loudly \\" twice"')).toEqual(['say " loudly " twice'])
+  // A sentence merely CONTAINING a path is not a path token — the heuristic
+  // is anchored to the token start, so the literal quote survives here.
+  expect(parseCommandLineArgs('--title "Saved under C:\\Logs\\" today"')).toEqual([
+    '--title',
+    'Saved under C:\\Logs" today'
+  ])
+})
+
+test('parseCommandLineArgs closes path tokens supplied as --key=value payloads (#504)', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('"--log=C:\\Temp\\" -v')).toEqual(['--log=C:\\Temp\\', '-v'])
+})
+
+test('parseCommandLineArgs keeps backslash runs not followed by a quote literal', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('\\\\server\\share\\file.cfg')).toEqual([
+    '\\\\server\\share\\file.cfg'
+  ])
+  expect(parseCommandLineArgs('"a\\\\b c"')).toEqual(['a\\\\b c'])
+})
+
 test('normalizeLaunchInput resolves a plain utility path via appPaths reverse lookup', async () => {
   const { normalizeLaunchInput } = await loadSpawnModule()
   storeData.gamePaths = { iracing: 'C:/Games/iRacingUI.exe' }

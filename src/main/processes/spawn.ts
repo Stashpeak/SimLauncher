@@ -173,22 +173,69 @@ export function isRunningExePath(processNames: Set<string>, appPath: string): bo
  * We do not delegate to the shell (`shell: true`) because that would spawn an
  * intermediate cmd.exe and break `detached` process-tree ownership — the child
  * would become a grandchild of cmd.exe rather than a direct child, preventing
- * reliable PID-based kill.  This parser handles the subset of quoting rules
- * that users realistically enter in the Settings UI (double-quoted groups,
- * backslash-escaped quotes).
+ * reliable PID-based kill.
+ *
+ * Backslashes follow the Windows argv convention (CommandLineToArgvW): they
+ * are literal unless they precede a double quote, in which case each pair
+ * collapses to one backslash and an odd remainder escapes the quote. One
+ * deliberate deviation: inside a quoted group whose accumulated content looks
+ * like a Windows path, an odd trailing backslash whose quote is followed by
+ * whitespace/end closes the group instead of producing a literal quote — so
+ * `"C:\My Path\" --flag` parses the way users mean it (a path plus a flag)
+ * rather than swallowing the rest of the line (#504). The path test is what
+ * keeps escaped quotes in non-path arguments (e.g. `"Lap \" time"`) on the
+ * strict Windows behaviour — a literal `"` cannot occur in a Windows path, so
+ * the two intents never genuinely collide.
+ *
+ * Exported for unit tests only — not part of the processes barrel surface.
  */
-function parseCommandLineArgs(input: string) {
+export function parseCommandLineArgs(input: string): string[] {
   const args: string[] = []
   let current = ''
   let inQuotes = false
 
   for (let index = 0; index < input.length; index += 1) {
     const char = input[index]
-    const nextChar = input[index + 1]
 
-    if (char === '\\' && nextChar === '"') {
-      current += nextChar
-      index += 1
+    if (char === '\\') {
+      let backslashCount = 0
+      while (input[index + backslashCount] === '\\') {
+        backslashCount += 1
+      }
+
+      if (input[index + backslashCount] !== '"') {
+        current += '\\'.repeat(backslashCount)
+        index += backslashCount - 1
+        continue
+      }
+
+      current += '\\'.repeat(Math.floor(backslashCount / 2))
+
+      if (backslashCount % 2 === 0) {
+        // Even run: backslashes consumed, the quote toggles on the next pass.
+        index += backslashCount - 1
+        continue
+      }
+
+      const charAfterQuote = input[index + backslashCount + 1]
+      const quoteEndsToken = charAfterQuote === undefined || /\s/.test(charAfterQuote)
+      // The token itself must BE a path (optionally as a --key=value payload):
+      // drive-letter or UNC prefix at the token start. Anchoring matters — a
+      // sentence merely containing a path (e.g. "Saved under C:\Logs\" today")
+      // must keep the strict literal-quote behaviour. Quotes are invalid
+      // characters in Windows paths, so an actual path token cannot
+      // legitimately want a literal quote here.
+      const looksLikeWindowsPath = /^(?:[^\s"]*=)?(?:[A-Za-z]:[\\/]|\\\\)/.test(current)
+
+      if (inQuotes && quoteEndsToken && looksLikeWindowsPath) {
+        // The path-friendly deviation described above: `...\" ` closes the
+        // quoted group and keeps the backslash.
+        current += '\\'
+        inQuotes = false
+      } else {
+        current += '"'
+      }
+      index += backslashCount // also consumes the quote
       continue
     }
 
