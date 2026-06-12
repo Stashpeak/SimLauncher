@@ -63,7 +63,7 @@ export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
   }
 
   const generationAtStart = generation
-  inflight = spawnTasklist()
+  const read: Promise<RunningProcessNamesResult> = spawnTasklist()
     .then((result) => {
       // Only cache successful reads so a transient tasklist failure doesn't
       // poison subsequent calls for the full TTL window and so callers can
@@ -78,14 +78,25 @@ export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
       return result
     })
     .finally(() => {
-      inflight = undefined
+      // Only clear the slot we own: an invalidation may have detached this
+      // read and a fresh one may already be in flight in its place.
+      if (inflight === read) {
+        inflight = undefined
+      }
     })
+  inflight = read
 
-  return inflight
+  return read
 }
 
 export function invalidateProcessNameCache(): void {
   generation += 1
   cachedResult = undefined
   cachedAt = 0
+  // Detach any in-flight read: it was sampled before the process set changed,
+  // so callers arriving after the invalidation must not piggyback on it — the
+  // next read spawns a fresh tasklist. The detached read still resolves for
+  // its own (pre-invalidation) callers; the generation guard above keeps its
+  // result out of the cache.
+  inflight = undefined
 }
