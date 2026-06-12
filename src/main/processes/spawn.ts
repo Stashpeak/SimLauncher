@@ -19,6 +19,7 @@ import {
   processNameMismatchWarnings,
   runningProcesses
 } from './state'
+import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { AppLaunchResult, LaunchResult, ProfileLaunchEntry, ProfileLaunchInput } from './types'
 import { publishRunningApps } from './running'
@@ -303,13 +304,19 @@ function launchElevated(appPath: string, args: string[] = []) {
   })
 }
 
-export function spawnDetachedApp(
+export async function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
   entry: ProfileLaunchEntry,
   gamePath?: string
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
+  // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
+  // they can exit before doing anything (powershell.exe exits 0 without
+  // executing, #486). Spawned non-detached they allocate their own console,
+  // and children outlive the parent on Windows either way. GUI apps keep the
+  // long-standing detached behavior.
+  const consoleApp = await isConsoleExecutable(appPath)
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -333,7 +340,7 @@ export function spawnDetachedApp(
       // inherit SimLauncher's CWD instead (#483).
       const child = spawn(appPath, args, {
         cwd: path.dirname(appPath),
-        detached: true,
+        detached: !consoleApp,
         stdio: 'ignore'
       })
       const runningKey = normalizePathForComparison(appPath)
