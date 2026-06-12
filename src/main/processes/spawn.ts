@@ -219,10 +219,13 @@ export function parseCommandLineArgs(input: string): string[] {
 
       const charAfterQuote = input[index + backslashCount + 1]
       const quoteEndsToken = charAfterQuote === undefined || /\s/.test(charAfterQuote)
-      // Drive-letter or UNC prefix anywhere in the token so far — quotes are
-      // invalid characters in Windows paths, so a path-looking token cannot
+      // The token itself must BE a path (optionally as a --key=value payload):
+      // drive-letter or UNC prefix at the token start. Anchoring matters — a
+      // sentence merely containing a path (e.g. "Saved under C:\Logs\" today")
+      // must keep the strict literal-quote behaviour. Quotes are invalid
+      // characters in Windows paths, so an actual path token cannot
       // legitimately want a literal quote here.
-      const looksLikeWindowsPath = /[A-Za-z]:[\\/]|^\\\\/.test(current)
+      const looksLikeWindowsPath = /^(?:[^\s"]*=)?(?:[A-Za-z]:[\\/]|\\\\)/.test(current)
 
       if (inQuotes && quoteEndsToken && looksLikeWindowsPath) {
         // The path-friendly deviation described above: `...\" ` closes the

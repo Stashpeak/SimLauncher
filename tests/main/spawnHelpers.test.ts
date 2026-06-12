@@ -103,6 +103,18 @@ test('parseCommandLineArgs keeps escaped quotes in non-path quoted values', asyn
 
   expect(parseCommandLineArgs('--title "Lap \\" time"')).toEqual(['--title', 'Lap " time'])
   expect(parseCommandLineArgs('"say \\" loudly \\" twice"')).toEqual(['say " loudly " twice'])
+  // A sentence merely CONTAINING a path is not a path token — the heuristic
+  // is anchored to the token start, so the literal quote survives here.
+  expect(parseCommandLineArgs('--title "Saved under C:\\Logs\\" today"')).toEqual([
+    '--title',
+    'Saved under C:\\Logs" today'
+  ])
+})
+
+test('parseCommandLineArgs closes path tokens supplied as --key=value payloads (#504)', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('"--log=C:\\Temp\\" -v')).toEqual(['--log=C:\\Temp\\', '-v'])
 })
 
 test('parseCommandLineArgs keeps backslash runs not followed by a quote literal', async () => {
