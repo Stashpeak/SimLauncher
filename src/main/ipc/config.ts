@@ -420,7 +420,14 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle('set-zoom', (_event, factor: unknown) => {
     const zoomFactor = requireSafeZoomFactor(factor)
-    getMainWindow()?.webContents.setZoomFactor(zoomFactor)
+    const webContents = getMainWindow()?.webContents
+    if (!webContents) return
+    // Skip same-value calls: re-setting the current zoom on a still-hidden
+    // window suppresses 'ready-to-show' on Electron 42 (#382), and the
+    // renderer's boot-time set-zoom is always same-value (both sides read the
+    // same store).
+    if (Math.abs(webContents.getZoomFactor() - zoomFactor) < 0.001) return
+    webContents.setZoomFactor(zoomFactor)
   })
 
   ipcMain.handle('get-settings', () => {
