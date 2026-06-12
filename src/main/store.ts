@@ -22,6 +22,7 @@ export const KNOWN_GAME_KEYS = new Set([
   'acc',
   'acevo',
   'acrally',
+  'aeroflyfs4',
   'ams',
   'ams2',
   'beamng',
@@ -31,14 +32,19 @@ export const KNOWN_GAME_KEYS = new Set([
   'eawrc',
   'f124',
   'f125',
+  'il2gb',
   'iracing',
   'lmu',
+  'msfs2020',
+  'msfs2024',
+  'p3d',
   'pmr',
   'raceroom',
   'rbr',
   'rennsport',
   'rf1',
-  'rf2'
+  'rf2',
+  'xplane12'
 ])
 const KNOWN_UTILITY_KEYS = ['simhub', 'crewchief', 'tradingpaints', 'garage61', 'secondmonitor']
 const PROFILE_BOOLEAN_KEYS = [

@@ -47,6 +47,7 @@ export const GAMES: Game[] = [
   { key: 'acc', name: 'Assetto Corsa Competizione', icon: 'assets/acc.png' },
   { key: 'acevo', name: 'Assetto Corsa Evo', icon: 'assets/acevo.png' },
   { key: 'acrally', name: 'Assetto Corsa Rally', icon: 'assets/acrally.png' },
+  { key: 'aeroflyfs4', name: 'Aerofly FS 4', icon: 'assets/aeroflyfs4.png' },
   { key: 'ams', name: 'Automobilista', icon: 'assets/ams.png' },
   { key: 'ams2', name: 'Automobilista 2', icon: 'assets/ams2.png' },
   { key: 'beamng', name: 'BeamNG', icon: 'assets/beamng.png' },
@@ -56,14 +57,19 @@ export const GAMES: Game[] = [
   { key: 'eawrc', name: 'EA WRC', icon: 'assets/eawrc.png' },
   { key: 'f124', name: 'F1 24', icon: 'assets/f124.png' },
   { key: 'f125', name: 'F1 25', icon: 'assets/f125.png' },
+  { key: 'il2gb', name: 'IL-2 Sturmovik: Great Battles', icon: 'assets/il2gb.png' },
   { key: 'iracing', name: 'iRacing', icon: 'assets/iracing.png' },
   { key: 'lmu', name: 'Le Mans Ultimate', icon: 'assets/lmu.png' },
+  { key: 'msfs2020', name: 'Microsoft Flight Simulator 2020', icon: 'assets/msfs2020.png' },
+  { key: 'msfs2024', name: 'Microsoft Flight Simulator 2024', icon: 'assets/msfs2024.png' },
+  { key: 'p3d', name: 'Prepar3D', icon: 'assets/p3d.png' },
   { key: 'pmr', name: 'Project Motor Racing', icon: 'assets/pmr.png' },
   { key: 'raceroom', name: 'RaceRoom Racing Experience', icon: 'assets/raceroom.png' },
   { key: 'rbr', name: 'Richard Burns Rally', icon: 'assets/rbr.png' },
   { key: 'rennsport', name: 'Rennsport', icon: 'assets/rennsport.png' },
   { key: 'rf1', name: 'rFactor', icon: 'assets/rf1.png' },
-  { key: 'rf2', name: 'rFactor 2', icon: 'assets/rf2.png' }
+  { key: 'rf2', name: 'rFactor 2', icon: 'assets/rf2.png' },
+  { key: 'xplane12', name: 'X-Plane 12', icon: 'assets/xplane12.png' }
 ]
 
 export const BUILT_IN_UTILITIES: Utility[] = [
