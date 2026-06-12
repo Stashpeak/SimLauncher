@@ -1,5 +1,12 @@
 import type { ChildProcess } from 'child_process'
 
+/**
+ * `access_denied` — taskkill/WMI confirmed the process is still alive but Windows
+ * refused the kill (elevated target, see #390).  `still_running` — kill call
+ * succeeded according to the API but a post-kill tasklist recheck shows the exe
+ * is still present.  `unknown` — any other condition where we cannot confirm the
+ * process exited.
+ */
 export type KillFailureReason = 'access_denied' | 'still_running' | 'unknown'
 
 export interface KillFailure {
@@ -60,6 +67,12 @@ export interface ProcessNameMismatchWarningEntry {
   name: string
   gameKey: string
   warning: string
+  /**
+   * Optional wall-clock expiry (ms since epoch). When set, the entry is
+   * eligible for pruning by `pruneExpiredProcessNameMismatchWarnings` once
+   * the current time passes this value. Entries without an expiry persist
+   * until the user explicitly dismisses the icon.
+   */
   expiresAt?: number
 }
 
@@ -69,5 +82,10 @@ export interface UnclosedProcessEntry {
   gameKey: string
   error: string
   reason: KillFailureReason
+  /**
+   * Explicit flag set when the kill was `access_denied`. Kept separately from
+   * `reason` so the renderer can show a lock icon without re-interpreting the
+   * free-form `error` string.
+   */
   elevated?: boolean
 }

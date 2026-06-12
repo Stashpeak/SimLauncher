@@ -25,6 +25,10 @@ export function useConfigIO({ notify, onConfigImported }: UseConfigIOArgs): UseC
   const [exportingConfig, setExportingConfig] = useState(false)
   const [importingConfig, setImportingConfig] = useState(false)
   const [importConfirmOpen, setImportConfirmOpen] = useState(false)
+  // The preview token is issued by the main process to tie the preview step to
+  // the subsequent apply/cancel call. It must be forwarded unmodified; if the
+  // dialog is dismissed without applying, cancelImportConfig must be called so
+  // the main process can clean up any temporary files associated with the token.
   const [importPreview, setImportPreview] = useState<{
     token: string
     filePath?: string
@@ -50,6 +54,8 @@ export function useConfigIO({ notify, onConfigImported }: UseConfigIOArgs): UseC
     }
   }, [notify])
 
+  // Show a "this will replace all settings" warning before opening the file
+  // picker — avoids an accidental destructive import via a mis-click.
   const handleImportConfig = useCallback(async () => {
     setImportConfirmOpen(true)
   }, [])

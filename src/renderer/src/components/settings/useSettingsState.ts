@@ -135,6 +135,10 @@ export function useSettingsState(): SettingsStateBundle {
     gamePaths
   })
 
+  // Increment the version counter BEFORE calling setter so the version is
+  // already bumped when the save reads settingsObjectEditVersions.current at
+  // the start of its async critical section. Bumping inside the updater
+  // callback would race because React may batch or defer the state update.
   const updateSettingsObject = useCallback(
     (
       field: SettingsObjectField,
@@ -144,6 +148,8 @@ export function useSettingsState(): SettingsStateBundle {
       settingsObjectEditVersions.current[field] += 1
       setter((current) => {
         const next = updater(current)
+        // Mirror the latest value into the ref so that useSettingsSave can read
+        // it synchronously without waiting for the React render cycle to complete.
         latestSettingsObjects.current = {
           ...latestSettingsObjects.current,
           [field]: next

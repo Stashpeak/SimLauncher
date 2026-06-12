@@ -13,6 +13,12 @@ export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 
+/**
+ * Signal that the upcoming exit of `appPath` is intentional (user-initiated
+ * kill). The suppression is consumed exactly once by
+ * `consumeProcessNameMismatchWarningSuppression` so the fast-exit mismatch
+ * warning is not shown when SimLauncher itself caused the close.
+ */
 export function suppressProcessNameMismatchWarning(appPath: string): void {
   suppressedProcessNameMismatchWarnings.add(normalizePathForComparison(appPath))
 }
@@ -20,10 +26,23 @@ export function suppressProcessNameMismatchWarning(appPath: string): void {
 export function consumeProcessNameMismatchWarningSuppression(appPath: string): boolean {
   const key = normalizePathForComparison(appPath)
   const suppressed = suppressedProcessNameMismatchWarnings.has(key)
+  // One-shot: delete regardless of whether it was set so a suppression
+  // registered for a kill cannot accidentally absorb a subsequent
+  // unrelated fast-exit of the same exe.
   suppressedProcessNameMismatchWarnings.delete(key)
   return suppressed
 }
 
+/**
+ * Reconcile `runningProcesses` against the live tasklist snapshot.
+ *
+ * Matching is done by exe name, not by the Map key (normalised path), because
+ * some apps replace their process with a child of the same exe name — the
+ * original PID is gone but the exe is still present, so the path key would
+ * still match even without this exe-name check.  Conversely, if the exe name
+ * disappears from the tasklist the ChildProcess handle is stale regardless of
+ * what key it was filed under, so we drop it.
+ */
 export function pruneStoppedRunningProcesses(processNames: Set<string>): void {
   runningProcesses.forEach((appProcess, key) => {
     if (!processNames.has(getExeName(appProcess.path))) {

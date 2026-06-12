@@ -99,6 +99,8 @@ export function useCustomSlots({
       const slotKey = getCustomUtilityKey(slotNumber)
       const slotName = appNames[slotKey] || `Custom App ${slotNumber}`
 
+      // Only show the destructive-action confirmation when the slot actually has
+      // an executable configured. An empty slot can be removed silently.
       if (appPaths[slotKey]) {
         setCustomSlotRemoveConfirm({ slotNumber, slotName })
         return

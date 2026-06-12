@@ -190,6 +190,10 @@ export function getStoredStringRecord(key: string): Record<string, string> {
   )
 }
 
+// Strip prototype-pollution keys before iterating any object from an imported
+// or IPC-supplied config. JSON.parse does not produce these, but a crafted
+// config file saved with a hex editor can. Dropping them here ensures no
+// sanitizer downstream has to guard against '__proto__' assignments.
 function getSafeObjectEntries(value: Record<string, unknown>) {
   return Object.entries(value).filter(([key]) => !FORBIDDEN_OBJECT_KEYS.has(key))
 }
@@ -473,6 +477,12 @@ function sanitizeProfiles(value: unknown, utilityKeys: Set<string>) {
   return safeProfiles
 }
 
+/**
+ * Validate and sanitize a raw config object from a file import. All sanitizers
+ * called from here are STRICT WHITELISTS — any field not explicitly handled is
+ * silently dropped. Adding a new store key therefore requires a corresponding
+ * case in getSupportedConfigValues, or it will never survive an import round-trip.
+ */
 export function sanitizeImportedConfig(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new Error('Config file must contain a JSON object.')
@@ -613,9 +623,19 @@ export function getSupportedConfigValues(config: Record<string, unknown>): Recor
   return supportedConfig
 }
 
+/**
+ * Validate and sanitize a partial settings object sent from the renderer via
+ * the save-settings IPC. Only scalar/UI settings are accepted here:
+ * - 'profiles' and 'windowBounds' are managed by dedicated IPC handlers and
+ *   must never be overwritten by a general settings save.
+ * - Migration flags ('profileUtilityOrderMigrated', 'profileSetsMigrated',
+ *   'migrated') are internal and must not be reset by the renderer.
+ */
 export function sanitizeSettingsPatch(patch: Record<string, unknown>): Record<string, unknown> {
   const currentCustomSlots = getSafeCustomSlots(store.get('customSlots'))
   const patchCustomSlots = getSafeCustomSlots(patch.customSlots)
+  // customSlots is resolved first because the utility-key whitelist used by
+  // all other sanitizers depends on it.
   const config: Record<string, unknown> = {
     customSlots: patchCustomSlots ?? currentCustomSlots ?? 1
   }

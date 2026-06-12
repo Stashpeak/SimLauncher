@@ -89,6 +89,9 @@ export function resolveActiveProfile(entry: StoredProfileEntry | undefined): Sto
       (p): p is StoredNamedProfile => isRecord(p) && typeof p.id === 'string'
     )
     if (validProfiles.length === 0) return { id: 'default', name: 'Default' }
+    // Silent recovery: if activeProfileId no longer matches any profile (e.g.
+    // after an import that replaced the set), fall back to the first available
+    // profile rather than erroring — the user can correct the selection in UI.
     return validProfiles.find((p) => p.id === entry.activeProfileId) || validProfiles[0]
   }
   return { ...(entry as StoredProfile), id: 'default', name: 'Default' }
@@ -199,6 +202,10 @@ export function getEnabledUtilityKeys(profile: StoredProfile | undefined): strin
       .map((utility) => utility.id)
   }
 
+  // Legacy path: profiles stored before the utilities-array migration keep
+  // utility state as top-level boolean keys (e.g. { simhub: true }). The
+  // migrator converts these on first run, but this branch handles any profile
+  // that somehow missed migration (manual store edit, partial import, etc.).
   return Object.entries(profile)
     .filter(([, value]) => value === true)
     .map(([key]) => key)

@@ -42,6 +42,9 @@ export function AppsSection(): ReactNode {
 
   const [showArgsMap, setShowArgsMap] = useState<Record<string, boolean>>({})
 
+  // Default visibility: show the args row when the slot already has a saved
+  // arg string so returning users see their configured value immediately. Once
+  // the user has explicitly toggled, the explicit state in showArgsMap wins.
   const isArgsVisible = (key: string) => {
     return showArgsMap[key] !== undefined ? showArgsMap[key] : !!appArgs[key]
   }

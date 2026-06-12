@@ -30,6 +30,12 @@ export function ScrollFade({ children, className = '' }: ScrollFadeProps): React
     const scrollArea = scrollAreaRef.current
     if (!scrollArea) return
 
+    // Observe both the scroll container and its immediate children so the fade
+    // recalculates when the content height changes (e.g. a list item collapses)
+    // without requiring the user to scroll first. The window resize listener
+    // covers viewport-driven changes that wouldn't surface through ResizeObserver
+    // alone (e.g. sidebar toggling). The rAF handles the initial render tick
+    // where the first synchronous updateFade() may see height = 0.
     const resizeObserver = new ResizeObserver(updateFade)
     resizeObserver.observe(scrollArea)
     Array.from(scrollArea.children).forEach((child) => resizeObserver.observe(child))

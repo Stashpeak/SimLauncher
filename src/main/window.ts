@@ -302,6 +302,11 @@ export function registerWindowHandlers(): void {
   })
 
   ipcMain.handle('window-close', () => {
+    // Pre-set isQuitting when the close will result in a real quit, so the
+    // 'close' event handler in createWindow() sees the flag and does not
+    // re-intercept. When minimize-to-tray is active or there are unsaved
+    // changes, the 'close' handler takes its own branch (hide/confirm) and
+    // isQuitting must stay false so that branch runs correctly.
     if (!getEffectiveMinimizeToTray() && !getRendererDirty()) {
       setIsQuitting(true)
     }

@@ -126,6 +126,8 @@ export function ProfileMenu({
               </button>
             </form>
           ) : (
+            // '__new__' is a sentinel: callers convert it to the new-profile
+            // form path instead of treating it as a real profile id.
             <button
               type="button"
               role="menuitem"

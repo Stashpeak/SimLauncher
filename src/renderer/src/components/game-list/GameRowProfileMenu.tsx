@@ -138,6 +138,9 @@ export function GameRowProfileMenu({
               </Tooltip>
             </form>
           ) : (
+            // '__new__' is a sentinel handled by GameRow.switchToProfile to open
+            // the inline new-profile form instead of selecting an existing one.
+            // It is never a real profile id (real ids are UUIDs).
             <button
               type="button"
               role="menuitem"

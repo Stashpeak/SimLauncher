@@ -38,6 +38,8 @@ export function useUpdateStatus({
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(null)
 
   useEffect(() => {
+    // Track all auto-clear timers so they can be cancelled on unmount; leaking
+    // a timer that calls setState on an unmounted hook causes a React warning.
     const statusTimers: number[] = []
     const clearStatusLater = (delayMs: number) => {
       const timer = window.setTimeout(() => setUpdateStatus(null), delayMs)
@@ -50,6 +52,9 @@ export function useUpdateStatus({
     }
     load()
 
+    // When an update is found, clear the spinner but leave status null so the
+    // "Download & Install" button (rendered when updateInfo is truthy) takes over
+    // the UI — no intermediate status message is needed.
     const unsubscribeAvailable = onUpdateAvailable(() => {
       setCheckingUpdate(false)
       setUpdateStatus(null)

@@ -33,6 +33,9 @@ export function SettingsProvider({
 }): ReactNode {
   const { notify } = useNotify()
   const theme = useTheme()
+  // Ref keeps themeRef.current always pointing at the latest theme object so
+  // that useSettingsLoad's loadSettingsFromStore callback (memoized with an
+  // empty dep array) can call theme.setThemeMode without becoming stale.
   const themeRef = useRef(theme)
   themeRef.current = theme
 
@@ -282,6 +285,8 @@ export function SettingsProvider({
   const handleAppPathChange = useCallback(
     (key: string, path: string) => {
       updateSettingsObject('appPaths', setAppPaths, (prev) => ({ ...prev, [key]: path }))
+      // Drop the cached icon when the path is cleared so the initial-letter
+      // fallback renders instead of a stale icon from the previous executable.
       if (!path) {
         setAppIcons((prev) => {
           const next = { ...prev }

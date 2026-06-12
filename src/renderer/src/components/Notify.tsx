@@ -35,6 +35,9 @@ const TOAST_PROGRESS_CLASSES: Record<ToastType, string> = {
   error: 'toast-progress-error'
 }
 
+// Module-level counter so ids are unique across full React lifecycle (including
+// StrictMode double-mounts) without needing useRef. Never reset to zero so
+// old ids cannot collide with new toasts after a re-mount.
 let toastId = 0
 
 function formatLaunchErrorToast(data: unknown) {
@@ -150,6 +153,10 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
     })
   }, [])
 
+  // Two-phase dismiss: first set the id as "dismissing" so the card plays its
+  // exit animation (CSS opacity/translate/scale transition), then actually
+  // remove it from state after 250 ms. The guard on has(id) prevents a
+  // double-click or auto-timeout from resetting the animation mid-flight.
   const dismissToast = useCallback(
     (id: number) => {
       if (dismissTimersRef.current.has(id)) {

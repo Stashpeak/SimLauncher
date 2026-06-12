@@ -10,6 +10,8 @@ import {
 } from './config'
 import { getMigrationFlags, saveProfiles, saveSettings, setMigrationFlags } from './store'
 
+// Keys used by the pre-profile-set storage schema (flat localStorage keys).
+// Must not be extended — they describe the historical format, not the current one.
 const LEGACY_UTILITY_KEYS = [
   'simhub',
   'crewchief',
@@ -66,6 +68,18 @@ function getStringRecord(value: unknown) {
   )
 }
 
+/**
+ * One-shot migration from the legacy localStorage schema to the Electron store.
+ *
+ * The `migrated` flag in the persistent migration flags record is the gate: once
+ * set, this function is a no-op on every subsequent startup. The flag is written
+ * atomically at the end (after all store writes succeed), so a crash mid-migration
+ * will retry on next launch rather than silently leaving data half-migrated.
+ *
+ * Ordering matters: settings are saved before profiles so that the resolved
+ * custom-slot count (derived from the migrated appPaths/appNames) is available
+ * when the profile store is read back on the next load.
+ */
 export async function migrateFromLocalStorage(): Promise<void> {
   const flags = await getMigrationFlags()
   if (flags.migrated) return
@@ -124,6 +138,13 @@ export async function migrateFromLocalStorage(): Promise<void> {
   })
 }
 
+/**
+ * Entry point called once during renderer startup.
+ *
+ * Errors are swallowed so that a migration failure never blocks the app from
+ * opening. If the migration is skipped due to an error, the `migrated` flag is
+ * not set and the migration will be retried on the next launch.
+ */
 export async function runStartupMigrations(): Promise<void> {
   try {
     await migrateFromLocalStorage()

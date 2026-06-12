@@ -51,6 +51,10 @@ function SettingsViewContent({
     setExpandedSections((current) => ({ ...current, [section]: open }))
   }
 
+  // Escape navigates back to the games view from anywhere inside Settings.
+  // This listener is on the bubble phase (not capture), so ConfirmDialog's
+  // capture-phase handler takes priority and prevents this from firing while
+  // a dialog is open — no double-close risk.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {

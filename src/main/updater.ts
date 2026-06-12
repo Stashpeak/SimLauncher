@@ -11,6 +11,9 @@ let installAfterDownload = false
 let updateDownloaded = false
 let availableUpdate: UpdateAvailability | null = null
 
+// Opt out of automatic background download so the user controls when the
+// update is fetched (via the 'install-update' IPC). Downloading silently
+// without consent would consume bandwidth and could interrupt a race session.
 autoUpdater.autoDownload = false
 
 export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
@@ -27,6 +30,8 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
     availableUpdate = { version: info.version }
     sendToRenderer('update-downloaded', info)
 
+    // installAfterDownload is set when the user clicked Install while the
+    // download was still in progress. Complete the deferred install now.
     if (installAfterDownload) {
       quitAndInstallUpdate()
     }
@@ -49,6 +54,10 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
 }
 
 function quitAndInstallUpdate() {
+  // isQuitting must be set BEFORE quitAndInstall() triggers the app quit;
+  // otherwise the window 'close' interceptor in window.ts fires first and
+  // cancels the quit (or shows the dirty-data confirm dialog) before the
+  // installer can take over.
   setIsQuitting(true)
   autoUpdater.quitAndInstall()
 }
@@ -57,6 +66,9 @@ export async function checkForUpdates(): Promise<Awaited<
   ReturnType<typeof autoUpdater.checkForUpdates>
 > | null> {
   if (!app.isPackaged) {
+    // Stub a far-future version so the updater UI (banner, download flow,
+    // install confirmation) is always exercisable in development without
+    // needing a real release server.
     availableUpdate = { version: '99.0.0' }
     sendToRenderer('update-available', availableUpdate)
     return null
@@ -74,10 +86,15 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
 
   ipcMain.handle('install-update', async () => {
     if (!app.isPackaged) {
+      // Simulate the download-complete event so the dev-mode install flow
+      // (confirm dialog → restart) can be exercised end-to-end.
       sendToRenderer('update-downloaded', { version: '99.0.0' })
       return { success: true }
     }
 
+    // Mark intent first: if the download finishes before downloadUpdate()
+    // resolves (unlikely but possible), the 'update-downloaded' handler will
+    // call quitAndInstallUpdate() immediately rather than waiting.
     installAfterDownload = true
 
     if (updateDownloaded) {

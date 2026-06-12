@@ -16,6 +16,8 @@ export function configureTray(options: CreateTrayOptions): void {
 }
 
 export function createTray(): void {
+  // Guard against double-creation (e.g. applyTrayVisibility called twice) and
+  // against being called before configureTray() wires the dependencies.
   if (tray || !trayOptions) return
   const icon = nativeImage.createFromPath(trayOptions.getIconPath())
   tray = new Tray(icon)
@@ -27,6 +29,10 @@ export function createTray(): void {
       { label: 'Quit', click: () => trayOptions!.quitApp() }
     ])
   )
+  // Both events are bound because Windows fires 'click' on a single left-click
+  // and 'double-click' on a rapid second click. Without the double-click
+  // binding the second click does nothing, making the tray feel unresponsive
+  // when users habitually double-click system tray icons.
   tray.on('click', trayOptions.showMainWindow)
   tray.on('double-click', trayOptions.showMainWindow)
 }

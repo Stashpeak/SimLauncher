@@ -16,6 +16,8 @@ export type RunningApp = {
   tracked?: boolean
 }
 
+// 'config' fires when the set of tracked paths changes without a process event.
+// 'scan' is a periodic reconciliation poll from the main process.
 export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | 'config' | 'scan'
 
 export interface RunningAppsChangedPayload {
@@ -35,6 +37,9 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
 
   const clearRunningState = useCallback(() => {
+    // Referential stability: avoid triggering downstream re-renders when
+    // state is already empty. Return the same array/object reference so
+    // React bails out of the update.
     setRunningApps((current) => (current.length === 0 ? current : []))
     setRunningStatus((current) => (Object.keys(current).length === 0 ? current : {}))
   }, [])
@@ -85,12 +90,18 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
       }
     }
 
+    // Register the push listener BEFORE calling subscribeRunningApps so that
+    // any events emitted synchronously during subscription are not lost.
     const unsubscribe = onRunningAppsChanged((payload: RunningAppsChangedPayload) => {
       if (isMounted()) {
         applyRunningApps(payload.apps)
       }
     })
 
+    // subscribeRunningApps asks the main process to begin emitting
+    // onRunningAppsChanged events and returns the current snapshot.
+    // Falls back to a one-shot getRunningApps poll if the subscription fails
+    // (e.g. IPC timeout on startup).
     subscribeRunningApps()
       .then((payload: RunningAppsChangedPayload) => {
         if (isMounted()) {

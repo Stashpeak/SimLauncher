@@ -39,6 +39,9 @@ export function ProfileBehaviorSection({
           onToggle={() => onTrackingEnabledChange((value) => !value)}
           onChange={onTrackingEnabledChange}
         />
+        {/* Game position is only meaningful when "Launch game with profile" is
+            on; dim and disable it via pointer-events-none + opacity rather than
+            unmounting so the current value is preserved if the user re-enables. */}
         <div
           className={`flex items-center justify-between rounded-xl bg-(--glass-bg) p-3 transition-opacity ${
             launchAutomatically ? '' : 'pointer-events-none opacity-50'

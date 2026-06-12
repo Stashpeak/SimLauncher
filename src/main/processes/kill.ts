@@ -39,6 +39,11 @@ export interface KillAttemptResult {
   stillRunning?: boolean
 }
 
+// Hardcoded list of companion process names for utilities that spawn background
+// agents under a name that differs from (or is not derived from) their
+// configured exe path, making normal path-based kill lookup insufficient.
+// Utilities whose agent name can be derived from `appPaths` at runtime do not
+// need an entry here.
 const UTILITY_COMPANION_PROCESS_NAMES: Record<string, string[]> = {
   garage61: ['Garage61 telemetry agent.exe']
 }
@@ -89,6 +94,13 @@ function runTaskkill(args: string[], description: string) {
   })
 }
 
+/**
+ * Guard that distinguishes a fully-qualified exe path (e.g.
+ * `C:\Tools\app.exe`) from a bare process name (e.g. `app.exe`). Only full
+ * paths are eligible for path-scoped kills via WMI `ExecutablePath` matching —
+ * bare names fall back to the less precise `/IM` image-name kill to avoid
+ * refusing to kill a process whose path we cannot verify.
+ */
 function isFullExePath(appPath: string | undefined): appPath is string {
   return (
     typeof appPath === 'string' && path.basename(appPath) !== appPath && isValidExePath(appPath)
@@ -128,6 +140,10 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
     accessDenied?: boolean
   }>((resolve) => {
     const script = [
+      // The target path is injected via an environment variable rather than
+      // interpolated directly into the script string. This prevents a path
+      // containing single-quotes or special PowerShell metacharacters from
+      // breaking out of the string literal or injecting arbitrary commands.
       '$target = $env:SIMLAUNCHER_TARGET_PROCESS_PATH',
       `$name = '${escapeWmiString(processName)}'`,
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
@@ -312,6 +328,13 @@ export function pruneUnclosedProcesses(processNames: Set<string>): void {
   })
 }
 
+/**
+ * Build the set of app paths the user has actually configured in their
+ * profiles. This acts as an allowlist for `killProfileApps`: any path that
+ * is not in the stored configuration is rejected outright, preventing a
+ * compromised renderer from issuing kill requests against arbitrary executables
+ * on the system.
+ */
 function getStoredAppPathTargets() {
   const storedAppPaths = getStoredStringRecord('appPaths')
 
@@ -549,6 +572,9 @@ export async function killProfileApps(
   const killTasks: Promise<KillAttemptResult>[] = []
   const killedExeNames = new Set<string>()
 
+  // Validate the entire list before acting on any of it. An all-or-nothing
+  // check avoids a partial kill where some apps close and others are rejected,
+  // which would leave the profile in an inconsistent half-closed state.
   for (const appPath of appPathsToKill) {
     if (
       !isValidExePath(appPath) ||
@@ -566,6 +592,10 @@ export async function killProfileApps(
     validAppPathsToKill.push(appPath)
   }
 
+  // First pass: prefer killing via the ChildProcess handle (PID-based /T /F
+  // tree kill) for apps that SimLauncher itself spawned and still owns. This
+  // is more precise than image-name matching and correctly terminates child
+  // processes the app may have spawned.
   validAppPathsToKill.forEach((appPath) => {
     if (gamePath && pathsEqual(appPath, gamePath)) {
       return
@@ -584,6 +614,10 @@ export async function killProfileApps(
     }
   })
 
+  // Second pass: fall back to WMI path-scoped image-name kill for apps that
+  // are running but were not launched by this SimLauncher session (externally
+  // started or session-restored). `killedExeNames` prevents double-killing an
+  // exe that was already handled in the first pass.
   validAppPathsToKill.forEach((appPath) => {
     if (gamePath && pathsEqual(appPath, gamePath)) {
       return

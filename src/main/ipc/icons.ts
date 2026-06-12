@@ -5,9 +5,16 @@ import path from 'path'
 import { getStoredStringRecord } from '../store'
 import { normalizePathForComparison } from '../utils'
 
+// Three-state sentinel: `undefined` = not yet computed, `null` = computation
+// failed or platform does not support fingerprinting, `string` = cached data URL.
 let genericIconFingerprint: string | null | undefined
+// In-flight singleton promise so concurrent calls to getGenericIconFingerprint
+// share a single computation rather than spawning multiple temp-file writes.
 let genericIconFingerprintPromise: Promise<string | null> | null = null
 
+// The set acts as an LRU approximation: insertion order is preserved by Set,
+// so eviction always removes the oldest entry. 32 entries comfortably covers a
+// full Settings page reload without unbounded growth.
 const RECENTLY_BROWSED_PATH_LIMIT = 32
 const recentlyBrowsedPaths = new Set<string>()
 
@@ -35,6 +42,20 @@ export function markRecentlyBrowsedPath(filePath: string): void {
   }
 }
 
+/**
+ * Captures the data URL of the generic Windows "unknown application" icon by
+ * asking Electron to resolve the icon for a freshly created empty .exe file.
+ * This fingerprint is later compared against icon lookups to suppress the
+ * generic placeholder — showing it in the UI would be misleading since it
+ * implies we found a real icon when we did not.
+ *
+ * The temp file uses process.pid + timestamp + random suffix to avoid
+ * collisions when multiple Electron instances run side-by-side (e.g. during
+ * development). The `.exe` extension is required: Windows' shell icon resolver
+ * uses file extension to pick the icon source.
+ *
+ * Only meaningful on Win32; other platforms return null immediately.
+ */
 async function computeGenericIconFingerprint() {
   if (process.platform !== 'win32') {
     return null
@@ -47,6 +68,7 @@ async function computeGenericIconFingerprint() {
   let tempFileCreated = false
 
   try {
+    // 'wx' flag: create exclusively, fail if the file already exists.
     const fileDescriptor = fs.openSync(tempExePath, 'wx')
     fs.closeSync(fileDescriptor)
     tempFileCreated = true
@@ -92,6 +114,9 @@ function getGenericIconFingerprint() {
 }
 
 export function registerIconHandlers(): void {
+  // get-asset-data: basename check enforces that `filename` is a plain file
+  // name with no path separators, preventing directory traversal outside the
+  // assets directory (e.g. "../../main.js" would fail basename comparison).
   ipcMain.handle('get-asset-data', async (_event, filename: unknown) => {
     if (typeof filename !== 'string' || path.basename(filename) !== filename || !filename)
       return null
@@ -109,6 +134,10 @@ export function registerIconHandlers(): void {
     }
   })
 
+  // get-file-icon: access-controlled icon fetch. Only paths that are already
+  // persisted in the store OR were recently selected via the OS file picker
+  // (markRecentlyBrowsedPath) are allowed. This prevents the renderer from
+  // using this channel to probe arbitrary file paths on disk for their icons.
   ipcMain.handle('get-file-icon', async (_event, filePath: string) => {
     const storedPathKeys = new Set(
       [

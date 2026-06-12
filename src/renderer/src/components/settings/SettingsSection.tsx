@@ -56,6 +56,9 @@ export function SettingsSection({
         aria-label={title}
         className={`grid transition-all duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
+        {/* inert removes the collapsed content from tab order and assistive tech without unmounting it,
+            preserving React state (e.g. unsaved text inputs) across open/close. overflow-hidden is
+            only applied when collapsed so animation can clip the expanding content. */}
         <div className={open ? undefined : 'overflow-hidden'} inert={open ? undefined : true}>
           <div className="glass-surface rounded-2xl flex flex-col pt-1 overflow-hidden">
             {children}

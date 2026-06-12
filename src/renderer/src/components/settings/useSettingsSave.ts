@@ -31,10 +31,15 @@ interface SettingsStateSnapshot {
   zoomFactor: number
 }
 
+// Paths only need whitespace trimmed; an empty string is a valid sentinel
+// meaning "not configured" and must be preserved so the store can clear it.
 function trimPathRecord(paths: Record<string, string>) {
   return Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, value.trim()]))
 }
 
+// Args entries with a blank value after trimming are dropped entirely rather
+// than stored as empty strings — avoids passing a bare "" to the launcher and
+// keeps the persisted JSON clean.
 function trimStringRecord(values: Record<string, string>) {
   return Object.fromEntries(
     Object.entries(values)
@@ -108,6 +113,8 @@ export function useSettingsSave({
       const trimmedAppPaths = trimPathRecord(appPaths)
       const trimmedGamePaths = trimPathRecord(gamePaths)
       const trimmedAppArgs = trimStringRecord(appArgs)
+      // Snapshot versions before the await so we can detect edits that arrive
+      // while the IPC write is in flight (the race window).
       const settingsObjectEditVersionsAtSave = { ...settingsObjectEditVersions.current }
       const savedSettingsObjects = {
         appPaths: trimmedAppPaths,
@@ -148,6 +155,9 @@ export function useSettingsSave({
         changedDuringSave
       })
 
+      // Only push the trimmed value back into state when the user hasn't edited
+      // the field since the save started — avoids overwriting a concurrent edit
+      // with the (now-stale) pre-save trimmed copy.
       if (!changedDuringSave.appPaths) setAppPaths(savedSettingsObjects.appPaths)
       if (!changedDuringSave.gamePaths) setGamePaths(savedSettingsObjects.gamePaths)
       if (!changedDuringSave.appArgs) setAppArgs(savedSettingsObjects.appArgs)

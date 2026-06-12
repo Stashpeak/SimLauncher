@@ -59,6 +59,9 @@ function RunningAppIconItem({
   const role = useRole(context, { role: 'menu' })
   const { getReferenceProps, getFloatingProps } = useInteractions([dismiss, role])
 
+  // Only show the context menu when there is a warning (e.g. process-name
+  // mismatch). Apps without warnings get no right-click menu so the native
+  // Chromium context menu (inspect element) still works in dev builds.
   const handleContextMenu = (e: React.MouseEvent) => {
     if (app.warning) {
       e.preventDefault()
@@ -104,6 +107,10 @@ function RunningAppIconItem({
       />
     )
   } else if (app.icon === null && !isFailed && !cacheInitialized) {
+    // Icon is still loading (cache not yet populated): show a skeleton so
+    // the strip does not collapse and then jump when icons arrive. Once the
+    // cache is initialized, a null icon means "no icon found" — fall through
+    // to the fallback initial so there's no empty hole.
     return <div aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
   } else {
     content = (
@@ -159,6 +166,8 @@ export function RunningAppsStrip({
   runningAppIcons,
   cacheInitialized
 }: RunningAppsStripProps): ReactNode {
+  // Track image URLs that returned a load error so we can show the text
+  // initial fallback without attempting to re-fetch on every render.
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
 
   if (runningAppIcons.length === 0) return null
