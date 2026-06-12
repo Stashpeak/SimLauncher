@@ -27,6 +27,10 @@ import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { KillFailure, KillFailureReason, KillResult } from './types'
 
+// Generous for a healthy system (the query usually returns in tens of ms) but
+// bounded so a wedged WMI service cannot hang a kill request forever.
+const WMI_LOOKUP_TIMEOUT_MS = 3000
+
 export interface KillAttemptResult {
   processName: string
   success: boolean
@@ -158,11 +162,21 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
       {
         windowsHide: true,
+        // A hung or slow WMI query (slow disk, process-heavy system) must not
+        // stall the kill pipeline indefinitely. On timeout this surfaces as a
+        // clean kill failure — deliberately NOT a `taskkill /IM` fallback,
+        // which would break the path-scoping safety guarantee and kill
+        // same-named processes the user started outside SimLauncher (#503).
+        timeout: WMI_LOOKUP_TIMEOUT_MS,
         env: { ...process.env, SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath) }
       },
       (error, stdout, stderr) => {
         if (error) {
-          const detail = stderr.trim() || stdout.trim() || error.message
+          // execFile sets `killed` when it terminated the child itself —
+          // with a plain timeout option that means the deadline elapsed.
+          const detail = error.killed
+            ? `Process lookup timed out after ${WMI_LOOKUP_TIMEOUT_MS / 1000} seconds.`
+            : stderr.trim() || stdout.trim() || error.message
           console.error(`Failed to find process IDs for ${appPath}: ${detail}`)
           resolve({ processIds: [], detail, accessDenied: isAccessDeniedMessage(detail) })
           return
