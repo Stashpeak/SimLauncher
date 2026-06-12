@@ -95,6 +95,16 @@ test('parseCommandLineArgs handles quoted paths ending in a backslash (#504)', a
   expect(parseCommandLineArgs('--out "D:\\Logs\\"')).toEqual(['--out', 'D:\\Logs\\'])
 })
 
+// Codex P2 on #508: an escaped quote before whitespace inside a NON-path
+// quoted value keeps the strict Windows behaviour (one argument containing a
+// literal quote) — only path-looking tokens get the closing deviation.
+test('parseCommandLineArgs keeps escaped quotes in non-path quoted values', async () => {
+  const { parseCommandLineArgs } = await loadSpawnModule()
+
+  expect(parseCommandLineArgs('--title "Lap \\" time"')).toEqual(['--title', 'Lap " time'])
+  expect(parseCommandLineArgs('"say \\" loudly \\" twice"')).toEqual(['say " loudly " twice'])
+})
+
 test('parseCommandLineArgs keeps backslash runs not followed by a quote literal', async () => {
   const { parseCommandLineArgs } = await loadSpawnModule()
 

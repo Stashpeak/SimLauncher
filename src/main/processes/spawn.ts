@@ -178,10 +178,14 @@ export function isRunningExePath(processNames: Set<string>, appPath: string): bo
  * Backslashes follow the Windows argv convention (CommandLineToArgvW): they
  * are literal unless they precede a double quote, in which case each pair
  * collapses to one backslash and an odd remainder escapes the quote. One
- * deliberate deviation: inside a quoted group, an odd trailing backslash whose
- * quote is followed by whitespace/end closes the group instead of producing a
- * literal quote — so `"C:\My Path\" --flag` parses the way users mean it
- * (a path plus a flag) rather than swallowing the rest of the line (#504).
+ * deliberate deviation: inside a quoted group whose accumulated content looks
+ * like a Windows path, an odd trailing backslash whose quote is followed by
+ * whitespace/end closes the group instead of producing a literal quote — so
+ * `"C:\My Path\" --flag` parses the way users mean it (a path plus a flag)
+ * rather than swallowing the rest of the line (#504). The path test is what
+ * keeps escaped quotes in non-path arguments (e.g. `"Lap \" time"`) on the
+ * strict Windows behaviour — a literal `"` cannot occur in a Windows path, so
+ * the two intents never genuinely collide.
  *
  * Exported for unit tests only — not part of the processes barrel surface.
  */
@@ -215,8 +219,12 @@ export function parseCommandLineArgs(input: string): string[] {
 
       const charAfterQuote = input[index + backslashCount + 1]
       const quoteEndsToken = charAfterQuote === undefined || /\s/.test(charAfterQuote)
+      // Drive-letter or UNC prefix anywhere in the token so far — quotes are
+      // invalid characters in Windows paths, so a path-looking token cannot
+      // legitimately want a literal quote here.
+      const looksLikeWindowsPath = /[A-Za-z]:[\\/]|^\\\\/.test(current)
 
-      if (inQuotes && quoteEndsToken) {
+      if (inQuotes && quoteEndsToken && looksLikeWindowsPath) {
         // The path-friendly deviation described above: `...\" ` closes the
         // quoted group and keeps the backslash.
         current += '\\'
