@@ -233,25 +233,25 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(getExeName(appProcess.path))
   )
 
-  const apps = [
-    ...surfacedApps,
-    ...mismatchWarnings.filter(
-      (appProcess) =>
-        !launchedKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
-    ),
-    ...trackedApps.filter(
-      (appProcess) =>
-        !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
-    )
-  ]
+  const filteredMismatchWarnings = mismatchWarnings.filter(
+    (appProcess) =>
+      !launchedKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
+  )
+  const filteredTrackedApps = trackedApps.filter(
+    (appProcess) =>
+      !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
+  )
 
-  // Refresh the tray's "Close Apps" enabled state off the same surfaced list the
-  // UI shows. This is the only place that sees the full picture — launched
-  // companions plus elevated/externally-running ones that never enter
-  // runningProcesses but that killLaunchedApps still reaches.
-  closableAppsCached = apps.some((app) => !isGameApp(app, gamePaths))
+  // Refresh the tray's "Close Apps" enabled state. Closable = anything
+  // killLaunchedApps can target: launched companions, still-running unclosed
+  // companions, and externally-tracked companions. The game is excluded, and so
+  // are mismatch warnings — their original exe is already gone from the tasklist
+  // (only the renamed child survives), so the kill cannot act on them.
+  closableAppsCached = [...surfacedApps, ...filteredTrackedApps].some(
+    (app) => !isGameApp(app, gamePaths)
+  )
 
-  return apps
+  return [...surfacedApps, ...filteredMismatchWarnings, ...filteredTrackedApps]
 }
 
 // A surfaced running app is the game itself (not a closable companion) when its
@@ -271,7 +271,8 @@ function isGameApp(app: RunningApp, gamePaths: Record<string, string> | undefine
  * exit, kill and the periodic scan, so it stays current within the scan
  * interval. Sourcing it from getRunningApps — rather than runningProcesses
  * alone — means elevated and externally-running companions, which never enter
- * runningProcesses but are still reachable by killLaunchedApps, are counted too.
+ * runningProcesses but are still reachable by killLaunchedApps, are counted too,
+ * while the game and mismatch warnings (which the kill cannot act on) are not.
  */
 export function hasClosableApps(): boolean {
   return closableAppsCached
@@ -330,6 +331,10 @@ function emitRunningAppsChanged(payload: RunningAppsChangedPayload) {
     webContents.send(RUNNING_APPS_CHANGED_CHANNEL, payload)
   })
 
+  notifyRunningAppsChangeListeners(payload)
+}
+
+function notifyRunningAppsChangeListeners(payload: RunningAppsChangedPayload) {
   runningAppsChangeListeners.forEach((listener) => {
     // Isolate listener failures: a misbehaving main-process listener (e.g. the
     // tray menu rebuild) must not reject the publish promise that kill/spawn
@@ -407,7 +412,17 @@ export async function subscribeRunningApps(
 
   const apps = await getRunningApps()
   lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
-  return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
+  const payload = {
+    apps,
+    reason: 'initial',
+    updatedAt: Date.now()
+  } satisfies RunningAppsChangedPayload
+  // Notify main-process listeners (the tray) with the initial snapshot so the
+  // menu reflects companions that were already running before the renderer
+  // subscribed. emitRunningAppsChanged is not used here because the subscribing
+  // WebContents receives this payload as the return value instead.
+  notifyRunningAppsChangeListeners(payload)
+  return payload
 }
 
 export function unsubscribeRunningApps(webContents: WebContents): void {

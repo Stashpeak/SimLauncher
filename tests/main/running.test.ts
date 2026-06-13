@@ -208,11 +208,13 @@ test('main-process listeners receive running-apps changes and can unsubscribe (#
     succeeded: true
   })
 
-  const listener = vi.fn()
-  const unsubscribe = runningModule.addRunningAppsChangeListener(listener)
-
   const webContents = { isDestroyed: () => false, send: vi.fn(), once: vi.fn() }
   await runningModule.subscribeRunningApps(webContents as never)
+
+  // Register after subscribe so we observe only the change emission, not the
+  // initial-snapshot notification (covered by its own test).
+  const listener = vi.fn()
+  const unsubscribe = runningModule.addRunningAppsChangeListener(listener)
   await runningModule.publishRunningApps('kill')
 
   expect(listener).toHaveBeenCalledTimes(1)
@@ -225,6 +227,59 @@ test('main-process listeners receive running-apps changes and can unsubscribe (#
 
   // Stop the 2s scan interval started by subscribeRunningApps.
   runningModule.unsubscribeRunningApps(webContents as never)
+})
+
+// Codex P2 on #536: createTray() builds the menu before the renderer subscribes,
+// so a companion already running at startup must still enable the tray via the
+// initial-snapshot notification (the scan dedup would otherwise never re-emit).
+test('subscribing notifies main-process listeners with the initial snapshot (#519)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule()
+  stateModule.runningProcesses.set('companion', {
+    process: {} as ChildProcess,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe']),
+    succeeded: true
+  })
+
+  const listener = vi.fn()
+  runningModule.addRunningAppsChangeListener(listener)
+
+  const webContents = { isDestroyed: () => false, send: vi.fn(), once: vi.fn() }
+  await runningModule.subscribeRunningApps(webContents as never)
+
+  expect(listener).toHaveBeenCalledTimes(1)
+  expect(listener.mock.calls[0][0].reason).toBe('initial')
+
+  runningModule.unsubscribeRunningApps(webContents as never)
+})
+
+// Codex P2 on #536: a process-name mismatch warning (original exe already gone
+// from the tasklist) is not something killLaunchedApps can close, so it must not
+// enable the tray action.
+test('hasClosableApps excludes process-name mismatch warnings (#519)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule()
+  stateModule.processNameMismatchWarnings.set('iracing:c:\\tools\\wrapper.exe', {
+    path: 'C:/Tools/Wrapper.exe',
+    name: 'Wrapper.exe',
+    gameKey: 'iracing',
+    warning: 'a renamed child process is still running'
+  })
+  // The original Wrapper.exe is NOT in the tasklist (that is what makes it a
+  // mismatch warning); only an unrelated child survives.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['someotherchild.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(apps.some((app) => app.path === 'C:/Tools/Wrapper.exe')).toBe(true)
+  expect(runningModule.hasClosableApps()).toBe(false)
 })
 
 // killLaunchedApps awaits publishRunningApps; a throwing menu-refresh listener
@@ -244,15 +299,16 @@ test('a throwing change listener does not break publishing or other listeners (#
     succeeded: true
   })
 
+  const webContents = { isDestroyed: () => false, send: vi.fn(), once: vi.fn() }
+  await runningModule.subscribeRunningApps(webContents as never)
+
+  // Register after subscribe so the counts below reflect only the kill emission.
   const throwingListener = vi.fn(() => {
     throw new Error('listener boom')
   })
   const goodListener = vi.fn()
   runningModule.addRunningAppsChangeListener(throwingListener)
   runningModule.addRunningAppsChangeListener(goodListener)
-
-  const webContents = { isDestroyed: () => false, send: vi.fn(), once: vi.fn() }
-  await runningModule.subscribeRunningApps(webContents as never)
 
   await expect(runningModule.publishRunningApps('kill')).resolves.not.toThrow()
   expect(throwingListener).toHaveBeenCalledTimes(1)
