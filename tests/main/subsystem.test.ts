@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'vitest'
+import { afterAll, afterEach, expect, test, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -45,6 +45,14 @@ afterAll(() => {
   })
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+function lockError(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`mock ${code}`), { code })
+}
+
 test('detects a console-subsystem PE (#486)', async () => {
   const file = writeFixture('console', buildPeFixture({ subsystem: SUBSYSTEM_CONSOLE }))
   await expect(isConsoleExecutable(file)).resolves.toBe(true)
@@ -72,6 +80,36 @@ test('fails open (non-console) on a truncated file (#486)', async () => {
 
 test('fails open (non-console) on a nonexistent path (#486)', async () => {
   await expect(isConsoleExecutable('C:/does/not/exist.exe')).resolves.toBe(false)
+})
+
+test('retries once on a transient lock and then succeeds (#505)', async () => {
+  const file = writeFixture('lock-retry', buildPeFixture({ subsystem: SUBSYSTEM_CONSOLE }))
+  const realOpen = fs.promises.open
+  const openSpy = vi
+    .spyOn(fs.promises, 'open')
+    .mockRejectedValueOnce(lockError('EBUSY'))
+    .mockImplementation((...args: Parameters<typeof fs.promises.open>) =>
+      realOpen.apply(fs.promises, args)
+    )
+
+  await expect(isConsoleExecutable(file)).resolves.toBe(true)
+  expect(openSpy).toHaveBeenCalledTimes(2)
+})
+
+test('does not retry on a non-transient error (#505)', async () => {
+  const file = writeFixture('no-retry', buildPeFixture({ subsystem: SUBSYSTEM_CONSOLE }))
+  const openSpy = vi.spyOn(fs.promises, 'open').mockRejectedValue(lockError('ENOENT'))
+
+  await expect(isConsoleExecutable(file)).resolves.toBe(false)
+  expect(openSpy).toHaveBeenCalledTimes(1)
+})
+
+test('fails open after the retry still hits the lock (#505)', async () => {
+  const file = writeFixture('lock-persist', buildPeFixture({ subsystem: SUBSYSTEM_CONSOLE }))
+  const openSpy = vi.spyOn(fs.promises, 'open').mockRejectedValue(lockError('EBUSY'))
+
+  await expect(isConsoleExecutable(file)).resolves.toBe(false)
+  expect(openSpy).toHaveBeenCalledTimes(2)
 })
 
 // Real-world sanity against actual Windows system binaries (skipped on the
