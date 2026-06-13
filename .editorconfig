@@ -1,0 +1,17 @@
+# EditorConfig baseline for editors that don't read Prettier/ESLint config.
+# https://editorconfig.org — Prettier still owns formatting for the file types
+# it handles; this just keeps non-Prettier files (configs, scripts, markdown)
+# consistent.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown: trailing whitespace can be a meaningful line break, so don't strip it.
+[*.md]
+trim_trailing_whitespace = false

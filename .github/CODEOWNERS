@@ -1,0 +1,3 @@
+# Default reviewer for the whole repository.
+# Formalizes the human-review gate: every PR requests review from @Shieldxx.
+* @Shieldxx

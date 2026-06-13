@@ -10,6 +10,12 @@ One-click startup for your entire sim racing setup.
 
 Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software — automatically.
 
+https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
+
+**➡️ [Download SimLauncher for Windows](../../releases/latest)**
+
+> On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
+
 <table>
   <tr>
     <td><img alt="Launcher Tab" src="docs/screenshots/Launcher%20Tab.png" /></td>
@@ -24,6 +30,8 @@ Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimH
     <td><img alt="No Games Configured" src="docs/screenshots/Launcher%20Tab%20-%20No%20Games%20Configured.png" /></td>
   </tr>
 </table>
+
+**Jump to:** [Who it's for](#who-is-this-for) · [Features](#features) · [Supported games](#supported-games) · [Installation](#installation) · [Troubleshooting](#troubleshooting) · [Build from source](#building-from-source) · [Security](#security) · [Support](#support)
 
 ---
 
@@ -65,6 +73,8 @@ In that case, your current setup is already simple enough.
 - Start with Windows, start minimized, and minimize to tray options
 - Toast notifications for launch status and errors
 
+---
+
 ## Planned Features
 
 - **Optional auto-close**: Automatically terminate companion apps and utilities when the sim game session ends.
@@ -73,13 +83,17 @@ In that case, your current setup is already simple enough.
 - **Enhanced session management**: Session-state-aware app launching and advanced restart triggers.
 - **Global profile actions**: Explicit "Close Full Profile" and "Close Game" actions for better control.
 
+---
+
 ## Supported Games
 
 Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rally, Aerofly FS 4, Automobilista, Automobilista 2, BeamNG, DCS World, Dirt Rally, Dirt Rally 2.0, EA WRC, F1 24, F1 25, IL-2 Sturmovik: Great Battles, iRacing, Le Mans Ultimate, Microsoft Flight Simulator 2020, Microsoft Flight Simulator 2024, Prepar3D, Project Motor Racing, RaceRoom Racing Experience, Richard Burns Rally, Rennsport, rFactor, rFactor 2, X-Plane 12
 
+---
+
 ## Supported Utilities
 
-SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor, plus up to 20 user-added custom app slots
+**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor. **Anything else** — overlays, telemetry tools, wheelbase software — goes in up to 20 user-added custom app slots, each launched the same way.
 
 ---
 
@@ -119,17 +133,17 @@ The installer isn't code-signed yet, so SmartScreen may warn on first launch. Cl
 
 ## Building from source
 
-SimLauncher is a standard Electron + electron-vite project. You need [Node.js](https://nodejs.org/) 24 or newer and npm.
+You can build the installer yourself instead of trusting the published binary. It's a standard Electron + electron-vite project; you need [Node.js](https://nodejs.org/) 24 or newer.
 
 ```bash
-git clone https://github.com/Stashpeak/SimLauncher.git
+git clone https://github.com/Stashpeak/SimLauncher
 cd SimLauncher
 npm install
-npm run dev        # run in development
-npm run dist:win   # build a Windows installer into dist/
+npx install-electron   # Electron >=42 no longer downloads its binary via postinstall
+npm run dist:win       # build a Windows installer into dist/
 ```
 
-Other useful scripts: `npm test` (unit tests), `npm run lint`, and `npm run typecheck`.
+For the full development workflow — running in dev mode, the test/lint/typecheck gates, and how to add a game or utility — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
