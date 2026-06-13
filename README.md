@@ -10,8 +10,7 @@ One-click startup for your entire sim racing setup.
 
 Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software — automatically.
 
-<!-- DEMO_VIDEO: drag-drop assets-source demo.mp4 into the PR conversation to mint the
-     user-attachments URL, then replace this comment with the rendered video link. -->
+https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
 **➡️ [Download SimLauncher for Windows](../../releases/latest)**
 
