@@ -1318,6 +1318,28 @@ test('the global close never targets a game exe configured as a companion elsewh
   })
 })
 
+// Codex P2 on #536: the game exclusion must match by full path, not basename. A
+// companion whose basename collides with a DIFFERENT game's exe (different path)
+// must still be closable — otherwise the per-game close drops legitimate apps.
+test('a companion sharing a basename with another game is still closable (#519)', async () => {
+  const { hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/acs.exe', other: 'C:/OtherGame/app.exe' },
+    // The selected profile's companion is named app.exe but lives elsewhere than
+    // the "other" game's app.exe.
+    appPaths: { tool: 'C:/Tools/app.exe' },
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    }
+  })
+  markExistingPath('C:/Games/acs.exe')
+  markExistingPath('C:/OtherGame/app.exe')
+  processNames.add('app.exe')
+
+  // app.exe is a real companion for profile ac (its path is not a game path), so
+  // the per-game close must reach it despite the basename collision.
+  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
+})
+
 test('killProfileApps rejects paths that are not configured app paths', async () => {
   const { killProfileApps } = await loadProcessModules()
 
