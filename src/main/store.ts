@@ -184,9 +184,15 @@ function ensureStore(): StoreInstance {
  * access in the app runs inside a function that executes after the lock check.
  */
 export const store = new Proxy({} as StoreInstance, {
-  get(_target, prop, receiver) {
+  // Forward reads to the lazily-built instance. The receiver MUST be `instance`,
+  // not the Proxy: electron-store exposes accessors like `.store`/`.path`/`.size`
+  // as getters that read private (`#`) fields, and a getter invoked with the
+  // Proxy as `this` throws because the Proxy is not a Conf instance. Passing the
+  // real instance as the receiver lets those getters reach their private state
+  // (config import snapshots and export both read `store.store`).
+  get(_target, prop) {
     const instance = ensureStore()
-    const value = Reflect.get(instance as object, prop, receiver)
+    const value = Reflect.get(instance as object, prop, instance)
     return typeof value === 'function' ? value.bind(instance) : value
   }
 }) as StoreInstance
