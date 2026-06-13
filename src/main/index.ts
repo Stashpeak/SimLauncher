@@ -1,12 +1,17 @@
 import { app } from 'electron'
 
 import { setIsQuitting } from './app-state'
+import { installMainProcessErrorLogging } from './errorLog'
 import { registerHandlers } from './ipc'
 import { migrateProfilesToNamedSets } from './migrator'
 import { registerContentSecurityPolicy } from './security'
 import { store } from './store'
 import { configureTray, createTray } from './tray'
 import { createWindow, getAppIconPath, showMainWindow } from './window'
+
+// Register crash logging first, before any other main-process work, so an early
+// failure (lock acquisition, store build, boot) still leaves a diagnostic trail.
+installMainProcessErrorLogging()
 
 // Prevent multiple instances: the first instance acquires the lock; any
 // subsequent launch is redirected to focus the already-running window.

@@ -23,6 +23,16 @@ async function bootApp(opts: BootOptions = {}) {
   vi.doMock('../../src/main/security', () => securityMock)
   vi.doMock('../../src/main/security.ts', () => securityMock)
 
+  // Mock crash logging so importing index doesn't register real process-level
+  // uncaughtException/unhandledRejection handlers across the whole test run.
+  const errorLogMock = {
+    installMainProcessErrorLogging: vi.fn()
+  }
+  vi.doMock('./errorLog', () => errorLogMock)
+  vi.doMock('/src/main/errorLog.ts', () => errorLogMock)
+  vi.doMock('../../src/main/errorLog', () => errorLogMock)
+  vi.doMock('../../src/main/errorLog.ts', () => errorLogMock)
+
   const migratorMock = {
     migrateProfilesToNamedSets: vi.fn(() => {
       if (opts.migrateThrows) {
@@ -83,7 +93,15 @@ async function bootApp(opts: BootOptions = {}) {
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   const appState = await import('../../src/main/app-state')
-  return { app: app as typeof mockApp, appState, callLog, trayMock, windowMock, ipcMock }
+  return {
+    app: app as typeof mockApp,
+    appState,
+    callLog,
+    trayMock,
+    windowMock,
+    ipcMock,
+    errorLogMock
+  }
 }
 
 beforeEach(() => {
@@ -113,6 +131,13 @@ test('first instance boots in the documented order', async () => {
     'createTray',
     'createWindow'
   ])
+})
+
+// Crash logging is registered at module load (before the single-instance lock),
+// so even a second instance that quits immediately still has a diagnostic trail.
+test('boot registers main-process crash logging before anything else (#522)', async () => {
+  const { errorLogMock } = await bootApp()
+  expect(errorLogMock.installMainProcessErrorLogging).toHaveBeenCalledTimes(1)
 })
 
 // migrateProfilesToNamedSets throws on a failed store write so config import can
