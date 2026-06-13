@@ -147,14 +147,16 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
       '$target = $env:SIMLAUNCHER_TARGET_PROCESS_PATH',
       '$name = $env:SIMLAUNCHER_TARGET_PROCESS_NAME',
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
-      // WQL string literals escape a single quote by doubling it (like SQL), so
-      // the quote must be doubled when building the filter — NOT when assigning
-      // $name. Interpolating $name straight into the filter would emit
-      // `Name = 'Dave'sApp.exe'` for an exe whose name contains a quote, which
-      // WQL rejects as an invalid query and the process is never found.
-      '$wqlName = $name -replace "\'", "\'\'"',
-      'Get-CimInstance Win32_Process -Filter "Name = \'$wqlName\'" |',
-      '  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
+      // Match the process name in PowerShell with -ieq rather than in a WQL
+      // `Name = '...'` filter. WQL string-literal quote escaping is ambiguous and
+      // version-dependent (SQL-style doubling vs backslash), and getting it wrong
+      // silently breaks the lookup for exe names containing a single quote — the
+      // exact case this guards (#531). Comparing $_.Name to the env-injected $name
+      // in the host language sidesteps WQL escaping entirely and handles any
+      // character. The (rare, user-initiated) full-process enumeration is bounded
+      // by WMI_LOOKUP_TIMEOUT_MS; precision still comes from the ExecutablePath match.
+      'Get-CimInstance Win32_Process |',
+      '  Where-Object { $_.Name -ieq $name -and $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
       '  Select-Object -ExpandProperty ProcessId |',
       '  ConvertTo-Json -Compress'
     ].join('\n')

@@ -1278,10 +1278,10 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
   expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
 })
 
-test('PID lookup injects the name via env and doubles single quotes for WQL (#531)', async () => {
+test('PID lookup injects the name via env and matches it in PowerShell, not WQL (#531)', async () => {
   // An exe whose name contains a single quote (e.g. Dave'sApp.exe) must not break
-  // the Get-CimInstance WQL filter. The name is passed via env (never interpolated)
-  // and the quote is doubled when the filter is built, so WQL stays valid.
+  // the lookup. The name is passed via env (never interpolated) and matched with
+  // -ieq in Where-Object, so no WQL string-literal quote escaping is involved.
   const quotedPath = "C:/Tools/Dave'sApp.exe"
   markExistingPath(quotedPath)
   processNames.add("dave'sapp.exe")
@@ -1305,11 +1305,12 @@ test('PID lookup injects the name via env and doubles single quotes for WQL (#53
   expect((psCall!.options.env as Record<string, string>).SIMLAUNCHER_TARGET_PROCESS_NAME).toContain(
     "'"
   )
-  // WQL doubling happens at filter-build time; the filter uses the doubled var.
-  expect(script).toContain('$wqlName = $name -replace')
-  expect(script).toContain("Name = '$wqlName'")
-  // The raw quoted name must NOT be interpolated into the filter (the bug).
-  expect(script).not.toContain("Name = 'Dave'sApp.exe'")
+  // Name is matched in PowerShell (-ieq), not in a WQL string literal, so no
+  // quote escaping is needed and the WQL Name filter is gone.
+  expect(script).toContain('$_.Name -ieq $name')
+  expect(script).not.toContain('-Filter')
+  // The raw quoted name must never appear in the script (it travels via env).
+  expect(script).not.toContain("Dave'sApp.exe")
 })
 
 test('killProfileApps only kills the PID matching the requested executable path (#341)', async () => {
