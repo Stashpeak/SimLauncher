@@ -131,6 +131,16 @@ test('createInMemoryFallbackStore seeds schema defaults and supports get/set/cle
   // clear() resets to schema defaults, matching electron-store semantics.
   fallback.clear()
   expect(fallback.get('themeMode')).toBe('dark')
+
+  // Object defaults are cloned, not shared by reference: a handler mutating a
+  // returned object default (e.g. save-profile does `profiles[key] = ...`) must
+  // not corrupt the seed, so clear() still resets to a fresh empty object and a
+  // second fallback instance is unaffected.
+  const profiles = fallback.get('profiles') as Record<string, unknown>
+  profiles.ac = { activeProfileId: 'x', profiles: [] }
+  fallback.clear()
+  expect(fallback.get('profiles')).toEqual({})
+  expect(createInMemoryFallbackStore().get('profiles')).toEqual({})
 })
 
 test('formatConfigRecoveryNotice describes the reset and mentions a kept backup only when present', async () => {

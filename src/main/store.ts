@@ -197,7 +197,12 @@ export function createInMemoryFallbackStore(): StoreInstance {
     const seeded: Record<string, unknown> = {}
     Object.entries(schema ?? {}).forEach(([key, spec]) => {
       if (spec && 'default' in spec) {
-        seeded[key] = spec.default
+        // Clone object/array defaults so the fallback never hands out (or reseeds
+        // from) the shared STORE_OPTIONS.schema reference. Handlers like
+        // save-profile mutate store.get('profiles') in place before setting it,
+        // which would otherwise corrupt the schema default and stop clear() from
+        // truly resetting.
+        seeded[key] = structuredClone(spec.default)
       }
     })
     return seeded
