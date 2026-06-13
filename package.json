@@ -75,6 +75,6 @@
   "overrides": {
     "@electron/asar": "4.2.0",
     "js-yaml": "4.1.1",
-    "esbuild": ">=0.28.1"
+    "esbuild": "^0.28.1"
   }
 }
