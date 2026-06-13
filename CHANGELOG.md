@@ -26,7 +26,7 @@ Full per-release notes — including every linked issue and PR — are published
 
 - The app now honors the system "reduce motion" setting, Settings toggles show a keyboard focus ring, and Escape closes the import-preview and color-picker dialogs.
 - The process lookup used when closing apps now times out instead of stalling the close pipeline on a wedged system service.
-- Smaller installer: build-only frontend libraries (React, Tailwind, etc.) are bundled by Vite at build time and are no longer packaged into the app, trimming the install footprint.
+- Smaller installer: frontend libraries (React, Tailwind, etc.) are bundled by Vite into the app's own code, so their separate package copies are no longer shipped in the installer, trimming the footprint.
 
 ## [0.9.10] - 2026-06-12
 
