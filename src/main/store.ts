@@ -154,18 +154,42 @@ export function createResilientStore<T>(
   }
 }
 
-const builtStore = createResilientStore(
-  (clearInvalidConfig) =>
-    new StoreConstructor(
-      (clearInvalidConfig
-        ? { ...STORE_OPTIONS, clearInvalidConfig: true }
-        : STORE_OPTIONS) as ConstructorParameters<typeof StoreConstructor>[0]
-    ),
-  quarantineCorruptConfig
-)
+type StoreInstance = InstanceType<typeof StoreConstructor>
 
-export const store = builtStore.store
-configRecoveryNotice = builtStore.recovery
+let storeInstance: StoreInstance | null = null
+
+function ensureStore(): StoreInstance {
+  if (!storeInstance) {
+    const built = createResilientStore<StoreInstance>(
+      (clearInvalidConfig) =>
+        new StoreConstructor(
+          (clearInvalidConfig
+            ? { ...STORE_OPTIONS, clearInvalidConfig: true }
+            : STORE_OPTIONS) as ConstructorParameters<typeof StoreConstructor>[0]
+        ),
+      quarantineCorruptConfig
+    )
+    storeInstance = built.store
+    configRecoveryNotice = built.recovery
+  }
+  return storeInstance
+}
+
+/**
+ * The store is built lazily on first access (not at import) so its corrupt-config
+ * recovery — which can rewrite/quarantine config.json — only ever runs for the
+ * PRIMARY instance. index.ts imports `store` before requestSingleInstanceLock();
+ * a second launch quits on the lock before any store access, so it never builds
+ * the store and can't touch the live user's config (#516 Codex P2). Every store
+ * access in the app runs inside a function that executes after the lock check.
+ */
+export const store = new Proxy({} as StoreInstance, {
+  get(_target, prop, receiver) {
+    const instance = ensureStore()
+    const value = Reflect.get(instance as object, prop, receiver)
+    return typeof value === 'function' ? value.bind(instance) : value
+  }
+}) as StoreInstance
 
 export const CONFIG_FILE_NAME = 'simlauncher-config.json'
 export const EXPECTED_CONFIG_KEYS = new Set([
