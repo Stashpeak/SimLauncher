@@ -146,7 +146,12 @@ async function loadProcessModules() {
         }
 
         const script = args[args.indexOf('-Command') + 1]
-        const processName = script.match(/\$name = '([^']+)'/)?.[1]?.toLowerCase()
+        // findProcessIdsByExecutablePath now passes the name via env var (#531);
+        // fall back to the legacy in-script form for any other powershell call.
+        const processName = (
+          (options.env?.SIMLAUNCHER_TARGET_PROCESS_NAME as string | undefined) ??
+          script.match(/\$name = '([^']+)'/)?.[1]
+        )?.toLowerCase()
 
         const targetPathEnv = options.env?.SIMLAUNCHER_TARGET_PROCESS_PATH
         if (typeof targetPathEnv !== 'string' || targetPathEnv.length === 0) {
@@ -1271,6 +1276,41 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
     ])
   )
   expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
+})
+
+test('PID lookup injects the name via env and matches it in PowerShell, not WQL (#531)', async () => {
+  // An exe whose name contains a single quote (e.g. Dave'sApp.exe) must not break
+  // the lookup. The name is passed via env (never interpolated) and matched with
+  // -ieq in Where-Object, so no WQL string-literal quote escaping is involved.
+  const quotedPath = "C:/Tools/Dave'sApp.exe"
+  markExistingPath(quotedPath)
+  processNames.add("dave'sapp.exe")
+  registerProcess(quotedPath, "dave'sapp.exe", '4321')
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { simhub: quotedPath }
+  })
+
+  await killProfileApps('ac', [quotedPath])
+
+  const psCall = execFileCalls.find(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      call.args.some((arg) => arg.includes('Get-CimInstance Win32_Process'))
+  )
+  expect(psCall).toBeDefined()
+  const script = psCall!.args[psCall!.args.length - 1] as string
+
+  // Name comes from the environment, not interpolated into the script string.
+  expect(script).toContain('$name = $env:SIMLAUNCHER_TARGET_PROCESS_NAME')
+  expect((psCall!.options.env as Record<string, string>).SIMLAUNCHER_TARGET_PROCESS_NAME).toContain(
+    "'"
+  )
+  // Name is matched in PowerShell (-ieq), not in a WQL string literal, so no
+  // quote escaping is needed and the WQL Name filter is gone.
+  expect(script).toContain('$_.Name -ieq $name')
+  expect(script).not.toContain('-Filter')
+  // The raw quoted name must never appear in the script (it travels via env).
+  expect(script).not.toContain("Dave'sApp.exe")
 })
 
 test('killProfileApps only kills the PID matching the requested executable path (#341)', async () => {

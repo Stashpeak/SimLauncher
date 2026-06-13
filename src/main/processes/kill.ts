@@ -111,10 +111,6 @@ function isFullExePath(appPath: string | undefined): appPath is string {
   )
 }
 
-function escapeWmiString(value: string) {
-  return value.replace(/'/g, "''")
-}
-
 function parseProcessIds(output: string) {
   const trimmedOutput = output.trim()
 
@@ -144,15 +140,23 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
     accessDenied?: boolean
   }>((resolve) => {
     const script = [
-      // The target path is injected via an environment variable rather than
-      // interpolated directly into the script string. This prevents a path
-      // containing single-quotes or special PowerShell metacharacters from
-      // breaking out of the string literal or injecting arbitrary commands.
+      // Both the target path and the process name are injected via environment
+      // variables rather than interpolated into the script string. This prevents
+      // a value containing single-quotes or PowerShell metacharacters from
+      // breaking out of a string literal or injecting arbitrary commands.
       '$target = $env:SIMLAUNCHER_TARGET_PROCESS_PATH',
-      `$name = '${escapeWmiString(processName)}'`,
+      '$name = $env:SIMLAUNCHER_TARGET_PROCESS_NAME',
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
-      'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
-      '  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
+      // Match the process name in PowerShell with -ieq rather than in a WQL
+      // `Name = '...'` filter. WQL string-literal quote escaping is ambiguous and
+      // version-dependent (SQL-style doubling vs backslash), and getting it wrong
+      // silently breaks the lookup for exe names containing a single quote — the
+      // exact case this guards (#531). Comparing $_.Name to the env-injected $name
+      // in the host language sidesteps WQL escaping entirely and handles any
+      // character. The (rare, user-initiated) full-process enumeration is bounded
+      // by WMI_LOOKUP_TIMEOUT_MS; precision still comes from the ExecutablePath match.
+      'Get-CimInstance Win32_Process |',
+      '  Where-Object { $_.Name -ieq $name -and $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
       '  Select-Object -ExpandProperty ProcessId |',
       '  ConvertTo-Json -Compress'
     ].join('\n')
@@ -168,7 +172,11 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
         // which would break the path-scoping safety guarantee and kill
         // same-named processes the user started outside SimLauncher (#503).
         timeout: WMI_LOOKUP_TIMEOUT_MS,
-        env: { ...process.env, SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath) }
+        env: {
+          ...process.env,
+          SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath),
+          SIMLAUNCHER_TARGET_PROCESS_NAME: processName
+        }
       },
       (error, stdout, stderr) => {
         if (error) {
