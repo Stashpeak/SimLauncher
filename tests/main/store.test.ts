@@ -128,6 +128,12 @@ test('createInMemoryFallbackStore seeds schema defaults and supports get/set/cle
   snapshot.themeMode = 'mutated'
   expect(fallback.get('themeMode')).toBe('light')
 
+  // The copy is DEEP (electron-store deserializes a fresh object per read), so
+  // mutating a nested object on the returned config must not touch internal state.
+  const deepSnapshot = fallback.store as { profiles: Record<string, unknown> }
+  deepSnapshot.profiles.ac = { activeProfileId: 'mutated', profiles: [] }
+  expect(fallback.get('profiles')).toEqual({})
+
   // clear() resets to schema defaults, matching electron-store semantics.
   fallback.clear()
   expect(fallback.get('themeMode')).toBe('dark')

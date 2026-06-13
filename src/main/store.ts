@@ -227,7 +227,11 @@ export function createInMemoryFallbackStore(): StoreInstance {
       data = seedDefaults()
     },
     get store() {
-      return { ...data }
+      // Deep clone, matching electron-store's `.store` which deserializes a fresh
+      // object each read. A shallow `{ ...data }` would alias nested objects
+      // (profiles/appPaths/...), so a caller mutating the returned config would
+      // corrupt the in-memory state.
+      return structuredClone(data)
     }
   }
 
