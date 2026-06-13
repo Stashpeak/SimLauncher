@@ -5,6 +5,7 @@ import type { app as mockApp } from './electronMock'
 interface BootOptions {
   lockAcquired?: boolean
   showTrayIcon?: boolean
+  migrateThrows?: boolean
 }
 
 // Imports src/main/index for its side effects with every collaborator module
@@ -23,7 +24,12 @@ async function bootApp(opts: BootOptions = {}) {
   vi.doMock('../../src/main/security.ts', () => securityMock)
 
   const migratorMock = {
-    migrateProfilesToNamedSets: vi.fn(() => callLog.push('migrate'))
+    migrateProfilesToNamedSets: vi.fn(() => {
+      if (opts.migrateThrows) {
+        throw new Error('mock migration failure')
+      }
+      callLog.push('migrate')
+    })
   }
   vi.doMock('./migrator', () => migratorMock)
   vi.doMock('/src/main/migrator.ts', () => migratorMock)
@@ -107,6 +113,19 @@ test('first instance boots in the documented order', async () => {
     'createTray',
     'createWindow'
   ])
+})
+
+// migrateProfilesToNamedSets throws on a failed store write so config import can
+// roll back, but a malformed legacy profile must not brick startup. The boot
+// caller catches it and continues registering handlers, tray and window (#513).
+test('boot survives a profile migration failure and still finishes booting (#513)', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { callLog } = await bootApp({ migrateThrows: true })
+
+  // 'migrate' is absent (the mock threw before recording), but boot continued.
+  expect(callLog).toEqual(['csp', 'handlers', 'configureTray', 'createTray', 'createWindow'])
+  expect(consoleError).toHaveBeenCalled()
+  consoleError.mockRestore()
 })
 
 test('tray is not created on boot when showTrayIcon is off (#391)', async () => {

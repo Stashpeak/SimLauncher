@@ -1,3 +1,6 @@
+import { app } from 'electron'
+import fs from 'fs'
+import path from 'path'
 import Store from 'electron-store'
 
 import { clamp, isRecord, normalizePathForComparison } from './utils'
@@ -58,7 +61,7 @@ const PROFILE_BOOLEAN_KEYS = [
 const StoreConstructor =
   typeof Store === 'function' ? Store : (Store as unknown as { default: typeof Store }).default
 
-export const store = new StoreConstructor({
+const STORE_OPTIONS = {
   projectName: 'SimLauncher',
   schema: {
     appPaths: { type: 'object', default: {} },
@@ -84,7 +87,198 @@ export const store = new StoreConstructor({
     profileSetsMigrated: { type: 'boolean', default: false },
     migrated: { type: 'boolean', default: false }
   }
-} as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string })
+} as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string }
+
+// One-shot notice that the persisted config was unreadable on boot. The renderer
+// pulls it via the 'get-startup-notice' IPC and shows a toast, so settings
+// silently reverting to defaults is explained. `ephemeral` marks the last-resort
+// case where no store could be built at all (the file is locked/permission-denied,
+// so it was NOT reset and the saved settings are intact) versus a corrupt-config
+// reset.
+type ConfigRecoveryNotice = { backupPath: string | null; ephemeral?: boolean }
+
+let configRecoveryNotice: ConfigRecoveryNotice | null = null
+
+export function consumeConfigRecoveryNotice(): ConfigRecoveryNotice | null {
+  const notice = configRecoveryNotice
+  configRecoveryNotice = null
+  return notice
+}
+
+export function formatConfigRecoveryNotice(notice: ConfigRecoveryNotice): {
+  type: 'warn'
+  message: string
+} {
+  if (notice.ephemeral) {
+    // The saved file could not be opened (e.g. locked by AV/sync/another
+    // instance), so nothing was reset — defaults are in effect only for this
+    // session and the real settings load again once the file is readable.
+    return {
+      type: 'warn',
+      message:
+        "Your saved settings couldn't be opened — they may be locked by another program. SimLauncher started with defaults for now; your saved settings are untouched and will load next time."
+    }
+  }
+
+  const backupSuffix = notice.backupPath
+    ? ' A copy of the unreadable file was kept next to it.'
+    : ''
+  return {
+    type: 'warn',
+    message: `Your saved settings couldn't be read and were reset to defaults.${backupSuffix}`
+  }
+}
+
+// Move an unreadable config file aside so the user can recover/inspect it,
+// returning the backup path (or null when there was nothing to move). The
+// default electron-store file is config.json in userData.
+function quarantineCorruptConfig(): string | null {
+  try {
+    const file = path.join(app.getPath('userData'), 'config.json')
+    if (!fs.existsSync(file)) {
+      return null
+    }
+    const backup = path.join(app.getPath('userData'), `config.corrupt-${Date.now()}.json`)
+    fs.renameSync(file, backup)
+    return backup
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build the store while surviving an unreadable config file. Without this,
+ * electron-store rethrows on construction and the app cannot launch at all (no
+ * window, no tray, no dialog). Recovery ladder:
+ *   1. construct normally;
+ *   2. on failure, move the bad file aside (quarantine) and retry fresh;
+ *   3. if that also fails, retry with clearInvalidConfig so electron-store resets
+ *      a corrupt or schema-invalid file in place;
+ *   4. if even that throws — the file is locked or permission-denied (EBUSY/
+ *      EPERM/EACCES), which electron-store rethrows rather than resetting because
+ *      it cannot read the file to reset it — boot on an ephemeral in-memory store
+ *      seeded with defaults instead of letting the throw brick boot.
+ * Constructor/quarantine/fallback are injected so all four paths are unit-testable.
+ */
+export function createResilientStore<T>(
+  construct: (clearInvalidConfig: boolean) => T,
+  quarantine: () => string | null,
+  createFallback: () => T
+): { store: T; recovery: ConfigRecoveryNotice | null } {
+  try {
+    return { store: construct(false), recovery: null }
+  } catch {
+    const backupPath = quarantine()
+    try {
+      return { store: construct(false), recovery: { backupPath } }
+    } catch {
+      try {
+        return { store: construct(true), recovery: { backupPath } }
+      } catch {
+        return { store: createFallback(), recovery: { backupPath, ephemeral: true } }
+      }
+    }
+  }
+}
+
+type StoreInstance = InstanceType<typeof StoreConstructor>
+
+// Last-resort store used when electron-store cannot construct at all (config.json
+// locked/permission-denied — EBUSY/EPERM — which it rethrows rather than
+// resetting). It is ephemeral and seeded with the schema defaults, so the app
+// boots usable with defaults instead of bricking; nothing persists, which is moot
+// when the file can't be read or written anyway. Only the surface the app actually
+// uses (get/set/clear/`store`) is implemented, and the methods read closure state
+// rather than `this`, so the lazy Proxy can bind/forward them safely.
+export function createInMemoryFallbackStore(): StoreInstance {
+  const schema = STORE_OPTIONS.schema as Record<string, { default?: unknown }> | undefined
+
+  const seedDefaults = () => {
+    const seeded: Record<string, unknown> = {}
+    Object.entries(schema ?? {}).forEach(([key, spec]) => {
+      if (spec && 'default' in spec) {
+        // Clone object/array defaults so the fallback never hands out (or reseeds
+        // from) the shared STORE_OPTIONS.schema reference. Handlers like
+        // save-profile mutate store.get('profiles') in place before setting it,
+        // which would otherwise corrupt the schema default and stop clear() from
+        // truly resetting.
+        seeded[key] = structuredClone(spec.default)
+      }
+    })
+    return seeded
+  }
+
+  let data = seedDefaults()
+
+  const fallback = {
+    get(key: string, defaultValue?: unknown) {
+      return key in data ? data[key] : defaultValue
+    },
+    set(keyOrValues: string | Record<string, unknown>, value?: unknown) {
+      if (typeof keyOrValues === 'string') {
+        data[keyOrValues] = value
+      } else {
+        Object.assign(data, keyOrValues)
+      }
+    },
+    clear() {
+      // electron-store's clear() leaves the schema defaults in effect, not an
+      // empty object, so re-seed rather than emptying.
+      data = seedDefaults()
+    },
+    get store() {
+      // Deep clone, matching electron-store's `.store` which deserializes a fresh
+      // object each read. A shallow `{ ...data }` would alias nested objects
+      // (profiles/appPaths/...), so a caller mutating the returned config would
+      // corrupt the in-memory state.
+      return structuredClone(data)
+    }
+  }
+
+  return fallback as unknown as StoreInstance
+}
+
+let storeInstance: StoreInstance | null = null
+
+function ensureStore(): StoreInstance {
+  if (!storeInstance) {
+    const built = createResilientStore<StoreInstance>(
+      (clearInvalidConfig) =>
+        new StoreConstructor(
+          (clearInvalidConfig
+            ? { ...STORE_OPTIONS, clearInvalidConfig: true }
+            : STORE_OPTIONS) as ConstructorParameters<typeof StoreConstructor>[0]
+        ),
+      quarantineCorruptConfig,
+      createInMemoryFallbackStore
+    )
+    storeInstance = built.store
+    configRecoveryNotice = built.recovery
+  }
+  return storeInstance
+}
+
+/**
+ * The store is built lazily on first access (not at import) so its corrupt-config
+ * recovery — which can rewrite/quarantine config.json — only ever runs for the
+ * PRIMARY instance. index.ts imports `store` before requestSingleInstanceLock();
+ * a second launch quits on the lock before any store access, so it never builds
+ * the store and can't touch the live user's config (#516 Codex P2). Every store
+ * access in the app runs inside a function that executes after the lock check.
+ */
+export const store = new Proxy({} as StoreInstance, {
+  // Forward reads to the lazily-built instance. The receiver MUST be `instance`,
+  // not the Proxy: electron-store exposes accessors like `.store`/`.path`/`.size`
+  // as getters that read private (`#`) fields, and a getter invoked with the
+  // Proxy as `this` throws because the Proxy is not a Conf instance. Passing the
+  // real instance as the receiver lets those getters reach their private state
+  // (config import snapshots and export both read `store.store`).
+  get(_target, prop) {
+    const instance = ensureStore()
+    const value = Reflect.get(instance as object, prop, instance)
+    return typeof value === 'function' ? value.bind(instance) : value
+  }
+}) as StoreInstance
 
 export const CONFIG_FILE_NAME = 'simlauncher-config.json'
 export const EXPECTED_CONFIG_KEYS = new Set([
