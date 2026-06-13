@@ -5,10 +5,9 @@ import { confirmAndCloseApps } from './closeApps'
 import { installMainProcessErrorLogging, writeMainErrorLog } from './errorLog'
 import { registerHandlers } from './ipc'
 import { migrateProfilesToNamedSets } from './migrator'
-import { addRunningAppsChangeListener, hasClosableApps } from './processes'
 import { registerContentSecurityPolicy } from './security'
 import { store } from './store'
-import { configureTray, createTray, refreshTrayMenu } from './tray'
+import { configureTray, createTray } from './tray'
 import { createWindow, getAppIconPath, showMainWindow } from './window'
 
 // Register crash logging first, before any other main-process work, so an early
@@ -67,12 +66,8 @@ if (!gotTheLock) {
         // its own errors, and Electron menu click handlers ignore the promise.
         closeApps: () => {
           void confirmAndCloseApps()
-        },
-        hasClosableApps
+        }
       })
-      // Keep the tray menu's "Close Apps" enabled state in sync as apps launch
-      // and exit.
-      addRunningAppsChangeListener(() => refreshTrayMenu())
       if (store.get('showTrayIcon') !== false) {
         createTray()
       }

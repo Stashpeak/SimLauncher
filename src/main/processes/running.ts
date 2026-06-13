@@ -10,7 +10,7 @@ import {
 import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
-import { hasClosableLaunchedApps, pruneUnclosedProcesses } from './kill'
+import { pruneUnclosedProcesses } from './kill'
 import {
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
@@ -39,22 +39,6 @@ export interface RunningAppsChangedPayload {
 const RUNNING_APPS_CHANGED_CHANNEL = 'running-apps-changed'
 const RUNNING_APPS_SCAN_INTERVAL_MS = 2000
 const runningAppsSubscribers = new Set<WebContents>()
-
-type RunningAppsChangeListener = (payload: RunningAppsChangedPayload) => void
-// Main-process (non-renderer) listeners, e.g. the tray menu rebuilding its
-// "Close Apps" enabled state. Kept separate from the WebContents subscribers
-// because they receive the payload directly rather than over IPC.
-const runningAppsChangeListeners = new Set<RunningAppsChangeListener>()
-
-// Cached result of "is there a closable companion running" so the tray menu can
-// decide its enabled state synchronously (Menu.buildFromTemplate is sync). It is
-// refreshed on every getRunningApps() computation — see hasClosableApps.
-let closableAppsCached = false
-// The closable state at the last emission. The closable state can change without
-// the surfaced app list changing (a configured companion starting/exiting with
-// no game launched is never surfaced), so the scan dedup must consider it too —
-// otherwise the tray menu would not rebuild for those closable-only transitions.
-let lastClosableAppsState = false
 let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
 let lastRunningAppsSnapshot = ''
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
@@ -238,12 +222,6 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(getExeName(appProcess.path))
   )
 
-  // Refresh the tray's "Close Apps" enabled state from killLaunchedApps' OWN
-  // target selection rather than this surfaced list: the surfaced list gates
-  // companions on the owning game being launched/adopted, while the kill closes
-  // configured companions regardless, so it would under-report closable targets.
-  closableAppsCached = await hasClosableLaunchedApps()
-
   return [
     ...surfacedApps,
     ...mismatchWarnings.filter(
@@ -255,38 +233,6 @@ export async function getRunningApps(): Promise<RunningApp[]> {
         !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     )
   ]
-}
-
-/**
- * Whether the tray "Close Apps" action has anything to act on (#519): at least
- * one running companion (non-game) app that killLaunchedApps could close.
- *
- * Synchronous (Menu.buildFromTemplate is) by returning the value cached on the
- * last getRunningApps() computation, which is run on every launch, exit, kill and
- * the periodic scan, so it stays current within the scan interval. The value is
- * computed by hasClosableLaunchedApps() — killLaunchedApps' own target selection
- * — so it counts every companion the kill can reach (tracked, elevated, or a
- * configured companion running with no game launched) and excludes the game.
- */
-export function hasClosableApps(): boolean {
-  return closableAppsCached
-}
-
-/**
- * Register a main-process listener for running-apps changes (the tray uses this
- * to refresh its "Close Apps" enabled state). Returns an unsubscribe function.
- *
- * Listeners fire from the same emission path as renderer subscribers, which is
- * gated on there being at least one renderer subscriber. In practice the
- * renderer's WebContents stays subscribed for the whole app lifetime (it is only
- * destroyed on quit, not when minimized to the tray), so the tray — which only
- * exists alongside that window — receives every change.
- */
-export function addRunningAppsChangeListener(listener: RunningAppsChangeListener): () => void {
-  runningAppsChangeListeners.add(listener)
-  return () => {
-    runningAppsChangeListeners.delete(listener)
-  }
 }
 
 function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
@@ -324,21 +270,6 @@ function emitRunningAppsChanged(payload: RunningAppsChangedPayload) {
 
     webContents.send(RUNNING_APPS_CHANGED_CHANNEL, payload)
   })
-
-  notifyRunningAppsChangeListeners(payload)
-}
-
-function notifyRunningAppsChangeListeners(payload: RunningAppsChangedPayload) {
-  runningAppsChangeListeners.forEach((listener) => {
-    // Isolate listener failures: a misbehaving main-process listener (e.g. the
-    // tray menu rebuild) must not reject the publish promise that kill/spawn
-    // callers await, nor stop other listeners from running.
-    try {
-      listener(payload)
-    } catch (err) {
-      console.error('Running apps change listener error:', err)
-    }
-  })
 }
 
 async function publishRunningAppsInternal(
@@ -348,23 +279,14 @@ async function publishRunningAppsInternal(
     return null
   }
 
-  // getRunningApps refreshes closableAppsCached as a side effect.
   const apps = await getRunningApps()
   const snapshot = normalizeRunningAppsSnapshot(apps)
 
-  // Skip only when neither the surfaced list nor the tray's closable state
-  // changed. The latter can flip on its own (a configured companion with no game
-  // launched never enters the surfaced list), and must still rebuild the menu.
-  if (
-    snapshot === lastRunningAppsSnapshot &&
-    closableAppsCached === lastClosableAppsState &&
-    reason === 'scan'
-  ) {
+  if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
     return null
   }
 
   lastRunningAppsSnapshot = snapshot
-  lastClosableAppsState = closableAppsCached
   const payload = { apps, reason, updatedAt: Date.now() }
   emitRunningAppsChanged(payload)
   return payload
@@ -415,18 +337,7 @@ export async function subscribeRunningApps(
 
   const apps = await getRunningApps()
   lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
-  lastClosableAppsState = closableAppsCached
-  const payload = {
-    apps,
-    reason: 'initial',
-    updatedAt: Date.now()
-  } satisfies RunningAppsChangedPayload
-  // Notify main-process listeners (the tray) with the initial snapshot so the
-  // menu reflects companions that were already running before the renderer
-  // subscribed. emitRunningAppsChanged is not used here because the subscribing
-  // WebContents receives this payload as the return value instead.
-  notifyRunningAppsChangeListeners(payload)
-  return payload
+  return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
 }
 
 export function unsubscribeRunningApps(webContents: WebContents): void {

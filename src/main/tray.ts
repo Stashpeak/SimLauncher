@@ -7,12 +7,11 @@ interface CreateTrayOptions {
   getIconPath: () => string
   showMainWindow: () => void
   quitApp: () => void
-  // Close every running companion app (the game is left alone). Handles its own
-  // confirmation; fired from the tray menu, so it may run with no visible window.
+  // Close every running companion app (the game is left alone). Always enabled;
+  // it decides at click time whether anything is running (showing an info dialog
+  // when not), so the tray needs no background polling to keep an enabled state
+  // fresh. Fired from the tray menu, so it may run with no visible window.
   closeApps: () => void
-  // Synchronous predicate driving the "Close Apps" item's enabled state. Must be
-  // synchronous because Menu.buildFromTemplate is.
-  hasClosableApps: () => boolean
 }
 
 // Store the wiring once at startup so the tray can be (re)created later without
@@ -25,19 +24,10 @@ function buildContextMenu(options: CreateTrayOptions): Menu {
   return Menu.buildFromTemplate([
     { label: 'Show SimLauncher', click: options.showMainWindow },
     { type: 'separator' },
-    // Disabled when nothing is running so the item never silently no-ops; its
-    // enabled state is refreshed via refreshTrayMenu() on running-apps changes.
-    { label: 'Close Apps', enabled: options.hasClosableApps(), click: () => options.closeApps() },
+    { label: 'Close Apps', click: () => options.closeApps() },
     { type: 'separator' },
     { label: 'Quit', click: () => options.quitApp() }
   ])
-}
-
-// Rebuild the context menu so the "Close Apps" item reflects whether any apps
-// are currently running. No-op when the tray is hidden/uncreated.
-export function refreshTrayMenu(): void {
-  if (!tray || !trayOptions) return
-  tray.setContextMenu(buildContextMenu(trayOptions))
 }
 
 export function createTray(): void {

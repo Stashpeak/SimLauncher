@@ -61,23 +61,12 @@ async function bootApp(opts: BootOptions = {}) {
     configureTray: vi.fn(() => callLog.push('configureTray')),
     createTray: vi.fn(() => callLog.push('createTray')),
     destroyTray: vi.fn(),
-    applyTrayVisibility: vi.fn(),
-    refreshTrayMenu: vi.fn()
+    applyTrayVisibility: vi.fn()
   }
   vi.doMock('./tray', () => trayMock)
   vi.doMock('/src/main/tray.ts', () => trayMock)
   vi.doMock('../../src/main/tray', () => trayMock)
   vi.doMock('../../src/main/tray.ts', () => trayMock)
-
-  const processesMock = {
-    hasClosableApps: vi.fn(() => false),
-    addRunningAppsChangeListener: vi.fn(),
-    killLaunchedApps: vi.fn()
-  }
-  vi.doMock('./processes', () => processesMock)
-  vi.doMock('/src/main/processes.ts', () => processesMock)
-  vi.doMock('../../src/main/processes', () => processesMock)
-  vi.doMock('../../src/main/processes.ts', () => processesMock)
 
   const windowMock = {
     createWindow: vi.fn(() => {
@@ -116,7 +105,6 @@ async function bootApp(opts: BootOptions = {}) {
     appState,
     callLog,
     trayMock,
-    processesMock,
     windowMock,
     ipcMock,
     errorLogMock
@@ -209,17 +197,6 @@ test('before-quit marks the app as quitting so the close interceptor lets it die
   expect(appState.getIsQuitting()).toBe(false)
   app.emit('before-quit')
   expect(appState.getIsQuitting()).toBe(true)
-})
-
-// The tray's "Close Apps" enabled state is static once built, so boot must wire
-// a running-apps listener that rebuilds the menu when apps come and go (#519).
-test('boot keeps the tray menu in sync with running apps (#519)', async () => {
-  const { trayMock, processesMock } = await bootApp()
-
-  expect(processesMock.addRunningAppsChangeListener).toHaveBeenCalledTimes(1)
-  const listener = processesMock.addRunningAppsChangeListener.mock.calls[0][0] as () => void
-  listener()
-  expect(trayMock.refreshTrayMenu).toHaveBeenCalledTimes(1)
 })
 
 test('the tray Quit hook sets isQuitting before asking the app to quit', async () => {
