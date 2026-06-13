@@ -31,10 +31,9 @@ npm run dev
    { key: 'myutil', name: 'My Utility' }
    ```
 
-   `UTILITIES` is a computed export that concatenates `BUILT_IN_UTILITIES` with the
-   user's custom slots, so built-in utilities go in `BUILT_IN_UTILITIES` — not in
-   `UTILITIES`. User-renameable slots are generated automatically as `customapp<N>`
-   keys and must not be authored by hand.
+   Built-in utilities go in `BUILT_IN_UTILITIES`. The user's custom slots are
+   generated automatically as `customapp<N>` keys by `getUtilities(customSlots)`
+   and must not be authored by hand.
 
 ## Code style
 

@@ -1,0 +1,3 @@
+# Shows a "Sponsor" button on the repo. The README already invites tips;
+# this wires up the button to the same PayPal link.
+custom: ['https://paypal.me/shieldxx']

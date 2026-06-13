@@ -1,0 +1,15 @@
+# Force new issues through the bug/feature templates so reports arrive
+# structured; the contact links below route everything else off the issue
+# tracker.
+blank_issues_enabled: false
+contact_links:
+  - name: ❓ Questions & setup help
+    url: https://simlauncher.com/#faq
+    about: How-to and "how do I configure X" questions — check the FAQ first.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/Stashpeak/SimLauncher/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  # Uncomment after enabling GitHub Discussions on the repo (Settings → Features):
+  # - name: 💬 Discussions
+  #   url: https://github.com/Stashpeak/SimLauncher/discussions
+  #   about: Ideas, questions, and general conversation belong here.
