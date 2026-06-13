@@ -159,6 +159,19 @@ test('check-for-updates swallows a network failure but rethrows other errors (#5
   await expect(handlers['check-for-updates']({})).rejects.toThrow('HTTP 500')
 })
 
+test('a TLS/cert net error is NOT downgraded to offline (#535)', async () => {
+  const { sendToRenderer, handlers } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](new Error('net::ERR_CERT_AUTHORITY_INVALID'))
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: false })
+
+  // ...and check-for-updates must NOT swallow it — a security/config error should
+  // surface, not hide behind the calm offline notice.
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(new Error('net::ERR_CERT_AUTHORITY_INVALID'))
+  await expect(handlers['check-for-updates']({})).rejects.toThrow('ERR_CERT_AUTHORITY_INVALID')
+})
+
 test('unpackaged builds simulate the update flow without touching electron-updater', async () => {
   const { updaterModule, handlers, sendToRenderer } = await loadUpdaterModule({
     isPackaged: false

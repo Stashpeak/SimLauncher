@@ -31,8 +31,13 @@ export function isUpdateNetworkError(err: unknown): boolean {
     return true
   }
 
+  // Match only genuine connectivity failures. In particular do NOT match the
+  // broad `net::ERR_` prefix: that would also classify TLS/security errors like
+  // net::ERR_CERT_AUTHORITY_INVALID as "offline" and (via check-for-updates
+  // swallowing them) hide a real update-server/security misconfiguration behind
+  // the calm offline notice.
   const message = err instanceof Error ? err.message : String(err ?? '')
-  return /\b(ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN)\b|getaddrinfo|net::ERR_|ERR_INTERNET_DISCONNECTED/i.test(
+  return /\b(ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN)\b|getaddrinfo|net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NAME_RESOLUTION_FAILED|NETWORK_CHANGED|CONNECTION_(REFUSED|TIMED_OUT|RESET|CLOSED|ABORTED)|ADDRESS_UNREACHABLE|PROXY_CONNECTION_FAILED|TIMED_OUT|NETWORK_ACCESS_DENIED)/i.test(
     message
   )
 }
