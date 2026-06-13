@@ -45,6 +45,11 @@ jobs:
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@v0
+        env:
+          # Electron is a devDependency but electron-builder embeds its
+          # Chromium runtime into the installer, so dev deps must be included
+          # or the shipped, security-critical Electron component is omitted.
+          SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES: 'true'
         with:
           file: package-lock.json
           format: cyclonedx-json
