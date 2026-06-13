@@ -9,6 +9,10 @@ Full per-release notes — including every linked issue and PR — are published
 
 ## [Unreleased]
 
+### Added
+
+- Each release now ships SHA-256 checksums (`SHA256SUMS.txt`) and a CycloneDX SBOM (`sbom.cdx.json`) alongside the installer, so you can verify download integrity and inspect the full dependency inventory.
+
 ### Fixed
 
 - The maximize/restore button icon now stays correct when the window is snapped or restored through Windows shortcuts (Win+Up, aero-snap, taskbar double-click), not just the title-bar button.
