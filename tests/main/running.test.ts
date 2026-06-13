@@ -3,6 +3,8 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 const readRunningProcessNamesMock = vi.fn()
 const pruneUnclosedProcessesMock = vi.fn()
+// Per-test stored config (e.g. gamePaths) read via getStoredStringRecord(key).
+const storedStringRecords: Record<string, Record<string, string>> = {}
 
 async function loadRunningModule() {
   const tasklistMock = {
@@ -35,7 +37,7 @@ async function loadRunningModule() {
   vi.doMock('../../src/main/profiles.ts', () => profilesMock)
 
   const storeMock = {
-    getStoredStringRecord: vi.fn(() => ({}))
+    getStoredStringRecord: vi.fn((key: string) => storedStringRecords[key] ?? {})
   }
   vi.doMock('../store', () => storeMock)
   vi.doMock('/src/main/store.ts', () => storeMock)
@@ -67,6 +69,9 @@ function seedState(stateModule: Awaited<ReturnType<typeof loadRunningModule>>['s
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  for (const key of Object.keys(storedStringRecords)) {
+    delete storedStringRecords[key]
+  }
 })
 
 // A failed tasklist read returns an empty Set carrying no signal value.
@@ -115,15 +120,23 @@ test('a successful tasklist read keeps entries whose exe is still running', asyn
   ])
 })
 
-// The tray "Close Apps" item is enabled off this synchronous check, which must
-// mirror killLaunchedApps: only non-game companions count (#519).
+// The tray "Close Apps" item is enabled off this synchronous check, which is
+// refreshed on every getRunningApps() and must mirror what killLaunchedApps can
+// close: companions yes, the game no (#519).
 test('hasClosableApps is false when nothing is running', async () => {
   const { runningModule } = await loadRunningModule()
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+
+  await runningModule.getRunningApps()
+
   expect(runningModule.hasClosableApps()).toBe(false)
 })
 
 test('hasClosableApps ignores the game itself and counts only companions (#519)', async () => {
   const { runningModule, stateModule } = await loadRunningModule()
+  storedStringRecords.gamePaths = { iracing: 'C:/Games/iRacingSim64DX11.exe' }
+
+  // Only the game is running.
   stateModule.runningProcesses.set('game', {
     process: {} as ChildProcess,
     path: 'C:/Games/iRacingSim64DX11.exe',
@@ -131,8 +144,14 @@ test('hasClosableApps ignores the game itself and counts only companions (#519)'
     gameKey: 'iracing',
     isGame: true
   })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingsim64dx11.exe']),
+    succeeded: true
+  })
+  await runningModule.getRunningApps()
   expect(runningModule.hasClosableApps()).toBe(false)
 
+  // A companion joins it.
   stateModule.runningProcesses.set('companion', {
     process: {} as ChildProcess,
     path: 'C:/Tools/SimHub.exe',
@@ -140,6 +159,35 @@ test('hasClosableApps ignores the game itself and counts only companions (#519)'
     gameKey: 'iracing',
     isGame: false
   })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingsim64dx11.exe', 'simhub.exe']),
+    succeeded: true
+  })
+  await runningModule.getRunningApps()
+  expect(runningModule.hasClosableApps()).toBe(true)
+})
+
+// Codex P2 on #536: companions reachable by killLaunchedApps but NOT present in
+// runningProcesses (e.g. an elevated launch, which has no child-process handle)
+// must still enable the tray action.
+test('hasClosableApps counts companions surfaced outside runningProcesses (#519)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule()
+  stateModule.unclosedProcesses.set('iracing:c:\\tools\\ioverlay.exe', {
+    path: 'C:/Tools/iOverlay.exe',
+    name: 'iOverlay.exe',
+    gameKey: 'iracing',
+    error: 'access denied',
+    reason: 'access_denied',
+    elevated: true
+  })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['ioverlay.exe']),
+    succeeded: true
+  })
+
+  await runningModule.getRunningApps()
+
+  expect(stateModule.runningProcesses.size).toBe(0)
   expect(runningModule.hasClosableApps()).toBe(true)
 })
 

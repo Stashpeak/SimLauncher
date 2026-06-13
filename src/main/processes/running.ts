@@ -8,7 +8,7 @@ import {
   getStoredProfiles
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
+import { getExeName, isValidExePath, normalizePathForComparison, pathsEqual } from '../utils'
 
 import { pruneUnclosedProcesses } from './kill'
 import {
@@ -45,6 +45,11 @@ type RunningAppsChangeListener = (payload: RunningAppsChangedPayload) => void
 // "Close Apps" enabled state. Kept separate from the WebContents subscribers
 // because they receive the payload directly rather than over IPC.
 const runningAppsChangeListeners = new Set<RunningAppsChangeListener>()
+
+// Cached result of "is there a closable companion running" so the tray menu can
+// decide its enabled state synchronously (Menu.buildFromTemplate is sync). It is
+// refreshed on every getRunningApps() computation — see hasClosableApps.
+let closableAppsCached = false
 let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
 let lastRunningAppsSnapshot = ''
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
@@ -228,7 +233,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(getExeName(appProcess.path))
   )
 
-  return [
+  const apps = [
     ...surfacedApps,
     ...mismatchWarnings.filter(
       (appProcess) =>
@@ -239,24 +244,37 @@ export async function getRunningApps(): Promise<RunningApp[]> {
         !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     )
   ]
+
+  // Refresh the tray's "Close Apps" enabled state off the same surfaced list the
+  // UI shows. This is the only place that sees the full picture — launched
+  // companions plus elevated/externally-running ones that never enter
+  // runningProcesses but that killLaunchedApps still reaches.
+  closableAppsCached = apps.some((app) => !isGameApp(app, gamePaths))
+
+  return apps
+}
+
+// A surfaced running app is the game itself (not a closable companion) when its
+// path matches the profile's configured game exe. killLaunchedApps never
+// terminates the game, so it must not drive the "Close Apps" enabled state.
+function isGameApp(app: RunningApp, gamePaths: Record<string, string> | undefined): boolean {
+  const gamePath = gamePaths?.[app.gameKey]
+  return !!gamePath && pathsEqual(app.path, gamePath)
 }
 
 /**
  * Whether the tray "Close Apps" action has anything to act on (#519): at least
- * one companion (non-game) process that SimLauncher launched and still tracks.
+ * one running companion (non-game) app that killLaunchedApps could close.
  *
- * Kept synchronous so the tray menu's enabled state can be decided at build time
- * (Menu.buildFromTemplate is synchronous). Mirrors killLaunchedApps, which only
- * terminates non-game companions — never the game itself — so the menu item is
- * not enabled when the only running process is the game.
+ * Synchronous (Menu.buildFromTemplate is) by returning the value cached on the
+ * last getRunningApps() computation. That cache is refreshed on every launch,
+ * exit, kill and the periodic scan, so it stays current within the scan
+ * interval. Sourcing it from getRunningApps — rather than runningProcesses
+ * alone — means elevated and externally-running companions, which never enter
+ * runningProcesses but are still reachable by killLaunchedApps, are counted too.
  */
 export function hasClosableApps(): boolean {
-  for (const entry of runningProcesses.values()) {
-    if (!entry.isGame) {
-      return true
-    }
-  }
-  return false
+  return closableAppsCached
 }
 
 /**
