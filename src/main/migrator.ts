@@ -153,19 +153,19 @@ function normalizeStoredProfileSet(profileEntry: StoredProfileEntry, utilityKeys
   }
 }
 
+// Migrates legacy flat-boolean profiles into the named-profile-set shape.
+//
+// This propagates store-write failures by design. Config import
+// (applySanitizedConfig) calls it inside a try/catch and relies on the throw to
+// restore its pre-import snapshot, so swallowing the error here would report a
+// successful import over a half-written store. The boot caller (index.ts) wraps
+// this in its own try/catch so a malformed legacy profile still can't brick
+// startup — resilience lives at that call site, not in the migration itself.
+//
+// Every store write happens at the very end, after the migrated shape is fully
+// built, so a throw leaves the original profiles untouched and the migrated
+// flags unset: a future launch (or a rolled-back import) retries cleanly.
 export function migrateProfilesToNamedSets(): void {
-  try {
-    runProfileSetMigration()
-  } catch (error) {
-    // A malformed legacy profile must not brick boot. Every store write happens
-    // at the very end of runProfileSetMigration, after the migrated shape is
-    // fully built, so a throw leaves the original profiles untouched and the
-    // migrated flags unset — a future launch retries against the original data.
-    console.error('Profile migration failed; leaving stored profiles unchanged.', error)
-  }
-}
-
-function runProfileSetMigration(): void {
   // Both migration flags are gated on profileSetsMigrated so the whole
   // pipeline only runs once. profileUtilityOrderMigrated was a predecessor
   // one-time migration; it is set here retroactively for installs that were

@@ -92,7 +92,7 @@ test('migrateProfilesToNamedSets preserves existing named profiles after removin
   expect(storeData.profileSetsMigrated).toBe(true)
 })
 
-test('migrateProfilesToNamedSets does not throw and preserves data when a store write fails mid-migration', async () => {
+test('migrateProfilesToNamedSets propagates a mid-migration store-write failure so import can roll back (#513)', async () => {
   storeData.customSlots = 1
   storeData.profileSetsMigrated = false
   const originalProfiles = {
@@ -100,19 +100,19 @@ test('migrateProfilesToNamedSets does not throw and preserves data when a store 
   }
   storeData.profiles = originalProfiles
   // The profiles write is the load-bearing one; make it throw to simulate a
-  // mid-migration failure.
+  // mid-migration failure. The migrator must propagate it: applySanitizedConfig
+  // depends on the throw to restore its pre-import snapshot, and the boot caller
+  // catches it separately so startup is unaffected.
   setThrowKeys.add('profiles')
 
-  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
   const { migrateProfilesToNamedSets } = await loadMigratorModule()
 
-  expect(() => migrateProfilesToNamedSets()).not.toThrow()
-  // Original profiles untouched (the throwing write never landed) and the
-  // migrated flag stays false so a future launch can retry against the original.
+  expect(() => migrateProfilesToNamedSets()).toThrow(/mock store\.set failure for profiles/)
+  // The throwing write never landed, so the original profiles are untouched and
+  // the migrated flag stays false: a rolled-back import or a future launch retries
+  // against the original data.
   expect(storeData.profiles).toBe(originalProfiles)
   expect(storeData.profileSetsMigrated).not.toBe(true)
-  expect(consoleError).toHaveBeenCalled()
-  consoleError.mockRestore()
 })
 
 test('migrateProfilesToNamedSets creates a default profile when a stored profile set has no valid profiles', async () => {
