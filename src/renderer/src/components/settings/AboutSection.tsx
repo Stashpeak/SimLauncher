@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { openLogsFolder } from '../../lib/electron'
+import { useNotify } from '../Notify'
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
 import type { UpdateInfo, UpdateStatus } from './types'
@@ -26,12 +28,41 @@ export function AboutSection({
   onInstallUpdate
 }: AboutSectionProps): ReactNode {
   const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettingsMeta()
+  const { notify } = useNotify()
+
+  const handleOpenLogsFolder = async () => {
+    // shell.openPath resolves to '' on success or a non-empty error string on
+    // failure (e.g. no file-manager association). Surface that so the click
+    // never looks like it silently did nothing.
+    const error = await openLogsFolder()
+    if (error) {
+      notify('Could not open the logs folder.', 'error')
+    }
+  }
 
   return (
     <>
       <div className="settings-row">
         <span className="settings-label text-(--text-secondary)">Installed Version</span>
         <span className="select-text text-xs font-mono text-(--text-muted)">v{appVersion}</span>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-label-group">
+          <span className="settings-label">Diagnostics</span>
+          <span className="settings-sublabel">
+            Open the folder with the crash log and settings file
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            void handleOpenLogsFolder()
+          }}
+          className="action-hover-scale cursor-pointer rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
+        >
+          Open logs folder
+        </button>
       </div>
 
       <div className="settings-row">

@@ -172,6 +172,11 @@ export const dialog = {
   showErrorBox: vi.fn()
 }
 
+export const shell = {
+  openPath: vi.fn().mockResolvedValue(''),
+  showItemInFolder: vi.fn()
+}
+
 export const ipcMain = {
   handle: vi.fn((channel: string, handler: MockIpcHandler) => {
     __ipcHandlers[channel] = handler

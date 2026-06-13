@@ -4,6 +4,7 @@ import { registerConfigHandlers } from './config'
 import { registerContextMenuHandlers } from './context-menu'
 import { registerIconHandlers } from './icons'
 import { registerLaunchHandlers } from './launch'
+import { registerSystemHandlers } from './system'
 
 /**
  * Registers all ipcMain handlers for the application. Must be called once
@@ -21,5 +22,6 @@ export function registerHandlers(): void {
   registerIconHandlers()
   registerContextMenuHandlers()
   registerWindowHandlers()
+  registerSystemHandlers()
   registerUpdaterHandlers(sendToRenderer)
 }

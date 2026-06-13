@@ -35,4 +35,5 @@ export const getAssetData = window.electronAPI.getAssetData
 export const getFileIcon = window.electronAPI.getFileIcon
 export const getVersion = () => window.electronAPI.getVersion()
 export const getStartupNotice = () => window.electronAPI.getStartupNotice()
+export const openLogsFolder = () => window.electronAPI.openLogsFolder()
 export const dismissAppIcon = window.electronAPI.dismissAppIcon
