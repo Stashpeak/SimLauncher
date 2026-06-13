@@ -23,6 +23,7 @@ Full per-release notes — including every linked issue and PR — are published
 - A maximized window now reopens at your previous restored size instead of the full-screen rectangle.
 - The maximize/restore button icon now stays correct when the window is snapped or restored through Windows shortcuts (Win+Up, aero-snap, taskbar double-click), not just the title-bar button.
 - App-argument parsing now follows the Windows convention for quoted paths ending in a backslash (e.g. `"C:\My Path\" --flag`), so the rest of the arguments are no longer swallowed into one token.
+- Closing an app whose executable name contains a single quote now works (the process lookup no longer builds an invalid query).
 
 ### Changed
 
