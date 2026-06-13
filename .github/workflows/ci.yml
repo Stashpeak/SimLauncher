@@ -35,11 +35,32 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Test
-        run: npm test
-
       - name: Build app
         run: npm run build
 
       - name: Audit dependencies
         run: npm audit --omit=dev
+
+  # SimLauncher only ships on Windows, and the suite exercises Windows-specific
+  # behavior (PowerShell-encoded elevated launches, taskkill/PID resolution) by
+  # reading the real process.platform rather than stubbing it. Running the tests
+  # on a Linux runner takes the non-win32 code paths and fails ~22 process tests,
+  # so the test job runs on windows-latest where the assertions are meaningful.
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
