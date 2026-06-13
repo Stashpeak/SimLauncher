@@ -37,7 +37,7 @@ npm run dev
 
 ## Code style
 
-- Run `npm run build`, `npm run typecheck`, `npm run lint`, and `npm run format:check` before submitting a PR (CI gates all four).
+- Run `npm test`, `npm run build`, `npm run typecheck`, `npm run lint`, and `npm run format:check` before submitting a PR (CI gates all five).
 - Keep changes focused, with one feature or fix per PR.
 - Keep renderer code in React and TypeScript.
 

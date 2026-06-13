@@ -22,6 +22,17 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Verify tag matches package.json version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (version ${tag_version}) does not match package.json version ${pkg_version}. Bump package.json before tagging."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package.json version ${pkg_version}."
+
       - name: Install dependencies
         run: npm ci
 
