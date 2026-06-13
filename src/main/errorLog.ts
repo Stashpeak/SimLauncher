@@ -51,8 +51,13 @@ let installed = false
  * crash-exits on an uncaught exception or an unhandled rejection — the app logs
  * the error and keeps running. That is intentional for a desktop app that lives
  * in the tray (a silent hard-exit on a background error is worse UX than limping
- * on), but it does mean the process can continue in a degraded state. Behavior
- * beyond logging (showing a dialog, quitting) is deliberately out of scope.
+ * on), but it does mean the process can continue in a degraded state.
+ *
+ * Where continuing would be wrong — notably a failure during the boot chain,
+ * which would otherwise leave the instance holding the single-instance lock with
+ * no usable window — the call site handles termination itself (see the
+ * `whenReady().then(...).catch(...)` in index.ts) rather than relying on this
+ * log-and-continue default.
  *
  * Idempotent — safe to call more than once.
  */

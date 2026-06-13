@@ -6,6 +6,7 @@ interface BootOptions {
   lockAcquired?: boolean
   showTrayIcon?: boolean
   migrateThrows?: boolean
+  windowThrows?: boolean
 }
 
 // Imports src/main/index for its side effects with every collaborator module
@@ -26,7 +27,8 @@ async function bootApp(opts: BootOptions = {}) {
   // Mock crash logging so importing index doesn't register real process-level
   // uncaughtException/unhandledRejection handlers across the whole test run.
   const errorLogMock = {
-    installMainProcessErrorLogging: vi.fn()
+    installMainProcessErrorLogging: vi.fn(),
+    writeMainErrorLog: vi.fn()
   }
   vi.doMock('./errorLog', () => errorLogMock)
   vi.doMock('/src/main/errorLog.ts', () => errorLogMock)
@@ -67,7 +69,12 @@ async function bootApp(opts: BootOptions = {}) {
   vi.doMock('../../src/main/tray.ts', () => trayMock)
 
   const windowMock = {
-    createWindow: vi.fn(() => callLog.push('createWindow')),
+    createWindow: vi.fn(() => {
+      if (opts.windowThrows) {
+        throw new Error('mock window creation failure')
+      }
+      callLog.push('createWindow')
+    }),
     getAppIconPath: vi.fn(() => 'C:/app/SimLauncher.ico'),
     showMainWindow: vi.fn()
   }
@@ -150,6 +157,21 @@ test('boot survives a profile migration failure and still finishes booting (#513
   // 'migrate' is absent (the mock threw before recording), but boot continued.
   expect(callLog).toEqual(['csp', 'handlers', 'configureTray', 'createTray', 'createWindow'])
   expect(consoleError).toHaveBeenCalled()
+  consoleError.mockRestore()
+})
+
+// A failure bringing up handlers/tray/window must not be swallowed by the global
+// unhandledRejection logger — that would leave this instance holding the
+// single-instance lock with no window. The boot chain's own .catch logs, warns
+// the user, and exits so the lock is released and a relaunch can start (#522).
+test('boot failure logs, shows an error box, and exits so the lock is released (#522)', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { app, errorLogMock } = await bootApp({ windowThrows: true })
+  const { dialog } = await import('electron')
+
+  expect(errorLogMock.writeMainErrorLog).toHaveBeenCalledWith('bootFailure', expect.any(Error))
+  expect(dialog.showErrorBox).toHaveBeenCalled()
+  expect(app.exit).toHaveBeenCalledWith(1)
   consoleError.mockRestore()
 })
 
