@@ -89,21 +89,37 @@ const STORE_OPTIONS = {
   }
 } as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string }
 
-// One-shot notice that the persisted config was unreadable on boot and had to
-// be reset to defaults. The renderer pulls it via the 'get-startup-notice' IPC
-// and shows a toast, so settings silently reverting to defaults is explained.
-let configRecoveryNotice: { backupPath: string | null } | null = null
+// One-shot notice that the persisted config was unreadable on boot. The renderer
+// pulls it via the 'get-startup-notice' IPC and shows a toast, so settings
+// silently reverting to defaults is explained. `ephemeral` marks the last-resort
+// case where no store could be built at all (the file is locked/permission-denied,
+// so it was NOT reset and the saved settings are intact) versus a corrupt-config
+// reset.
+type ConfigRecoveryNotice = { backupPath: string | null; ephemeral?: boolean }
 
-export function consumeConfigRecoveryNotice(): { backupPath: string | null } | null {
+let configRecoveryNotice: ConfigRecoveryNotice | null = null
+
+export function consumeConfigRecoveryNotice(): ConfigRecoveryNotice | null {
   const notice = configRecoveryNotice
   configRecoveryNotice = null
   return notice
 }
 
-export function formatConfigRecoveryNotice(notice: { backupPath: string | null }): {
+export function formatConfigRecoveryNotice(notice: ConfigRecoveryNotice): {
   type: 'warn'
   message: string
 } {
+  if (notice.ephemeral) {
+    // The saved file could not be opened (e.g. locked by AV/sync/another
+    // instance), so nothing was reset — defaults are in effect only for this
+    // session and the real settings load again once the file is readable.
+    return {
+      type: 'warn',
+      message:
+        "Your saved settings couldn't be opened — they may be locked by another program. SimLauncher started with defaults for now; your saved settings are untouched and will load next time."
+    }
+  }
+
   const backupSuffix = notice.backupPath
     ? ' A copy of the unreadable file was kept next to it.'
     : ''
@@ -131,17 +147,24 @@ function quarantineCorruptConfig(): string | null {
 }
 
 /**
- * Build the store while surviving a corrupt or schema-invalid config file.
- * Without this, electron-store rethrows on an unreadable config and the app
- * cannot launch at all (no window, no tray, no dialog). Recovery: move the bad
- * file aside and retry fresh; if even that fails (e.g. the file is locked),
- * fall back to letting electron-store reset the invalid config in place.
- * Constructor/quarantine are injected so all three paths are unit-testable.
+ * Build the store while surviving an unreadable config file. Without this,
+ * electron-store rethrows on construction and the app cannot launch at all (no
+ * window, no tray, no dialog). Recovery ladder:
+ *   1. construct normally;
+ *   2. on failure, move the bad file aside (quarantine) and retry fresh;
+ *   3. if that also fails, retry with clearInvalidConfig so electron-store resets
+ *      a corrupt or schema-invalid file in place;
+ *   4. if even that throws — the file is locked or permission-denied (EBUSY/
+ *      EPERM/EACCES), which electron-store rethrows rather than resetting because
+ *      it cannot read the file to reset it — boot on an ephemeral in-memory store
+ *      seeded with defaults instead of letting the throw brick boot.
+ * Constructor/quarantine/fallback are injected so all four paths are unit-testable.
  */
 export function createResilientStore<T>(
   construct: (clearInvalidConfig: boolean) => T,
-  quarantine: () => string | null
-): { store: T; recovery: { backupPath: string | null } | null } {
+  quarantine: () => string | null,
+  createFallback: () => T
+): { store: T; recovery: ConfigRecoveryNotice | null } {
   try {
     return { store: construct(false), recovery: null }
   } catch {
@@ -149,12 +172,62 @@ export function createResilientStore<T>(
     try {
       return { store: construct(false), recovery: { backupPath } }
     } catch {
-      return { store: construct(true), recovery: { backupPath } }
+      try {
+        return { store: construct(true), recovery: { backupPath } }
+      } catch {
+        return { store: createFallback(), recovery: { backupPath, ephemeral: true } }
+      }
     }
   }
 }
 
 type StoreInstance = InstanceType<typeof StoreConstructor>
+
+// Last-resort store used when electron-store cannot construct at all (config.json
+// locked/permission-denied — EBUSY/EPERM — which it rethrows rather than
+// resetting). It is ephemeral and seeded with the schema defaults, so the app
+// boots usable with defaults instead of bricking; nothing persists, which is moot
+// when the file can't be read or written anyway. Only the surface the app actually
+// uses (get/set/clear/`store`) is implemented, and the methods read closure state
+// rather than `this`, so the lazy Proxy can bind/forward them safely.
+export function createInMemoryFallbackStore(): StoreInstance {
+  const schema = STORE_OPTIONS.schema as Record<string, { default?: unknown }> | undefined
+
+  const seedDefaults = () => {
+    const seeded: Record<string, unknown> = {}
+    Object.entries(schema ?? {}).forEach(([key, spec]) => {
+      if (spec && 'default' in spec) {
+        seeded[key] = spec.default
+      }
+    })
+    return seeded
+  }
+
+  let data = seedDefaults()
+
+  const fallback = {
+    get(key: string, defaultValue?: unknown) {
+      return key in data ? data[key] : defaultValue
+    },
+    set(keyOrValues: string | Record<string, unknown>, value?: unknown) {
+      if (typeof keyOrValues === 'string') {
+        data[keyOrValues] = value
+      } else {
+        Object.assign(data, keyOrValues)
+      }
+    },
+    clear() {
+      // electron-store's clear() leaves the schema defaults in effect, not an
+      // empty object, so re-seed rather than emptying.
+      data = seedDefaults()
+    },
+    get store() {
+      return { ...data }
+    }
+  }
+
+  return fallback as unknown as StoreInstance
+}
 
 let storeInstance: StoreInstance | null = null
 
@@ -167,7 +240,8 @@ function ensureStore(): StoreInstance {
             ? { ...STORE_OPTIONS, clearInvalidConfig: true }
             : STORE_OPTIONS) as ConstructorParameters<typeof StoreConstructor>[0]
         ),
-      quarantineCorruptConfig
+      quarantineCorruptConfig,
+      createInMemoryFallbackStore
     )
     storeInstance = built.store
     configRecoveryNotice = built.recovery

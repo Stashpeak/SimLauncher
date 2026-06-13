@@ -24,6 +24,7 @@ async function loadStoreModule() {
     sanitizeSettingsPatch: storeModule.sanitizeSettingsPatch,
     sanitizeImportedConfig: storeModule.sanitizeImportedConfig,
     createResilientStore: storeModule.createResilientStore,
+    createInMemoryFallbackStore: storeModule.createInMemoryFallbackStore,
     formatConfigRecoveryNotice: storeModule.formatConfigRecoveryNotice,
     store: storeModule.store
   }
@@ -34,11 +35,14 @@ test('createResilientStore returns the store with no recovery notice when constr
   const fakeStore = { id: 'ok' }
   const quarantine = vi.fn(() => null)
 
-  const result = createResilientStore(() => fakeStore, quarantine)
+  const createFallback = vi.fn(() => ({ id: 'fallback' }))
+
+  const result = createResilientStore(() => fakeStore, quarantine, createFallback)
 
   expect(result.store).toBe(fakeStore)
   expect(result.recovery).toBeNull()
   expect(quarantine).not.toHaveBeenCalled()
+  expect(createFallback).not.toHaveBeenCalled()
 })
 
 test('createResilientStore quarantines a corrupt config and retries fresh', async () => {
@@ -51,14 +55,16 @@ test('createResilientStore quarantines a corrupt config and retries fresh', asyn
     return fresh
   })
   const quarantine = vi.fn(() => 'C:/userdata/config.corrupt-1.json')
+  const createFallback = vi.fn(() => ({ id: 'fallback' }))
 
-  const result = createResilientStore(construct, quarantine)
+  const result = createResilientStore(construct, quarantine, createFallback)
 
   expect(result.store).toBe(fresh)
   expect(result.recovery).toEqual({ backupPath: 'C:/userdata/config.corrupt-1.json' })
   expect(quarantine).toHaveBeenCalledOnce()
   expect(construct).toHaveBeenNthCalledWith(1, false)
   expect(construct).toHaveBeenNthCalledWith(2, false)
+  expect(createFallback).not.toHaveBeenCalled()
 })
 
 test('createResilientStore falls back to clearInvalidConfig when the retry also fails', async () => {
@@ -69,12 +75,62 @@ test('createResilientStore falls back to clearInvalidConfig when the retry also 
     return cleared
   })
   const quarantine = vi.fn(() => null)
+  const createFallback = vi.fn(() => ({ id: 'fallback' }))
 
-  const result = createResilientStore(construct, quarantine)
+  const result = createResilientStore(construct, quarantine, createFallback)
 
   expect(result.store).toBe(cleared)
   expect(result.recovery).toEqual({ backupPath: null })
   expect(construct).toHaveBeenLastCalledWith(true)
+  expect(createFallback).not.toHaveBeenCalled()
+})
+
+test('createResilientStore boots an ephemeral in-memory fallback when even clearInvalidConfig throws (locked file)', async () => {
+  const { createResilientStore } = await loadStoreModule()
+  // Every construction attempt throws — simulates a locked/permission-denied
+  // config.json, which electron-store rethrows (EBUSY/EPERM) instead of
+  // resetting because it cannot read the file to reset it.
+  const construct = vi.fn(() => {
+    throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
+  })
+  const quarantine = vi.fn(() => null)
+  const fallback = { id: 'in-memory' }
+  const createFallback = vi.fn(() => fallback)
+
+  const result = createResilientStore(construct, quarantine, createFallback)
+
+  // The app gets a usable store and an ephemeral recovery notice instead of an
+  // uncaught throw that would brick boot with no window/tray/dialog.
+  expect(result.store).toBe(fallback)
+  expect(result.recovery).toEqual({ backupPath: null, ephemeral: true })
+  expect(construct).toHaveBeenCalledTimes(3)
+  expect(construct).toHaveBeenLastCalledWith(true)
+  expect(createFallback).toHaveBeenCalledOnce()
+})
+
+test('createInMemoryFallbackStore seeds schema defaults and supports get/set/clear/store', async () => {
+  const { createInMemoryFallbackStore } = await loadStoreModule()
+  const fallback = createInMemoryFallbackStore()
+
+  // Seeded with schema defaults so the app behaves like a fresh install.
+  expect(fallback.get('themeMode')).toBe('dark')
+  expect(fallback.get('showTrayIcon')).toBe(true)
+  expect(fallback.get('customSlots')).toBe(1)
+  // Unknown keys honor the get(key, default) form.
+  expect(fallback.get('nope', 'fallbackValue')).toBe('fallbackValue')
+
+  fallback.set('themeMode', 'light')
+  expect(fallback.get('themeMode')).toBe('light')
+
+  // store getter returns a copy of the full config.
+  const snapshot = fallback.store
+  expect(snapshot.themeMode).toBe('light')
+  snapshot.themeMode = 'mutated'
+  expect(fallback.get('themeMode')).toBe('light')
+
+  // clear() resets to schema defaults, matching electron-store semantics.
+  fallback.clear()
+  expect(fallback.get('themeMode')).toBe('dark')
 })
 
 test('formatConfigRecoveryNotice describes the reset and mentions a kept backup only when present', async () => {
@@ -88,6 +144,14 @@ test('formatConfigRecoveryNotice describes the reset and mentions a kept backup 
   const noBackup = formatConfigRecoveryNotice({ backupPath: null })
   expect(noBackup.message).toContain('reset to defaults')
   expect(noBackup.message).not.toContain('kept next to it')
+
+  // The ephemeral (locked-file) case must NOT claim the settings were reset —
+  // they were never touched and reload next launch.
+  const ephemeral = formatConfigRecoveryNotice({ backupPath: null, ephemeral: true })
+  expect(ephemeral.type).toBe('warn')
+  expect(ephemeral.message).toContain('defaults for now')
+  expect(ephemeral.message).toContain('untouched')
+  expect(ephemeral.message).not.toContain('reset to defaults')
 })
 
 test('store accessors validate scalar and string-record values at runtime', async () => {
