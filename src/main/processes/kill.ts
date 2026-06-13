@@ -111,10 +111,6 @@ function isFullExePath(appPath: string | undefined): appPath is string {
   )
 }
 
-function escapeWmiString(value: string) {
-  return value.replace(/'/g, "''")
-}
-
 function parseProcessIds(output: string) {
   const trimmedOutput = output.trim()
 
@@ -144,14 +140,20 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
     accessDenied?: boolean
   }>((resolve) => {
     const script = [
-      // The target path is injected via an environment variable rather than
-      // interpolated directly into the script string. This prevents a path
-      // containing single-quotes or special PowerShell metacharacters from
-      // breaking out of the string literal or injecting arbitrary commands.
+      // Both the target path and the process name are injected via environment
+      // variables rather than interpolated into the script string. This prevents
+      // a value containing single-quotes or PowerShell metacharacters from
+      // breaking out of a string literal or injecting arbitrary commands.
       '$target = $env:SIMLAUNCHER_TARGET_PROCESS_PATH',
-      `$name = '${escapeWmiString(processName)}'`,
+      '$name = $env:SIMLAUNCHER_TARGET_PROCESS_NAME',
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
-      'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
+      // WQL string literals escape a single quote by doubling it (like SQL), so
+      // the quote must be doubled when building the filter — NOT when assigning
+      // $name. Interpolating $name straight into the filter would emit
+      // `Name = 'Dave'sApp.exe'` for an exe whose name contains a quote, which
+      // WQL rejects as an invalid query and the process is never found.
+      '$wqlName = $name -replace "\'", "\'\'"',
+      'Get-CimInstance Win32_Process -Filter "Name = \'$wqlName\'" |',
       '  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
       '  Select-Object -ExpandProperty ProcessId |',
       '  ConvertTo-Json -Compress'
@@ -168,7 +170,11 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
         // which would break the path-scoping safety guarantee and kill
         // same-named processes the user started outside SimLauncher (#503).
         timeout: WMI_LOOKUP_TIMEOUT_MS,
-        env: { ...process.env, SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath) }
+        env: {
+          ...process.env,
+          SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath),
+          SIMLAUNCHER_TARGET_PROCESS_NAME: processName
+        }
       },
       (error, stdout, stderr) => {
         if (error) {

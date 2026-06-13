@@ -146,7 +146,12 @@ async function loadProcessModules() {
         }
 
         const script = args[args.indexOf('-Command') + 1]
-        const processName = script.match(/\$name = '([^']+)'/)?.[1]?.toLowerCase()
+        // findProcessIdsByExecutablePath now passes the name via env var (#531);
+        // fall back to the legacy in-script form for any other powershell call.
+        const processName = (
+          (options.env?.SIMLAUNCHER_TARGET_PROCESS_NAME as string | undefined) ??
+          script.match(/\$name = '([^']+)'/)?.[1]
+        )?.toLowerCase()
 
         const targetPathEnv = options.env?.SIMLAUNCHER_TARGET_PROCESS_PATH
         if (typeof targetPathEnv !== 'string' || targetPathEnv.length === 0) {
@@ -1271,6 +1276,40 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
     ])
   )
   expect(invalidateProcessNameCacheMock).toHaveBeenCalled()
+})
+
+test('PID lookup injects the name via env and doubles single quotes for WQL (#531)', async () => {
+  // An exe whose name contains a single quote (e.g. Dave'sApp.exe) must not break
+  // the Get-CimInstance WQL filter. The name is passed via env (never interpolated)
+  // and the quote is doubled when the filter is built, so WQL stays valid.
+  const quotedPath = "C:/Tools/Dave'sApp.exe"
+  markExistingPath(quotedPath)
+  processNames.add("dave'sapp.exe")
+  registerProcess(quotedPath, "dave'sapp.exe", '4321')
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { simhub: quotedPath }
+  })
+
+  await killProfileApps('ac', [quotedPath])
+
+  const psCall = execFileCalls.find(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      call.args.some((arg) => arg.includes('Get-CimInstance Win32_Process'))
+  )
+  expect(psCall).toBeDefined()
+  const script = psCall!.args[psCall!.args.length - 1] as string
+
+  // Name comes from the environment, not interpolated into the script string.
+  expect(script).toContain('$name = $env:SIMLAUNCHER_TARGET_PROCESS_NAME')
+  expect((psCall!.options.env as Record<string, string>).SIMLAUNCHER_TARGET_PROCESS_NAME).toContain(
+    "'"
+  )
+  // WQL doubling happens at filter-build time; the filter uses the doubled var.
+  expect(script).toContain('$wqlName = $name -replace')
+  expect(script).toContain("Name = '$wqlName'")
+  // The raw quoted name must NOT be interpolated into the filter (the bug).
+  expect(script).not.toContain("Name = 'Dave'sApp.exe'")
 })
 
 test('killProfileApps only kills the PID matching the requested executable path (#341)', async () => {
