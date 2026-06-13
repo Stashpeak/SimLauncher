@@ -168,7 +168,8 @@ export const app = new MockApp()
 
 export const dialog = {
   showOpenDialog: vi.fn(),
-  showSaveDialog: vi.fn()
+  showSaveDialog: vi.fn(),
+  showErrorBox: vi.fn()
 }
 
 export const ipcMain = {
