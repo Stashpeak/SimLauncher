@@ -9,12 +9,14 @@ import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import {
   forceClose,
   forceMinimizeToTray,
+  getStartupNotice,
   getUpdateInfo,
   onCloseRequested,
   onUpdateAvailable,
   setPendingMinimizeToTray,
   setRendererDirty
 } from './lib/electron'
+import { subscribeGlobalErrors } from './lib/globalErrors'
 import { runStartupMigrations } from './lib/migrations'
 import { useTheme } from './contexts/ThemeContext'
 import { SettingsProvider } from './components/settings/SettingsContext'
@@ -65,6 +67,27 @@ function AppContent() {
   useEffect(() => {
     runStartupMigrations()
   }, [])
+
+  // Surface non-React errors (async rejections, event-handler throws, errors
+  // outside the render tree) as a toast — the ErrorBoundary only covers render.
+  useEffect(() => subscribeGlobalErrors((message) => notify(message, 'error', 6000)), [notify])
+
+  // One-shot: if the persisted config was unreadable on boot and reset to
+  // defaults, tell the user why their settings reverted. Consumed server-side,
+  // so a StrictMode double-mount can't double-toast.
+  useEffect(() => {
+    let cancelled = false
+    getStartupNotice()
+      .then((notice: { type: 'success' | 'warn' | 'error'; message: string } | null) => {
+        if (!cancelled && notice) notify(notice.message, notice.type, 8000)
+      })
+      .catch((err: unknown) => {
+        console.error('Failed to load startup notice', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [notify])
 
   // Keep the main process in sync so it can show a native "unsaved changes"
   // prompt if the OS sends a close signal before the React dialog is open.

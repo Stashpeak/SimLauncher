@@ -32,7 +32,16 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     registerContentSecurityPolicy()
-    migrateProfilesToNamedSets()
+    try {
+      migrateProfilesToNamedSets()
+    } catch (error) {
+      // A malformed legacy profile must not brick boot. migrateProfilesToNamedSets
+      // throws so config import can roll back, but at startup there is no snapshot
+      // to restore: every store write lands only after the migrated shape is fully
+      // built, so a throw leaves the original profiles untouched and the migrated
+      // flags unset, and a future launch retries against the original data.
+      console.error('Profile migration failed; leaving stored profiles unchanged.', error)
+    }
     registerHandlers()
     configureTray({
       getIconPath: getAppIconPath,
