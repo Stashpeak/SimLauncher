@@ -75,6 +75,8 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
     KNOWN_GAME_KEYS: new Set(['iracing']),
     MAX_CONFIG_IMPORT_BYTES: 1024 * 1024,
     MAX_CUSTOM_SLOTS: 20,
+    consumeConfigRecoveryNotice: vi.fn(() => null),
+    formatConfigRecoveryNotice: vi.fn(),
     getSupportedConfigValues: vi.fn(() => ({})),
     getStoredZoomFactor: vi.fn(() => 1),
     requireSafeZoomFactor: vi.fn((value: unknown) => value),

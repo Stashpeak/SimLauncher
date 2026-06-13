@@ -163,6 +163,16 @@ export interface UpdateAvailability {
   version: string
 }
 
+/**
+ * A one-shot notice the main process surfaces to the renderer on startup (e.g.
+ * the persisted config was unreadable and had to be reset). Pulled once via
+ * getStartupNotice and shown as a toast; the type maps to a toast variant.
+ */
+export interface StartupNotice {
+  type: 'success' | 'warn' | 'error'
+  message: string
+}
+
 export interface ElectronAPI {
   launchProfile: (gameKey: string) => Promise<LaunchResult>
   relaunchMissingProfile: (gameKey: string) => Promise<LaunchResult>
@@ -221,6 +231,7 @@ export interface ElectronAPI {
   getAssetData: (filename: string) => Promise<string | null>
   getFileIcon: (filePath: string) => Promise<string | null>
   getVersion: () => Promise<string>
+  getStartupNotice: () => Promise<StartupNotice | null>
   dismissAppIcon: (
     appPath: string,
     gameKey: string

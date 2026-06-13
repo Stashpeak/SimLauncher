@@ -12,9 +12,11 @@ Full per-release notes — including every linked issue and PR — are published
 ### Added
 
 - Each release now ships SHA-256 checksums (`SHA256SUMS.txt`) and a CycloneDX SBOM (`sbom.cdx.json`) alongside the installer, so you can verify download integrity and inspect the full dependency inventory.
+- Unexpected background errors are now surfaced as a notification instead of being swallowed silently.
 
 ### Fixed
 
+- A corrupted or unreadable settings file no longer prevents SimLauncher from starting: the unreadable file is set aside, the app launches with default settings, and a notice explains the reset. Profile migration is hardened the same way, so a malformed legacy profile can't block startup either.
 - The maximize/restore button icon now stays correct when the window is snapped or restored through Windows shortcuts (Win+Up, aero-snap, taskbar double-click), not just the title-bar button.
 - App-argument parsing now follows the Windows convention for quoted paths ending in a backslash (e.g. `"C:\My Path\" --flag`), so the rest of the arguments are no longer swallowed into one token.
 

@@ -153,6 +153,7 @@ class MockApp extends MockEventTarget {
   isPackaged = false
   getVersion = vi.fn().mockReturnValue('1.0.0')
   getAppPath = vi.fn().mockReturnValue(process.cwd())
+  getPath = vi.fn().mockReturnValue(process.cwd())
   setLoginItemSettings = vi.fn()
   quit = vi.fn()
   exit = vi.fn()

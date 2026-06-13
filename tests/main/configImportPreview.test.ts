@@ -32,6 +32,8 @@ async function loadConfigModule() {
     KNOWN_GAME_KEYS: new Set(['ac', 'acc']),
     MAX_CONFIG_IMPORT_BYTES: 1_000_000,
     MAX_CUSTOM_SLOTS: 20,
+    consumeConfigRecoveryNotice: vi.fn(() => null),
+    formatConfigRecoveryNotice: vi.fn(),
     getSupportedConfigValues: vi.fn(),
     getStoredZoomFactor: vi.fn(),
     requireSafeZoomFactor: vi.fn(),
