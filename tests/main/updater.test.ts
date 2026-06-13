@@ -127,6 +127,51 @@ test('an updater error resets the install latch', async () => {
   expect(quitAndInstall).not.toHaveBeenCalled()
 })
 
+test('a network error is flagged so the renderer can show an offline notice (#527)', async () => {
+  const { sendToRenderer } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](
+    Object.assign(new Error('net::ERR_INTERNET_DISCONNECTED'), { code: 'ENOTFOUND' })
+  )
+
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: true })
+})
+
+test('a non-network updater error is not flagged as network (#527)', async () => {
+  const { sendToRenderer } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](new Error('Checksum mismatch'))
+
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: false, message: 'Checksum mismatch' })
+})
+
+test('check-for-updates swallows a network failure but rethrows other errors (#527)', async () => {
+  const { handlers } = await loadUpdaterModule()
+
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(
+    Object.assign(new Error('getaddrinfo ENOTFOUND update.example.com'), { code: 'ENOTFOUND' })
+  )
+  await expect(handlers['check-for-updates']({})).resolves.toBeNull()
+
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(new Error('HTTP 500 from update server'))
+  await expect(handlers['check-for-updates']({})).rejects.toThrow('HTTP 500')
+})
+
+test('a TLS/cert net error is NOT downgraded to offline (#535)', async () => {
+  const { sendToRenderer, handlers } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](new Error('net::ERR_CERT_AUTHORITY_INVALID'))
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: false })
+
+  // ...and check-for-updates must NOT swallow it — a security/config error should
+  // surface, not hide behind the calm offline notice.
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(new Error('net::ERR_CERT_AUTHORITY_INVALID'))
+  await expect(handlers['check-for-updates']({})).rejects.toThrow('ERR_CERT_AUTHORITY_INVALID')
+})
+
 test('unpackaged builds simulate the update flow without touching electron-updater', async () => {
   const { updaterModule, handlers, sendToRenderer } = await loadUpdaterModule({
     isPackaged: false

@@ -10,7 +10,7 @@ import {
   onUpdateError,
   onUpdateNotAvailable
 } from '../../lib/electron'
-import type { UpdateInfo, UpdateStatus } from './types'
+import type { UpdateErrorInfo, UpdateInfo, UpdateStatus } from './types'
 
 type Notify = (message: string, type: 'success' | 'warn' | 'error', durationMs?: number) => void
 
@@ -75,12 +75,19 @@ export function useUpdateStatus({
       setUpdateProgress(null)
       setUpdateStatus('downloaded')
     })
-    const unsubscribeError = onUpdateError((error: Error) => {
+    const unsubscribeError = onUpdateError((error: UpdateErrorInfo) => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
       setUpdateProgress(null)
-      setUpdateStatus('error')
-      notify(error?.message || 'Update check failed', 'error')
+      if (error?.isNetworkError) {
+        // Offline (common on a dedicated rig) is not a real failure — show a
+        // calm notice rather than a scary "update failed".
+        setUpdateStatus('offline')
+        notify("Can't reach the update server — check your connection.", 'warn')
+      } else {
+        setUpdateStatus('error')
+        notify(error?.message || 'Update check failed', 'error')
+      }
       clearStatusLater(4000)
     })
 
