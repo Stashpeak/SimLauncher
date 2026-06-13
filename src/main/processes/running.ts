@@ -39,6 +39,12 @@ export interface RunningAppsChangedPayload {
 const RUNNING_APPS_CHANGED_CHANNEL = 'running-apps-changed'
 const RUNNING_APPS_SCAN_INTERVAL_MS = 2000
 const runningAppsSubscribers = new Set<WebContents>()
+
+type RunningAppsChangeListener = (payload: RunningAppsChangedPayload) => void
+// Main-process (non-renderer) listeners, e.g. the tray menu rebuilding its
+// "Close Apps" enabled state. Kept separate from the WebContents subscribers
+// because they receive the payload directly rather than over IPC.
+const runningAppsChangeListeners = new Set<RunningAppsChangeListener>()
 let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
 let lastRunningAppsSnapshot = ''
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
@@ -235,6 +241,41 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   ]
 }
 
+/**
+ * Whether the tray "Close Apps" action has anything to act on (#519): at least
+ * one companion (non-game) process that SimLauncher launched and still tracks.
+ *
+ * Kept synchronous so the tray menu's enabled state can be decided at build time
+ * (Menu.buildFromTemplate is synchronous). Mirrors killLaunchedApps, which only
+ * terminates non-game companions — never the game itself — so the menu item is
+ * not enabled when the only running process is the game.
+ */
+export function hasClosableApps(): boolean {
+  for (const entry of runningProcesses.values()) {
+    if (!entry.isGame) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Register a main-process listener for running-apps changes (the tray uses this
+ * to refresh its "Close Apps" enabled state). Returns an unsubscribe function.
+ *
+ * Listeners fire from the same emission path as renderer subscribers, which is
+ * gated on there being at least one renderer subscriber. In practice the
+ * renderer's WebContents stays subscribed for the whole app lifetime (it is only
+ * destroyed on quit, not when minimized to the tray), so the tray — which only
+ * exists alongside that window — receives every change.
+ */
+export function addRunningAppsChangeListener(listener: RunningAppsChangeListener): () => void {
+  runningAppsChangeListeners.add(listener)
+  return () => {
+    runningAppsChangeListeners.delete(listener)
+  }
+}
+
 function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
   return JSON.stringify(
     apps.map((app) => ({
@@ -269,6 +310,17 @@ function emitRunningAppsChanged(payload: RunningAppsChangedPayload) {
     }
 
     webContents.send(RUNNING_APPS_CHANGED_CHANNEL, payload)
+  })
+
+  runningAppsChangeListeners.forEach((listener) => {
+    // Isolate listener failures: a misbehaving main-process listener (e.g. the
+    // tray menu rebuild) must not reject the publish promise that kill/spawn
+    // callers await, nor stop other listeners from running.
+    try {
+      listener(payload)
+    } catch (err) {
+      console.error('Running apps change listener error:', err)
+    }
   })
 }
 

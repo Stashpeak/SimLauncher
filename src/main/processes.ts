@@ -1,6 +1,8 @@
 export { killLaunchedApps, killProfileApps } from './processes/kill'
 export {
+  addRunningAppsChangeListener,
   getRunningApps,
+  hasClosableApps,
   publishRunningApps,
   subscribeRunningApps,
   unsubscribeRunningApps
