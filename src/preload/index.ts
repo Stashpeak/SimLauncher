@@ -126,6 +126,7 @@ const electronAPI: ElectronAPI = {
   getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath),
   getVersion: () => ipcRenderer.invoke('get-version'),
   getStartupNotice: () => ipcRenderer.invoke('get-startup-notice'),
+  openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
   dismissAppIcon: (appPath: string, gameKey: string) =>
     ipcRenderer.invoke('dismiss-app-icon', appPath, gameKey)
 }

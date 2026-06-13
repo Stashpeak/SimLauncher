@@ -14,6 +14,7 @@ Full per-release notes — including every linked issue and PR — are published
 - Each release now ships SHA-256 checksums (`SHA256SUMS.txt`) and a CycloneDX SBOM (`sbom.cdx.json`) alongside the installer, so you can verify download integrity and inspect the full dependency inventory.
 - Unexpected background errors are now surfaced as a notification instead of being swallowed silently.
 - Unexpected crashes in the app's main process are now recorded to a `main-error.log` file in the app's data folder, so issues on your machine are easier to diagnose.
+- An "Open logs folder" button in Settings → About opens the folder with that crash log and your settings file, so it's easy to find when reporting an issue.
 - Utilities in a profile's launch order can now be reordered with the keyboard (up/down buttons), not only by mouse drag.
 
 ### Fixed

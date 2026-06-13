@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { openLogsFolder } from '../../lib/electron'
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
 import type { UpdateInfo, UpdateStatus } from './types'
@@ -32,6 +33,24 @@ export function AboutSection({
       <div className="settings-row">
         <span className="settings-label text-(--text-secondary)">Installed Version</span>
         <span className="select-text text-xs font-mono text-(--text-muted)">v{appVersion}</span>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-label-group">
+          <span className="settings-label">Diagnostics</span>
+          <span className="settings-sublabel">
+            Open the folder with the crash log and settings file
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            void openLogsFolder()
+          }}
+          className="action-hover-scale cursor-pointer rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
+        >
+          Open logs folder
+        </button>
       </div>
 
       <div className="settings-row">
