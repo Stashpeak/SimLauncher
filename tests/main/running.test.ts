@@ -3,6 +3,9 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 const readRunningProcessNamesMock = vi.fn()
 const pruneUnclosedProcessesMock = vi.fn()
+// running.ts caches this for the synchronous tray predicate; the real selection
+// logic lives in kill.ts and is covered in processes.test.ts.
+const hasClosableLaunchedAppsMock = vi.fn()
 // Per-test stored config (e.g. gamePaths) read via getStoredStringRecord(key).
 const storedStringRecords: Record<string, Record<string, string>> = {}
 
@@ -18,6 +21,7 @@ async function loadRunningModule() {
 
   const killMock = {
     pruneUnclosedProcesses: pruneUnclosedProcessesMock,
+    hasClosableLaunchedApps: hasClosableLaunchedAppsMock,
     killLaunchedApps: vi.fn(),
     killProfileApps: vi.fn()
   }
@@ -69,6 +73,7 @@ function seedState(stateModule: Awaited<ReturnType<typeof loadRunningModule>>['s
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  hasClosableLaunchedAppsMock.mockResolvedValue(false)
   for (const key of Object.keys(storedStringRecords)) {
     delete storedStringRecords[key]
   }
@@ -120,74 +125,20 @@ test('a successful tasklist read keeps entries whose exe is still running', asyn
   ])
 })
 
-// The tray "Close Apps" item is enabled off this synchronous check, which is
-// refreshed on every getRunningApps() and must mirror what killLaunchedApps can
-// close: companions yes, the game no (#519).
-test('hasClosableApps is false when nothing is running', async () => {
+// The tray "Close Apps" item is enabled off this synchronous check, which
+// getRunningApps() refreshes from killLaunchedApps' own target selection
+// (hasClosableLaunchedApps). The selection logic itself is covered in
+// processes.test.ts; here we only verify the cache plumbing (#519).
+test('hasClosableApps returns the kill-target check cached by getRunningApps (#519)', async () => {
   const { runningModule } = await loadRunningModule()
   readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
 
-  await runningModule.getRunningApps()
-
-  expect(runningModule.hasClosableApps()).toBe(false)
-})
-
-test('hasClosableApps ignores the game itself and counts only companions (#519)', async () => {
-  const { runningModule, stateModule } = await loadRunningModule()
-  storedStringRecords.gamePaths = { iracing: 'C:/Games/iRacingSim64DX11.exe' }
-
-  // Only the game is running.
-  stateModule.runningProcesses.set('game', {
-    process: {} as ChildProcess,
-    path: 'C:/Games/iRacingSim64DX11.exe',
-    name: 'iRacingSim64DX11.exe',
-    gameKey: 'iracing',
-    isGame: true
-  })
-  readRunningProcessNamesMock.mockResolvedValue({
-    processNames: new Set(['iracingsim64dx11.exe']),
-    succeeded: true
-  })
+  hasClosableLaunchedAppsMock.mockResolvedValue(false)
   await runningModule.getRunningApps()
   expect(runningModule.hasClosableApps()).toBe(false)
 
-  // A companion joins it.
-  stateModule.runningProcesses.set('companion', {
-    process: {} as ChildProcess,
-    path: 'C:/Tools/SimHub.exe',
-    name: 'SimHub.exe',
-    gameKey: 'iracing',
-    isGame: false
-  })
-  readRunningProcessNamesMock.mockResolvedValue({
-    processNames: new Set(['iracingsim64dx11.exe', 'simhub.exe']),
-    succeeded: true
-  })
+  hasClosableLaunchedAppsMock.mockResolvedValue(true)
   await runningModule.getRunningApps()
-  expect(runningModule.hasClosableApps()).toBe(true)
-})
-
-// Codex P2 on #536: companions reachable by killLaunchedApps but NOT present in
-// runningProcesses (e.g. an elevated launch, which has no child-process handle)
-// must still enable the tray action.
-test('hasClosableApps counts companions surfaced outside runningProcesses (#519)', async () => {
-  const { runningModule, stateModule } = await loadRunningModule()
-  stateModule.unclosedProcesses.set('iracing:c:\\tools\\ioverlay.exe', {
-    path: 'C:/Tools/iOverlay.exe',
-    name: 'iOverlay.exe',
-    gameKey: 'iracing',
-    error: 'access denied',
-    reason: 'access_denied',
-    elevated: true
-  })
-  readRunningProcessNamesMock.mockResolvedValue({
-    processNames: new Set(['ioverlay.exe']),
-    succeeded: true
-  })
-
-  await runningModule.getRunningApps()
-
-  expect(stateModule.runningProcesses.size).toBe(0)
   expect(runningModule.hasClosableApps()).toBe(true)
 })
 

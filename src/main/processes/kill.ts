@@ -582,6 +582,43 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   return result
 }
 
+/**
+ * Whether killLaunchedApps(gameKey) currently has at least one target it would
+ * try to close: a tracked non-game process whose exe is running, or a configured
+ * / hardcoded companion whose process is running. Drives the tray "Close Apps"
+ * enabled state (#519).
+ *
+ * KEEP IN SYNC with killLaunchedApps above — the two membership conditions here
+ * mirror its two kill-task branches. Deliberately NOT derived from
+ * getRunningApps(): that list gates companions on the owning game being launched
+ * or adopted, while killLaunchedApps closes configured companions regardless, so
+ * the surfaced list would under-report closable targets.
+ */
+export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean> {
+  const { processNames } = await readRunningProcessNames()
+
+  for (const appProcess of runningProcesses.values()) {
+    if (gameKey && appProcess.gameKey !== gameKey) {
+      continue
+    }
+    if (appProcess.isGame) {
+      continue
+    }
+    if (processNames.has(getExeName(appProcess.path))) {
+      return true
+    }
+  }
+
+  const companionTargets = getProfileCompanionTargets(gameKey)
+  for (const target of companionTargets.values()) {
+    if (processNames.has(target.processName)) {
+      return true
+    }
+  }
+
+  return false
+}
+
 export async function killProfileApps(
   gameKey: string,
   appPathsToKill: string[]

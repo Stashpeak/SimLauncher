@@ -372,6 +372,7 @@ async function loadProcessModules() {
     launchProfileApps: spawnModule.launchProfileApps,
     spawnDetachedApp: spawnModule.spawnDetachedApp,
     killLaunchedApps: killModule.killLaunchedApps,
+    hasClosableLaunchedApps: killModule.hasClosableLaunchedApps,
     killProfileApps: killModule.killProfileApps,
     finalizeKillAttempts: killModule.finalizeKillAttempts,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
@@ -1227,6 +1228,59 @@ test('killLaunchedApps keeps generic no-op message for unrelated game wrapper wa
     failedCount: 0,
     failures: []
   })
+})
+
+// hasClosableLaunchedApps drives the tray "Close Apps" enabled state (#519) and
+// must mirror killLaunchedApps' own target selection.
+test('hasClosableLaunchedApps is false when nothing is running', async () => {
+  const { hasClosableLaunchedApps } = await loadProcessModules()
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+})
+
+test('hasClosableLaunchedApps is true for a running non-game companion', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+})
+
+test('hasClosableLaunchedApps ignores the game itself', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  runningProcesses.set('c:\\games\\acs.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Games/acs.exe',
+    name: 'acs.exe',
+    gameKey: 'ac',
+    isGame: true
+  })
+  processNames.add('acs.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+})
+
+// Codex P2 on #536: a configured companion can be running while its game is NOT
+// launched/adopted. killLaunchedApps still closes it (via companion targets), so
+// the tray must be enabled — even though getRunningApps would not surface it.
+test('hasClosableLaunchedApps is true for a configured companion with no game launched (#519)', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  processNames.add('simhub.exe')
+
+  // Nothing SimLauncher-launched is tracked; the companion is reachable only via
+  // the configured-companion-targets branch.
+  expect(runningProcesses.size).toBe(0)
+  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
 })
 
 test('killProfileApps rejects paths that are not configured app paths', async () => {

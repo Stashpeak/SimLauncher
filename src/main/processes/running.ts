@@ -8,9 +8,9 @@ import {
   getStoredProfiles
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath, normalizePathForComparison, pathsEqual } from '../utils'
+import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
-import { pruneUnclosedProcesses } from './kill'
+import { hasClosableLaunchedApps, pruneUnclosedProcesses } from './kill'
 import {
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
@@ -233,33 +233,23 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(getExeName(appProcess.path))
   )
 
-  const filteredMismatchWarnings = mismatchWarnings.filter(
-    (appProcess) =>
-      !launchedKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
-  )
-  const filteredTrackedApps = trackedApps.filter(
-    (appProcess) =>
-      !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
-  )
+  // Refresh the tray's "Close Apps" enabled state from killLaunchedApps' OWN
+  // target selection rather than this surfaced list: the surfaced list gates
+  // companions on the owning game being launched/adopted, while the kill closes
+  // configured companions regardless, so it would under-report closable targets.
+  closableAppsCached = await hasClosableLaunchedApps()
 
-  // Refresh the tray's "Close Apps" enabled state. Closable = anything
-  // killLaunchedApps can target: launched companions, still-running unclosed
-  // companions, and externally-tracked companions. The game is excluded, and so
-  // are mismatch warnings — their original exe is already gone from the tasklist
-  // (only the renamed child survives), so the kill cannot act on them.
-  closableAppsCached = [...surfacedApps, ...filteredTrackedApps].some(
-    (app) => !isGameApp(app, gamePaths)
-  )
-
-  return [...surfacedApps, ...filteredMismatchWarnings, ...filteredTrackedApps]
-}
-
-// A surfaced running app is the game itself (not a closable companion) when its
-// path matches the profile's configured game exe. killLaunchedApps never
-// terminates the game, so it must not drive the "Close Apps" enabled state.
-function isGameApp(app: RunningApp, gamePaths: Record<string, string> | undefined): boolean {
-  const gamePath = gamePaths?.[app.gameKey]
-  return !!gamePath && pathsEqual(app.path, gamePath)
+  return [
+    ...surfacedApps,
+    ...mismatchWarnings.filter(
+      (appProcess) =>
+        !launchedKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
+    ),
+    ...trackedApps.filter(
+      (appProcess) =>
+        !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
+    )
+  ]
 }
 
 /**
@@ -267,12 +257,11 @@ function isGameApp(app: RunningApp, gamePaths: Record<string, string> | undefine
  * one running companion (non-game) app that killLaunchedApps could close.
  *
  * Synchronous (Menu.buildFromTemplate is) by returning the value cached on the
- * last getRunningApps() computation. That cache is refreshed on every launch,
- * exit, kill and the periodic scan, so it stays current within the scan
- * interval. Sourcing it from getRunningApps — rather than runningProcesses
- * alone — means elevated and externally-running companions, which never enter
- * runningProcesses but are still reachable by killLaunchedApps, are counted too,
- * while the game and mismatch warnings (which the kill cannot act on) are not.
+ * last getRunningApps() computation, which is run on every launch, exit, kill and
+ * the periodic scan, so it stays current within the scan interval. The value is
+ * computed by hasClosableLaunchedApps() — killLaunchedApps' own target selection
+ * — so it counts every companion the kill can reach (tracked, elevated, or a
+ * configured companion running with no game launched) and excludes the game.
  */
 export function hasClosableApps(): boolean {
   return closableAppsCached
