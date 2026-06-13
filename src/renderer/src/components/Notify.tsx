@@ -101,6 +101,14 @@ function ToastCard({
       return undefined
     }
 
+    // Honor reduced-motion: this progress bar is WAAPI-driven, so the CSS
+    // reduced-motion rules don't cover it. The toast still auto-dismisses on its
+    // own timer; we just skip the shrinking animation. (Optional chaining keeps
+    // it safe in jsdom, which doesn't implement matchMedia.)
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+      return undefined
+    }
+
     const animation = progressElement.animate([{ width: '100%' }, { width: '0%' }], {
       duration: toast.duration,
       easing: 'linear',

@@ -67,7 +67,7 @@ export function ImportPreviewDialog({
   // The trap is conditional on `summary` being present because the dialog may
   // briefly be `isOpen: true` while the summary is still loading — activating
   // the trap on an empty container would immediately focus the wrong element.
-  useFocusTrap(isOpen && !!summary, dialogRef)
+  useFocusTrap(isOpen && !!summary, dialogRef, undefined, onCancel)
 
   if (!isOpen || !summary) return null
 

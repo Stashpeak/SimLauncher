@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -32,12 +32,25 @@ function setBackgroundInert(inert: boolean): void {
  *
  * The container MUST be rendered OUTSIDE #root (e.g. portaled to document.body)
  * so it is not itself inerted.
+ *
+ * When `onEscape` is provided, Escape closes the dialog. It is handled on the
+ * document in the capture phase with stopImmediatePropagation so it dismisses
+ * this dialog before any background keydown handler (Settings, profile editor)
+ * can see the key — matching ConfirmDialog's own Escape behaviour.
  */
 export function useFocusTrap(
   active: boolean,
   containerRef: RefObject<HTMLElement | null>,
-  initialFocusRef?: RefObject<HTMLElement | null>
+  initialFocusRef?: RefObject<HTMLElement | null>,
+  onEscape?: () => void
 ): void {
+  // Stable ref so passing a fresh onEscape each render does not re-run the trap
+  // (which would re-inert the background and steal focus).
+  const onEscapeRef = useRef(onEscape)
+  useEffect(() => {
+    onEscapeRef.current = onEscape
+  }, [onEscape])
+
   useEffect(() => {
     if (!active) return
     const container = containerRef.current
@@ -86,8 +99,21 @@ export function useFocusTrap(
 
     container.addEventListener('keydown', handleKeyDown)
 
+    // Escape-to-dismiss (when a handler was supplied). Capture phase so it wins
+    // over background document listeners; a no-op when no onEscape was passed.
+    const handleEscape = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      const onEscape = onEscapeRef.current
+      if (!onEscape) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      onEscape()
+    }
+    document.addEventListener('keydown', handleEscape, true)
+
     return () => {
       container.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('keydown', handleEscape, true)
       trapDepth = Math.max(0, trapDepth - 1)
       if (trapDepth === 0) setBackgroundInert(false)
       // Restore focus only AFTER un-inerting; focusing an element inside an inert

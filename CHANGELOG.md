@@ -13,15 +13,18 @@ Full per-release notes — including every linked issue and PR — are published
 
 - Each release now ships SHA-256 checksums (`SHA256SUMS.txt`) and a CycloneDX SBOM (`sbom.cdx.json`) alongside the installer, so you can verify download integrity and inspect the full dependency inventory.
 - Unexpected background errors are now surfaced as a notification instead of being swallowed silently.
+- Utilities in a profile's launch order can now be reordered with the keyboard (up/down buttons), not only by mouse drag.
 
 ### Fixed
 
 - A corrupted or unreadable settings file no longer prevents SimLauncher from starting: the unreadable file is set aside, the app launches with default settings, and a notice explains the reset. Profile migration is hardened the same way, so a malformed legacy profile can't block startup either.
+- A maximized window now reopens at your previous restored size instead of the full-screen rectangle.
 - The maximize/restore button icon now stays correct when the window is snapped or restored through Windows shortcuts (Win+Up, aero-snap, taskbar double-click), not just the title-bar button.
 - App-argument parsing now follows the Windows convention for quoted paths ending in a backslash (e.g. `"C:\My Path\" --flag`), so the rest of the arguments are no longer swallowed into one token.
 
 ### Changed
 
+- The app now honors the system "reduce motion" setting, Settings toggles show a keyboard focus ring, and Escape closes the import-preview and color-picker dialogs.
 - The process lookup used when closing apps now times out instead of stalling the close pipeline on a wedged system service.
 
 ## [0.9.10] - 2026-06-12

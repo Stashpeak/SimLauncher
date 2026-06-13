@@ -35,7 +35,7 @@ export function ColorPickerPopover({
   // Focus is trapped here rather than via aria-modal because the popover is
   // portalled to document.body and positioned absolutely — a real modal focus
   // trap keeps keyboard users from tabbing into the background settings form.
-  useFocusTrap(true, popoverRef)
+  useFocusTrap(true, popoverRef, undefined, onClose)
 
   useLayoutEffect(() => {
     const updatePosition = () => {

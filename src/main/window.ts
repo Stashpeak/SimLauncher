@@ -175,7 +175,10 @@ export function createWindow(): void {
       return
     }
 
-    store.set('windowBounds', mainWindow.getBounds())
+    // getNormalBounds (not getBounds) so a maximized window persists its
+    // pre-maximize size; otherwise the next launch reopens un-maximized at the
+    // full work-area rectangle and the user's restored size is lost.
+    store.set('windowBounds', mainWindow.getNormalBounds())
 
     const action = decideCloseAction({
       isQuitting: getIsQuitting(),
