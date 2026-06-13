@@ -16,6 +16,27 @@ let availableUpdate: UpdateAvailability | null = null
 // without consent would consume bandwidth and could interrupt a race session.
 autoUpdater.autoDownload = false
 
+// A dedicated sim rig is often offline, so the most common update "failure" is
+// simply no connectivity. Distinguish that from a real updater error (corrupt
+// download, server 4xx/5xx, signature mismatch) so the UI can show a calm
+// "can't reach the server" notice instead of a scary generic failure.
+export function isUpdateNetworkError(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code
+  if (
+    typeof code === 'string' &&
+    /^(ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN)$/.test(
+      code
+    )
+  ) {
+    return true
+  }
+
+  const message = err instanceof Error ? err.message : String(err ?? '')
+  return /\b(ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN)\b|getaddrinfo|net::ERR_|ERR_INTERNET_DISCONNECTED/i.test(
+    message
+  )
+}
+
 export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
   sendToRenderer = rendererSender
 
@@ -49,7 +70,10 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
 
   autoUpdater.on('error', (err) => {
     installAfterDownload = false
-    sendToRenderer('update-error', { message: err.message })
+    sendToRenderer('update-error', {
+      message: err.message,
+      isNetworkError: isUpdateNetworkError(err)
+    })
   })
 }
 
@@ -112,7 +136,18 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
   })
 
   ipcMain.handle('check-for-updates', async () => {
-    return await checkForUpdates()
+    try {
+      return await checkForUpdates()
+    } catch (err) {
+      // The autoUpdater 'error' event already reported this to the renderer with
+      // a categorized message. For a network failure, swallow the rejection so
+      // the manual-check flow doesn't additionally surface a generic error that
+      // would override the calmer offline notice; re-throw anything else.
+      if (isUpdateNetworkError(err)) {
+        return null
+      }
+      throw err
+    }
   })
 
   ipcMain.handle('get-update-info', async () => {
