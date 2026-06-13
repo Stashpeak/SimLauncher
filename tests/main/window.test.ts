@@ -81,6 +81,8 @@ async function getCreatedWindow() {
     show: ReturnType<typeof vi.fn>
     hide: ReturnType<typeof vi.fn>
     close: ReturnType<typeof vi.fn>
+    getBounds: ReturnType<typeof vi.fn>
+    getNormalBounds: ReturnType<typeof vi.fn>
     webContents: {
       emit: (event: string, ...args: unknown[]) => void
       send: ReturnType<typeof vi.fn>
@@ -165,6 +167,26 @@ test('close quits by default and persists the window bounds first', async () => 
   // Bounds are saved on every close path so the next start restores them.
   expect(storeSet).toHaveBeenCalledWith('windowBounds', { x: 0, y: 0, width: 800, height: 600 })
   expect(closeEvent.preventDefault).not.toHaveBeenCalled()
+})
+
+test('close persists the pre-maximize (normal) bounds, not the maximized rect (#515)', async () => {
+  const { createWindow, storeSet } = await loadWindowModuleForCreate()
+  createWindow()
+  const win = await getCreatedWindow()
+  // A maximized window: getBounds() is the full work-area rect, getNormalBounds()
+  // is the size to restore to. We must persist the latter.
+  win.getBounds.mockReturnValue({ x: 0, y: 0, width: 1920, height: 1040 })
+  win.getNormalBounds.mockReturnValue({ x: 120, y: 90, width: 900, height: 650 })
+
+  win.emit('close', { preventDefault: vi.fn() })
+
+  expect(storeSet).toHaveBeenCalledWith('windowBounds', { x: 120, y: 90, width: 900, height: 650 })
+  expect(storeSet).not.toHaveBeenCalledWith('windowBounds', {
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1040
+  })
 })
 
 test('close hides to tray when minimize-to-tray is enabled', async () => {

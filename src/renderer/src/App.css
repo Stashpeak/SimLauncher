@@ -770,3 +770,32 @@ textarea {
 .settings-control-preset {
   width: 4.75rem;
 }
+
+/* Keyboard focus for the Settings toggle switches: the real checkbox is
+   sr-only, so the focus ring goes on the visual track when the peer input is
+   focus-visible. Matches the outline treatment used elsewhere. */
+.peer:focus-visible ~ .toggle-track {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Keyboard reorder buttons (launch order) — visible focus consistent with the
+   app's outline treatment. */
+.reorder-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Respect the OS "reduce motion" preference: neutralize transitions and stop
+   the infinite loops (ping/pulse/spin, toast progress) for vestibular safety.
+   Mirrors the marketing site's reduced-motion support. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

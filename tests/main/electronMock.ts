@@ -98,6 +98,7 @@ export class BrowserWindow extends MockEventTarget {
   isDestroyed = vi.fn(() => this.destroyed)
   isMaximized = vi.fn(() => false)
   getBounds = vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 }))
+  getNormalBounds = vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 }))
   loadFile = vi.fn()
   loadURL = vi.fn()
 }

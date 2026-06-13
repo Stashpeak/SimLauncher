@@ -121,6 +121,51 @@ function renderUtilityRow(
             {orderIndex + 1}
           </span>
         )}
+        {/* Keyboard path for reordering — the drag handle is mouse-only (#515). */}
+        {isEnabled && typeof orderIndex === 'number' && props.enabledUtilityEntries.length > 1 && (
+          <span data-no-row-drag="true" className="flex shrink-0 flex-col gap-0.5">
+            <button
+              type="button"
+              aria-label={`Move ${label} up in launch order`}
+              disabled={orderIndex === 0}
+              onClick={() => {
+                const previous = props.enabledUtilityEntries[orderIndex - 1]
+                if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
+              }}
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+            >
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                <path
+                  d="M1 5L5 1L9 5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label={`Move ${label} down in launch order`}
+              disabled={orderIndex === props.enabledUtilityEntries.length - 1}
+              onClick={() => {
+                const next = props.enabledUtilityEntries[orderIndex + 1]
+                if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
+              }}
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+            >
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                <path
+                  d="M1 1L5 5L9 1"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </span>
+        )}
         <Tooltip label="Drag to reorder">
           <div
             className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''}`}
