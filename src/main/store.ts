@@ -1,3 +1,6 @@
+import { app } from 'electron'
+import fs from 'fs'
+import path from 'path'
 import Store from 'electron-store'
 
 import { clamp, isRecord, normalizePathForComparison } from './utils'
@@ -58,7 +61,7 @@ const PROFILE_BOOLEAN_KEYS = [
 const StoreConstructor =
   typeof Store === 'function' ? Store : (Store as unknown as { default: typeof Store }).default
 
-export const store = new StoreConstructor({
+const STORE_OPTIONS = {
   projectName: 'SimLauncher',
   schema: {
     appPaths: { type: 'object', default: {} },
@@ -84,7 +87,85 @@ export const store = new StoreConstructor({
     profileSetsMigrated: { type: 'boolean', default: false },
     migrated: { type: 'boolean', default: false }
   }
-} as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string })
+} as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string }
+
+// One-shot notice that the persisted config was unreadable on boot and had to
+// be reset to defaults. The renderer pulls it via the 'get-startup-notice' IPC
+// and shows a toast, so settings silently reverting to defaults is explained.
+let configRecoveryNotice: { backupPath: string | null } | null = null
+
+export function consumeConfigRecoveryNotice(): { backupPath: string | null } | null {
+  const notice = configRecoveryNotice
+  configRecoveryNotice = null
+  return notice
+}
+
+export function formatConfigRecoveryNotice(notice: { backupPath: string | null }): {
+  type: 'warn'
+  message: string
+} {
+  const backupSuffix = notice.backupPath
+    ? ' A copy of the unreadable file was kept next to it.'
+    : ''
+  return {
+    type: 'warn',
+    message: `Your saved settings couldn't be read and were reset to defaults.${backupSuffix}`
+  }
+}
+
+// Move an unreadable config file aside so the user can recover/inspect it,
+// returning the backup path (or null when there was nothing to move). The
+// default electron-store file is config.json in userData.
+function quarantineCorruptConfig(): string | null {
+  try {
+    const file = path.join(app.getPath('userData'), 'config.json')
+    if (!fs.existsSync(file)) {
+      return null
+    }
+    const backup = path.join(app.getPath('userData'), `config.corrupt-${Date.now()}.json`)
+    fs.renameSync(file, backup)
+    return backup
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build the store while surviving a corrupt or schema-invalid config file.
+ * Without this, electron-store rethrows on an unreadable config and the app
+ * cannot launch at all (no window, no tray, no dialog). Recovery: move the bad
+ * file aside and retry fresh; if even that fails (e.g. the file is locked),
+ * fall back to letting electron-store reset the invalid config in place.
+ * Constructor/quarantine are injected so all three paths are unit-testable.
+ */
+export function createResilientStore<T>(
+  construct: (clearInvalidConfig: boolean) => T,
+  quarantine: () => string | null
+): { store: T; recovery: { backupPath: string | null } | null } {
+  try {
+    return { store: construct(false), recovery: null }
+  } catch {
+    const backupPath = quarantine()
+    try {
+      return { store: construct(false), recovery: { backupPath } }
+    } catch {
+      return { store: construct(true), recovery: { backupPath } }
+    }
+  }
+}
+
+const builtStore = createResilientStore(
+  (clearInvalidConfig) =>
+    new StoreConstructor(
+      (clearInvalidConfig
+        ? { ...STORE_OPTIONS, clearInvalidConfig: true }
+        : STORE_OPTIONS) as ConstructorParameters<typeof StoreConstructor>[0]
+    ),
+  quarantineCorruptConfig
+)
+
+export const store = builtStore.store
+configRecoveryNotice = builtStore.recovery
 
 export const CONFIG_FILE_NAME = 'simlauncher-config.json'
 export const EXPECTED_CONFIG_KEYS = new Set([

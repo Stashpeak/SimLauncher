@@ -23,9 +23,72 @@ async function loadStoreModule() {
     MAX_CUSTOM_SLOTS: storeModule.MAX_CUSTOM_SLOTS,
     sanitizeSettingsPatch: storeModule.sanitizeSettingsPatch,
     sanitizeImportedConfig: storeModule.sanitizeImportedConfig,
+    createResilientStore: storeModule.createResilientStore,
+    formatConfigRecoveryNotice: storeModule.formatConfigRecoveryNotice,
     store: storeModule.store
   }
 }
+
+test('createResilientStore returns the store with no recovery notice when construction succeeds', async () => {
+  const { createResilientStore } = await loadStoreModule()
+  const fakeStore = { id: 'ok' }
+  const quarantine = vi.fn(() => null)
+
+  const result = createResilientStore(() => fakeStore, quarantine)
+
+  expect(result.store).toBe(fakeStore)
+  expect(result.recovery).toBeNull()
+  expect(quarantine).not.toHaveBeenCalled()
+})
+
+test('createResilientStore quarantines a corrupt config and retries fresh', async () => {
+  const { createResilientStore } = await loadStoreModule()
+  const fresh = { id: 'fresh' }
+  let attempt = 0
+  const construct = vi.fn(() => {
+    attempt += 1
+    if (attempt === 1) throw new Error('corrupt config')
+    return fresh
+  })
+  const quarantine = vi.fn(() => 'C:/userdata/config.corrupt-1.json')
+
+  const result = createResilientStore(construct, quarantine)
+
+  expect(result.store).toBe(fresh)
+  expect(result.recovery).toEqual({ backupPath: 'C:/userdata/config.corrupt-1.json' })
+  expect(quarantine).toHaveBeenCalledOnce()
+  expect(construct).toHaveBeenNthCalledWith(1, false)
+  expect(construct).toHaveBeenNthCalledWith(2, false)
+})
+
+test('createResilientStore falls back to clearInvalidConfig when the retry also fails', async () => {
+  const { createResilientStore } = await loadStoreModule()
+  const cleared = { id: 'cleared' }
+  const construct = vi.fn((clearInvalidConfig: boolean) => {
+    if (!clearInvalidConfig) throw new Error('still corrupt / file locked')
+    return cleared
+  })
+  const quarantine = vi.fn(() => null)
+
+  const result = createResilientStore(construct, quarantine)
+
+  expect(result.store).toBe(cleared)
+  expect(result.recovery).toEqual({ backupPath: null })
+  expect(construct).toHaveBeenLastCalledWith(true)
+})
+
+test('formatConfigRecoveryNotice describes the reset and mentions a kept backup only when present', async () => {
+  const { formatConfigRecoveryNotice } = await loadStoreModule()
+
+  const withBackup = formatConfigRecoveryNotice({ backupPath: 'C:/x/config.corrupt-1.json' })
+  expect(withBackup.type).toBe('warn')
+  expect(withBackup.message).toContain('reset to defaults')
+  expect(withBackup.message).toContain('kept next to it')
+
+  const noBackup = formatConfigRecoveryNotice({ backupPath: null })
+  expect(noBackup.message).toContain('reset to defaults')
+  expect(noBackup.message).not.toContain('kept next to it')
+})
 
 test('store accessors validate scalar and string-record values at runtime', async () => {
   const { getStoredBoolean, getStoredStringRecord, store } = await loadStoreModule()

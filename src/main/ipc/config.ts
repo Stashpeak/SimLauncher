@@ -9,6 +9,8 @@ import {
   KNOWN_GAME_KEYS,
   MAX_CONFIG_IMPORT_BYTES,
   MAX_CUSTOM_SLOTS,
+  consumeConfigRecoveryNotice,
+  formatConfigRecoveryNotice,
   getSupportedConfigValues,
   getStoredZoomFactor,
   requireSafeZoomFactor,
@@ -415,6 +417,11 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle('get-version', () => {
     return app.getVersion()
+  })
+
+  ipcMain.handle('get-startup-notice', () => {
+    const notice = consumeConfigRecoveryNotice()
+    return notice ? formatConfigRecoveryNotice(notice) : null
   })
 
   ipcMain.handle('set-login-item', (_event, openAtLogin: unknown) => {

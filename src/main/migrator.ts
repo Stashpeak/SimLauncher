@@ -154,6 +154,18 @@ function normalizeStoredProfileSet(profileEntry: StoredProfileEntry, utilityKeys
 }
 
 export function migrateProfilesToNamedSets(): void {
+  try {
+    runProfileSetMigration()
+  } catch (error) {
+    // A malformed legacy profile must not brick boot. Every store write happens
+    // at the very end of runProfileSetMigration, after the migrated shape is
+    // fully built, so a throw leaves the original profiles untouched and the
+    // migrated flags unset — a future launch retries against the original data.
+    console.error('Profile migration failed; leaving stored profiles unchanged.', error)
+  }
+}
+
+function runProfileSetMigration(): void {
   // Both migration flags are gated on profileSetsMigrated so the whole
   // pipeline only runs once. profileUtilityOrderMigrated was a predecessor
   // one-time migration; it is set here retroactively for installs that were
