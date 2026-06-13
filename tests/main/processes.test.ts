@@ -1340,6 +1340,36 @@ test('a companion sharing a basename with another game is still closable (#519)'
   await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
 })
 
+// Codex P2 on #536 (Option B): a game exe launched under a NON-owning profile is
+// recorded isGame=false in runningProcesses, so the all-profiles close would kill
+// it via the runningProcesses branch despite the "game not affected" promise. The
+// configured-game-path guard must protect it regardless of the cached isGame flag.
+test('the global close never kills a game launched under another profile (#519)', async () => {
+  const { hasClosableLaunchedApps, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      gamePaths: { ac: 'C:/Games/acs.exe' }
+    })
+  markExistingPath('C:/Games/acs.exe')
+  // Same exe, but recorded for a different profile and (wrongly) flagged non-game.
+  runningProcesses.set('c:\\games\\acs.exe', {
+    process: { pid: 1 } as never,
+    path: 'C:/Games/acs.exe',
+    name: 'acs.exe',
+    gameKey: 'other',
+    isGame: false
+  })
+  processNames.add('acs.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  // The game process was skipped, not killed or pruned.
+  expect(runningProcesses.has('c:\\games\\acs.exe')).toBe(true)
+})
+
 test('killProfileApps rejects paths that are not configured app paths', async () => {
   const { killProfileApps } = await loadProcessModules()
 

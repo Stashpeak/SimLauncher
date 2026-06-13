@@ -497,6 +497,23 @@ export async function finalizeKillAttempts(
   }
 }
 
+// Normalized full paths of every configured game executable, across all
+// profiles. A game must NEVER be a kill target — not via a companion target, and
+// not via a runningProcesses entry whose cached isGame flag is unreliable (the
+// same exe launched under a non-owning profile is recorded isGame=false). Match
+// by full PATH, not basename: two games — or a game and a utility — can share a
+// basename, and a basename filter would wrongly drop legitimate companions (#519).
+function getConfiguredGameExePaths(): Set<string> {
+  const gamePaths = getStoredStringRecord('gamePaths')
+  const gameExePaths = new Set<string>()
+  Object.values(gamePaths || {}).forEach((gamePath) => {
+    if (isValidExePath(gamePath)) {
+      gameExePaths.add(normalizePathForComparison(gamePath))
+    }
+  })
+  return gameExePaths
+}
+
 function getProfileCompanionTargets(gameKey?: string) {
   const profiles = getStoredProfiles()
   const gamePaths = getStoredStringRecord('gamePaths')
@@ -506,18 +523,7 @@ function getProfileCompanionTargets(gameKey?: string) {
     { processName: string; appPath: string; gameKey: string }
   >()
 
-  // A game executable must NEVER be a companion kill target — not even when its
-  // path is configured as a tracked process under a DIFFERENT profile. The no-arg
-  // tray "Close Apps" scans every profile, so excluding only the scanned
-  // profile's own game is not enough (#519). Match by full PATH, not basename:
-  // two different games — or a game and an unrelated utility — can share a
-  // basename, and a basename filter would wrongly drop legitimate companions.
-  const gameExePaths = new Set<string>()
-  Object.values(gamePaths || {}).forEach((gamePath) => {
-    if (isValidExePath(gamePath)) {
-      gameExePaths.add(normalizePathForComparison(gamePath))
-    }
-  })
+  const gameExePaths = getConfiguredGameExePaths()
 
   Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
@@ -562,6 +568,7 @@ function getProfileCompanionTargets(gameKey?: string) {
 
 export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
+  const gameExePaths = getConfiguredGameExePaths()
   const companionTargets = getProfileCompanionTargets(gameKey)
   const killTasks: Promise<KillAttemptResult>[] = []
 
@@ -570,7 +577,10 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     if (gameKey && appProcess.gameKey !== gameKey) {
       return
     }
-    if (appProcess.isGame) {
+    // Never terminate a configured game. The isGame flag alone is not enough:
+    // the same exe launched under a non-owning profile is recorded isGame=false,
+    // so the all-profiles close would otherwise kill it (#519).
+    if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appPath))) {
       return
     }
 
@@ -610,12 +620,13 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
  */
 export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean> {
   const { processNames } = await readRunningProcessNames()
+  const gameExePaths = getConfiguredGameExePaths()
 
   for (const appProcess of runningProcesses.values()) {
     if (gameKey && appProcess.gameKey !== gameKey) {
       continue
     }
-    if (appProcess.isGame) {
+    if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
       continue
     }
     if (processNames.has(getExeName(appProcess.path))) {
