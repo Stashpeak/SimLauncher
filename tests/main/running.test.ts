@@ -209,6 +209,34 @@ test('subscribing notifies main-process listeners with the initial snapshot (#51
   runningModule.unsubscribeRunningApps(webContents as never)
 })
 
+// Codex P2 on #536: a configured companion can start/exit with no game running,
+// flipping the closable state while the surfaced app list (often []) is
+// unchanged. The scan dedup must still rebuild the tray for that transition.
+test('a scan rebuilds the tray when only the closable state changes (#519)', async () => {
+  const { runningModule } = await loadRunningModule()
+  // Surfaced app list stays empty across scans.
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  hasClosableLaunchedAppsMock.mockResolvedValue(false)
+
+  const webContents = { isDestroyed: () => false, send: vi.fn(), once: vi.fn() }
+  await runningModule.subscribeRunningApps(webContents as never)
+
+  const listener = vi.fn()
+  runningModule.addRunningAppsChangeListener(listener)
+
+  // Closable flips true with no change to the (empty) surfaced list → must emit.
+  hasClosableLaunchedAppsMock.mockResolvedValue(true)
+  await runningModule.publishRunningApps('scan')
+  expect(listener).toHaveBeenCalledTimes(1)
+  expect(listener.mock.calls[0][0].reason).toBe('scan')
+
+  // Nothing changed on the next scan → deduped, no further rebuild.
+  await runningModule.publishRunningApps('scan')
+  expect(listener).toHaveBeenCalledTimes(1)
+
+  runningModule.unsubscribeRunningApps(webContents as never)
+})
+
 // Codex P2 on #536: a process-name mismatch warning (original exe already gone
 // from the tasklist) is not something killLaunchedApps can close, so it must not
 // enable the tray action.

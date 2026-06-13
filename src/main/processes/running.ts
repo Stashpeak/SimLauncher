@@ -50,6 +50,11 @@ const runningAppsChangeListeners = new Set<RunningAppsChangeListener>()
 // decide its enabled state synchronously (Menu.buildFromTemplate is sync). It is
 // refreshed on every getRunningApps() computation — see hasClosableApps.
 let closableAppsCached = false
+// The closable state at the last emission. The closable state can change without
+// the surfaced app list changing (a configured companion starting/exiting with
+// no game launched is never surfaced), so the scan dedup must consider it too —
+// otherwise the tray menu would not rebuild for those closable-only transitions.
+let lastClosableAppsState = false
 let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
 let lastRunningAppsSnapshot = ''
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
@@ -343,14 +348,23 @@ async function publishRunningAppsInternal(
     return null
   }
 
+  // getRunningApps refreshes closableAppsCached as a side effect.
   const apps = await getRunningApps()
   const snapshot = normalizeRunningAppsSnapshot(apps)
 
-  if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
+  // Skip only when neither the surfaced list nor the tray's closable state
+  // changed. The latter can flip on its own (a configured companion with no game
+  // launched never enters the surfaced list), and must still rebuild the menu.
+  if (
+    snapshot === lastRunningAppsSnapshot &&
+    closableAppsCached === lastClosableAppsState &&
+    reason === 'scan'
+  ) {
     return null
   }
 
   lastRunningAppsSnapshot = snapshot
+  lastClosableAppsState = closableAppsCached
   const payload = { apps, reason, updatedAt: Date.now() }
   emitRunningAppsChanged(payload)
   return payload
@@ -401,6 +415,7 @@ export async function subscribeRunningApps(
 
   const apps = await getRunningApps()
   lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
+  lastClosableAppsState = closableAppsCached
   const payload = {
     apps,
     reason: 'initial',
