@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { openLogsFolder } from '../../lib/electron'
+import { useNotify } from '../Notify'
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
 import type { UpdateInfo, UpdateStatus } from './types'
@@ -27,6 +28,17 @@ export function AboutSection({
   onInstallUpdate
 }: AboutSectionProps): ReactNode {
   const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettingsMeta()
+  const { notify } = useNotify()
+
+  const handleOpenLogsFolder = async () => {
+    // shell.openPath resolves to '' on success or a non-empty error string on
+    // failure (e.g. no file-manager association). Surface that so the click
+    // never looks like it silently did nothing.
+    const error = await openLogsFolder()
+    if (error) {
+      notify('Could not open the logs folder.', 'error')
+    }
+  }
 
   return (
     <>
@@ -45,7 +57,7 @@ export function AboutSection({
         <button
           type="button"
           onClick={() => {
-            void openLogsFolder()
+            void handleOpenLogsFolder()
           }}
           className="action-hover-scale cursor-pointer rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
         >
