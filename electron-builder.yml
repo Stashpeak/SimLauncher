@@ -5,6 +5,19 @@ directories:
 files:
   - out/**/*
   - package.json
+  # The renderer libraries are listed under dependencies so `npm audit --omit=dev`
+  # still covers them (they ship — Vite bundles them into out/renderer), but the
+  # bundled output is all the app loads at runtime, so their node_modules copies
+  # are dead weight in the installer. Exclude them (and their renderer-only
+  # transitives) from packaging to keep the asar small. electron-store and
+  # electron-updater are intentionally NOT excluded — the main process requires
+  # them from node_modules at runtime.
+  - '!node_modules/react/**/*'
+  - '!node_modules/react-dom/**/*'
+  - '!node_modules/react-colorful/**/*'
+  - '!node_modules/@floating-ui/**/*'
+  - '!node_modules/scheduler/**/*'
+  - '!node_modules/tabbable/**/*'
 extraResources:
   - from: assets/
     to: assets/
