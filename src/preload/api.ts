@@ -242,6 +242,7 @@ export interface ElectronAPI {
   getFileIcon: (filePath: string) => Promise<string | null>
   getVersion: () => Promise<string>
   getStartupNotice: () => Promise<StartupNotice | null>
+  openLogsFolder: () => Promise<string>
   dismissAppIcon: (
     appPath: string,
     gameKey: string
