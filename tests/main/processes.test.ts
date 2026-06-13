@@ -1283,6 +1283,41 @@ test('hasClosableLaunchedApps is true for a configured companion with no game la
   await expect(hasClosableLaunchedApps()).resolves.toBe(true)
 })
 
+// Codex P2 on #536: the no-arg close scans all profiles. A game exe configured
+// as a companion under a DIFFERENT profile must never become a kill target — the
+// confirmation promises the game is untouched.
+test('the global close never targets a game exe configured as a companion elsewhere (#519)', async () => {
+  const { hasClosableLaunchedApps, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      gamePaths: { ac: 'C:/Games/acs.exe' },
+      // acs.exe (a game) is also configured as a tracked app, surfaced under a
+      // different profile that has no game of its own.
+      appPaths: { acsAsTool: 'C:/Games/acs.exe' },
+      profiles: {
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      }
+    })
+  // The game exe must be a valid path for it to be recognised and excluded.
+  markExistingPath('C:/Games/acs.exe')
+  runningProcesses.set('c:\\games\\acs.exe', {
+    process: { pid: 1 } as never,
+    path: 'C:/Games/acs.exe',
+    name: 'acs.exe',
+    gameKey: 'ac',
+    isGame: true
+  })
+  processNames.add('acs.exe')
+
+  // The only running process is the game → nothing closable, and a global close
+  // must be a no-op rather than killing the game via the other profile's target.
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+})
+
 test('killProfileApps rejects paths that are not configured app paths', async () => {
   const { killProfileApps } = await loadProcessModules()
 

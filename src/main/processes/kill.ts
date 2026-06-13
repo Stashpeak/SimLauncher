@@ -506,20 +506,33 @@ function getProfileCompanionTargets(gameKey?: string) {
     { processName: string; appPath: string; gameKey: string }
   >()
 
+  // A game executable must NEVER be a companion kill target — not even when it is
+  // configured as a tracked/utility process in a DIFFERENT profile. The no-arg
+  // tray "Close Apps" scans every profile, so excluding only the scanned
+  // profile's own game exe is not enough: game A could be reached as a companion
+  // of profile B and killed despite the confirmation promising the game is safe
+  // (#519). getExeName lowercases, matching the keys used below.
+  const gameExeNames = new Set<string>()
+  Object.values(gamePaths || {}).forEach((gamePath) => {
+    if (isValidExePath(gamePath)) {
+      gameExeNames.add(getExeName(gamePath))
+    }
+  })
+
   Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
       return
     }
 
     const profile = getActiveStoredProfile(profileEntry)
-    const gameExeName = isValidExePath(gamePaths?.[profileGameKey])
-      ? getExeName(gamePaths![profileGameKey])
-      : null
 
     Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
       if (isUtilityEnabled(profile, utilityKey)) {
         processNames.forEach((processName) => {
           const normalizedProcessName = processName.toLowerCase()
+          if (gameExeNames.has(normalizedProcessName)) {
+            return
+          }
           companionTargets.set(normalizedProcessName, {
             processName: normalizedProcessName,
             appPath: processName,
@@ -532,13 +545,14 @@ function getProfileCompanionTargets(gameKey?: string) {
     getProfileTrackablePaths(profileGameKey, profile, appPaths, gamePaths).forEach(
       (processPath) => {
         const processName = getExeName(processPath)
-        if (processName !== gameExeName) {
-          companionTargets.set(processName, {
-            processName,
-            appPath: processPath,
-            gameKey: profileGameKey
-          })
+        if (gameExeNames.has(processName)) {
+          return
         }
+        companionTargets.set(processName, {
+          processName,
+          appPath: processPath,
+          gameKey: profileGameKey
+        })
       }
     )
   })
