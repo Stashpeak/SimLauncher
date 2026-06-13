@@ -1,4 +1,4 @@
-export { killLaunchedApps, killProfileApps } from './processes/kill'
+export { hasClosableLaunchedApps, killLaunchedApps, killProfileApps } from './processes/kill'
 export {
   getRunningApps,
   publishRunningApps,

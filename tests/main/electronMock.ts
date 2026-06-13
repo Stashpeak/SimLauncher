@@ -135,6 +135,7 @@ export class Tray extends MockEventTarget {
 export interface MockMenuItem {
   label?: string
   type?: string
+  enabled?: boolean
   click?: () => void
 }
 
@@ -169,7 +170,8 @@ export const app = new MockApp()
 export const dialog = {
   showOpenDialog: vi.fn(),
   showSaveDialog: vi.fn(),
-  showErrorBox: vi.fn()
+  showErrorBox: vi.fn(),
+  showMessageBox: vi.fn().mockResolvedValue({ response: 1 })
 }
 
 export const shell = {

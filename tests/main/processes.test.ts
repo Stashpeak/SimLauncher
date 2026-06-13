@@ -372,6 +372,7 @@ async function loadProcessModules() {
     launchProfileApps: spawnModule.launchProfileApps,
     spawnDetachedApp: spawnModule.spawnDetachedApp,
     killLaunchedApps: killModule.killLaunchedApps,
+    hasClosableLaunchedApps: killModule.hasClosableLaunchedApps,
     killProfileApps: killModule.killProfileApps,
     finalizeKillAttempts: killModule.finalizeKillAttempts,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
@@ -1227,6 +1228,146 @@ test('killLaunchedApps keeps generic no-op message for unrelated game wrapper wa
     failedCount: 0,
     failures: []
   })
+})
+
+// hasClosableLaunchedApps drives the tray "Close Apps" enabled state (#519) and
+// must mirror killLaunchedApps' own target selection.
+test('hasClosableLaunchedApps is false when nothing is running', async () => {
+  const { hasClosableLaunchedApps } = await loadProcessModules()
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+})
+
+test('hasClosableLaunchedApps is true for a running non-game companion', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+})
+
+test('hasClosableLaunchedApps ignores the game itself', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  runningProcesses.set('c:\\games\\acs.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Games/acs.exe',
+    name: 'acs.exe',
+    gameKey: 'ac',
+    isGame: true
+  })
+  processNames.add('acs.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+})
+
+// Codex P2 on #536: a configured companion can be running while its game is NOT
+// launched/adopted. killLaunchedApps still closes it (via companion targets), so
+// the tray must be enabled — even though getRunningApps would not surface it.
+test('hasClosableLaunchedApps is true for a configured companion with no game launched (#519)', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  processNames.add('simhub.exe')
+
+  // Nothing SimLauncher-launched is tracked; the companion is reachable only via
+  // the configured-companion-targets branch.
+  expect(runningProcesses.size).toBe(0)
+  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+})
+
+// Codex P2 on #536: the no-arg close scans all profiles. A game exe configured
+// as a companion under a DIFFERENT profile must never become a kill target — the
+// confirmation promises the game is untouched.
+test('the global close never targets a game exe configured as a companion elsewhere (#519)', async () => {
+  const { hasClosableLaunchedApps, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      gamePaths: { ac: 'C:/Games/acs.exe' },
+      // acs.exe (a game) is also configured as a tracked app, surfaced under a
+      // different profile that has no game of its own.
+      appPaths: { acsAsTool: 'C:/Games/acs.exe' },
+      profiles: {
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      }
+    })
+  // The game exe must be a valid path for it to be recognised and excluded.
+  markExistingPath('C:/Games/acs.exe')
+  runningProcesses.set('c:\\games\\acs.exe', {
+    process: { pid: 1 } as never,
+    path: 'C:/Games/acs.exe',
+    name: 'acs.exe',
+    gameKey: 'ac',
+    isGame: true
+  })
+  processNames.add('acs.exe')
+
+  // The only running process is the game → nothing closable, and a global close
+  // must be a no-op rather than killing the game via the other profile's target.
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+})
+
+// Codex P2 on #536: the game exclusion must match by full path, not basename. A
+// companion whose basename collides with a DIFFERENT game's exe (different path)
+// must still be closable — otherwise the per-game close drops legitimate apps.
+test('a companion sharing a basename with another game is still closable (#519)', async () => {
+  const { hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/acs.exe', other: 'C:/OtherGame/app.exe' },
+    // The selected profile's companion is named app.exe but lives elsewhere than
+    // the "other" game's app.exe.
+    appPaths: { tool: 'C:/Tools/app.exe' },
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    }
+  })
+  markExistingPath('C:/Games/acs.exe')
+  markExistingPath('C:/OtherGame/app.exe')
+  processNames.add('app.exe')
+
+  // app.exe is a real companion for profile ac (its path is not a game path), so
+  // the per-game close must reach it despite the basename collision.
+  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
+})
+
+// Codex P2 on #536 (Option B): a game exe launched under a NON-owning profile is
+// recorded isGame=false in runningProcesses, so the all-profiles close would kill
+// it via the runningProcesses branch despite the "game not affected" promise. The
+// configured-game-path guard must protect it regardless of the cached isGame flag.
+test('the global close never kills a game launched under another profile (#519)', async () => {
+  const { hasClosableLaunchedApps, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      gamePaths: { ac: 'C:/Games/acs.exe' }
+    })
+  markExistingPath('C:/Games/acs.exe')
+  // Same exe, but recorded for a different profile and (wrongly) flagged non-game.
+  runningProcesses.set('c:\\games\\acs.exe', {
+    process: { pid: 1 } as never,
+    path: 'C:/Games/acs.exe',
+    name: 'acs.exe',
+    gameKey: 'other',
+    isGame: false
+  })
+  processNames.add('acs.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  // The game process was skipped, not killed or pruned.
+  expect(runningProcesses.has('c:\\games\\acs.exe')).toBe(true)
 })
 
 test('killProfileApps rejects paths that are not configured app paths', async () => {
