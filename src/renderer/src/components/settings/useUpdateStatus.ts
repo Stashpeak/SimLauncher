@@ -10,10 +10,10 @@ import {
   onUpdateError,
   onUpdateNotAvailable
 } from '../../lib/electron'
+import type { Announce } from '../Notify'
 import type { UpdateErrorInfo, UpdateInfo, UpdateStatus } from './types'
 
 type Notify = (message: string, type: 'success' | 'warn' | 'error', durationMs?: number) => void
-type Announce = (message: string, politeness?: 'polite' | 'assertive') => void
 
 export interface UseUpdateStatusResult {
   appVersion: string

@@ -36,6 +36,10 @@ interface NotifyContextValue {
   announce: (message: string, politeness?: Politeness) => void
 }
 
+/** Standalone screen-reader announcement (no toast) — shared so consumers like
+ *  useUpdateStatus don't redefine (and risk drifting from) this signature. */
+export type Announce = NotifyContextValue['announce']
+
 export const NotifyContext = createContext<NotifyContextValue | null>(null)
 
 // Appended to alternating announcements so two identical consecutive messages
