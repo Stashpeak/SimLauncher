@@ -1,0 +1,41 @@
+name: PR title
+
+# Enforce Conventional-Commit PR titles. `main` uses squash-merge, so the PR
+# title becomes the commit subject on `main` — this guards the visible history.
+# (Feature-branch commits are squashed away, so linting individual commit
+# messages would add little; the PR title is the lever that matters here.)
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Types kept in sync with the prefixes used across this repo's history.
+          types: |
+            feat
+            fix
+            chore
+            docs
+            perf
+            refactor
+            test
+            ci
+            build
+            style
+            revert
+            security
+            reliability
