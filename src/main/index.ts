@@ -1,7 +1,6 @@
 import { app, dialog } from 'electron'
 
 import { setIsQuitting } from './app-state'
-import { confirmAndCloseApps } from './closeApps'
 import { installMainProcessErrorLogging, writeMainErrorLog } from './errorLog'
 import { registerHandlers } from './ipc'
 import { migrateProfilesToNamedSets } from './migrator'
@@ -61,11 +60,6 @@ if (!gotTheLock) {
           // too late if the interceptor runs first.
           setIsQuitting(true)
           app.quit()
-        },
-        // Fire-and-forget: confirmAndCloseApps shows its own dialog and handles
-        // its own errors, and Electron menu click handlers ignore the promise.
-        closeApps: () => {
-          void confirmAndCloseApps()
         }
       })
       if (store.get('showTrayIcon') !== false) {

@@ -9,6 +9,8 @@ Full per-release notes — including every linked issue and PR — are published
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-14
+
 ### Added
 
 - Each release now ships SHA-256 checksums (`SHA256SUMS.txt`) and a CycloneDX SBOM (`sbom.cdx.json`) alongside the installer, so you can verify download integrity and inspect the full dependency inventory.
@@ -16,7 +18,8 @@ Full per-release notes — including every linked issue and PR — are published
 - Unexpected crashes in the app's main process are now recorded to a `main-error.log` file in the app's data folder, so issues on your machine are easier to diagnose.
 - An "Open logs folder" button in Settings → About opens the folder with that crash log and your settings file, so it's easy to find when reporting an issue.
 - Utilities in a profile's launch order can now be reordered with the keyboard (up/down buttons), not only by mouse drag.
-- A "Close Apps" option in the system tray menu closes all running companion apps at once (after a confirmation); your game is left untouched. When nothing is running it simply tells you so.
+- Windows High Contrast support: in a Contrast theme the keyboard focus ring, button borders, the toggle on/off state and the running / unsaved / selected dots all stay visible instead of collapsing into one colour.
+- The running-app warning icon is now operable by keyboard and screen reader — focus it and press Enter or Space to open its Dismiss menu, instead of right-click only.
 
 ### Fixed
 
@@ -32,6 +35,9 @@ Full per-release notes — including every linked issue and PR — are published
 - The process lookup used when closing apps now times out instead of stalling the close pipeline on a wedged system service.
 - Smaller installer: frontend libraries (React, Tailwind, etc.) are bundled by Vite into the app's own code, so their separate package copies are no longer shipped in the installer, trimming the footprint.
 - Checking for updates while offline now shows a calm "can't reach the update server — check your connection" notice instead of a generic update-failure error.
+- A broad screen-reader and keyboard accessibility pass: launch progress, launch failures, "now running", companion-apps-closed and update-available status are now spoken through a dedicated live region (errors interrupt); the games and settings screens expose proper headings, landmarks, list semantics and a per-screen window title; switching screens or pressing Escape moves keyboard focus into the visible screen instead of stranding it; and every control shows a visible focus ring, with idle icon buttons brightened to meet contrast.
+- The accent colour is now the SimLauncher teal everywhere — the keyboard focus ring and a brief startup flash that could still show the old purple are gone.
+- Updated the application icon to the current SimLauncher branding.
 
 ## [0.9.10] - 2026-06-12
 
@@ -108,7 +114,8 @@ auto-updater and tray UX, and the 2026 design overhaul. See the
 [GitHub Releases page](https://github.com/Stashpeak/SimLauncher/releases) for the
 complete history and detailed notes.
 
-[Unreleased]: https://github.com/Stashpeak/SimLauncher/compare/v0.9.10...HEAD
+[Unreleased]: https://github.com/Stashpeak/SimLauncher/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Stashpeak/SimLauncher/compare/v0.9.10...v1.0.0
 [0.9.10]: https://github.com/Stashpeak/SimLauncher/compare/v0.9.9...v0.9.10
 [0.9.9]: https://github.com/Stashpeak/SimLauncher/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/Stashpeak/SimLauncher/compare/v0.9.7...v0.9.8

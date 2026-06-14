@@ -4,7 +4,6 @@ import type { MockMenuItem, Tray as MockTray } from './electronMock'
 
 const showMainWindow = vi.fn()
 const quitApp = vi.fn()
-const closeApps = vi.fn()
 
 async function loadTrayModule({ configure = true } = {}) {
   const trayModule = await import('../../src/main/tray')
@@ -13,8 +12,7 @@ async function loadTrayModule({ configure = true } = {}) {
     trayModule.configureTray({
       getIconPath: () => 'C:/app/SimLauncher.ico',
       showMainWindow,
-      quitApp,
-      closeApps
+      quitApp
     })
   }
 
@@ -70,26 +68,11 @@ test('createTray is a no-op when unconfigured or when a tray already exists', as
   trayModule.configureTray({
     getIconPath: () => 'C:/app/SimLauncher.ico',
     showMainWindow,
-    quitApp,
-    closeApps
+    quitApp
   })
   trayModule.createTray()
   trayModule.createTray()
   expect(TrayMock.instances).toHaveLength(1)
-})
-
-// #519: the Close Apps item is always enabled (it decides at click time whether
-// anything is running) and routes to the configured closeApps hook.
-test('clicking Close Apps invokes the configured closeApps hook (#519)', async () => {
-  const { trayModule, MenuMock } = await loadTrayModule()
-
-  trayModule.createTray()
-
-  const template = MenuMock.buildFromTemplate.mock.calls[0][0] as MockMenuItem[]
-  const closeItem = template.find((item) => item.label === 'Close Apps')
-  expect(closeItem).toBeDefined()
-  closeItem!.click!()
-  expect(closeApps).toHaveBeenCalledTimes(1)
 })
 
 // The #391 toggle cycle: turning the tray off must null the handle so a later
