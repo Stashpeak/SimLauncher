@@ -10,9 +10,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
 import { applyAccentTheme } from '../../src/renderer/src/lib/theme'
 
-// The reference surfaces theme.ts derives the readable accent against.
+// The plain reference surfaces theme.ts derives the readable accent against.
 const DARK_BG = '#322d3a'
 const LIGHT_BG = '#f4f4f8'
+// The accent-TINTED surfaces the token actually renders on (launch-order badge =
+// accent ~/15 over glass; in light theme the glass is itself accent-tinted).
+// Modeled independently of theme.ts so these assertions are not circular; these
+// are LOWER-contrast than the plain references and are the binding constraint.
+const LIGHT_TINTED_BADGE_BG = '#c0e1e5'
+const DARK_TINTED_BADGE_BG = '#2f3a47'
 const AA_NORMAL_TEXT = 4.5
 
 function channel(hex: string, start: number): number {
@@ -68,6 +74,16 @@ describe('accent-text contrast (#562)', () => {
     applyAccentTheme('#008c99')
 
     expect(contrast(accentText(), LIGHT_BG)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT)
+  })
+
+  test('default accent text clears AA on the accent-tinted badge surfaces (both themes)', () => {
+    document.documentElement.dataset.theme = 'light'
+    applyAccentTheme('#008c99')
+    expect(contrast(accentText(), LIGHT_TINTED_BADGE_BG)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT)
+
+    document.documentElement.dataset.theme = 'dark'
+    applyAccentTheme('#008c99')
+    expect(contrast(accentText(), DARK_TINTED_BADGE_BG)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT)
   })
 
   test('a dark custom accent unreadable at full saturation is lightened until it passes (dark)', () => {

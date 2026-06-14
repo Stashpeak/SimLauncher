@@ -44,6 +44,12 @@ const DARK_TEXT_BG_REF = '#322d3a'
 const LIGHT_TEXT_BG_REF = '#f4f4f8'
 // Slightly above the 4.5:1 AA floor for normal text, for margin across surfaces.
 const ACCENT_TEXT_TARGET_CONTRAST = 4.6
+// Accent fraction blended into the reference surface to model the accent-TINTED
+// backgrounds the text actually sits on (launch-order badge ~15% over glass,
+// update pill ~12-18%; in light theme the glass itself is accent-tinted). The
+// tint pulls the background toward the text's own hue and lowers contrast below
+// a plain surface, so the readable variant must be derived against it.
+const TEXT_BG_TINT = 0.2
 
 function clampChannel(value: number) {
   return Math.max(0, Math.min(255, Math.round(value)))
@@ -55,6 +61,16 @@ function channelToHex(value: number) {
 
 function rgbToHex(r: number, g: number, b: number) {
   return `#${channelToHex(r)}${channelToHex(g)}${channelToHex(b)}`
+}
+
+// Alpha-composite fgHex over bgHex at the given alpha (src-over). Used to model
+// an accent-tinted surface as a flat reference color for contrast derivation.
+function compositeOver(fgHex: string, bgHex: string, alpha: number): string {
+  return rgbToHex(
+    getChannel(fgHex, 1) * alpha + getChannel(bgHex, 1) * (1 - alpha),
+    getChannel(fgHex, 3) * alpha + getChannel(bgHex, 3) * (1 - alpha),
+    getChannel(fgHex, 5) * alpha + getChannel(bgHex, 5) * (1 - alpha)
+  )
 }
 
 function contrastBetween(hexA: string, hexB: string) {
@@ -96,11 +112,15 @@ function deriveAccentText(accentHex: string, bgHex: string, toward: string): str
  */
 function applyAccentTextToken(): void {
   const isLight = document.documentElement.dataset.theme === 'light'
-  const accentText = deriveAccentText(
+  // Derive against the worst case: the accent composited over the plain surface,
+  // modeling the accent-tinted badge/pill backgrounds. Plain-surface text (the
+  // section headings) then clears AA with extra margin.
+  const tintedRef = compositeOver(
     currentAccentHex,
     isLight ? LIGHT_TEXT_BG_REF : DARK_TEXT_BG_REF,
-    isLight ? '#000000' : '#ffffff'
+    TEXT_BG_TINT
   )
+  const accentText = deriveAccentText(currentAccentHex, tintedRef, isLight ? '#000000' : '#ffffff')
   document.documentElement.style.setProperty('--accent-text', accentText)
 }
 
