@@ -18,7 +18,6 @@ Full per-release notes — including every linked issue and PR — are published
 - Unexpected crashes in the app's main process are now recorded to a `main-error.log` file in the app's data folder, so issues on your machine are easier to diagnose.
 - An "Open logs folder" button in Settings → About opens the folder with that crash log and your settings file, so it's easy to find when reporting an issue.
 - Utilities in a profile's launch order can now be reordered with the keyboard (up/down buttons), not only by mouse drag.
-- A "Close Apps" option in the system tray menu closes all running companion apps at once (after a confirmation); your game is left untouched. When nothing is running it simply tells you so.
 - Windows High Contrast support: in a Contrast theme the keyboard focus ring, button borders, the toggle on/off state and the running / unsaved / selected dots all stay visible instead of collapsing into one colour.
 - The running-app warning icon is now operable by keyboard and screen reader — focus it and press Enter or Space to open its Dismiss menu, instead of right-click only.
 

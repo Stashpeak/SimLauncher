@@ -7,11 +7,6 @@ interface CreateTrayOptions {
   getIconPath: () => string
   showMainWindow: () => void
   quitApp: () => void
-  // Close every running companion app (the game is left alone). Always enabled;
-  // it decides at click time whether anything is running (showing an info dialog
-  // when not), so the tray needs no background polling to keep an enabled state
-  // fresh. Fired from the tray menu, so it may run with no visible window.
-  closeApps: () => void
 }
 
 // Store the wiring once at startup so the tray can be (re)created later without
@@ -23,8 +18,6 @@ export function configureTray(options: CreateTrayOptions): void {
 function buildContextMenu(options: CreateTrayOptions): Menu {
   return Menu.buildFromTemplate([
     { label: 'Show SimLauncher', click: options.showMainWindow },
-    { type: 'separator' },
-    { label: 'Close Apps', click: () => options.closeApps() },
     { type: 'separator' },
     { label: 'Quit', click: () => options.quitApp() }
   ])
