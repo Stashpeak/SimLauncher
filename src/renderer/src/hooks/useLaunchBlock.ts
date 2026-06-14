@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 
+export interface LaunchEndOptions {
+  /**
+   * Marks this as a fresh game launch (not a profile switch or relaunch-missing,
+   * which reuse the same cooldown while the game is already running). Only a
+   * primary launch fires `onLaunchSettled`, so the "now running" cue isn't spoken
+   * after a switch/relaunch.
+   */
+  primaryLaunch?: boolean
+}
+
 export interface UseLaunchBlockOptions {
   /**
-   * Called once the post-launch cooldown for a game lapses — i.e. the launch
-   * sequence has fully settled. Only fires when a cooldown actually ran (apps
-   * were started), so it is a reliable "now running" signal. Not called if a new
-   * launch pre-empts the cooldown or the component unmounts first.
+   * Called once the post-launch cooldown for a PRIMARY launch lapses — i.e. a
+   * fresh game launch has fully settled. Only fires when a cooldown actually ran
+   * (apps were started) AND the launch was flagged `primaryLaunch`. Not called
+   * for profile switches / relaunch-missing, if a new launch pre-empts the
+   * cooldown, or if the component unmounts first.
    */
   onLaunchSettled?: (gameKey: string) => void
 }
@@ -19,9 +30,14 @@ export interface UseLaunchBlockResult {
    * If `cooldownMs` > 0 the block stays active for that duration after the
    * launch so that the UI remains locked during process-startup time (prevents
    * accidental double-launches). The cooldown is cancelled if a new launch
-   * starts before it expires.
+   * starts before it expires. Pass `{ primaryLaunch: true }` for a fresh launch
+   * so the settled cue fires (omit it for switches / relaunch-missing).
    */
-  handleLaunchEnd: (finishedGameKey: string, cooldownMs?: number) => void
+  handleLaunchEnd: (
+    finishedGameKey: string,
+    cooldownMs?: number,
+    options?: LaunchEndOptions
+  ) => void
 }
 
 export function useLaunchBlock(options: UseLaunchBlockOptions = {}): UseLaunchBlockResult {
@@ -51,7 +67,15 @@ export function useLaunchBlock(options: UseLaunchBlockOptions = {}): UseLaunchBl
     setLaunchingGameKey(gameKey)
   }
 
-  const handleLaunchEnd = (finishedGameKey: string, cooldownMs = 0) => {
+  const handleLaunchEnd = (
+    finishedGameKey: string,
+    cooldownMs = 0,
+    options: LaunchEndOptions = {}
+  ) => {
+    // Captured per-launch so the scheduled timer fires the settled cue only for a
+    // fresh launch — never after a profile switch / relaunch-missing.
+    const isPrimaryLaunch = options.primaryLaunch === true
+
     setLaunchingGameKey((currentGameKey) => {
       // Guard: a new launch for a different game may have started while this
       // one was in flight — leave that key untouched.
@@ -70,7 +94,9 @@ export function useLaunchBlock(options: UseLaunchBlockOptions = {}): UseLaunchBl
         setLaunchingGameKey((latestGameKey) =>
           latestGameKey === finishedGameKey ? null : latestGameKey
         )
-        onLaunchSettledRef.current?.(finishedGameKey)
+        if (isPrimaryLaunch) {
+          onLaunchSettledRef.current?.(finishedGameKey)
+        }
       }, cooldownMs)
 
       return currentGameKey
