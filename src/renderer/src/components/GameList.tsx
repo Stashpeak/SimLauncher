@@ -4,6 +4,7 @@ import { getSettings } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
+import { useNotify } from './Notify'
 import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
@@ -31,7 +32,15 @@ export function GameList({
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
-  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock()
+  const { announce } = useNotify()
+  // Announce a launch as "now running" once its cooldown settles. Resolved from
+  // the static GAMES config (never stale) so the timer closure stays correct.
+  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock({
+    onLaunchSettled: (gameKey) => {
+      const name = GAMES.find((game) => game.key === gameKey)?.name
+      if (name) announce(`${name} is now running`)
+    }
+  })
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
   const { gameIcons } = useGamesSettings()
 

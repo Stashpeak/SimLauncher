@@ -38,7 +38,7 @@ export default function App(): ReactNode {
 function AppContent() {
   const [view, setView] = useState<'games' | 'settings'>('games')
   const { accentBgTint, syncThemeFromStore } = useTheme()
-  const { notify } = useNotify()
+  const { notify, announce } = useNotify()
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
   const [showImportWarning, setShowImportWarning] = useState(false)
   const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
@@ -54,6 +54,11 @@ function AppContent() {
   // would both bind global Enter/Escape and a single keypress could fire both.
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
+
+  // Remembers the version we last announced so the live event and the
+  // getUpdateInfo() hydration (which can both deliver the same version) don't
+  // announce it twice.
+  const announcedUpdateRef = useRef<string | null>(null)
 
   // Mirror so the once-registered close-request handler reads the latest value
   // without re-subscribing.
@@ -121,7 +126,14 @@ function AppContent() {
     })
 
     const applyUpdateInfo = (info: { version?: string } | null) => {
-      if (info?.version) setUpdateInfo({ version: info.version })
+      if (!info?.version) return
+      setUpdateInfo({ version: info.version })
+      // The update pill is otherwise silent on the Games view — announce it once
+      // per version through the SR live region.
+      if (announcedUpdateRef.current !== info.version) {
+        announcedUpdateRef.current = info.version
+        announce(`Update version ${info.version} available`)
+      }
     }
 
     // Listen for auto-updates, then hydrate any update result that arrived before React mounted.
@@ -139,7 +151,7 @@ function AppContent() {
       cancelled = true
       unsubscribe()
     }
-  }, [syncThemeFromStore])
+  }, [syncThemeFromStore, announce])
 
   // Gate tab navigation behind the discard/save confirm dialog when dirty.
   // The actual view switch is deferred to handleConfirmDiscard/Save so the

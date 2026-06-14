@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 
+export interface UseLaunchBlockOptions {
+  /**
+   * Called once the post-launch cooldown for a game lapses — i.e. the launch
+   * sequence has fully settled. Only fires when a cooldown actually ran (apps
+   * were started), so it is a reliable "now running" signal. Not called if a new
+   * launch pre-empts the cooldown or the component unmounts first.
+   */
+  onLaunchSettled?: (gameKey: string) => void
+}
+
 export interface UseLaunchBlockResult {
   /** The game currently in its launch sequence, or null when idle. */
   launchingGameKey: string | null
@@ -14,9 +24,15 @@ export interface UseLaunchBlockResult {
   handleLaunchEnd: (finishedGameKey: string, cooldownMs?: number) => void
 }
 
-export function useLaunchBlock(): UseLaunchBlockResult {
+export function useLaunchBlock(options: UseLaunchBlockOptions = {}): UseLaunchBlockResult {
+  const { onLaunchSettled } = options
   const [launchingGameKey, setLaunchingGameKey] = useState<string | null>(null)
   const launchBlockTimeoutRef = useRef<number | null>(null)
+
+  // Read the latest callback from the cooldown timer without re-subscribing or
+  // baking a stale closure into the scheduled timeout.
+  const onLaunchSettledRef = useRef(onLaunchSettled)
+  onLaunchSettledRef.current = onLaunchSettled
 
   useEffect(() => {
     return () => {
@@ -48,10 +64,13 @@ export function useLaunchBlock(): UseLaunchBlockResult {
       }
 
       launchBlockTimeoutRef.current = window.setTimeout(() => {
+        launchBlockTimeoutRef.current = null
+        // A new launch would have cleared this timeout in handleLaunchStart, so
+        // reaching here means this game's sequence settled uninterrupted.
         setLaunchingGameKey((latestGameKey) =>
           latestGameKey === finishedGameKey ? null : latestGameKey
         )
-        launchBlockTimeoutRef.current = null
+        onLaunchSettledRef.current?.(finishedGameKey)
       }, cooldownMs)
 
       return currentGameKey
