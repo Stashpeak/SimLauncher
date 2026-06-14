@@ -70,7 +70,7 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
     "vite": "^8.0.16",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "@electron/asar": "4.2.0",
