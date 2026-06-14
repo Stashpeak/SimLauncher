@@ -4,8 +4,20 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+    # Bundle updates into a few grouped PRs instead of one per dependency.
+    # Production deps are grouped separately from dev deps so runtime changes
+    # still get their own reviewable PR.
+    groups:
+      production-dependencies:
+        dependency-type: 'production'
+      development-dependencies:
+        dependency-type: 'development'
 
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
       interval: 'weekly'
+    groups:
+      github-actions:
+        patterns:
+          - '*'
