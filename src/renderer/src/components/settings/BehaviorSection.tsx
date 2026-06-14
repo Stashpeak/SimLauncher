@@ -93,6 +93,7 @@ export function BehaviorSection(): ReactNode {
           {DELAY_PRESETS.map((preset) => (
             <button
               key={preset.value}
+              type="button"
               onClick={() => onLaunchDelayMsChange(preset.value)}
               aria-pressed={launchDelayMs === preset.value}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${

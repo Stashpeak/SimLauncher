@@ -53,7 +53,7 @@ export function AppearanceSection(): ReactNode {
   return (
     <>
       <div className="settings-row settings-row-responsive">
-        <label className="settings-label text-(--text-secondary)">Theme</label>
+        <span className="settings-label text-(--text-secondary)">Theme</span>
         <div className="settings-control" role="group" aria-label="Theme">
           {THEME_MODE_OPTIONS.map((option) => (
             <button
@@ -74,7 +74,7 @@ export function AppearanceSection(): ReactNode {
       </div>
 
       <div className="settings-row settings-row-responsive">
-        <label className="settings-label text-(--text-secondary)">Accent Color</label>
+        <span className="settings-label text-(--text-secondary)">Accent Color</span>
         <div className="settings-control" role="group" aria-label="Accent color">
           {ACCENT_PRESETS.map((preset) => (
             <Tooltip key={preset.hex} label={preset.name}>
@@ -97,11 +97,12 @@ export function AppearanceSection(): ReactNode {
                   setShowPicker(!showPicker)
                   if (!isCustomColor) onAccentChange('custom')
                 }}
-                aria-label="Custom accent color"
+                aria-label={
+                  isCustomColor ? 'Custom accent color (selected)' : 'Custom accent color'
+                }
                 aria-haspopup="dialog"
                 aria-expanded={showPicker}
                 aria-controls={showPicker ? 'accent-color-picker' : undefined}
-                aria-pressed={isCustomColor}
                 className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
                   isCustomColor ? 'scale-110' : ''
                 }`}
@@ -164,11 +165,12 @@ export function AppearanceSection(): ReactNode {
       </div>
 
       <div className="settings-row settings-row-responsive">
-        <label className="settings-label text-(--text-secondary)">UI Scale</label>
+        <span className="settings-label text-(--text-secondary)">UI Scale</span>
         <div className="settings-control" role="group" aria-label="UI scale">
           {ZOOM_PRESETS.map((preset) => (
             <button
               key={preset.factor}
+              type="button"
               onClick={() => onZoomFactorChange(preset.factor)}
               aria-pressed={zoomFactor === preset.factor}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${

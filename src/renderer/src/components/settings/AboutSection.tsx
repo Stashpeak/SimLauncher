@@ -115,7 +115,7 @@ export function AboutSection({
           </p>
         )}
         {updateStatus === 'error' && (
-          <p className="text-[10px] text-center text-red-400 animate-fade-slide">
+          <p className="text-[10px] text-center text-(--status-danger) animate-fade-slide">
             Update failed. Try again later.
           </p>
         )}

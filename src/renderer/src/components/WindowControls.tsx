@@ -38,8 +38,11 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
 
   return (
     <div className="drag-region flex h-12 w-full items-center px-4 gap-2 shrink-0">
-      {/* Pill: branding + settings gear */}
-      <div className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden">
+      {/* Pill: branding + settings gear — the app's primary navigation */}
+      <nav
+        aria-label="Primary"
+        className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden"
+      >
         {/* Launcher branding */}
         <Tooltip label="SimLauncher" placement="bottom">
           <button
@@ -77,7 +80,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             <SettingsIcon width={13} height={13} />
           </button>
         </Tooltip>
-      </div>
+      </nav>
 
       {/* Update Pill */}
       {updateInfo && (

@@ -73,6 +73,14 @@ function AppContent() {
     runStartupMigrations()
   }, [])
 
+  // Reflect the active view in the document title and the banner heading so
+  // Narrator (and the OS task switcher) announce which screen is active — the
+  // two views were otherwise indistinguishable.
+  const viewLabel = view === 'settings' ? 'Settings' : 'Games'
+  useEffect(() => {
+    document.title = `SimLauncher — ${viewLabel}`
+  }, [viewLabel])
+
   // Surface non-React errors (async rejections, event-handler throws, errors
   // outside the render tree) as a toast — the ErrorBoundary only covers render.
   useEffect(() => subscribeGlobalErrors((message) => notify(message, 'error', 6000)), [notify])
@@ -277,7 +285,7 @@ function AppContent() {
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
     >
       <header className="absolute top-0 left-0 w-full z-20 header-glass">
-        <h1 className="sr-only">SimLauncher</h1>
+        <h1 className="sr-only">SimLauncher — {viewLabel}</h1>
         <WindowControls view={view} onNavigate={handleNavigate} updateInfo={updateInfo} />
       </header>
 
