@@ -25,7 +25,7 @@ export function SettingsSection({
         aria-expanded={open}
         aria-controls={regionId}
       >
-        <h3 className="flex flex-1 items-center gap-2 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">
+        <h2 className="flex flex-1 items-center gap-2 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">
           {title}
           {dirty && (
             <span
@@ -34,7 +34,7 @@ export function SettingsSection({
               aria-label="Unsaved changes in this section"
             />
           )}
-        </h3>
+        </h2>
         <svg
           width="14"
           height="14"

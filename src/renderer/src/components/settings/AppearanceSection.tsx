@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
@@ -30,6 +30,8 @@ const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
 ]
 
 export function AppearanceSection(): ReactNode {
+  const accentBgTintId = useId()
+  const focusActiveTitleId = useId()
   const [showPicker, setShowPicker] = useState(false)
   const customSwatchRef = useRef<HTMLButtonElement>(null)
   const {
@@ -144,20 +146,20 @@ export function AppearanceSection(): ReactNode {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label text-(--text-secondary)">Accent Glow Background</label>
-        <Toggle
-          checked={accentBgTint}
-          onChange={onAccentBgTintChange}
-          aria-label="Toggle accent glow background"
-        />
+        <label htmlFor={accentBgTintId} className="settings-label text-(--text-secondary)">
+          Accent Glow Background
+        </label>
+        <Toggle id={accentBgTintId} checked={accentBgTint} onChange={onAccentBgTintChange} />
       </div>
 
       <div className="settings-row">
-        <label className="settings-label text-(--text-secondary)">Focus active title</label>
+        <label htmlFor={focusActiveTitleId} className="settings-label text-(--text-secondary)">
+          Focus active title
+        </label>
         <Toggle
+          id={focusActiveTitleId}
           checked={focusActiveTitle}
           onChange={onFocusActiveTitleChange}
-          aria-label="Focus active title"
         />
       </div>
 

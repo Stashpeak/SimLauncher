@@ -264,9 +264,10 @@ function AppContent() {
     <div
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
     >
-      <div className="absolute top-0 left-0 w-full z-20 header-glass">
+      <header className="absolute top-0 left-0 w-full z-20 header-glass">
+        <h1 className="sr-only">SimLauncher</h1>
         <WindowControls view={view} onNavigate={handleNavigate} updateInfo={updateInfo} />
-      </div>
+      </header>
 
       {showImportWarning && (
         <div

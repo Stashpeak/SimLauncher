@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 import { openLogsFolder } from '../../lib/electron'
 import { useNotify } from '../Notify'
@@ -27,6 +27,7 @@ export function AboutSection({
   onManualCheck,
   onInstallUpdate
 }: AboutSectionProps): ReactNode {
+  const autoCheckUpdatesId = useId()
   const { autoCheckUpdates, onAutoCheckUpdatesChange } = useSettingsMeta()
   const { notify } = useNotify()
 
@@ -67,13 +68,15 @@ export function AboutSection({
 
       <div className="settings-row">
         <div className="settings-label-group">
-          <span className="settings-label">Automatically check for updates</span>
+          <label htmlFor={autoCheckUpdatesId} className="settings-label">
+            Automatically check for updates
+          </label>
           <span className="settings-sublabel">Check on startup when enabled</span>
         </div>
         <Toggle
+          id={autoCheckUpdatesId}
           checked={autoCheckUpdates}
           onChange={onAutoCheckUpdatesChange}
-          aria-label="Automatically check for updates"
         />
       </div>
 

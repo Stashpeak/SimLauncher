@@ -446,7 +446,7 @@ export function GameRow({
           <GameIcon game={game} isRunning={isRunning} iconUrl={gameIconUrl} />
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="game-title font-normal text-(--text-primary)">{game.name}</h3>
+              <h2 className="game-title font-normal text-(--text-primary)">{game.name}</h2>
             </div>
             <RunningAppsStrip
               runningAppIcons={runningAppIcons}
