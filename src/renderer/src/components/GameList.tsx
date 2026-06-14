@@ -146,7 +146,7 @@ export function GameList({
   }
 
   return (
-    <div className="flex flex-col gap-3 px-1 py-2">
+    <div role="list" aria-label="Games" className="flex flex-col gap-3 px-1 py-2">
       {configuredGames
         .map((game, index) => ({ game, index }))
         .sort((firstEntry, secondEntry) => {
