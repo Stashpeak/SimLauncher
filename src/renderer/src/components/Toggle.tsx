@@ -29,7 +29,13 @@ export function Toggle({
     >
       <input
         id={id}
-        aria-label={ariaLabel || id}
+        // Only set aria-label when one is explicitly passed. The previous
+        // `ariaLabel || id` fallback injected the raw React useId() string as
+        // the accessible name, which OVERRIDES an associated <label htmlFor={id}>
+        // — a labelled switch would then announce as ":r0:" instead of its text
+        // (#520). No caller relied on the fallback (they all pass aria-label or
+        // a real <label>), so dropping it only removes the bug.
+        aria-label={ariaLabel}
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
