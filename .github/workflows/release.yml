@@ -45,7 +45,11 @@ jobs:
       - name: Build installer and publish release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Azure Artifact Signing credentials (service principal). electron-builder
+          # reads these automatically for win.azureSignOptions.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: npx electron-builder --win --publish always
 
       - name: Generate SHA-256 checksums
