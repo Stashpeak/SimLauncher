@@ -397,7 +397,9 @@ textarea {
 
 .icon-action {
   background: transparent;
-  color: var(--text-subtle);
+  /* --text-muted (not --text-subtle) so resting icon glyphs clear the 3:1
+     non-text contrast minimum; --text-subtle (~2.3:1) was below it. */
+  color: var(--text-muted);
 }
 
 .icon-action.icon-action-active {
@@ -422,7 +424,7 @@ textarea {
 .icon-action.danger-action {
   background: transparent;
   box-shadow: none;
-  color: var(--text-subtle);
+  color: var(--text-muted);
 }
 
 .icon-action.danger-action:hover {
@@ -781,6 +783,24 @@ textarea {
 .reorder-btn:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
+}
+
+/* Fallback keyboard focus ring for any button / role=button that doesn't carry
+   one of the dedicated .accent-action/.icon-action/etc. rules above — e.g. the
+   wordmark, the profile-menu trigger, the accent swatches and the section
+   disclosure headers, which otherwise showed only the faint UA outline on dark
+   glass. outline-offset keeps it clear of round swatches. */
+button:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* View re-homing focus target (App.tsx) — focused programmatically on a view
+   switch to keep keyboard focus inside the visible view. It's not user-tabbable
+   (tabIndex=-1), so it must not paint a ring around the whole scroll region. */
+.view-focus-region:focus {
+  outline: none;
 }
 
 /* Respect the OS "reduce motion" preference: neutralize transitions and stop

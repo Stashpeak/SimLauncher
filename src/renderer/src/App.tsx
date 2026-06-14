@@ -60,6 +60,12 @@ function AppContent() {
   // announce it twice.
   const announcedUpdateRef = useRef<string | null>(null)
 
+  // Focus targets for re-homing keyboard focus into the visible view on a view
+  // switch (see the effect below). viewFocusReadyRef skips the initial mount.
+  const gamesRegionRef = useRef<HTMLDivElement>(null)
+  const settingsRegionRef = useRef<HTMLDivElement>(null)
+  const viewFocusReadyRef = useRef(false)
+
   // Mirror so the once-registered close-request handler reads the latest value
   // without re-subscribing.
   const discardConfirmOpenRef = useRef(false)
@@ -80,6 +86,21 @@ function AppContent() {
   useEffect(() => {
     document.title = `SimLauncher — ${viewLabel}`
   }, [viewLabel])
+
+  // Re-home keyboard focus into the now-visible view whenever the view changes
+  // (tab switch, Escape-from-Settings). Otherwise focus stays on the control
+  // that triggered the switch — which is about to become `inert` — and drops to
+  // <body>, so the next Tab restarts at the titlebar. Skip the first run so the
+  // app doesn't steal focus on initial load. preventScroll keeps the viewport
+  // from jumping.
+  useEffect(() => {
+    if (!viewFocusReadyRef.current) {
+      viewFocusReadyRef.current = true
+      return
+    }
+    const region = view === 'settings' ? settingsRegionRef.current : gamesRegionRef.current
+    region?.focus({ preventScroll: true })
+  }, [view])
 
   // Surface non-React errors (async rejections, event-handler throws, errors
   // outside the render tree) as a toast — the ErrorBoundary only covers render.
@@ -330,7 +351,10 @@ function AppContent() {
             }`}
           >
             <div
-              className={`flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
+              ref={gamesRegionRef}
+              tabIndex={-1}
+              aria-label="Games"
+              className={`view-focus-region flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
             >
               <GameList key={refreshKey} onNavigate={handleNavigate} />
             </div>
@@ -346,7 +370,10 @@ function AppContent() {
             }`}
           >
             <div
-              className={`flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
+              ref={settingsRegionRef}
+              tabIndex={-1}
+              aria-label="Settings"
+              className={`view-focus-region flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
             >
               <SettingsView onClose={() => handleNavigate('games')} updateInfo={updateInfo} />
             </div>
