@@ -24,18 +24,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Types kept in sync with the prefixes used across this repo's history.
+          # Kept in sync with the prefixes used across this repo's history.
           types: |
             feat
             fix
-            chore
             docs
-            perf
-            refactor
-            test
-            ci
-            build
             style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
             revert
+            a11y
+            visual
             security
             reliability
