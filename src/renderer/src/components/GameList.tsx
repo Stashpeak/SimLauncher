@@ -4,6 +4,7 @@ import { getSettings } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
+import { useNotify } from './Notify'
 import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
@@ -31,8 +32,32 @@ export function GameList({
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
-  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock()
+  const { announce } = useNotify()
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
+  // Announce "X is now running" once a launch cooldown settles — but only if the
+  // game EXECUTABLE itself is detected running by then. The cooldown also runs on
+  // partial failures (a companion app started while the game exe failed), and
+  // runningStatus[key] is an aggregate that's true for any app under the key
+  // (companions included), so it would still fire there after the user already
+  // heard the assertive error. Match a running app against the configured game
+  // path instead (same game-vs-companion split used for the running strip), so a
+  // failed game launch stays silent. useLaunchBlock always invokes the latest
+  // callback, so this reads the freshest snapshot (the 10s cooldown is the window
+  // for process detection to catch up). Name comes from the static GAMES config
+  // so the timer closure can't go stale.
+  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock({
+    onLaunchSettled: (gameKey) => {
+      const gamePath = gamePaths[gameKey]
+      if (!gamePath) return
+      const gamePathLower = normalizePath(gamePath)
+      const gameExeRunning = runningApps.some(
+        (app) => app.gameKey === gameKey && normalizePath(app.path) === gamePathLower
+      )
+      if (!gameExeRunning) return
+      const name = GAMES.find((game) => game.key === gameKey)?.name
+      if (name) announce(`${name} is now running`)
+    }
+  })
   const { gameIcons } = useGamesSettings()
 
   useEffect(() => {

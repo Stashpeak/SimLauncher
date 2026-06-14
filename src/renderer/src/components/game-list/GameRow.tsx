@@ -53,7 +53,10 @@ export function GameRow({
   isLaunching: boolean
   isLaunchBlocked: boolean
   onLaunchStart: (gameKey: string) => void
-  onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
+  // `primaryLaunch` marks a fresh game launch (vs a profile switch / relaunch-
+  // missing) so the launch-block only speaks the "now running" cue after a real
+  // launch.
+  onLaunchEnd: (gameKey: string, cooldownMs?: number, options?: { primaryLaunch?: boolean }) => void
   onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
   // Explicit close for this row's editor (key-guarded functional update) so the
@@ -330,6 +333,11 @@ export function GameRow({
       return
     }
 
+    // Capture BEFORE launching: this is a fresh game start only if the game
+    // wasn't already running. If it was (e.g. started outside SimLauncher and the
+    // user clicks Launch to start companion apps), the game exe would still be
+    // running at cooldown end and wrongly trigger the "now running" cue.
+    const wasRunning = isRunning
     let cooldownMs = 0
 
     try {
@@ -351,7 +359,7 @@ export function GameRow({
       notify('Failed to launch profile', 'error')
       console.error(err)
     } finally {
-      onLaunchEnd(game.key, cooldownMs)
+      onLaunchEnd(game.key, cooldownMs, { primaryLaunch: !wasRunning })
     }
   }
 
@@ -512,7 +520,12 @@ export function GameRow({
                   handleLaunchRequest.current = launcher
                 }}
                 onLaunchStart={() => onLaunchStart(game.key)}
-                onLaunchEnd={(cooldownMs) => onLaunchEnd(game.key, cooldownMs)}
+                // primaryLaunch only when the game wasn't already running, so the
+                // "now running" cue isn't spoken for a launch that merely
+                // (re)starts companion apps for an already-running game.
+                onLaunchEnd={(cooldownMs) =>
+                  onLaunchEnd(game.key, cooldownMs, { primaryLaunch: !isRunning })
+                }
               />
             </div>
           )}
