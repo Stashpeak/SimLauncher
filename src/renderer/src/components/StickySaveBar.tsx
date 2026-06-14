@@ -67,7 +67,7 @@ export function StickySaveBar({ onRequestDiscard }: { onRequestDiscard: () => vo
           className="relative flex h-2 w-2 shrink-0 items-center justify-center"
         >
           <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-(--accent) opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-(--accent)" />
+          <span className="status-dot relative inline-flex h-2 w-2 rounded-full bg-(--accent)" />
         </span>
         <span className="min-w-0 flex-1 text-xs font-medium text-(--text-secondary)">
           You have unsaved changes.

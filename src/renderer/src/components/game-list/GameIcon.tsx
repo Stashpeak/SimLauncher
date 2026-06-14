@@ -37,7 +37,7 @@ export function GameIcon({ game, isRunning, iconUrl }: GameIconProps): ReactNode
       }
       {isRunning && (
         <Tooltip label="Running">
-          <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]">
+          <div className="status-dot absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]">
             <span className="sr-only">{game.name} is running</span>
           </div>
         </Tooltip>

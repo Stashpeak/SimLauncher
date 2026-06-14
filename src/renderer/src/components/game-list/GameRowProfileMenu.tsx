@@ -100,7 +100,7 @@ export function GameRowProfileMenu({
                 }`}
               >
                 <span
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
+                  className={`status-dot h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
                 />
                 <span className="min-w-0 flex-1 truncate">{profile.name}</span>
               </button>

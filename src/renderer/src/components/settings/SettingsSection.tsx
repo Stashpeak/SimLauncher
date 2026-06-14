@@ -36,7 +36,7 @@ export function SettingsSection({
             {title}
             {dirty && (
               <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent)"
+                className="status-dot h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent)"
                 title="Unsaved changes"
                 aria-label="Unsaved changes in this section"
               />

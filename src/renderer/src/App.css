@@ -796,3 +796,72 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+
+/* Windows High Contrast / forced-colors: the OS swaps author colours for a small
+   system palette and strips most backgrounds, gradients and box-shadows. Our UI
+   leans on accent-tinted surfaces, glass borders and glow shadows, so without
+   these overrides the focus ring, button boundaries, the toggle on/off cue and
+   the status dots all collapse into one flat colour. Restore them with system
+   colour keywords (CanvasText = foreground, ButtonText = control outline,
+   Highlight = active selection). !important is needed to beat the Tailwind
+   utility / runtime custom-property colours at equal specificity, mirroring the
+   reduced-motion block above. */
+@media (forced-colors: active) {
+  /* Keyboard focus must stay visible — the accent color-mix ring resolves to a
+     non-system colour and is dropped here. */
+  *:focus-visible {
+    outline: 2px solid CanvasText !important;
+    outline-offset: 2px;
+  }
+
+  /* The toggle's real focus target is the sr-only checkbox, so its visible ring
+     lives on the sibling track. */
+  .peer:focus-visible ~ .toggle-track {
+    outline: 2px solid CanvasText !important;
+  }
+
+  /* Interactive surfaces lose their tinted/glass fill — give them a real edge. */
+  .accent-action,
+  .accent-surface-action,
+  .neutral-action,
+  .danger-action,
+  .icon-action,
+  .dropdown-trigger-surface,
+  .settings-control-pill {
+    border: 1px solid ButtonText !important;
+  }
+
+  /* Selected / checked controls stand out via the system Highlight. */
+  .selected-surface,
+  .dropdown-item[aria-checked='true'] {
+    border: 1px solid Highlight !important;
+  }
+
+  /* Toggle switch: outline the track, fill the checked track with Highlight, and
+     keep a solid system-colour thumb so on vs off is unmistakable (position is a
+     second cue). */
+  .toggle-track {
+    border: 1px solid CanvasText !important;
+  }
+
+  .toggle-track::after {
+    background: CanvasText !important;
+    border-color: CanvasText !important;
+  }
+
+  .peer:checked ~ .toggle-track {
+    background: Highlight !important;
+  }
+
+  /* Status dots (running / unsaved / selected): their accent/green fills and glow
+     shadows vanish — render a solid system-colour disc instead. */
+  .status-dot {
+    background: CanvasText !important;
+    box-shadow: none !important;
+  }
+
+  /* Don't dim inactive game rows below contrast — keep every title fully legible. */
+  .game-row-container {
+    opacity: 1 !important;
+  }
+}
