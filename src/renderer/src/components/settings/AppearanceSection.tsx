@@ -112,7 +112,7 @@ export function AppearanceSection(): ReactNode {
                   className="absolute inset-0 rounded-full"
                   style={{
                     background: isCustomColor
-                      ? accentCustom || '#ad46ff'
+                      ? accentCustom || DEFAULT_ACCENT_COLOR
                       : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
                   }}
                 />
@@ -135,7 +135,7 @@ export function AppearanceSection(): ReactNode {
 
             {showPicker && (
               <ColorPickerPopover
-                color={accentCustom || '#ad46ff'}
+                color={accentCustom || DEFAULT_ACCENT_COLOR}
                 onChange={onCustomColorChange}
                 onClose={() => setShowPicker(false)}
                 anchorRef={customSwatchRef}

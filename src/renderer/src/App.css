@@ -1,11 +1,6 @@
 @import 'tailwindcss' source('./');
 
 :root {
-  --purple-primary: #ad46ff;
-  --purple-solid-hover: #c06cff;
-  --purple-accent: rgba(173, 70, 255, 0.2);
-  --purple-accent-strong: rgba(173, 70, 255, 0.34);
-  --purple-button-text: #e9d4ff;
   --glass-bg: rgba(255, 255, 255, 0.02);
   --glass-bg-elevated: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.4);
@@ -14,12 +9,14 @@
   --text-secondary: rgba(255, 255, 255, 0.7);
   --text-muted: rgba(255, 255, 255, 0.5);
   --text-subtle: rgba(255, 255, 255, 0.3);
-  --accent: var(--purple-primary);
+  --accent: #008c99;
   --accent-foreground: #000000;
   --accent-action-foreground: var(--text-primary);
   --accent-glow-opacity: 0.25;
-  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
-  --focus-ring: rgba(173, 70, 255, 0.25);
+  --accent-glow: rgba(0, 140, 153, var(--accent-glow-opacity));
+  /* Derived from --accent so the keyboard focus ring tracks the live accent
+     (theme.ts sets --accent at runtime); default resolves to the teal brand. */
+  --focus-ring: color-mix(in srgb, var(--accent) 25%, transparent);
   --danger-surface: rgba(244, 63, 94, 0.14);
   --danger-border: rgba(251, 113, 133, 0.28);
   --danger-text: rgba(254, 205, 211, 0.95);
@@ -79,12 +76,12 @@
   --text-secondary: rgba(20, 20, 24, 0.7);
   --text-muted: rgba(20, 20, 24, 0.5);
   --text-subtle: rgba(20, 20, 24, 0.5);
-  --accent: var(--purple-primary);
+  --accent: #008c99;
   --accent-foreground: #000000;
   --accent-action-foreground: var(--text-primary);
   --accent-glow-opacity: 0.22;
-  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
-  --focus-ring: rgba(173, 70, 255, 0.45);
+  --accent-glow: rgba(0, 140, 153, var(--accent-glow-opacity));
+  --focus-ring: color-mix(in srgb, var(--accent) 45%, transparent);
   --danger-surface: rgba(244, 63, 94, 0.1);
   --danger-border: rgba(200, 35, 60, 0.35);
   --danger-text: rgba(145, 25, 45, 0.95);
