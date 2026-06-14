@@ -113,6 +113,22 @@ test('a failed download resets the install latch', async () => {
   expect(quitAndInstall).not.toHaveBeenCalled()
 })
 
+test('install-update swallows a network failure instead of double-surfacing it (#560)', async () => {
+  const { handlers } = await loadUpdaterModule()
+  downloadUpdate.mockRejectedValueOnce(
+    Object.assign(new Error('getaddrinfo ENOTFOUND github.com'), { code: 'ENOTFOUND' })
+  )
+
+  // The 'error' event already showed the calm offline notice; the install IPC
+  // must resolve (not reject), otherwise the renderer fires a second generic
+  // "Failed to install update" that overrides the offline message.
+  await expect(handlers['install-update']({})).resolves.toMatchObject({ offline: true })
+
+  // The latch is still cleared, so a later stray download won't auto-install.
+  autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
+  expect(quitAndInstall).not.toHaveBeenCalled()
+})
+
 test('an updater error resets the install latch', async () => {
   const { handlers } = await loadUpdaterModule()
   let resolveDownload: () => void = () => {}
