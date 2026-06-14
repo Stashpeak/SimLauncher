@@ -119,7 +119,7 @@ function renderUtilityRow(
       )}
       <div className="flex min-w-0 items-center gap-3">
         {isEnabled && typeof orderIndex === 'number' && (
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-(--accent)/15 text-[11px] font-black tabular-nums text-(--accent)">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-(--accent)/15 text-[11px] font-black tabular-nums text-(--accent-text)">
             {orderIndex + 1}
           </span>
         )}

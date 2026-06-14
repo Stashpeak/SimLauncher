@@ -32,7 +32,7 @@ export function SettingsSection({
           aria-expanded={open}
           aria-controls={regionId}
         >
-          <span className="flex flex-1 items-center gap-2 text-left text-sm font-semibold uppercase tracking-wider text-(--accent)">
+          <span className="flex flex-1 items-center gap-2 text-left text-sm font-semibold uppercase tracking-wider text-(--accent-text)">
             {title}
             {dirty && (
               <span

@@ -11,6 +11,11 @@
   --text-subtle: rgba(255, 255, 255, 0.3);
   --accent: #008c99;
   --accent-foreground: #000000;
+  /* Readable accent for accent-colored TEXT (section headings, update pill,
+     launch-order badge): the raw accent is ~3.5-4.2:1 on these surfaces, below
+     WCAG AA 4.5:1. theme.ts recomputes a contrast-tuned variant at runtime for
+     the live/custom accent; this is the static default for the brand teal. */
+  --accent-text: #33a3ad;
   --accent-action-foreground: var(--text-primary);
   --accent-glow-opacity: 0.25;
   --accent-glow: rgba(0, 140, 153, var(--accent-glow-opacity));
@@ -78,6 +83,9 @@
   --text-subtle: rgba(20, 20, 24, 0.5);
   --accent: #008c99;
   --accent-foreground: #000000;
+  /* Darker readable accent for accent-colored text on the light background
+     (theme.ts recomputes at runtime; static default for the brand teal). */
+  --accent-text: #00707a;
   --accent-action-foreground: var(--text-primary);
   --accent-glow-opacity: 0.22;
   --accent-glow: rgba(0, 140, 153, var(--accent-glow-opacity));
