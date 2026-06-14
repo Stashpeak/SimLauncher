@@ -35,16 +35,25 @@ export function GameList({
   const { announce } = useNotify()
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
   // Announce "X is now running" once a launch cooldown settles — but only if the
-  // game is actually running by then. The cooldown also runs on partial failures
-  // (a companion app started while the game exe failed), where the user has
-  // already heard the assertive error; gating on the live runningStatus avoids a
-  // contradictory "now running" follow-up. useLaunchBlock always invokes the
-  // latest callback, so this reads the freshest running state (the 10s cooldown
-  // is exactly the window for process detection to catch up). The name comes
-  // from the static GAMES config so the timer closure can't go stale.
+  // game EXECUTABLE itself is detected running by then. The cooldown also runs on
+  // partial failures (a companion app started while the game exe failed), and
+  // runningStatus[key] is an aggregate that's true for any app under the key
+  // (companions included), so it would still fire there after the user already
+  // heard the assertive error. Match a running app against the configured game
+  // path instead (same game-vs-companion split used for the running strip), so a
+  // failed game launch stays silent. useLaunchBlock always invokes the latest
+  // callback, so this reads the freshest snapshot (the 10s cooldown is the window
+  // for process detection to catch up). Name comes from the static GAMES config
+  // so the timer closure can't go stale.
   const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock({
     onLaunchSettled: (gameKey) => {
-      if (!runningStatus[gameKey]) return
+      const gamePath = gamePaths[gameKey]
+      if (!gamePath) return
+      const gamePathLower = normalizePath(gamePath)
+      const gameExeRunning = runningApps.some(
+        (app) => app.gameKey === gameKey && normalizePath(app.path) === gamePathLower
+      )
+      if (!gameExeRunning) return
       const name = GAMES.find((game) => game.key === gameKey)?.name
       if (name) announce(`${name} is now running`)
     }
