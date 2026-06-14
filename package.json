@@ -46,7 +46,7 @@
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
     "electron-store": "^11.0.2",
-    "electron-updater": "^6.3.0",
+    "electron-updater": "^6.8.9",
     "react": "^19.2.6",
     "react-colorful": "^5.7.0",
     "react-dom": "^19.2.6"
