@@ -33,15 +33,22 @@ export function GameList({
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const { announce } = useNotify()
-  // Announce a launch as "now running" once its cooldown settles. Resolved from
-  // the static GAMES config (never stale) so the timer closure stays correct.
+  const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
+  // Announce "X is now running" once a launch cooldown settles — but only if the
+  // game is actually running by then. The cooldown also runs on partial failures
+  // (a companion app started while the game exe failed), where the user has
+  // already heard the assertive error; gating on the live runningStatus avoids a
+  // contradictory "now running" follow-up. useLaunchBlock always invokes the
+  // latest callback, so this reads the freshest running state (the 10s cooldown
+  // is exactly the window for process detection to catch up). The name comes
+  // from the static GAMES config so the timer closure can't go stale.
   const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock({
     onLaunchSettled: (gameKey) => {
+      if (!runningStatus[gameKey]) return
       const name = GAMES.find((game) => game.key === gameKey)?.name
       if (name) announce(`${name} is now running`)
     }
   })
-  const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
   const { gameIcons } = useGamesSettings()
 
   useEffect(() => {
