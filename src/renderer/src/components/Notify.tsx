@@ -268,32 +268,40 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
   return (
     <NotifyContext.Provider value={value}>
       {children}
-      {/* Always-rendered visually-hidden announcer. role + aria-live are stated
-          explicitly (role=status implies polite, role=alert implies assertive)
-          for clarity and cross-AT reliability. aria-atomic so the full message
-          is re-read on every change. */}
-      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {politeMessage}
-      </div>
-      <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">
-        {assertiveMessage}
-      </div>
       {createPortal(
-        // Visual-only toast stack — aria-hidden because the announcer above
-        // carries the message to assistive tech.
-        <div
-          aria-hidden="true"
-          className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-9999"
-        >
-          {toasts.map((toast) => (
-            <ToastCard
-              key={toast.id}
-              toast={toast}
-              isDismissing={dismissingToastIds.has(toast.id)}
-              onDismiss={dismissToast}
-            />
-          ))}
-        </div>,
+        <>
+          {/* Always-rendered visually-hidden announcer. It MUST be portaled to
+              document.body (a sibling of #root) rather than rendered inline:
+              useFocusTrap marks #root `inert` while any modal is open, and
+              aria-live mutations inside an inert subtree are not announced — so
+              an inline announcer would go silent for screen-reader users for
+              every notify()/announce() fired while a dialog is up (e.g. a save
+              failure that keeps the close-confirm dialog open). role + aria-live
+              are stated explicitly (role=status implies polite, role=alert
+              implies assertive) for cross-AT reliability; aria-atomic so the
+              full message is re-read on every change. */}
+          <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {politeMessage}
+          </div>
+          <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">
+            {assertiveMessage}
+          </div>
+          {/* Visual-only toast stack — aria-hidden because the announcer above
+              carries the message to assistive tech. */}
+          <div
+            aria-hidden="true"
+            className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-9999"
+          >
+            {toasts.map((toast) => (
+              <ToastCard
+                key={toast.id}
+                toast={toast}
+                isDismissing={dismissingToastIds.has(toast.id)}
+                onDismiss={dismissToast}
+              />
+            ))}
+          </div>
+        </>,
         document.body
       )}
     </NotifyContext.Provider>

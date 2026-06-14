@@ -59,8 +59,11 @@ async function renderProvider(): Promise<{
       </NotifyProvider>
     )
   })
-  const polite = container.querySelector('[aria-live="polite"]')
-  const assertive = container.querySelector('[aria-live="assertive"]')
+  // The announcer is portaled to document.body (so it escapes the `inert` that
+  // useFocusTrap sets on #root while a modal is open), not rendered inside the
+  // provider's subtree — query the body, not the container.
+  const polite = document.body.querySelector('[aria-live="polite"]')
+  const assertive = document.body.querySelector('[aria-live="assertive"]')
   if (!polite || !assertive) throw new Error('announcer live regions not found')
   return {
     container,
@@ -118,5 +121,43 @@ describe('Notify announcer (#541)', () => {
     expect(card!.closest('[aria-hidden="true"]')).not.toBeNull()
 
     unmount()
+  })
+
+  // Regression: useFocusTrap marks #root `inert` while a modal is open, and
+  // aria-live mutations inside an inert subtree are not announced. The announcer
+  // therefore MUST live outside #root (portaled to document.body) so a
+  // notification fired while a dialog is up still reaches assistive tech — the
+  // exact failure mode of the close-confirm save error.
+  test('announcer escapes the modal `inert` on #root', async () => {
+    // Mimic the real app shell: NotifyProvider mounts inside #root.
+    const root = document.createElement('div')
+    root.id = 'root'
+    document.body.appendChild(root)
+    let appRoot: Root | null = null
+    await act(async () => {
+      appRoot = createRoot(root)
+      appRoot.render(
+        <NotifyProvider>
+          <Capture />
+        </NotifyProvider>
+      )
+    })
+
+    // The live regions must NOT be inside #root...
+    expect(root.querySelector('[aria-live]')).toBeNull()
+    // ...they live in document.body, a sibling of #root.
+    const assertive = document.body.querySelector('[aria-live="assertive"]') as HTMLElement | null
+    expect(assertive).not.toBeNull()
+    expect(assertive!.closest('#root')).toBeNull()
+
+    // A modal opening inerts #root. The announcement must stay reachable (no
+    // inert ancestor) and carry the message.
+    root.setAttribute('inert', '')
+    act(() => api!.notify('Failed to save changes. Window not closed.', 'error'))
+    expect(assertive!.closest('[inert]')).toBeNull()
+    expect(assertive!.textContent).toContain('Failed to save changes')
+
+    act(() => appRoot?.unmount())
+    root.remove()
   })
 })
