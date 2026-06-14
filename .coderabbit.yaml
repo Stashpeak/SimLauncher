@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+# CodeRabbit configuration — https://docs.coderabbit.ai/reference/configuration
+reviews:
+  pre_merge_checks:
+    # This codebase documents intent with inline `//` comments (the "why"),
+    # not JSDoc docstrings, so CodeRabbit's docstring-coverage metric reads
+    # artificially low and flags every PR. Turn it off to match the convention.
+    # The title / description / linked-issues / out-of-scope checks stay on.
+    docstrings:
+      mode: 'off'
