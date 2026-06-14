@@ -34,7 +34,7 @@ function SettingsViewContent({
   onClose: () => void
   updateInfo: UpdateInfo
 }) {
-  const { notify } = useNotify()
+  const { notify, announce } = useNotify()
   const { loading, isDirty, dirtySections, saveSettings } = useSettingsMeta()
   const { registerSaveHandler, registerDiscardHandler } = useAppDirty()
   const [expandedSections, setExpandedSections] = useState({
@@ -45,7 +45,7 @@ function SettingsViewContent({
     games: false,
     apps: false
   })
-  const updateStatus = useUpdateStatus({ updateInfo, notify })
+  const updateStatus = useUpdateStatus({ updateInfo, notify, announce })
 
   const setSectionOpen = (section: keyof typeof expandedSections, open: boolean) => {
     setExpandedSections((current) => ({ ...current, [section]: open }))

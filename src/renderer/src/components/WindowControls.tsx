@@ -93,7 +93,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             aria-hidden="true"
             className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]"
           />
-          <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent)">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent-text)">
             Update v{updateInfo.version} Available
           </span>
         </button>

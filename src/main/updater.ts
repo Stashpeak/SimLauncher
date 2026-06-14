@@ -136,6 +136,15 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
       return { success: true }
     } catch (err) {
       installAfterDownload = false
+      // downloadUpdate() both emits the 'error' event AND rejects. The event
+      // already surfaced a categorized message to the renderer, so for a network
+      // failure swallow the rejection here — otherwise the renderer's install
+      // catch fires a second, generic "Failed to install update" error that
+      // overrides the calmer offline notice (mirrors the check-for-updates
+      // handler). Re-throw anything else so genuine failures still surface.
+      if (isUpdateNetworkError(err)) {
+        return { success: false, offline: true }
+      }
       throw err
     }
   })

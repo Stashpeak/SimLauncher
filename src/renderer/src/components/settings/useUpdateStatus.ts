@@ -10,6 +10,7 @@ import {
   onUpdateError,
   onUpdateNotAvailable
 } from '../../lib/electron'
+import type { Announce } from '../Notify'
 import type { UpdateErrorInfo, UpdateInfo, UpdateStatus } from './types'
 
 type Notify = (message: string, type: 'success' | 'warn' | 'error', durationMs?: number) => void
@@ -26,10 +27,12 @@ export interface UseUpdateStatusResult {
 
 export function useUpdateStatus({
   updateInfo,
-  notify
+  notify,
+  announce
 }: {
   updateInfo: UpdateInfo
   notify: Notify
+  announce: Announce
 }): UseUpdateStatusResult {
   const [appVersion, setAppVersion] = useState<string>('')
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -128,6 +131,11 @@ export function useUpdateStatus({
       setInstallingUpdate(true)
       setUpdateProgress(null)
       setUpdateStatus(null)
+      // The download has no screen-reader-visible text (the button is
+      // aria-live=off so it doesn't announce every percent), so announce that
+      // the install started. Success ends in an app restart; failures are
+      // announced via notify().
+      announce('Downloading update…')
 
       try {
         await installUpdate()
@@ -139,7 +147,7 @@ export function useUpdateStatus({
         console.error(err)
       }
     }
-  }, [notify, updateInfo])
+  }, [announce, notify, updateInfo])
 
   return {
     appVersion,
