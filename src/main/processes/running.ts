@@ -99,8 +99,12 @@ function getExternallyAdoptableGameKeys(
   return adoptableGameKeys
 }
 
-// INVARIANT: manual companion utilities are only surfaced when the owning game is
-// already launched by SimLauncher or its configured game exe is externally running.
+// A profile's tracked companion utilities are surfaced once that profile has at
+// least one app surfaced (its game OR any companion launched by SimLauncher, or
+// an unclosed / mismatch entry), or its game exe is detected running externally
+// (adoption). NOTE: this is NOT gated on the game itself running — launching only
+// a companion still surfaces that profile's companions (same aggregate-vs-game
+// distinction as the green dot, #587; the in-session-exe question is #585/#586).
 async function getTrackedRunningApps(
   processNames: Set<string>,
   adoptedOrLaunchedGameKeys: Set<string>,

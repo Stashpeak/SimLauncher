@@ -4,6 +4,7 @@ import { getSettings } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
+import { isGameExeRunning } from '../lib/runningGame'
 import { useNotify } from './Notify'
 import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
@@ -47,13 +48,7 @@ export function GameList({
   // so the timer closure can't go stale.
   const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock({
     onLaunchSettled: (gameKey) => {
-      const gamePath = gamePaths[gameKey]
-      if (!gamePath) return
-      const gamePathLower = normalizePath(gamePath)
-      const gameExeRunning = runningApps.some(
-        (app) => app.gameKey === gameKey && normalizePath(app.path) === gamePathLower
-      )
-      if (!gameExeRunning) return
+      if (!isGameExeRunning(runningApps, gameKey, gamePaths[gameKey])) return
       const name = GAMES.find((game) => game.key === gameKey)?.name
       if (name) announce(`${name} is now running`)
     }
@@ -162,9 +157,13 @@ export function GameList({
         .map(({ game }) => {
           const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
           const gamePathLower = gamePaths[game.key] ? normalizePath(gamePaths[game.key]) : undefined
+          // The green dot means the game's own exe is running — NOT the
+          // runningStatus[key] aggregate, which is also true when only a
+          // companion (e.g. SimHub) is up (#587). See isGameExeRunning.
+          const gameExeRunning = isGameExeRunning(runningApps, game.key, gamePaths[game.key])
           // Exclude the game's own executable so it doesn't appear as a
-          // companion app in the running strip — the green dot on GameIcon
-          // already communicates that the game itself is running.
+          // companion app in the running strip — the dot above already
+          // represents the game itself.
           const appsForGame = runningApps.filter(
             (a) => a.gameKey === game.key && normalizePath(a.path) !== gamePathLower
           )
@@ -185,6 +184,7 @@ export function GameList({
               gameIconUrl={gameIcons[game.key]}
               isActive={activeEditorKey === game.key}
               isRunning={!!runningStatus[game.key]}
+              isGameRunning={gameExeRunning}
               runningAppIcons={runningAppIcons}
               isDimmed={hasActiveTitle && !runningStatus[game.key]}
               isLaunching={launchingGameKey === game.key}

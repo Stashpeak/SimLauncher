@@ -5,6 +5,7 @@ import {
   SettingsIcon,
   MinimizeIcon,
   MaximizeIcon,
+  RestoreIcon,
   CloseWindowIcon
 } from './icons'
 import { Tooltip } from './Tooltip'
@@ -41,7 +42,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
       {/* Pill: branding + settings gear — the app's primary navigation */}
       <nav
         aria-label="Primary"
-        className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden"
+        className="no-drag glass-surface rounded-full flex items-center shrink-0"
       >
         {/* Launcher branding */}
         <Tooltip label="SimLauncher" placement="bottom">
@@ -121,7 +122,11 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             className="icon-action cursor-pointer rounded-full p-2"
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
-            <MaximizeIcon width={14} height={14} />
+            {isMaximized ? (
+              <RestoreIcon width={14} height={14} />
+            ) : (
+              <MaximizeIcon width={14} height={14} />
+            )}
           </button>
         </Tooltip>
         <Tooltip label="Close" placement="bottom">

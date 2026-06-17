@@ -133,8 +133,10 @@ export function useProfileEditor({
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
   const [gamePosition, setGamePosition] = useState<GamePosition>('first')
   const [trackingEnabled, setTrackingEnabled] = useState(true)
-  const [killControlsEnabled, setKillControlsEnabled] = useState(false)
-  const [relaunchControlsEnabled, setRelaunchControlsEnabled] = useState(false)
+  // Default ON (see useGameProfile getProfileState / #590); the load below uses
+  // the same `!== false` rule so only an explicit opt-out reads as off.
+  const [killControlsEnabled, setKillControlsEnabled] = useState(true)
+  const [relaunchControlsEnabled, setRelaunchControlsEnabled] = useState(true)
   const [trackedProcessPaths, setTrackedProcessPaths] = useState<string[]>([])
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({})
@@ -181,8 +183,8 @@ export function useProfileEditor({
       // Anything other than an explicit 'last' means game-first (#471)
       setGamePosition(profile.gamePosition === 'last' ? 'last' : 'first')
       setTrackingEnabled(profile.trackingEnabled !== false)
-      setKillControlsEnabled(profile.killControlsEnabled === true)
-      setRelaunchControlsEnabled(profile.relaunchControlsEnabled === true)
+      setKillControlsEnabled(profile.killControlsEnabled !== false)
+      setRelaunchControlsEnabled(profile.relaunchControlsEnabled !== false)
       setTrackedProcessPaths(
         Array.isArray(profile.trackedProcessPaths) ? profile.trackedProcessPaths : []
       )
