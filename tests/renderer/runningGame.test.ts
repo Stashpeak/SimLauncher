@@ -34,6 +34,8 @@ describe('isGameExeRunning', () => {
   })
 
   test('matches case-insensitively (Windows paths)', () => {
-    expect(isGameExeRunning([{ path: acGame.path.toUpperCase(), gameKey: 'ac' }], 'ac', acGame.path)).toBe(true)
+    expect(
+      isGameExeRunning([{ path: acGame.path.toUpperCase(), gameKey: 'ac' }], 'ac', acGame.path)
+    ).toBe(true)
   })
 })
