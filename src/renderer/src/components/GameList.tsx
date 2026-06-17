@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { GAMES, type Game } from '../lib/config'
-import { getSettings } from '../lib/store'
+import { getSettings, onStoreConfigChanged } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
@@ -26,30 +26,46 @@ export function GameList({
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
   const { gameIcons } = useGamesSettings()
 
-  useEffect(() => {
-    let mounted = true
+  // Read the configured-games list (+ derived UI state) from the store. Kept in
+  // a callback so it can run on mount AND on every store config change: the
+  // Games view stays mounted (#479), so without a reactive re-read it would hold
+  // its mount-time snapshot. The normal save paths (sticky bar, in-Settings
+  // footer) persist without bumping App's refreshKey, so a newly-configured game
+  // stayed hidden and a removed one lingered until the next app restart (#601).
+  const loadSettings = useCallback(async (alive: { current: boolean }) => {
+    try {
+      const settings = await getSettings()
+      if (!alive.current) return
 
-    async function loadInitialSettings() {
-      try {
-        const settings = await getSettings()
-        if (!mounted) return
-
-        setGamePaths(settings.gamePaths)
-        setFocusActiveTitle(settings.focusActiveTitle !== false)
-        setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
-        setSettingsLoaded(true)
-      } catch (err) {
-        console.error('Failed to load game settings', err)
-      }
-    }
-
-    loadInitialSettings()
-
-    return () => {
-      mounted = false
+      setGamePaths(settings.gamePaths)
+      setFocusActiveTitle(settings.focusActiveTitle !== false)
+      setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
+      setSettingsLoaded(true)
+    } catch (err) {
+      console.error('Failed to load game settings', err)
     }
   }, [])
 
+  useEffect(() => {
+    const alive = { current: true }
+    void loadSettings(alive)
+    // GameList is a pure reader with no dirty baseline, so — unlike
+    // useSettingsLoad — it must NOT skip the 'save-settings' reason: that's the
+    // write that carries gamePaths. The event fires after the store write, and
+    // GameList never writes the store, so there is no feedback loop.
+    const unsubscribe = onStoreConfigChanged(() => {
+      void loadSettings(alive)
+    })
+
+    return () => {
+      alive.current = false
+      unsubscribe()
+    }
+  }, [loadSettings])
+
+  // Lazy-load Windows shell icons for newly-seen running app paths. Uses the
+  // undefined sentinel (vs '' for "loaded but no icon") so re-fetching on
+  // every render is avoided while still retrying if the cache entry is missing.
   useEffect(() => {
     let mounted = true
     const pathsToLoad = Array.from(
