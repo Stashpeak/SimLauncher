@@ -3,7 +3,7 @@ updates:
   - package-ecosystem: 'npm'
     directory: '/'
     schedule:
-      interval: 'weekly'
+      interval: 'monthly'
     # Bundle updates into a few grouped PRs instead of one per dependency.
     # Production deps are grouped separately from dev deps so runtime changes
     # still get their own reviewable PR.
@@ -16,7 +16,7 @@ updates:
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
-      interval: 'weekly'
+      interval: 'monthly'
     groups:
       github-actions:
         patterns:
