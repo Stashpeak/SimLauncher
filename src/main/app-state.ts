@@ -1,6 +1,7 @@
 // Shared in-process flags that coordinate the window close / quit / tray flow.
-// All three can change from IPC handlers (renderer thread) and from main-thread
-// event listeners, so they must never be read inside an async gap between an
+// isQuitting can change from both IPC handlers (renderer thread) and main-thread
+// event listeners (before-quit, tray quit); the other two are written only from
+// IPC handlers. So none of them should be read across an async gap between an
 // IPC call and its response — capture synchronously at the start of a handler.
 let isQuitting = false
 let rendererDirty = false

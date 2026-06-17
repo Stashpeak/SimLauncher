@@ -15,10 +15,11 @@ type ProfileState = {
 const FOCUS_DEBOUNCE_MS = 300
 const PROFILE_FOCUS_EVENT = 'simlauncher:profile-focus-reload'
 
-// Module-level singleton: the focus listener is registered once for the entire
-// renderer lifetime. Multiple useGameProfile instances share it through the
-// custom event, so the store is read at most once per focus regain regardless
-// of how many game rows are mounted.
+// Module-level singleton: the OS 'focus' listener is registered once for the
+// entire renderer lifetime and debounced, so each focus regain produces exactly
+// one PROFILE_FOCUS_EVENT dispatch. NOTE: this does NOT dedupe store reads —
+// every mounted useGameProfile registers its own PROFILE_FOCUS_EVENT handler, so
+// the store is read once per mounted game row per focus regain.
 let focusListenerActive = false
 let focusDebounceTimer: ReturnType<typeof setTimeout> | undefined
 

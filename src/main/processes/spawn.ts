@@ -25,10 +25,12 @@ import type { AppLaunchResult, LaunchResult, ProfileLaunchEntry, ProfileLaunchIn
 import { publishRunningApps } from './running'
 
 const activeLaunches = new Set<string>()
-// After a launch completes, block further launches for this window. Apps that
-// self-relaunch under a different process name (the mismatch-warning scenario)
-// can trigger a second fast-exit within a few seconds; the block prevents a
-// race where the user clicks Launch again before the UI reflects the real state.
+// After a launch completes, block further launches process-wide (across all
+// windows — launchBlockedUntil is a single module-level scalar, not per-window)
+// for this duration. Apps that self-relaunch under a different process name (the
+// mismatch-warning scenario) can trigger a second fast-exit within a few seconds;
+// the block prevents a race where the user clicks Launch again before the UI
+// reflects the real state.
 const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
 let launchBlockedUntil = 0
@@ -488,7 +490,7 @@ export async function spawnDetachedApp(
         })
       })
 
-      // The 'spawn' event fires synchronously on success for most GUI apps, but
+      // The 'spawn' event normally fires promptly (next tick) on success, but
       // some launchers (e.g. Ubisoft Connect wrapper) can delay it. The 500 ms
       // fallback ensures the caller is unblocked even if the event never fires
       // (e.g. the child is already gone by the time Node processes the queue).

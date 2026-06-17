@@ -205,7 +205,11 @@ export function getEnabledUtilityKeys(profile: StoredProfile | undefined): strin
   // Legacy path: profiles stored before the utilities-array migration keep
   // utility state as top-level boolean keys (e.g. { simhub: true }). The
   // migrator converts these on first run, but this branch handles any profile
-  // that somehow missed migration (manual store edit, partial import, etc.).
+  // that missed migration (manual store edit, partial import, etc.). NOTE: this
+  // returns ALL top-level keys set to `true`, so non-utility booleans like
+  // launchAutomatically / trackingEnabled are included too; the only caller
+  // (getProfileTrackablePaths) tolerates this because those keys have no matching
+  // appPaths entry and are dropped by the isValidExePath filter.
   return Object.entries(profile)
     .filter(([, value]) => value === true)
     .map(([key]) => key)
