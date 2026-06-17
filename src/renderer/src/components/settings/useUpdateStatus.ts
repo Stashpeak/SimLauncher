@@ -84,9 +84,11 @@ export function useUpdateStatus({
       setUpdateProgress(null)
       if (error?.isNetworkError) {
         // Offline (common on a dedicated rig) is not a real failure — show a
-        // calm notice rather than a scary "update failed".
+        // calm INLINE notice only (no toast), like "up to date" does. The update
+        // status block in AboutSection is already an aria-live region, so the
+        // inline notice is still announced to a screen reader without a redundant
+        // toast of the same text (#595).
         setUpdateStatus('offline')
-        notify("Can't reach the update server — check your connection.", 'warn')
       } else {
         setUpdateStatus('error')
         notify(error?.message || 'Update check failed', 'error')
