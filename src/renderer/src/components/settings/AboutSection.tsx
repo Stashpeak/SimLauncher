@@ -110,10 +110,7 @@ export function AboutSection({
         )}
 
         {updateStatus === 'up-to-date' && (
-          <p
-            role="status"
-            className="text-[10px] text-center text-(--status-success) animate-fade-slide"
-          >
+          <p className="text-[10px] text-center text-(--status-success) animate-fade-slide">
             SimLauncher is up to date!
           </p>
         )}
@@ -123,10 +120,7 @@ export function AboutSection({
           </p>
         )}
         {updateStatus === 'offline' && (
-          <p
-            role="status"
-            className="text-[10px] text-center text-(--text-muted) animate-fade-slide"
-          >
+          <p className="text-[10px] text-center text-(--text-muted) animate-fade-slide">
             Can&apos;t reach the update server — check your connection.
           </p>
         )}
