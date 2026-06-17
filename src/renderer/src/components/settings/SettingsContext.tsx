@@ -34,8 +34,9 @@ export function SettingsProvider({
   const { notify } = useNotify()
   const theme = useTheme()
   // Ref keeps themeRef.current always pointing at the latest theme object so
-  // that useSettingsLoad's loadSettingsFromStore callback (memoized with an
-  // empty dep array) can call theme.setThemeMode without becoming stale.
+  // that useSettingsLoad's loadSettingsFromStore callback (whose dependency
+  // array deliberately omits `theme`) can call theme.setThemeMode without
+  // closing over a stale theme.
   const themeRef = useRef(theme)
   themeRef.current = theme
 

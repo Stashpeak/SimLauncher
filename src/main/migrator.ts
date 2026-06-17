@@ -18,7 +18,7 @@ function getCustomSlotNumber(key: string) {
 // Scan every record that could reference a custom app slot and return the
 // highest slot number found. Both pre-migration (flat boolean/path keys) and
 // post-migration (utilities array) shapes are checked because the store may
-// contain a mix when this runs (e.g. gamePaths is always flat; profiles may
+// contain a mix when this runs (e.g. appPaths is always flat; profiles may
 // already be in the new shape from a partial earlier migration attempt).
 function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
   let highestSlot = 0
