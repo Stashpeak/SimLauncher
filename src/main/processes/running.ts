@@ -200,6 +200,16 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   )
   const launchedExeNames = new Set(surfacedApps.map((appProcess) => getExeName(appProcess.path)))
   const profiles = getStoredProfiles()
+  // #591: a profile with tracking disabled is fire-and-forget — surface nothing
+  // for it (not even apps SimLauncher launched), so there's no running strip,
+  // green dot or close/relaunch controls. getTrackedRunningApps already skips
+  // these, but the launched / unclosed / mismatch entries bypass that gate, so
+  // the final result is filtered by this set below.
+  const trackingDisabledGameKeys = new Set(
+    Object.entries(profiles || {})
+      .filter(([, entry]) => getActiveStoredProfile(entry)?.trackingEnabled === false)
+      .map(([gameKey]) => gameKey)
+  )
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
   const launchedGameKeys = new Set(
@@ -236,7 +246,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       (appProcess) =>
         !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     )
-  ]
+  ].filter((appProcess) => !trackingDisabledGameKeys.has(appProcess.gameKey))
 }
 
 function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
