@@ -42,7 +42,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
       {/* Pill: branding + settings gear — the app's primary navigation */}
       <nav
         aria-label="Primary"
-        className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden"
+        className="no-drag glass-surface rounded-full flex items-center shrink-0"
       >
         {/* Launcher branding */}
         <Tooltip label="SimLauncher" placement="bottom">
