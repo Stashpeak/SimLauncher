@@ -118,6 +118,27 @@ export function MaximizeIcon(props: IconProps): ReactNode {
   )
 }
 
+export function RestoreIcon(props: IconProps): ReactNode {
+  return (
+    <Icon
+      width={props.width ?? 16}
+      height={props.height ?? 16}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      strokeLinecap="round"
+      {...props}
+    >
+      {/* Front window (bottom-left) */}
+      <rect x="2" y="5" width="9" height="9" rx="1.5" />
+      {/* Back window (offset up-right) — only the edges not hidden by the front */}
+      <path d="M5 5V3.5A1.5 1.5 0 0 1 6.5 2H12.5A1.5 1.5 0 0 1 14 3.5V9.5A1.5 1.5 0 0 1 12.5 11H11" />
+    </Icon>
+  )
+}
+
 export function CloseWindowIcon(props: IconProps): ReactNode {
   return (
     <Icon
