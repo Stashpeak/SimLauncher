@@ -46,10 +46,12 @@ export function useGameProfile(
   const [profileSet, setProfileSet] = useState<GameProfileSet>(() =>
     normalizeGameProfileSet(undefined)
   )
-  const [profileState, setProfileState] = useState<ProfileState>({
-    killControlsEnabled: false,
-    relaunchControlsEnabled: false
-  })
+  // Initialize from the same helper the load path uses (getProfileState), so the
+  // first render already reflects the default-ON opt-out semantics instead of a
+  // hardcoded false that would briefly mismatch until the store load resolves.
+  const [profileState, setProfileState] = useState<ProfileState>(() =>
+    getProfileState(normalizeGameProfileSet(undefined))
+  )
 
   const readProfileSet = useCallback(async () => {
     const profiles = await getProfiles()
