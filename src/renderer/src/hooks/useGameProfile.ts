@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  getActiveGameProfile,
-  normalizeGameProfileSet,
-  type GameProfileSet,
-  type Profiles
-} from '../lib/config'
+import { normalizeGameProfileSet, type GameProfileSet, type Profiles } from '../lib/config'
 import { getProfiles, saveProfile } from '../lib/store'
-
-type ProfileState = {
-  killControlsEnabled: boolean
-  relaunchControlsEnabled: boolean
-}
+import { getProfileState, type ProfileState } from '../lib/profileControls'
 
 const FOCUS_DEBOUNCE_MS = 300
 const PROFILE_FOCUS_EVENT = 'simlauncher:profile-focus-reload'
@@ -37,15 +28,6 @@ function ensureFocusListener() {
       window.dispatchEvent(new Event(PROFILE_FOCUS_EVENT))
     }, FOCUS_DEBOUNCE_MS)
   })
-}
-
-const getProfileState = (profileSet: GameProfileSet): ProfileState => {
-  const profile = getActiveGameProfile(profileSet)
-
-  return {
-    killControlsEnabled: profile.killControlsEnabled === true,
-    relaunchControlsEnabled: profile.relaunchControlsEnabled === true
-  }
 }
 
 export interface UseGameProfileResult {
