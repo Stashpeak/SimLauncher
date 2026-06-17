@@ -1,6 +1,6 @@
 {
   "name": "simlauncher",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "description": "SimLauncher - Multi app launcher for simracing",
   "main": "out/main/index.js",
   "repository": {
@@ -74,6 +74,6 @@
   },
   "overrides": {
     "@electron/asar": "4.2.0",
-    "js-yaml": "4.1.1"
+    "js-yaml": "^4.2.0"
   }
 }
