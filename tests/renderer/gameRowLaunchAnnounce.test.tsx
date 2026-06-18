@@ -162,6 +162,11 @@ describe('GameRow launch a11y (#612)', () => {
 
     expect(announceMock).toHaveBeenCalledWith('Launching Assetto Corsa')
     expect(launchProfileMock).toHaveBeenCalledWith('ac')
+    // The cue must fire BEFORE the launch IPC, not merely at some point — that
+    // is the #612 contract: the SR hears "Launching" at launch start.
+    expect(announceMock.mock.invocationCallOrder[0]).toBeLessThan(
+      launchProfileMock.mock.invocationCallOrder[0]
+    )
   })
 
   test('the row exposes a role="listitem" whose accessible name is the game name', async () => {
