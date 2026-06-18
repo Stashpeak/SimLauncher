@@ -30,6 +30,11 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
+  # Hyphenated, space-free name so the local artifact, the published GitHub
+  # asset, latest.yml and SHA256SUMS.txt all agree — otherwise the default
+  # "${productName} Setup ${version}" (with spaces) is sanitized to hyphens on
+  # upload and `sha256sum -c SHA256SUMS.txt` fails on the downloaded asset (#614).
+  artifactName: ${productName}-Setup-${version}.${ext}
 publish:
   provider: github
   owner: Stashpeak
