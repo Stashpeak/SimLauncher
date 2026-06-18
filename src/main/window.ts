@@ -159,8 +159,9 @@ export function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Disable DevTools in packaged builds so Ctrl+Shift+I / F12 / the menu
-      // toggle are all no-ops in production (can't be bypassed); kept on in dev.
+      // Disable DevTools in packaged builds: Ctrl+Shift+I / F12 / the menu
+      // toggle all become no-ops in production (kept on in dev). Does not block
+      // the --remote-debugging-port launch flag, a separate advanced vector.
       // Field diagnostics go through the logs folder + main-error.log (#524).
       devTools: !app.isPackaged,
       zoomFactor,
