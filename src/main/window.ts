@@ -159,6 +159,10 @@ export function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Disable DevTools in packaged builds so Ctrl+Shift+I / F12 / the menu
+      // toggle are all no-ops in production (can't be bypassed); kept on in dev.
+      // Field diagnostics go through the logs folder + main-error.log (#524).
+      devTools: !app.isPackaged,
       zoomFactor,
       preload: path.join(__dirname, '../preload/index.js')
     }
