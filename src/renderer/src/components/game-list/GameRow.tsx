@@ -72,7 +72,7 @@ export function GameRow({
   onCloseEditor: () => void
   cacheInitialized: boolean
 }): ReactNode {
-  const { notify } = useNotify()
+  const { notify, announce } = useNotify()
   const [profileSwitchConfirm, setProfileSwitchConfirm] = useState<{
     nextProfileId: string
     nextProfileName: string
@@ -350,6 +350,11 @@ export function GameRow({
 
     try {
       onLaunchStart(game.key)
+      // Polite SR cue that a launch has begun. The button's spinner + aria-busy
+      // are visual/verbosity-dependent; this live-region announcement is the
+      // reliable spoken "launch started" feedback, paired with the existing
+      // "X is now running" settle cue (#612).
+      announce(`Launching ${game.name}`)
       const result = await launchProfile(game.key)
       if (!result.success) {
         cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
@@ -453,6 +458,10 @@ export function GameRow({
   return (
     <div
       role="listitem"
+      // Name the list item so Narrator announces the game (e.g. "Assetto Corsa,
+      // 3 of 7") instead of synthesizing a bare list marker ("bullet") in front
+      // of each focused control in the row (#612). Keeps the list semantics.
+      aria-label={game.name}
       className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
@@ -528,7 +537,10 @@ export function GameRow({
                 onLaunchRequest={(launcher) => {
                   handleLaunchRequest.current = launcher
                 }}
-                onLaunchStart={() => onLaunchStart(game.key)}
+                onLaunchStart={() => {
+                  announce(`Launching ${game.name}`)
+                  onLaunchStart(game.key)
+                }}
                 // primaryLaunch only when the game EXE wasn't already running
                 // (isGameRunning, not the aggregate), so the "now running" cue
                 // isn't spoken for a launch that merely (re)starts companion apps
