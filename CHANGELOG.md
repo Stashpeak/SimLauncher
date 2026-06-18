@@ -9,7 +9,7 @@ Full per-release notes — including every linked issue and PR — are published
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-06-14
+## [1.0.0] - 2026-06-18
 
 ### Added
 
@@ -28,6 +28,7 @@ Full per-release notes — including every linked issue and PR — are published
 - The maximize/restore button icon now stays correct when the window is snapped or restored through Windows shortcuts (Win+Up, aero-snap, taskbar double-click), not just the title-bar button.
 - App-argument parsing now follows the Windows convention for quoted paths ending in a backslash (e.g. `"C:\My Path\" --flag`), so the rest of the arguments are no longer swallowed into one token.
 - Closing an app whose executable name contains a single quote now works (the process lookup no longer builds an invalid query).
+- Games you configure or remove now appear in (or disappear from) the Games list immediately after saving, instead of only after restarting the app.
 
 ### Changed
 
@@ -38,6 +39,17 @@ Full per-release notes — including every linked issue and PR — are published
 - A broad screen-reader and keyboard accessibility pass: launch progress, launch failures, "now running", companion-apps-closed and update-available status are now spoken through a dedicated live region (errors interrupt); the games and settings screens expose proper headings, landmarks, list semantics and a per-screen window title; switching screens or pressing Escape moves keyboard focus into the visible screen instead of stranding it; and every control shows a visible focus ring, with idle icon buttons brightened to meet contrast.
 - The accent colour is now the SimLauncher teal everywhere — the keyboard focus ring and a brief startup flash that could still show the old purple are gone.
 - Updated the application icon to the current SimLauncher branding.
+
+### Security
+
+- Updated the bundled `js-yaml` dependency to 4.2.0, resolving a moderate denial-of-service advisory (GHSA-h67p-54hq-rp68) in the library that parses the auto-update manifest.
+- DevTools are now disabled in packaged builds, so they can no longer be opened (via the keyboard shortcuts or the menu) in production.
+
+## [0.9.11] - 2026-06-17
+
+### Fixed
+
+- Games you configure or remove now appear in (or disappear from) the Games list immediately after saving, instead of only after restarting the app.
 
 ### Security
 
