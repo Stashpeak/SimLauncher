@@ -11,6 +11,15 @@ import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
 
+// Derive the payload type from the store binding (same approach as
+// useSettingsLoad) so the reason gate below stays in sync with
+// StoreConfigChangeReason without a second import.
+type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] extends (
+  payload: infer Payload
+) => void
+  ? Payload
+  : never
+
 // Case-insensitive path comparison — Windows paths are case-insensitive but
 // the main process may return them in any case (e.g. from process snapshots
 // vs. settings-stored paths). Without normalization, `C:\foo` and `c:\foo`
@@ -78,11 +87,18 @@ export function GameList({
   useEffect(() => {
     const alive = { current: true }
     void loadSettings(alive)
-    // GameList is a pure reader with no dirty baseline, so — unlike
-    // useSettingsLoad — it must NOT skip the 'save-settings' reason: that's the
-    // write that carries gamePaths. The event fires after the store write, and
-    // GameList never writes the store, so there is no feedback loop.
-    const unsubscribe = onStoreConfigChanged(() => {
+    // GameList only reads gamePaths + focusActiveTitle, both written by
+    // 'save-settings'. So — unlike useSettingsLoad — it must NOT skip
+    // 'save-settings' (that's the write that carries gamePaths), but it CAN
+    // skip reasons that never touch gamePaths: 'save-profile' / 'save-profiles'
+    // (profiles only) and 'set-migration-flags' (boolean flags only). Gating
+    // here stops an unrelated save (theme, tray, a profile save) from giving
+    // configuredGames a new reference and needlessly re-subscribing the
+    // running-apps IPC/monitor (#603). 'import-config' replaces the whole store
+    // (keys ['*']) and can carry gamePaths, so it must reload. GameList never
+    // writes the store, so there is no feedback loop.
+    const unsubscribe = onStoreConfigChanged((payload: StoreConfigChangePayload) => {
+      if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
       void loadSettings(alive)
     })
 
