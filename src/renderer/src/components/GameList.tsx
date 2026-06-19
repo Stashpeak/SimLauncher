@@ -11,6 +11,15 @@ import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
 
+// Derive the payload type from the store binding (same approach as
+// useSettingsLoad) so the reason gate below stays in sync with
+// StoreConfigChangeReason without a second import.
+type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] extends (
+  payload: infer Payload
+) => void
+  ? Payload
+  : never
+
 // Case-insensitive path comparison — Windows paths are case-insensitive but
 // the main process may return them in any case (e.g. from process snapshots
 // vs. settings-stored paths). Without normalization, `C:\foo` and `c:\foo`
@@ -68,7 +77,18 @@ export function GameList({
 
       setGamePaths(settings.gamePaths)
       setFocusActiveTitle(settings.focusActiveTitle !== false)
-      setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
+      // Keep the previous configuredGames array reference when the game SET is
+      // unchanged. Every Settings save sends the full settings object, so
+      // 'save-settings' carries gamePaths in its changed keys even when gamePaths
+      // didn't actually change (theme/tray/accent saves). Without this guard a
+      // fresh array would churn useRunningApps' effect, re-subscribing the
+      // running-apps IPC/monitor on every unrelated save (#603).
+      setConfiguredGames((prev) => {
+        const next = GAMES.filter((game) => !!settings.gamePaths[game.key])
+        const unchanged =
+          prev.length === next.length && prev.every((game, index) => game.key === next[index].key)
+        return unchanged ? prev : next
+      })
       setSettingsLoaded(true)
     } catch (err) {
       console.error('Failed to load game settings', err)
@@ -78,11 +98,17 @@ export function GameList({
   useEffect(() => {
     const alive = { current: true }
     void loadSettings(alive)
-    // GameList is a pure reader with no dirty baseline, so — unlike
-    // useSettingsLoad — it must NOT skip the 'save-settings' reason: that's the
-    // write that carries gamePaths. The event fires after the store write, and
-    // GameList never writes the store, so there is no feedback loop.
-    const unsubscribe = onStoreConfigChanged(() => {
+    // Reload only for reasons that can carry gamePaths: 'import-config' (full
+    // store replace, keys ['*']) and 'save-settings'. Skip 'save-profile' /
+    // 'save-profiles' (profiles only) and 'set-migration-flags' (boolean flags)
+    // so those writes don't trigger a needless getSettings round-trip. Every
+    // Settings save sends the FULL settings object, so 'save-settings' also fires
+    // on theme/tray/accent changes — loadSettings absorbs that cheaply by keeping
+    // the configuredGames reference stable when the game set is unchanged (see the
+    // guard above), so useRunningApps doesn't re-subscribe (#603). GameList never
+    // writes the store, so there is no feedback loop.
+    const unsubscribe = onStoreConfigChanged((payload: StoreConfigChangePayload) => {
+      if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
       void loadSettings(alive)
     })
 

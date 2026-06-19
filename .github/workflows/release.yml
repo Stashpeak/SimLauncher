@@ -55,7 +55,7 @@ jobs:
           sha256sum *.exe | tee SHA256SUMS.txt
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         env:
           # Electron is a devDependency but electron-builder embeds its
           # Chromium runtime into the installer, so dev deps must be included
