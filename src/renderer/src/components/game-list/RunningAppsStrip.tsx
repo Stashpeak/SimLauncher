@@ -124,7 +124,7 @@ function RunningAppIconItem({
         ref={refs.setReference}
         type="button"
         aria-label={`${app.name}: ${app.warning}`}
-        className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm ring-1 ring-(--warning-text)"
+        className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-(--warning-border)"
         {...triggerProps}
       >
         {isAvailable ? (
