@@ -77,7 +77,18 @@ export function GameList({
 
       setGamePaths(settings.gamePaths)
       setFocusActiveTitle(settings.focusActiveTitle !== false)
-      setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
+      // Keep the previous configuredGames array reference when the game SET is
+      // unchanged. Every Settings save sends the full settings object, so
+      // 'save-settings' carries gamePaths in its changed keys even when gamePaths
+      // didn't actually change (theme/tray/accent saves). Without this guard a
+      // fresh array would churn useRunningApps' effect, re-subscribing the
+      // running-apps IPC/monitor on every unrelated save (#603).
+      setConfiguredGames((prev) => {
+        const next = GAMES.filter((game) => !!settings.gamePaths[game.key])
+        const unchanged =
+          prev.length === next.length && prev.every((game, index) => game.key === next[index].key)
+        return unchanged ? prev : next
+      })
       setSettingsLoaded(true)
     } catch (err) {
       console.error('Failed to load game settings', err)
@@ -87,15 +98,14 @@ export function GameList({
   useEffect(() => {
     const alive = { current: true }
     void loadSettings(alive)
-    // GameList only reads gamePaths + focusActiveTitle, both written by
-    // 'save-settings'. So — unlike useSettingsLoad — it must NOT skip
-    // 'save-settings' (that's the write that carries gamePaths), but it CAN
-    // skip reasons that never touch gamePaths: 'save-profile' / 'save-profiles'
-    // (profiles only) and 'set-migration-flags' (boolean flags only). Gating
-    // here stops an unrelated save (theme, tray, a profile save) from giving
-    // configuredGames a new reference and needlessly re-subscribing the
-    // running-apps IPC/monitor (#603). 'import-config' replaces the whole store
-    // (keys ['*']) and can carry gamePaths, so it must reload. GameList never
+    // Reload only for reasons that can carry gamePaths: 'import-config' (full
+    // store replace, keys ['*']) and 'save-settings'. Skip 'save-profile' /
+    // 'save-profiles' (profiles only) and 'set-migration-flags' (boolean flags)
+    // so those writes don't trigger a needless getSettings round-trip. Every
+    // Settings save sends the FULL settings object, so 'save-settings' also fires
+    // on theme/tray/accent changes — loadSettings absorbs that cheaply by keeping
+    // the configuredGames reference stable when the game set is unchanged (see the
+    // guard above), so useRunningApps doesn't re-subscribe (#603). GameList never
     // writes the store, so there is no feedback loop.
     const unsubscribe = onStoreConfigChanged((payload: StoreConfigChangePayload) => {
       if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
