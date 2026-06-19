@@ -5,6 +5,10 @@ on:
     branches-ignore:
       - main
 
+# Restrictive default so any future job inherits least privilege; the existing
+# job below explicitly grants the narrow scope it needs (pull-requests: write).
+permissions: {}
+
 jobs:
   sync:
     runs-on: ubuntu-latest
