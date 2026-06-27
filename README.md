@@ -1,11 +1,11 @@
 # SimLauncher
 
 [![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher)](../../releases)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37BPprjazF)
 [![Downloads](https://img.shields.io/github/downloads/Stashpeak/SimLauncher/total)](../../releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/Stashpeak/SimLauncher/ci.yml?branch=main&label=CI)](../../actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/Stashpeak/SimLauncher)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37BPprjazF)
 
 One-click startup for your entire sim racing setup.
 
@@ -13,7 +13,7 @@ Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimH
 
 https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
-**➡️ [Download SimLauncher for Windows](../../releases/latest)**
+**➡️ [Download SimLauncher for Windows](../../releases/latest)** · 💬 **[Join the Discord](https://discord.gg/37BPprjazF)**
 
 > On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
 
