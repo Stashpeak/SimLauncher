@@ -243,6 +243,7 @@ export interface ElectronAPI {
   getVersion: () => Promise<string>
   getStartupNotice: () => Promise<StartupNotice | null>
   openLogsFolder: () => Promise<string>
+  openExternalUrl: (url: string) => Promise<boolean>
   dismissAppIcon: (
     appPath: string,
     gameKey: string
