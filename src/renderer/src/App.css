@@ -399,10 +399,6 @@ textarea {
   transform: scale(1.04);
 }
 
-.action-hover-scale {
-  will-change: transform;
-}
-
 .icon-action {
   background: transparent;
   /* --text-muted (not --text-subtle) so resting icon glyphs clear the 3:1
