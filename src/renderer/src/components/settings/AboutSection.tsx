@@ -82,7 +82,7 @@ export function AboutSection({
           <span className="settings-label">Community</span>
           <span className="settings-sublabel">Join the Discord or browse the source on GitHub</span>
         </div>
-        <div className="flex gap-2">
+        <div className="settings-control">
           <button
             type="button"
             onClick={() => {
