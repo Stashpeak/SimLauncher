@@ -5,6 +5,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Stashpeak/SimLauncher/ci.yml?branch=main&label=CI)](../../actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/Stashpeak/SimLauncher)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37BPprjazF)
 
 One-click startup for your entire sim racing setup.
 
@@ -165,6 +166,8 @@ Please **don't** open a public issue for security vulnerabilities. Report them p
 ---
 
 ## Support
+
+Questions, setup help, or want to show your rig? Join the [SimLauncher Discord](https://discord.gg/37BPprjazF). For bugs and feature requests, open a [GitHub issue](../../issues).
 
 If SimLauncher saves you time on race day, a small tip is appreciated: [paypal.me/shieldxx](https://paypal.me/shieldxx)
 
