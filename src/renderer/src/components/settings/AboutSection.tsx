@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react'
 
 import { openExternalUrl, openLogsFolder } from '../../lib/electron'
+import { DiscordIcon, GithubIcon } from '../icons'
 import { useNotify } from '../Notify'
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
@@ -87,8 +88,9 @@ export function AboutSection({
             onClick={() => {
               void handleOpenExternal(DISCORD_INVITE_URL)
             }}
-            className="action-hover-scale cursor-pointer rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
+            className="action-hover-scale inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
           >
+            <DiscordIcon className="h-3.5 w-3.5" />
             Discord
           </button>
           <button
@@ -96,8 +98,9 @@ export function AboutSection({
             onClick={() => {
               void handleOpenExternal(GITHUB_REPO_URL)
             }}
-            className="action-hover-scale cursor-pointer rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
+            className="action-hover-scale inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
           >
+            <GithubIcon className="h-3.5 w-3.5" />
             GitHub
           </button>
         </div>
