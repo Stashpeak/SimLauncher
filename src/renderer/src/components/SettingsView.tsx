@@ -20,34 +20,25 @@ import { useAppDirty } from '../contexts/AppDirtyContext'
 export function SettingsView({
   onClose,
   updateInfo,
-  targetSection,
-  onTargetConsumed
+  targetSection
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
   targetSection: SettingsSectionKey | null
-  onTargetConsumed: () => void
 }): ReactNode {
   return (
-    <SettingsViewContent
-      onClose={onClose}
-      updateInfo={updateInfo}
-      targetSection={targetSection}
-      onTargetConsumed={onTargetConsumed}
-    />
+    <SettingsViewContent onClose={onClose} updateInfo={updateInfo} targetSection={targetSection} />
   )
 }
 
 function SettingsViewContent({
   onClose,
   updateInfo,
-  targetSection,
-  onTargetConsumed
+  targetSection
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
   targetSection: SettingsSectionKey | null
-  onTargetConsumed: () => void
 }) {
   const { notify, announce } = useNotify()
   const { loading, isDirty, dirtySections, saveSettings } = useSettingsMeta()
@@ -68,19 +59,24 @@ function SettingsViewContent({
   }, [])
 
   // Deep-link arrival (the "Configure Games" CTA, later onboarding): open the
-  // requested section and scroll it into view, then clear the request so the
-  // same CTA can re-trigger. Gated on `loading` because the sections (and their
-  // scroll anchors) aren't in the DOM until the config has loaded.
+  // requested section and scroll it to the top. Gated on `loading` because the
+  // sections (and their scroll anchors) aren't in the DOM until the config has
+  // loaded. The scroll is deferred ~one expand-transition: a previously
+  // collapsed section has no height yet, so scrolling immediately would clamp it
+  // partway down before its content exists. Navigating back to Games resets the
+  // target to null, so the same CTA re-fires without an explicit consume hop.
   useEffect(() => {
     if (loading || !targetSection) return
     setSectionOpen(targetSection, true)
-    const node = rootRef.current?.querySelector<HTMLElement>(`[data-section="${targetSection}"]`)
-    if (node) {
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      node.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
-    }
-    onTargetConsumed()
-  }, [targetSection, loading, setSectionOpen, onTargetConsumed])
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // Keep the delay in sync with SettingsSection's duration-300 grid-rows
+    // transition so the section has reached full height before we scroll.
+    const timer = window.setTimeout(() => {
+      const node = rootRef.current?.querySelector<HTMLElement>(`[data-section="${targetSection}"]`)
+      node?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    }, 320)
+    return () => window.clearTimeout(timer)
+  }, [targetSection, loading, setSectionOpen])
 
   // Escape navigates back to the games view from anywhere inside Settings.
   // This listener is on the bubble phase (not capture), so ConfirmDialog's

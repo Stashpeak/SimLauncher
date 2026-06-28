@@ -2,11 +2,12 @@
  * #642 / #583 — Settings deep-link auto-expand.
  *
  * When SettingsView receives a `targetSection` (e.g. from the "Configure Games"
- * CTA, or later onboarding), that section must open (aria-expanded=true) and
- * scroll into view, then the consume callback fires so the same CTA can
- * re-trigger. A null target must leave the default collapse state untouched
- * (no regression for a plain gear-icon open). Games is collapsed by default, so
- * it is the meaningful section to assert against.
+ * CTA, or later onboarding), that section opens (aria-expanded=true) and, once
+ * its expand transition has settled, scrolls to the top. A null target leaves
+ * the default collapse state untouched (no regression for a plain gear-icon
+ * open). Games is collapsed by default, so it is the meaningful section to
+ * assert against. The scroll is deferred ~one expand-transition (a previously
+ * collapsed section has no height yet), so it is asserted after a short wait.
  */
 import { describe, expect, test, vi, beforeEach } from 'vitest'
 import { act, type ReactNode } from 'react'
@@ -78,8 +79,7 @@ const metaValue: SettingsMetaContextValue = {
 }
 
 async function renderSettings(
-  targetSection: SettingsSectionKey | null,
-  onConsumed: () => void
+  targetSection: SettingsSectionKey | null
 ): Promise<{ container: HTMLElement; unmount: () => void }> {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -89,12 +89,7 @@ async function renderSettings(
     root.render(
       <AppDirtyProvider>
         <SettingsMetaContext.Provider value={metaValue}>
-          <SettingsView
-            onClose={() => {}}
-            updateInfo={null}
-            targetSection={targetSection}
-            onTargetConsumed={onConsumed}
-          />
+          <SettingsView onClose={() => {}} updateInfo={null} targetSection={targetSection} />
         </SettingsMetaContext.Provider>
       </AppDirtyProvider>
     )
@@ -116,6 +111,13 @@ function sectionButton(container: HTMLElement, key: SettingsSectionKey): HTMLBut
   return button as HTMLButtonElement
 }
 
+// Wait out the deferred scroll (SettingsView delays it ~one 300ms transition).
+async function flushDeferredScroll() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 360))
+  })
+}
+
 describe('Settings deep-link auto-expand (#642 / #583)', () => {
   beforeEach(() => {
     notifyMock.mockClear()
@@ -126,26 +128,26 @@ describe('Settings deep-link auto-expand (#642 / #583)', () => {
       .mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia
   })
 
-  test('a targetSection opens that section, scrolls it into view, and consumes the target', async () => {
-    const onConsumed = vi.fn()
-    const harness = await renderSettings('games', onConsumed)
+  test('a targetSection opens that section immediately, then scrolls it into view', async () => {
+    const harness = await renderSettings('games')
     try {
-      // Games is collapsed by default — the deep-link must open it.
+      // Games is collapsed by default — the deep-link opens it right away.
       expect(sectionButton(harness.container, 'games').getAttribute('aria-expanded')).toBe('true')
+      // The scroll is deferred until the expand transition has settled.
+      expect(scrollIntoViewMock).not.toHaveBeenCalled()
+      await flushDeferredScroll()
       expect(scrollIntoViewMock).toHaveBeenCalledTimes(1)
-      expect(onConsumed).toHaveBeenCalledTimes(1)
     } finally {
       harness.unmount()
     }
   })
 
-  test('no target leaves Games collapsed and does not scroll (direct gear open)', async () => {
-    const onConsumed = vi.fn()
-    const harness = await renderSettings(null, onConsumed)
+  test('no target leaves Games collapsed and never scrolls (direct gear open)', async () => {
+    const harness = await renderSettings(null)
     try {
       expect(sectionButton(harness.container, 'games').getAttribute('aria-expanded')).toBe('false')
+      await flushDeferredScroll()
       expect(scrollIntoViewMock).not.toHaveBeenCalled()
-      expect(onConsumed).not.toHaveBeenCalled()
     } finally {
       harness.unmount()
     }

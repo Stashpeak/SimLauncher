@@ -322,10 +322,6 @@ function AppContent() {
     setShowImportWarning(true)
   }
 
-  // Clear the deep-link target once SettingsView has opened + scrolled to it, so
-  // re-clicking the same CTA fires the effect again.
-  const handleTargetConsumed = useCallback(() => setSettingsTarget(null), [])
-
   return (
     <div
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
@@ -404,7 +400,6 @@ function AppContent() {
                 onClose={() => handleNavigate('games')}
                 updateInfo={updateInfo}
                 targetSection={settingsTarget}
-                onTargetConsumed={handleTargetConsumed}
               />
             </div>
           </div>
