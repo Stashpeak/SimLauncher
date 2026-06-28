@@ -36,7 +36,14 @@ export function registerSystemHandlers(): void {
     if (parsed.protocol !== 'https:' || !ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname)) {
       return false
     }
-    await shell.openExternal(url)
-    return true
+    // shell.openExternal can reject (no registered OS handler, launch failure).
+    // Map that to false so the renderer surfaces its error toast instead of the
+    // IPC invoke rejecting and the failure being dropped as an unhandled rejection.
+    try {
+      await shell.openExternal(url)
+      return true
+    } catch {
+      return false
+    }
   })
 }
