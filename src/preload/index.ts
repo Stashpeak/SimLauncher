@@ -128,6 +128,7 @@ const electronAPI: ElectronAPI = {
   getVersion: () => ipcRenderer.invoke('get-version'),
   getStartupNotice: () => ipcRenderer.invoke('get-startup-notice'),
   openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
+  openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
   dismissAppIcon: (appPath: string, gameKey: string) =>
     ipcRenderer.invoke('dismiss-app-icon', appPath, gameKey)
 }

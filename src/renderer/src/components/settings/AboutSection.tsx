@@ -1,10 +1,14 @@
 import { useId, type ReactNode } from 'react'
 
-import { openLogsFolder } from '../../lib/electron'
+import { openExternalUrl, openLogsFolder } from '../../lib/electron'
+import { DiscordIcon, GithubIcon } from '../icons'
 import { useNotify } from '../Notify'
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
 import type { UpdateInfo, UpdateStatus } from './types'
+
+const DISCORD_INVITE_URL = 'https://discord.gg/37BPprjazF'
+const GITHUB_REPO_URL = 'https://github.com/Stashpeak/SimLauncher'
 
 interface AboutSectionProps {
   appVersion: string
@@ -41,6 +45,13 @@ export function AboutSection({
     }
   }
 
+  const handleOpenExternal = async (url: string) => {
+    const opened = await openExternalUrl(url)
+    if (!opened) {
+      notify('Could not open the link.', 'error')
+    }
+  }
+
   return (
     <>
       <div className="settings-row">
@@ -64,6 +75,35 @@ export function AboutSection({
         >
           Open logs folder
         </button>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-label-group">
+          <span className="settings-label">Community</span>
+          <span className="settings-sublabel">Join the Discord or browse the source on GitHub</span>
+        </div>
+        <div className="settings-control">
+          <button
+            type="button"
+            onClick={() => {
+              void handleOpenExternal(DISCORD_INVITE_URL)
+            }}
+            className="action-hover-scale inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
+          >
+            <DiscordIcon className="h-3.5 w-3.5" />
+            Discord
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void handleOpenExternal(GITHUB_REPO_URL)
+            }}
+            className="action-hover-scale inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--glass-border) px-3 py-1.5 text-xs font-medium text-(--text-secondary)"
+          >
+            <GithubIcon className="h-3.5 w-3.5" />
+            GitHub
+          </button>
+        </div>
       </div>
 
       <div className="settings-row">
