@@ -1,7 +1,10 @@
 import { useId, type ReactNode } from 'react'
+import type { SettingsSectionKey } from './types'
 
 interface SettingsSectionProps {
   title: string
+  // Stable key used to deep-link/scroll to this section (data-section anchor).
+  sectionKey: SettingsSectionKey
   open: boolean
   onOpenChange: (open: boolean) => void
   children: ReactNode
@@ -10,6 +13,7 @@ interface SettingsSectionProps {
 
 export function SettingsSection({
   title,
+  sectionKey,
   open,
   onOpenChange,
   children,
@@ -17,7 +21,9 @@ export function SettingsSection({
 }: SettingsSectionProps): ReactNode {
   const regionId = useId()
   return (
-    <section className="space-y-4">
+    // scroll-mt-16 leaves room for the absolute header so a scrolled-to section
+    // heading isn't tucked behind it (#642 deep-link auto-scroll).
+    <section data-section={sectionKey} className="scroll-mt-16 space-y-4">
       {/* Heading WRAPS the button (WAI-ARIA accordion pattern). A button has
           presentational children, so a heading placed *inside* it is stripped
           from the accessibility tree — wrapping keeps the section title in the
