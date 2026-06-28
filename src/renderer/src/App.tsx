@@ -3,6 +3,7 @@ import { NotifyProvider, useNotify } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
+import type { SettingsSectionKey } from './components/settings/types'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { StickySaveBar } from './components/StickySaveBar'
 import { WarningTriangleIcon, CloseIcon } from './components/icons'
@@ -42,6 +43,11 @@ function AppContent() {
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
   const [showImportWarning, setShowImportWarning] = useState(false)
   const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
+  // Deep-link target: which Settings section to open + scroll to when Settings
+  // becomes the active view. `pendingTarget` mirrors `pendingView` so a target
+  // requested while there are unsaved changes survives the save/discard confirm.
+  const [settingsTarget, setSettingsTarget] = useState<SettingsSectionKey | null>(null)
+  const [pendingTarget, setPendingTarget] = useState<SettingsSectionKey | null>(null)
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   // When true, the close dialog's actions minimize to tray instead of fully
   // quitting. Set from the `close-requested` payload so the dialog labels and
@@ -185,14 +191,24 @@ function AppContent() {
   // Gate tab navigation behind the discard/save confirm dialog when dirty.
   // The actual view switch is deferred to handleConfirmDiscard/Save so the
   // user's choice (save vs discard) determines the transition.
-  const handleNavigate = (nextView: 'games' | 'settings') => {
-    if (view === nextView) return
+  const handleNavigate = (
+    nextView: 'games' | 'settings',
+    target: SettingsSectionKey | null = null
+  ) => {
+    if (view === nextView) {
+      // Already on this view; still surface a requested section (e.g. clicking
+      // a deep-link CTA again) so it re-opens + scrolls.
+      if (nextView === 'settings' && target) setSettingsTarget(target)
+      return
+    }
 
     if (isAnyDirty) {
       setPendingView(nextView)
+      setPendingTarget(target)
       return
     }
     setView(nextView)
+    setSettingsTarget(target)
   }
 
   const handleDiscardAll = useCallback(async () => {
@@ -216,12 +232,15 @@ function AppContent() {
     await handleDiscardAll()
     if (pendingView) {
       setView(pendingView)
+      setSettingsTarget(pendingTarget)
       setPendingView(null)
+      setPendingTarget(null)
     }
-  }, [handleDiscardAll, pendingView])
+  }, [handleDiscardAll, pendingView, pendingTarget])
 
   const handleConfirmCancel = () => {
     setPendingView(null)
+    setPendingTarget(null)
   }
 
   const handleConfirmSave = useCallback(async () => {
@@ -242,9 +261,11 @@ function AppContent() {
     setRefreshKey((k) => k + 1)
     if (pendingView) {
       setView(pendingView)
+      setSettingsTarget(pendingTarget)
       setPendingView(null)
+      setPendingTarget(null)
     }
-  }, [pendingView, requestSaveAll])
+  }, [pendingView, pendingTarget, requestSaveAll])
 
   const handleCloseConfirmSave = useCallback(async () => {
     let success: boolean
@@ -300,6 +321,11 @@ function AppContent() {
     setRefreshKey((k) => k + 1)
     setShowImportWarning(true)
   }
+
+  // SettingsView clears the deep-link target once it has opened + scrolled to
+  // it, so re-requesting the SAME section produces a real state change and
+  // re-fires the open/scroll effect.
+  const handleTargetConsumed = useCallback(() => setSettingsTarget(null), [])
 
   return (
     <div
@@ -375,7 +401,12 @@ function AppContent() {
               aria-label="Settings"
               className={`view-focus-region flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
             >
-              <SettingsView onClose={() => handleNavigate('games')} updateInfo={updateInfo} />
+              <SettingsView
+                onClose={() => handleNavigate('games')}
+                updateInfo={updateInfo}
+                targetSection={settingsTarget}
+                onTargetConsumed={handleTargetConsumed}
+              />
             </div>
           </div>
         </main>

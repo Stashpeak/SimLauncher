@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNotify } from './Notify'
 import { AboutSection } from './settings/AboutSection'
 import { AppearanceSection } from './settings/AppearanceSection'
@@ -8,7 +8,7 @@ import { ConfigSection } from './settings/ConfigSection'
 import { GamesSection } from './settings/GamesSection'
 import { SettingsSection } from './settings/SettingsSection'
 import { useSettingsMeta } from './settings/SettingsMetaContext'
-import type { UpdateInfo } from './settings/types'
+import type { SettingsSectionKey, UpdateInfo } from './settings/types'
 import { useUpdateStatus } from './settings/useUpdateStatus'
 import { useAppDirty } from '../contexts/AppDirtyContext'
 
@@ -19,20 +19,35 @@ import { useAppDirty } from '../contexts/AppDirtyContext'
 
 export function SettingsView({
   onClose,
-  updateInfo
+  updateInfo,
+  targetSection,
+  onTargetConsumed
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
+  targetSection: SettingsSectionKey | null
+  onTargetConsumed: () => void
 }): ReactNode {
-  return <SettingsViewContent onClose={onClose} updateInfo={updateInfo} />
+  return (
+    <SettingsViewContent
+      onClose={onClose}
+      updateInfo={updateInfo}
+      targetSection={targetSection}
+      onTargetConsumed={onTargetConsumed}
+    />
+  )
 }
 
 function SettingsViewContent({
   onClose,
-  updateInfo
+  updateInfo,
+  targetSection,
+  onTargetConsumed
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
+  targetSection: SettingsSectionKey | null
+  onTargetConsumed: () => void
 }) {
   const { notify, announce } = useNotify()
   const { loading, isDirty, dirtySections, saveSettings } = useSettingsMeta()
@@ -46,10 +61,35 @@ function SettingsViewContent({
     apps: false
   })
   const updateStatus = useUpdateStatus({ updateInfo, notify, announce })
+  const rootRef = useRef<HTMLDivElement>(null)
 
-  const setSectionOpen = (section: keyof typeof expandedSections, open: boolean) => {
+  const setSectionOpen = useCallback((section: keyof typeof expandedSections, open: boolean) => {
     setExpandedSections((current) => ({ ...current, [section]: open }))
-  }
+  }, [])
+
+  // Deep-link arrival (the "Configure Games" CTA, later onboarding): open the
+  // requested section and scroll it to the top. Gated on `loading` because the
+  // sections (and their scroll anchors) aren't in the DOM until the config has
+  // loaded. The scroll is deferred ~one expand-transition: a previously
+  // collapsed section has no height yet, so scrolling immediately would clamp it
+  // partway down before its content exists.
+  useEffect(() => {
+    if (loading || !targetSection) return
+    setSectionOpen(targetSection, true)
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // Keep the delay in sync with SettingsSection's duration-300 grid-rows
+    // transition so the section has reached full height before we scroll.
+    const timer = window.setTimeout(() => {
+      const node = rootRef.current?.querySelector<HTMLElement>(`[data-section="${targetSection}"]`)
+      node?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+      // Clear the target only AFTER it's handled, so re-requesting the SAME
+      // section (e.g. onboarding while Settings is already open) is a real state
+      // change that re-fires this effect. Clearing earlier would also cancel
+      // this scroll via the cleanup below.
+      onTargetConsumed()
+    }, 320)
+    return () => window.clearTimeout(timer)
+  }, [targetSection, loading, setSectionOpen, onTargetConsumed])
 
   // Escape navigates back to the games view from anywhere inside Settings.
   // This listener is on the bubble phase (not capture), so ConfirmDialog's
@@ -85,9 +125,10 @@ function SettingsViewContent({
   if (loading) return null
 
   return (
-    <div className="animate-fade-slide relative space-y-8 pb-2">
+    <div ref={rootRef} className="animate-fade-slide relative space-y-8 pb-2">
       <SettingsSection
         title="About"
+        sectionKey="about"
         open={expandedSections.about}
         onOpenChange={(open) => setSectionOpen('about', open)}
         dirty={dirtySections.about}
@@ -106,6 +147,7 @@ function SettingsViewContent({
 
       <SettingsSection
         title="Appearance"
+        sectionKey="appearance"
         open={expandedSections.appearance}
         onOpenChange={(open) => setSectionOpen('appearance', open)}
         dirty={dirtySections.appearance}
@@ -115,6 +157,7 @@ function SettingsViewContent({
 
       <SettingsSection
         title="Behavior"
+        sectionKey="behavior"
         open={expandedSections.behavior}
         onOpenChange={(open) => setSectionOpen('behavior', open)}
         dirty={dirtySections.behavior}
@@ -124,6 +167,7 @@ function SettingsViewContent({
 
       <SettingsSection
         title="Config"
+        sectionKey="config"
         open={expandedSections.config}
         onOpenChange={(open) => setSectionOpen('config', open)}
       >
@@ -132,6 +176,7 @@ function SettingsViewContent({
 
       <SettingsSection
         title="Games"
+        sectionKey="games"
         open={expandedSections.games}
         onOpenChange={(open) => setSectionOpen('games', open)}
         dirty={dirtySections.games}
@@ -141,6 +186,7 @@ function SettingsViewContent({
 
       <SettingsSection
         title="Utility Apps"
+        sectionKey="apps"
         open={expandedSections.apps}
         onOpenChange={(open) => setSectionOpen('apps', open)}
         dirty={dirtySections.apps}

@@ -10,6 +10,7 @@ import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
+import type { SettingsSectionKey } from './settings/types'
 
 // Derive the payload type from the store binding (same approach as
 // useSettingsLoad) so the reason gate below stays in sync with
@@ -30,7 +31,7 @@ const normalizePath = (path: string) => path.toLowerCase()
 export function GameList({
   onNavigate
 }: {
-  onNavigate: (view: 'games' | 'settings') => void
+  onNavigate: (view: 'games' | 'settings', target?: SettingsSectionKey) => void
 }): ReactNode {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -173,7 +174,9 @@ export function GameList({
         description="Configure your simulation game paths in settings to manage their companion apps and profiles here."
         action={{
           label: 'Configure Games',
-          onClick: () => onNavigate('settings')
+          // Deep-link straight to the Games section, opened + scrolled into
+          // view, rather than the top of Settings (#583 / #642).
+          onClick: () => onNavigate('settings', 'games')
         }}
       />
     )
