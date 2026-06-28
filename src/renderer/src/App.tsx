@@ -322,6 +322,11 @@ function AppContent() {
     setShowImportWarning(true)
   }
 
+  // SettingsView clears the deep-link target once it has opened + scrolled to
+  // it, so re-requesting the SAME section produces a real state change and
+  // re-fires the open/scroll effect.
+  const handleTargetConsumed = useCallback(() => setSettingsTarget(null), [])
+
   return (
     <div
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
@@ -400,6 +405,7 @@ function AppContent() {
                 onClose={() => handleNavigate('games')}
                 updateInfo={updateInfo}
                 targetSection={settingsTarget}
+                onTargetConsumed={handleTargetConsumed}
               />
             </div>
           </div>

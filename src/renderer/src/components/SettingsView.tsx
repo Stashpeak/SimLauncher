@@ -20,25 +20,34 @@ import { useAppDirty } from '../contexts/AppDirtyContext'
 export function SettingsView({
   onClose,
   updateInfo,
-  targetSection
+  targetSection,
+  onTargetConsumed
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
   targetSection: SettingsSectionKey | null
+  onTargetConsumed: () => void
 }): ReactNode {
   return (
-    <SettingsViewContent onClose={onClose} updateInfo={updateInfo} targetSection={targetSection} />
+    <SettingsViewContent
+      onClose={onClose}
+      updateInfo={updateInfo}
+      targetSection={targetSection}
+      onTargetConsumed={onTargetConsumed}
+    />
   )
 }
 
 function SettingsViewContent({
   onClose,
   updateInfo,
-  targetSection
+  targetSection,
+  onTargetConsumed
 }: {
   onClose: () => void
   updateInfo: UpdateInfo
   targetSection: SettingsSectionKey | null
+  onTargetConsumed: () => void
 }) {
   const { notify, announce } = useNotify()
   const { loading, isDirty, dirtySections, saveSettings } = useSettingsMeta()
@@ -63,8 +72,7 @@ function SettingsViewContent({
   // sections (and their scroll anchors) aren't in the DOM until the config has
   // loaded. The scroll is deferred ~one expand-transition: a previously
   // collapsed section has no height yet, so scrolling immediately would clamp it
-  // partway down before its content exists. Navigating back to Games resets the
-  // target to null, so the same CTA re-fires without an explicit consume hop.
+  // partway down before its content exists.
   useEffect(() => {
     if (loading || !targetSection) return
     setSectionOpen(targetSection, true)
@@ -74,9 +82,14 @@ function SettingsViewContent({
     const timer = window.setTimeout(() => {
       const node = rootRef.current?.querySelector<HTMLElement>(`[data-section="${targetSection}"]`)
       node?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+      // Clear the target only AFTER it's handled, so re-requesting the SAME
+      // section (e.g. onboarding while Settings is already open) is a real state
+      // change that re-fires this effect. Clearing earlier would also cancel
+      // this scroll via the cleanup below.
+      onTargetConsumed()
     }, 320)
     return () => window.clearTimeout(timer)
-  }, [targetSection, loading, setSectionOpen])
+  }, [targetSection, loading, setSectionOpen, onTargetConsumed])
 
   // Escape navigates back to the games view from anywhere inside Settings.
   // This listener is on the bubble phase (not capture), so ConfirmDialog's
