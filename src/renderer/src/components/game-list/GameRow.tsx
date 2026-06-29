@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -28,7 +28,7 @@ import { useAppDirty } from '../../contexts/AppDirtyContext'
 // Cooldown is skipped (0 ms) when no apps were actually launched.
 const POST_LAUNCH_BLOCK_MS = 10000
 
-export function GameRow({
+export const GameRow = React.memo(function GameRow({
   game,
   isActive,
   isRunning,
@@ -567,4 +567,4 @@ export function GameRow({
       />
     </div>
   )
-}
+})

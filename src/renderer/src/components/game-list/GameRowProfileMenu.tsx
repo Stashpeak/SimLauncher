@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import React, { useId } from 'react'
 import type { Dispatch, KeyboardEvent, MutableRefObject, ReactNode, SetStateAction } from 'react'
 import type { GameProfileSet, NamedGameProfile } from '../../lib/config'
 import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
@@ -24,7 +24,7 @@ export interface GameRowProfileMenuProps {
   onNewProfileSubmit: () => void
 }
 
-export function GameRowProfileMenu({
+export const GameRowProfileMenu = React.memo(function GameRowProfileMenu({
   profileSet,
   activeProfile,
   profileMenuOpen,
@@ -158,4 +158,4 @@ export function GameRowProfileMenu({
       )}
     </div>
   )
-}
+})

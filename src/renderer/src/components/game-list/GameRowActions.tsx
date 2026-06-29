@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 
 import { GameRowProfileMenu, type GameRowProfileMenuProps } from './GameRowProfileMenu'
 import { RefreshIcon, KillIcon, PlayMarkIcon, SettingsIcon } from '../icons'
@@ -19,7 +19,7 @@ export interface GameRowActionsProps {
   profileMenuProps: GameRowProfileMenuProps
 }
 
-export function GameRowActions({
+export const GameRowActions = React.memo(function GameRowActions({
   isActive,
   isLaunching,
   isLaunchBlocked,
@@ -129,4 +129,4 @@ export function GameRowActions({
       </Tooltip>
     </div>
   )
-}
+})

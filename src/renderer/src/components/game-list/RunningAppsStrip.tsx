@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type ReactElement } from 'react'
+import React, { useState, type ReactNode, type ReactElement } from 'react'
 import { dismissAppIcon } from '../../lib/electron'
 import { Tooltip } from '../Tooltip'
 import { buildDismissLabel } from '../../lib/contextMenuLabel'
@@ -197,7 +197,7 @@ function RunningAppIconItem({
   )
 }
 
-export function RunningAppsStrip({
+export const RunningAppsStrip = React.memo(function RunningAppsStrip({
   runningAppIcons,
   cacheInitialized
 }: RunningAppsStripProps): ReactNode {
@@ -253,4 +253,4 @@ export function RunningAppsStrip({
       )}
     </div>
   )
-}
+})
