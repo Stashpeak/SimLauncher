@@ -11,7 +11,7 @@
 [![License: GPL-3.0](https://img.shields.io/github/license/Stashpeak/SimLauncher)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
 
-One-click startup for your entire sim racing setup.
+**One-click startup for your entire sim racing setup.**
 
 Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software — automatically.
 
