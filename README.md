@@ -25,8 +25,9 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
 > On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
 
+## Screenshots
 <details>
-<summary>SCREENSHOTS</summary>
+<summary>SHOW</summary>
 
   <table>
   <tr>
