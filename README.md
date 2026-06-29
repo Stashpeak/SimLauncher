@@ -1,3 +1,7 @@
+<div align="center">
+
+<img alt="SimLauncher" src="docs/playbutton.svg" width="96" />
+
 # SimLauncher
 
 [![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher?sort=semver&cacheSeconds=3600)](../../releases)
@@ -11,9 +15,15 @@ One-click startup for your entire sim racing setup.
 
 Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software — automatically.
 
+</div>
+
 https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
+<div align="center">
+
 **➡️ [Download SimLauncher for Windows](../../releases/latest)** · 💬 **[Join the Discord](https://discord.gg/37BPprjazF)**
+
+</div>
 
 > On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
 
