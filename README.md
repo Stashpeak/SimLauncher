@@ -1,6 +1,6 @@
 # SimLauncher
 
-[![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher)](../../releases)
+[![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher?sort=semver&cacheSeconds=3600)](../../releases)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37BPprjazF)
 [![Downloads](https://img.shields.io/github/downloads/Stashpeak/SimLauncher/total)](../../releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/Stashpeak/SimLauncher/ci.yml?branch=main&label=CI)](../../actions/workflows/ci.yml)
