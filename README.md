@@ -27,7 +27,6 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
 ## Screenshots
 
-
   <table>
   <tr>
     <td><img alt="Launcher Tab" src="docs/screenshots/Launcher%20Tab.png" /></td>
