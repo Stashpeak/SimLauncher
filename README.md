@@ -23,7 +23,6 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
 **➡️ [Download SimLauncher for Windows](../../releases/latest)** · 💬 **[Join the Discord](https://discord.gg/37BPprjazF)**
 
-
 > On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
 
 <details>
@@ -49,6 +48,7 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 **Jump to:** [Who it's for](#who-is-this-for) · [Features](#features) · [Supported games](#supported-games) · [Installation](#installation) · [Troubleshooting](#troubleshooting) · [Build from source](#building-from-source) · [Security](#security) · [Support](#support)
 
 ---
+
 </div>
 
 ## Who is this for?
@@ -109,7 +109,7 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ## Supported Utilities
 
-**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor. 
+**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor.
 **Anything else** - overlays, telemetry tools, wheelbase software - goes in up to 20 user-added custom app slots, each launched the same way.
 
 ---
