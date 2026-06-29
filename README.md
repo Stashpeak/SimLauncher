@@ -23,11 +23,13 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
 **➡️ [Download SimLauncher for Windows](../../releases/latest)** · 💬 **[Join the Discord](https://discord.gg/37BPprjazF)**
 
-</div>
 
 > On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
 
-<table>
+<details>
+<summary>SCREENSHOTS</summary>
+
+  <table>
   <tr>
     <td><img alt="Launcher Tab" src="docs/screenshots/Launcher%20Tab.png" /></td>
     <td><img alt="Profile Editor" src="docs/screenshots/Launcher%20Tab%20-%20Profile%20Editor.png" /></td>
@@ -42,15 +44,18 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
   </tr>
 </table>
 
+</details>
+
 **Jump to:** [Who it's for](#who-is-this-for) · [Features](#features) · [Supported games](#supported-games) · [Installation](#installation) · [Troubleshooting](#troubleshooting) · [Build from source](#building-from-source) · [Security](#security) · [Support](#support)
 
 ---
+</div>
 
 ## Who is this for?
 
 SimLauncher is built for people who run non-trivial sim setups and are tired of manual prep every time they want to drive.
 
-You'll likely benefit from this if you:
+**You'll likely benefit from this if you:**
 
 - Run multiple sims (iRacing, AC, ACC, AMS2, etc.)
 - Switch between different setups (VR vs triples, motion on/off, etc.)
@@ -104,7 +109,8 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ## Supported Utilities
 
-**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor. **Anything else** — overlays, telemetry tools, wheelbase software — goes in up to 20 user-added custom app slots, each launched the same way.
+**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor. 
+**Anything else** - overlays, telemetry tools, wheelbase software - goes in up to 20 user-added custom app slots, each launched the same way.
 
 ---
 
