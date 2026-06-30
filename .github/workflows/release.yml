@@ -45,8 +45,16 @@ jobs:
       - name: Build installer and publish release
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --win --publish always
+          # Azure Artifact Signing credentials (service principal). electron-builder
+          # reads these automatically for win.azureSignOptions.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        # forceCodeSigning is enforced here (release-only) instead of in
+        # electron-builder.yml so contributors can still build unsigned from
+        # source (npm run dist:win) without Azure creds. On a release, a signing
+        # failure now fails the build instead of silently shipping unsigned.
+        run: npx electron-builder --win --publish always -c.win.forceCodeSigning=true
 
       - name: Generate SHA-256 checksums
         shell: bash

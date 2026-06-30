@@ -26,6 +26,17 @@ extraResources:
 win:
   target: nsis
   icon: SimLauncher.ico
+  # Azure Artifact Signing (formerly Trusted Signing). Auth comes from the
+  # AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET env vars set in CI.
+  azureSignOptions:
+    # MUST exactly match the certificate's CommonName (CN) = the validated
+    # identity (here CN=David Kohout), or SmartScreen reports a publisher mismatch.
+    publisherName: 'David Kohout'
+    # West Europe region endpoint (matches where the signing account was created).
+    endpoint: 'https://weu.codesigning.azure.net/'
+    # The Trusted/Artifact Signing account name (NOT the app registration).
+    codeSigningAccountName: 'SimLauncher'
+    certificateProfileName: 'SimLauncher'
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
