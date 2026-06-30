@@ -50,11 +50,27 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        # forceCodeSigning is enforced here (release-only) instead of in
-        # electron-builder.yml so contributors can still build unsigned from
-        # source (npm run dist:win) without Azure creds. On a release, a signing
-        # failure now fails the build instead of silently shipping unsigned.
-        run: npx electron-builder --win --publish always -c.win.forceCodeSigning=true
+        run: npx electron-builder --win --publish always
+
+      # Enforce signing on releases without putting forceCodeSigning in
+      # electron-builder.yml (which would break unsigned `npm run dist:win`
+      # builds from source). This also asserts the signature is TIMESTAMPED —
+      # without a timestamp the signature would expire with the short-lived
+      # Trusted Signing cert (~3 days). A failure here fails the release.
+      - name: Verify the installer is signed and timestamped
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw 'No installer found in dist/.' }
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "File:      $($exe.Name)"
+          Write-Host "Status:    $($sig.Status)"
+          Write-Host "Signer:    $($sig.SignerCertificate.Subject)"
+          Write-Host "Timestamp: $($sig.TimeStamperCertificate.Subject)"
+          if (-not $sig.SignerCertificate) { throw 'Installer is NOT signed.' }
+          if ($sig.SignerCertificate.Subject -notlike '*CN=David Kohout*') { throw "Unexpected signer: $($sig.SignerCertificate.Subject)" }
+          if (-not $sig.TimeStamperCertificate) { throw 'Installer is signed but NOT timestamped.' }
+          Write-Host 'OK: signed by David Kohout and timestamped.'
 
       - name: Generate SHA-256 checksums
         shell: bash
