@@ -60,17 +60,19 @@ jobs:
       - name: Verify the installer is signed and timestamped
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
-          if (-not $exe) { throw 'No installer found in dist/.' }
-          $sig = Get-AuthenticodeSignature $exe.FullName
-          Write-Host "File:      $($exe.Name)"
-          Write-Host "Status:    $($sig.Status)"
-          Write-Host "Signer:    $($sig.SignerCertificate.Subject)"
-          Write-Host "Timestamp: $($sig.TimeStamperCertificate.Subject)"
-          if (-not $sig.SignerCertificate) { throw 'Installer is NOT signed.' }
-          if ($sig.SignerCertificate.Subject -notlike '*CN=David Kohout*') { throw "Unexpected signer: $($sig.SignerCertificate.Subject)" }
-          if (-not $sig.TimeStamperCertificate) { throw 'Installer is signed but NOT timestamped.' }
-          Write-Host 'OK: signed by David Kohout and timestamped.'
+          $exes = Get-ChildItem dist -Filter *.exe
+          if (-not $exes) { throw 'No installer (.exe) found in dist/.' }
+          foreach ($exe in $exes) {
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            Write-Host "File:      $($exe.Name)"
+            Write-Host "Status:    $($sig.Status)"
+            Write-Host "Signer:    $($sig.SignerCertificate.Subject)"
+            Write-Host "Timestamp: $($sig.TimeStamperCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "Invalid Authenticode status for $($exe.Name): $($sig.Status)" }
+            if ($sig.SignerCertificate.Subject -notlike '*CN=David Kohout*') { throw "Unexpected signer for $($exe.Name): $($sig.SignerCertificate.Subject)" }
+            if (-not $sig.TimeStamperCertificate) { throw "$($exe.Name) is signed but NOT timestamped." }
+            Write-Host "OK: $($exe.Name) signed by David Kohout and timestamped."
+          }
 
       - name: Generate SHA-256 checksums
         shell: bash
