@@ -112,7 +112,7 @@ export function GameRowActions({
           className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 ${
             isActive
               ? 'icon-action-active'
-              : 'icon-action opacity-40 group-hover/row:opacity-100 group-hover/row:bg-(--glass-bg)'
+              : 'icon-action opacity-60 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 group-hover/row:bg-(--glass-bg)'
           }`}
           aria-label={
             isActive ? `Close profile settings for ${gameName}` : `Profile settings for ${gameName}`

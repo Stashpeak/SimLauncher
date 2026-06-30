@@ -163,6 +163,26 @@ export interface UpdateAvailability {
   version: string
 }
 
+/**
+ * Payload for the 'update-error' channel. `isNetworkError` is true when the
+ * failure is just a connectivity problem (offline rig) rather than a real
+ * updater fault, so the renderer can show a calmer message.
+ */
+export interface UpdateErrorPayload {
+  message: string
+  isNetworkError: boolean
+}
+
+/**
+ * A one-shot notice the main process surfaces to the renderer on startup (e.g.
+ * the persisted config was unreadable and had to be reset). Pulled once via
+ * getStartupNotice and shown as a toast; the type maps to a toast variant.
+ */
+export interface StartupNotice {
+  type: 'success' | 'warn' | 'error'
+  message: string
+}
+
 export interface ElectronAPI {
   launchProfile: (gameKey: string) => Promise<LaunchResult>
   relaunchMissingProfile: (gameKey: string) => Promise<LaunchResult>
@@ -200,7 +220,7 @@ export interface ElectronAPI {
   onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => Unsubscribe
   onUpdateNotAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
   onUpdateDownloadProgress: (cb: (progress: ProgressInfo) => void) => Unsubscribe
-  onUpdateError: (cb: (error: Error) => void) => Unsubscribe
+  onUpdateError: (cb: (error: UpdateErrorPayload) => void) => Unsubscribe
   installUpdate: () => Promise<unknown>
   checkForUpdates: () => Promise<unknown>
   getUpdateInfo: () => Promise<UpdateAvailability | null>
@@ -221,6 +241,9 @@ export interface ElectronAPI {
   getAssetData: (filename: string) => Promise<string | null>
   getFileIcon: (filePath: string) => Promise<string | null>
   getVersion: () => Promise<string>
+  getStartupNotice: () => Promise<StartupNotice | null>
+  openLogsFolder: () => Promise<string>
+  openExternalUrl: (url: string) => Promise<boolean>
   dismissAppIcon: (
     appPath: string,
     gameKey: string

@@ -1,13 +1,25 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { GAMES, type Game } from '../lib/config'
-import { getSettings } from '../lib/store'
+import { getSettings, onStoreConfigChanged } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
+import { isGameExeRunning } from '../lib/runningGame'
+import { useNotify } from './Notify'
 import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
 import { GamepadIcon } from './icons'
+import type { SettingsSectionKey } from './settings/types'
+
+// Derive the payload type from the store binding (same approach as
+// useSettingsLoad) so the reason gate below stays in sync with
+// StoreConfigChangeReason without a second import.
+type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] extends (
+  payload: infer Payload
+) => void
+  ? Payload
+  : never
 
 // Case-insensitive path comparison — Windows paths are case-insensitive but
 // the main process may return them in any case (e.g. from process snapshots
@@ -19,7 +31,7 @@ const normalizePath = (path: string) => path.toLowerCase()
 export function GameList({
   onNavigate
 }: {
-  onNavigate: (view: 'games' | 'settings') => void
+  onNavigate: (view: 'games' | 'settings', target?: SettingsSectionKey) => void
 }): ReactNode {
   const [configuredGames, setConfiguredGames] = useState<Game[]>([])
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -31,33 +43,81 @@ export function GameList({
   const [appIconCache, setAppIconCache] = useState<Record<string, string>>({})
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
-  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock()
+  const { announce } = useNotify()
   const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
+  // Announce "X is now running" once a launch cooldown settles — but only if the
+  // game EXECUTABLE itself is detected running by then. The cooldown also runs on
+  // partial failures (a companion app started while the game exe failed), and
+  // runningStatus[key] is an aggregate that's true for any app under the key
+  // (companions included), so it would still fire there after the user already
+  // heard the assertive error. Match a running app against the configured game
+  // path instead (same game-vs-companion split used for the running strip), so a
+  // failed game launch stays silent. useLaunchBlock always invokes the latest
+  // callback, so this reads the freshest snapshot (the 10s cooldown is the window
+  // for process detection to catch up). Name comes from the static GAMES config
+  // so the timer closure can't go stale.
+  const { launchingGameKey, handleLaunchStart, handleLaunchEnd } = useLaunchBlock({
+    onLaunchSettled: (gameKey) => {
+      if (!isGameExeRunning(runningApps, gameKey, gamePaths[gameKey])) return
+      const name = GAMES.find((game) => game.key === gameKey)?.name
+      if (name) announce(`${name} is now running`)
+    }
+  })
   const { gameIcons } = useGamesSettings()
 
-  useEffect(() => {
-    let mounted = true
+  // Read the configured-games list (+ derived UI state) from the store. Kept in
+  // a callback so it can run on mount AND on every store config change: the
+  // Games view stays mounted (#479), so without a reactive re-read it would hold
+  // its mount-time snapshot. The normal save paths (sticky bar, in-Settings
+  // footer) persist without bumping App's refreshKey, so a newly-configured game
+  // stayed hidden and a removed one lingered until the next app restart (#601).
+  const loadSettings = useCallback(async (alive: { current: boolean }) => {
+    try {
+      const settings = await getSettings()
+      if (!alive.current) return
 
-    async function loadInitialSettings() {
-      try {
-        const settings = await getSettings()
-        if (!mounted) return
-
-        setGamePaths(settings.gamePaths)
-        setFocusActiveTitle(settings.focusActiveTitle !== false)
-        setConfiguredGames(GAMES.filter((game) => !!settings.gamePaths[game.key]))
-        setSettingsLoaded(true)
-      } catch (err) {
-        console.error('Failed to load game settings', err)
-      }
-    }
-
-    loadInitialSettings()
-
-    return () => {
-      mounted = false
+      setGamePaths(settings.gamePaths)
+      setFocusActiveTitle(settings.focusActiveTitle !== false)
+      // Keep the previous configuredGames array reference when the game SET is
+      // unchanged. Every Settings save sends the full settings object, so
+      // 'save-settings' carries gamePaths in its changed keys even when gamePaths
+      // didn't actually change (theme/tray/accent saves). Without this guard a
+      // fresh array would churn useRunningApps' effect, re-subscribing the
+      // running-apps IPC/monitor on every unrelated save (#603).
+      setConfiguredGames((prev) => {
+        const next = GAMES.filter((game) => !!settings.gamePaths[game.key])
+        const unchanged =
+          prev.length === next.length && prev.every((game, index) => game.key === next[index].key)
+        return unchanged ? prev : next
+      })
+      setSettingsLoaded(true)
+    } catch (err) {
+      console.error('Failed to load game settings', err)
     }
   }, [])
+
+  useEffect(() => {
+    const alive = { current: true }
+    void loadSettings(alive)
+    // Reload only for reasons that can carry gamePaths: 'import-config' (full
+    // store replace, keys ['*']) and 'save-settings'. Skip 'save-profile' /
+    // 'save-profiles' (profiles only) and 'set-migration-flags' (boolean flags)
+    // so those writes don't trigger a needless getSettings round-trip. Every
+    // Settings save sends the FULL settings object, so 'save-settings' also fires
+    // on theme/tray/accent changes — loadSettings absorbs that cheaply by keeping
+    // the configuredGames reference stable when the game set is unchanged (see the
+    // guard above), so useRunningApps doesn't re-subscribe (#603). GameList never
+    // writes the store, so there is no feedback loop.
+    const unsubscribe = onStoreConfigChanged((payload: StoreConfigChangePayload) => {
+      if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
+      void loadSettings(alive)
+    })
+
+    return () => {
+      alive.current = false
+      unsubscribe()
+    }
+  }, [loadSettings])
 
   // Lazy-load Windows shell icons for newly-seen running app paths. Uses the
   // undefined sentinel (vs '' for "loaded but no icon") so re-fetching on
@@ -114,14 +174,16 @@ export function GameList({
         description="Configure your simulation game paths in settings to manage their companion apps and profiles here."
         action={{
           label: 'Configure Games',
-          onClick: () => onNavigate('settings')
+          // Deep-link straight to the Games section, opened + scrolled into
+          // view, rather than the top of Settings (#583 / #642).
+          onClick: () => onNavigate('settings', 'games')
         }}
       />
     )
   }
 
   return (
-    <div className="flex flex-col gap-3 px-1 py-2">
+    <div role="list" aria-label="Games" className="flex flex-col gap-3 px-1 py-2">
       {configuredGames
         .map((game, index) => ({ game, index }))
         .sort((firstEntry, secondEntry) => {
@@ -137,9 +199,13 @@ export function GameList({
         .map(({ game }) => {
           const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
           const gamePathLower = gamePaths[game.key] ? normalizePath(gamePaths[game.key]) : undefined
+          // The green dot means the game's own exe is running — NOT the
+          // runningStatus[key] aggregate, which is also true when only a
+          // companion (e.g. SimHub) is up (#587). See isGameExeRunning.
+          const gameExeRunning = isGameExeRunning(runningApps, game.key, gamePaths[game.key])
           // Exclude the game's own executable so it doesn't appear as a
-          // companion app in the running strip — the green dot on GameIcon
-          // already communicates that the game itself is running.
+          // companion app in the running strip — the dot above already
+          // represents the game itself.
           const appsForGame = runningApps.filter(
             (a) => a.gameKey === game.key && normalizePath(a.path) !== gamePathLower
           )
@@ -160,6 +226,7 @@ export function GameList({
               gameIconUrl={gameIcons[game.key]}
               isActive={activeEditorKey === game.key}
               isRunning={!!runningStatus[game.key]}
+              isGameRunning={gameExeRunning}
               runningAppIcons={runningAppIcons}
               isDimmed={hasActiveTitle && !runningStatus[game.key]}
               isLaunching={launchingGameKey === game.key}

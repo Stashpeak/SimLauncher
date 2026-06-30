@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 import { Toggle } from '../Toggle'
 import { useBehaviorSettings } from './BehaviorContext'
@@ -11,6 +11,11 @@ const DELAY_PRESETS = [
 ]
 
 export function BehaviorSection(): ReactNode {
+  const startWithWindowsId = useId()
+  const showTrayIconId = useId()
+  const startMinimizedId = useId()
+  const minimizeToTrayId = useId()
+
   const {
     startWithWindows,
     startMinimized,
@@ -29,49 +34,53 @@ export function BehaviorSection(): ReactNode {
     <>
       <div className="settings-row">
         <div className="settings-label-group">
-          <span className="settings-label">Start with Windows</span>
+          <label htmlFor={startWithWindowsId} className="settings-label">
+            Start with Windows
+          </label>
           <span className="settings-sublabel">Launch SimLauncher automatically at login</span>
         </div>
         <Toggle
+          id={startWithWindowsId}
           checked={startWithWindows}
           onChange={onStartWithWindowsChange}
-          aria-label="Start with Windows"
         />
       </div>
       <div className="settings-row">
         <div className="settings-label-group">
-          <span className="settings-label">Show tray icon</span>
+          <label htmlFor={showTrayIconId} className="settings-label">
+            Show tray icon
+          </label>
           <span className="settings-sublabel">Keep a SimLauncher icon in the system tray</span>
         </div>
-        <Toggle
-          checked={showTrayIcon}
-          onChange={onShowTrayIconChange}
-          aria-label="Show tray icon"
-        />
+        <Toggle id={showTrayIconId} checked={showTrayIcon} onChange={onShowTrayIconChange} />
       </div>
       <div className="settings-row">
         <div className="settings-label-group">
-          <span className="settings-label">Start minimized</span>
+          <label htmlFor={startMinimizedId} className="settings-label">
+            Start minimized
+          </label>
           <span className="settings-sublabel">Start hidden in the system tray</span>
         </div>
         <Toggle
+          id={startMinimizedId}
           checked={startMinimized}
           onChange={onStartMinimizedChange}
-          aria-label="Start minimized"
           disabled={!showTrayIcon}
         />
       </div>
       <div className="settings-row">
         <div className="settings-label-group">
-          <span className="settings-label">Minimize to tray on close</span>
+          <label htmlFor={minimizeToTrayId} className="settings-label">
+            Minimize to tray on close
+          </label>
           <span className="settings-sublabel">
             Keep SimLauncher running when the window is closed
           </span>
         </div>
         <Toggle
+          id={minimizeToTrayId}
           checked={minimizeToTray}
           onChange={onMinimizeToTrayChange}
-          aria-label="Minimize to tray on close"
           disabled={!showTrayIcon}
         />
       </div>
@@ -84,6 +93,7 @@ export function BehaviorSection(): ReactNode {
           {DELAY_PRESETS.map((preset) => (
             <button
               key={preset.value}
+              type="button"
               onClick={() => onLaunchDelayMsChange(preset.value)}
               aria-pressed={launchDelayMs === preset.value}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${

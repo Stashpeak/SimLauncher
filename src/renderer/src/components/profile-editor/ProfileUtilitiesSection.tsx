@@ -1,7 +1,6 @@
 import type { DragEvent, ReactNode } from 'react'
 import type { ProfileUtility, Utility } from '../../lib/config'
 import { Toggle } from '../Toggle'
-import { Tooltip } from '../Tooltip'
 
 interface ProfileUtilitiesSectionProps {
   appPaths: Record<string, string>
@@ -70,6 +69,9 @@ function renderUtilityRow(
   if (!utility) return null
 
   const label = props.appNames[utility.key] || utility.name
+  // Stable id so the visible name can be tied to the switch via <label htmlFor>
+  // (renderUtilityRow is a plain function, so useId() isn't available here).
+  const toggleId = `utility-toggle-${utility.key}`
   const iconPath = props.appPaths[utility.key]?.toLowerCase()
   const icon = iconPath ? props.appIconCache[iconPath] : null
   const dropPlacement = props.dropTarget?.id === utility.key ? props.dropTarget.placement : null
@@ -117,25 +119,72 @@ function renderUtilityRow(
       )}
       <div className="flex min-w-0 items-center gap-3">
         {isEnabled && typeof orderIndex === 'number' && (
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-(--accent)/15 text-[11px] font-black tabular-nums text-(--accent)">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-(--accent)/15 text-[11px] font-black tabular-nums text-(--accent-text)">
             {orderIndex + 1}
           </span>
         )}
-        <Tooltip label="Drag to reorder">
-          <div
-            className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''}`}
-            aria-hidden="true"
-          >
-            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
-              <circle cx="3" cy="3" r="1.2" />
-              <circle cx="9" cy="3" r="1.2" />
-              <circle cx="3" cy="8" r="1.2" />
-              <circle cx="9" cy="8" r="1.2" />
-              <circle cx="3" cy="13" r="1.2" />
-              <circle cx="9" cy="13" r="1.2" />
-            </svg>
-          </div>
-        </Tooltip>
+        {/* Keyboard path for reordering — the drag handle is mouse-only (#515). */}
+        {isEnabled && typeof orderIndex === 'number' && props.enabledUtilityEntries.length > 1 && (
+          <span data-no-row-drag="true" className="flex shrink-0 flex-col gap-0.5">
+            <button
+              type="button"
+              aria-label={`Move ${label} up in launch order`}
+              disabled={orderIndex === 0}
+              onClick={() => {
+                const previous = props.enabledUtilityEntries[orderIndex - 1]
+                if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
+              }}
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+            >
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                <path
+                  d="M1 5L5 1L9 5"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label={`Move ${label} down in launch order`}
+              disabled={orderIndex === props.enabledUtilityEntries.length - 1}
+              onClick={() => {
+                const next = props.enabledUtilityEntries[orderIndex + 1]
+                if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
+              }}
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+            >
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
+                <path
+                  d="M1 1L5 5L9 1"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </span>
+        )}
+        {/* Decorative drag affordance: aria-hidden + non-focusable, so a
+            Tooltip (focus/hover popover) could never surface — a native title
+            keeps the mouse hint. Keyboard users reorder via the buttons above. */}
+        <div
+          title="Drag to reorder"
+          className={`icon-action flex h-6 w-5 shrink-0 items-center justify-center rounded ${isEnabled ? 'cursor-grab group-active:cursor-grabbing' : ''}`}
+          aria-hidden="true"
+        >
+          <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+            <circle cx="3" cy="3" r="1.2" />
+            <circle cx="9" cy="3" r="1.2" />
+            <circle cx="3" cy="8" r="1.2" />
+            <circle cx="9" cy="8" r="1.2" />
+            <circle cx="3" cy="13" r="1.2" />
+            <circle cx="9" cy="13" r="1.2" />
+          </svg>
+        </div>
         <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
           {icon && !props.failedIcons[utility.key] ? (
             <img
@@ -152,13 +201,18 @@ function renderUtilityRow(
             </div>
           )}
         </div>
-        <span className="min-w-0 line-clamp-1 text-sm font-medium opacity-80">{label}</span>
+        <label
+          htmlFor={toggleId}
+          className="min-w-0 line-clamp-1 cursor-pointer text-sm font-medium opacity-80"
+        >
+          {label}
+        </label>
       </div>
       <span data-no-row-drag="true">
         <Toggle
+          id={toggleId}
           checked={isEnabled}
           onChange={() => props.onToggleUtility(utility.key)}
-          aria-label={label}
         />
       </span>
     </div>

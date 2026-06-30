@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { DEFAULT_ACCENT_COLOR } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
@@ -30,6 +30,8 @@ const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
 ]
 
 export function AppearanceSection(): ReactNode {
+  const accentBgTintId = useId()
+  const focusActiveTitleId = useId()
   const [showPicker, setShowPicker] = useState(false)
   const customSwatchRef = useRef<HTMLButtonElement>(null)
   const {
@@ -51,7 +53,7 @@ export function AppearanceSection(): ReactNode {
   return (
     <>
       <div className="settings-row settings-row-responsive">
-        <label className="settings-label text-(--text-secondary)">Theme</label>
+        <span className="settings-label text-(--text-secondary)">Theme</span>
         <div className="settings-control" role="group" aria-label="Theme">
           {THEME_MODE_OPTIONS.map((option) => (
             <button
@@ -72,7 +74,7 @@ export function AppearanceSection(): ReactNode {
       </div>
 
       <div className="settings-row settings-row-responsive">
-        <label className="settings-label text-(--text-secondary)">Accent Color</label>
+        <span className="settings-label text-(--text-secondary)">Accent Color</span>
         <div className="settings-control" role="group" aria-label="Accent color">
           {ACCENT_PRESETS.map((preset) => (
             <Tooltip key={preset.hex} label={preset.name}>
@@ -95,11 +97,12 @@ export function AppearanceSection(): ReactNode {
                   setShowPicker(!showPicker)
                   if (!isCustomColor) onAccentChange('custom')
                 }}
-                aria-label="Custom accent color"
+                aria-label={
+                  isCustomColor ? 'Custom accent color (selected)' : 'Custom accent color'
+                }
                 aria-haspopup="dialog"
                 aria-expanded={showPicker}
                 aria-controls={showPicker ? 'accent-color-picker' : undefined}
-                aria-pressed={isCustomColor}
                 className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
                   isCustomColor ? 'scale-110' : ''
                 }`}
@@ -110,7 +113,7 @@ export function AppearanceSection(): ReactNode {
                   className="absolute inset-0 rounded-full"
                   style={{
                     background: isCustomColor
-                      ? accentCustom || '#ad46ff'
+                      ? accentCustom || DEFAULT_ACCENT_COLOR
                       : 'conic-gradient(from 180deg, #ff5e57, #ffdd59, #0be881, #4bcffa, #575fcf, #ef5777, #ff5e57)'
                   }}
                 />
@@ -133,7 +136,7 @@ export function AppearanceSection(): ReactNode {
 
             {showPicker && (
               <ColorPickerPopover
-                color={accentCustom || '#ad46ff'}
+                color={accentCustom || DEFAULT_ACCENT_COLOR}
                 onChange={onCustomColorChange}
                 onClose={() => setShowPicker(false)}
                 anchorRef={customSwatchRef}
@@ -144,29 +147,30 @@ export function AppearanceSection(): ReactNode {
       </div>
 
       <div className="settings-row">
-        <label className="settings-label text-(--text-secondary)">Accent Glow Background</label>
-        <Toggle
-          checked={accentBgTint}
-          onChange={onAccentBgTintChange}
-          aria-label="Toggle accent glow background"
-        />
+        <label htmlFor={accentBgTintId} className="settings-label text-(--text-secondary)">
+          Accent Glow Background
+        </label>
+        <Toggle id={accentBgTintId} checked={accentBgTint} onChange={onAccentBgTintChange} />
       </div>
 
       <div className="settings-row">
-        <label className="settings-label text-(--text-secondary)">Focus active title</label>
+        <label htmlFor={focusActiveTitleId} className="settings-label text-(--text-secondary)">
+          Focus active title
+        </label>
         <Toggle
+          id={focusActiveTitleId}
           checked={focusActiveTitle}
           onChange={onFocusActiveTitleChange}
-          aria-label="Focus active title"
         />
       </div>
 
       <div className="settings-row settings-row-responsive">
-        <label className="settings-label text-(--text-secondary)">UI Scale</label>
+        <span className="settings-label text-(--text-secondary)">UI Scale</span>
         <div className="settings-control" role="group" aria-label="UI scale">
           {ZOOM_PRESETS.map((preset) => (
             <button
               key={preset.factor}
+              type="button"
               onClick={() => onZoomFactorChange(preset.factor)}
               aria-pressed={zoomFactor === preset.factor}
               className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${

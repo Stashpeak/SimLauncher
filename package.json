@@ -1,6 +1,6 @@
 {
   "name": "simlauncher",
-  "version": "0.9.10",
+  "version": "1.0.1",
   "description": "SimLauncher - Multi app launcher for simracing",
   "main": "out/main/index.js",
   "repository": {
@@ -45,35 +45,39 @@
   "license": "GPL-3.0-only",
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
-    "@tailwindcss/vite": "^4.3.0",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.3.0",
     "react": "^19.2.6",
     "react-colorful": "^5.7.0",
-    "react-dom": "^19.2.6",
-    "tailwindcss": "^4.2.4"
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.2",
     "electron": "^42.4.0",
     "electron-builder": "^26.8.1",
-    "electron-vite": "^5.0.0",
+    "electron-vite": "5.0.0",
     "eslint": "^10.4.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "prettier": "^3.8.3",
+    "tailwindcss": "^4.2.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
-    "vite": "^8.0.16",
+    "vite": "8.0.16",
     "vitest": "^4.1.5"
   },
   "overrides": {
     "@electron/asar": "4.2.0",
-    "js-yaml": "4.1.1"
+    "js-yaml": "^4.2.0",
+    "esbuild": "^0.28.1",
+    "form-data": "4.0.6",
+    "tar": "7.5.16",
+    "@babel/core": "7.29.7"
   }
 }

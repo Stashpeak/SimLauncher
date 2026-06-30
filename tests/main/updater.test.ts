@@ -113,6 +113,22 @@ test('a failed download resets the install latch', async () => {
   expect(quitAndInstall).not.toHaveBeenCalled()
 })
 
+test('install-update swallows a network failure instead of double-surfacing it (#560)', async () => {
+  const { handlers } = await loadUpdaterModule()
+  downloadUpdate.mockRejectedValueOnce(
+    Object.assign(new Error('getaddrinfo ENOTFOUND github.com'), { code: 'ENOTFOUND' })
+  )
+
+  // The 'error' event already showed the calm offline notice; the install IPC
+  // must resolve (not reject), otherwise the renderer fires a second generic
+  // "Failed to install update" that overrides the offline message.
+  await expect(handlers['install-update']({})).resolves.toMatchObject({ offline: true })
+
+  // The latch is still cleared, so a later stray download won't auto-install.
+  autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
+  expect(quitAndInstall).not.toHaveBeenCalled()
+})
+
 test('an updater error resets the install latch', async () => {
   const { handlers } = await loadUpdaterModule()
   let resolveDownload: () => void = () => {}
@@ -125,6 +141,51 @@ test('an updater error resets the install latch', async () => {
 
   autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
   expect(quitAndInstall).not.toHaveBeenCalled()
+})
+
+test('a network error is flagged so the renderer can show an offline notice (#527)', async () => {
+  const { sendToRenderer } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](
+    Object.assign(new Error('net::ERR_INTERNET_DISCONNECTED'), { code: 'ENOTFOUND' })
+  )
+
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: true })
+})
+
+test('a non-network updater error is not flagged as network (#527)', async () => {
+  const { sendToRenderer } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](new Error('Checksum mismatch'))
+
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: false, message: 'Checksum mismatch' })
+})
+
+test('check-for-updates swallows a network failure but rethrows other errors (#527)', async () => {
+  const { handlers } = await loadUpdaterModule()
+
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(
+    Object.assign(new Error('getaddrinfo ENOTFOUND update.example.com'), { code: 'ENOTFOUND' })
+  )
+  await expect(handlers['check-for-updates']({})).resolves.toBeNull()
+
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(new Error('HTTP 500 from update server'))
+  await expect(handlers['check-for-updates']({})).rejects.toThrow('HTTP 500')
+})
+
+test('a TLS/cert net error is NOT downgraded to offline (#535)', async () => {
+  const { sendToRenderer, handlers } = await loadUpdaterModule()
+
+  autoUpdaterHandlers['error'](new Error('net::ERR_CERT_AUTHORITY_INVALID'))
+  const errorCall = sendToRenderer.mock.calls.find((call) => call[0] === 'update-error')
+  expect(errorCall?.[1]).toMatchObject({ isNetworkError: false })
+
+  // ...and check-for-updates must NOT swallow it — a security/config error should
+  // surface, not hide behind the calm offline notice.
+  autoUpdaterCheckForUpdates.mockRejectedValueOnce(new Error('net::ERR_CERT_AUTHORITY_INVALID'))
+  await expect(handlers['check-for-updates']({})).rejects.toThrow('ERR_CERT_AUTHORITY_INVALID')
 })
 
 test('unpackaged builds simulate the update flow without touching electron-updater', async () => {

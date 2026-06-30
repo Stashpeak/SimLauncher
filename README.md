@@ -1,26 +1,44 @@
+<div align="center">
+
+<img alt="SimLauncher" src="docs/playbutton.svg" width="96" />
+
 # SimLauncher
 
-[![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher)](../../releases)
+[![Latest release](https://img.shields.io/github/v/release/Stashpeak/SimLauncher?sort=semver&cacheSeconds=3600)](../../releases)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37BPprjazF)
 [![Downloads](https://img.shields.io/github/downloads/Stashpeak/SimLauncher/total)](../../releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/Stashpeak/SimLauncher/ci.yml?branch=main&label=CI)](../../actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/Stashpeak/SimLauncher)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
 
-One-click startup for your entire sim racing setup.
+**One-click startup for your entire sim racing setup.**
 
 Launch iRacing, Assetto Corsa, ACC and other sims on Windows, together with SimHub, Crew Chief, Trading Paints, overlays, telemetry tools and wheelbase software — automatically.
 
+</div>
+
 https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
-**➡️ [Download SimLauncher for Windows](../../releases/latest)**
+<div align="center">
+
+**➡️ [Download SimLauncher for Windows](../../releases/latest)** · 💬 **[Join the Discord](https://discord.gg/37BPprjazF)**
 
 > On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
 
-<table>
+## Screenshots
+
+  <table>
   <tr>
     <td><img alt="Launcher Tab" src="docs/screenshots/Launcher%20Tab.png" /></td>
     <td><img alt="Profile Editor" src="docs/screenshots/Launcher%20Tab%20-%20Profile%20Editor.png" /></td>
   </tr>
+  </table>
+    
+<details>
+  
+  <summary>SHOW ALL</summary>
+  
+  <table>
   <tr>
     <td><img alt="Settings - Appearance" src="docs/screenshots/Settings%20-%20Appearance.png" /></td>
     <td><img alt="Settings - Games" src="docs/screenshots/Settings%20-%20Games.png" /></td>
@@ -31,15 +49,19 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
   </tr>
 </table>
 
+</details>
+
 **Jump to:** [Who it's for](#who-is-this-for) · [Features](#features) · [Supported games](#supported-games) · [Installation](#installation) · [Troubleshooting](#troubleshooting) · [Build from source](#building-from-source) · [Security](#security) · [Support](#support)
 
 ---
+
+</div>
 
 ## Who is this for?
 
 SimLauncher is built for people who run non-trivial sim setups and are tired of manual prep every time they want to drive.
 
-You'll likely benefit from this if you:
+**You'll likely benefit from this if you:**
 
 - Run multiple sims (iRacing, AC, ACC, AMS2, etc.)
 - Switch between different setups (VR vs triples, motion on/off, etc.)
@@ -93,7 +115,8 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ## Supported Utilities
 
-**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor. **Anything else** — overlays, telemetry tools, wheelbase software — goes in up to 20 user-added custom app slots, each launched the same way.
+**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor.
+**Anything else** - overlays, telemetry tools, wheelbase software - goes in up to 20 user-added custom app slots, each launched the same way.
 
 ---
 
@@ -165,6 +188,8 @@ Please **don't** open a public issue for security vulnerabilities. Report them p
 ---
 
 ## Support
+
+Questions, setup help, or want to show your rig? Join the [SimLauncher Discord](https://discord.gg/37BPprjazF). For bugs and feature requests, open a [GitHub issue](../../issues).
 
 If SimLauncher saves you time on race day, a small tip is appreciated: [paypal.me/shieldxx](https://paypal.me/shieldxx)
 

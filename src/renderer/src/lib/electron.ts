@@ -34,4 +34,7 @@ export const setZoom = window.electronAPI.setZoom
 export const getAssetData = window.electronAPI.getAssetData
 export const getFileIcon = window.electronAPI.getFileIcon
 export const getVersion = () => window.electronAPI.getVersion()
+export const getStartupNotice = () => window.electronAPI.getStartupNotice()
+export const openLogsFolder = () => window.electronAPI.openLogsFolder()
+export const openExternalUrl = (url: string) => window.electronAPI.openExternalUrl(url)
 export const dismissAppIcon = window.electronAPI.dismissAppIcon

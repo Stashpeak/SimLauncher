@@ -5,6 +5,7 @@ import {
   SettingsIcon,
   MinimizeIcon,
   MaximizeIcon,
+  RestoreIcon,
   CloseWindowIcon
 } from './icons'
 import { Tooltip } from './Tooltip'
@@ -38,8 +39,11 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
 
   return (
     <div className="drag-region flex h-12 w-full items-center px-4 gap-2 shrink-0">
-      {/* Pill: branding + settings gear */}
-      <div className="no-drag glass-surface rounded-full flex items-center shrink-0 overflow-hidden">
+      {/* Pill: branding + settings gear — the app's primary navigation */}
+      <nav
+        aria-label="Primary"
+        className="no-drag glass-surface rounded-full flex items-center shrink-0"
+      >
         {/* Launcher branding */}
         <Tooltip label="SimLauncher" placement="bottom">
           <button
@@ -77,7 +81,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             <SettingsIcon width={13} height={13} />
           </button>
         </Tooltip>
-      </div>
+      </nav>
 
       {/* Update Pill */}
       {updateInfo && (
@@ -90,7 +94,7 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             aria-hidden="true"
             className="h-2 w-2 rounded-full bg-(--accent) animate-pulse shadow-[0_0_8px_var(--accent)]"
           />
-          <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent)">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-(--accent-text)">
             Update v{updateInfo.version} Available
           </span>
         </button>
@@ -118,7 +122,11 @@ export function WindowControls({ view, onNavigate, updateInfo }: WindowControlsP
             className="icon-action cursor-pointer rounded-full p-2"
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
-            <MaximizeIcon width={14} height={14} />
+            {isMaximized ? (
+              <RestoreIcon width={14} height={14} />
+            ) : (
+              <MaximizeIcon width={14} height={14} />
+            )}
           </button>
         </Tooltip>
         <Tooltip label="Close" placement="bottom">

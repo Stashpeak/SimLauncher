@@ -159,6 +159,11 @@ export function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Disable DevTools in packaged builds: Ctrl+Shift+I / F12 / the menu
+      // toggle all become no-ops in production (kept on in dev). Does not block
+      // the --remote-debugging-port launch flag, a separate advanced vector.
+      // Field diagnostics go through the logs folder + main-error.log (#524).
+      devTools: !app.isPackaged,
       zoomFactor,
       preload: path.join(__dirname, '../preload/index.js')
     }
@@ -175,7 +180,10 @@ export function createWindow(): void {
       return
     }
 
-    store.set('windowBounds', mainWindow.getBounds())
+    // getNormalBounds (not getBounds) so a maximized window persists its
+    // pre-maximize size; otherwise the next launch reopens un-maximized at the
+    // full work-area rectangle and the user's restored size is lost.
+    store.set('windowBounds', mainWindow.getNormalBounds())
 
     const action = decideCloseAction({
       isQuitting: getIsQuitting(),

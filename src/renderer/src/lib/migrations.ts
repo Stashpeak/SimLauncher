@@ -76,9 +76,11 @@ function getStringRecord(value: unknown) {
  * atomically at the end (after all store writes succeed), so a crash mid-migration
  * will retry on next launch rather than silently leaving data half-migrated.
  *
- * Ordering matters: settings are saved before profiles so that the resolved
- * custom-slot count (derived from the migrated appPaths/appNames) is available
- * when the profile store is read back on the next load.
+ * The custom-slot count is resolved in-memory (getHighestCustomSlot over
+ * appPaths/appNames/profiles) and baked into the migrated profiles before any
+ * store write, so the relative order of saveSettings vs saveProfiles is not
+ * significant. Both writes happen at the very end so a crash before the
+ * `migrated` flag is set retries cleanly on the next launch.
  */
 export async function migrateFromLocalStorage(): Promise<void> {
   const flags = await getMigrationFlags()

@@ -32,6 +32,7 @@ export function GameRow({
   game,
   isActive,
   isRunning,
+  isGameRunning,
   runningAppIcons,
   gameIconUrl,
   isDimmed,
@@ -46,14 +47,23 @@ export function GameRow({
 }: {
   game: Game
   isActive: boolean
+  // Aggregate: any tracked app under this game's key is running (game exe OR a
+  // companion). Drives sorting, dimming, relaunch-missing and the switch
+  // confirm — all of which mean "this profile has something running".
   isRunning: boolean
+  // Narrow: the game's OWN executable is running. Drives only the green status
+  // dot, whose tooltip/label assert the game itself is running (#587).
+  isGameRunning: boolean
   runningAppIcons: RunningAppIcon[]
   gameIconUrl?: string
   isDimmed: boolean
   isLaunching: boolean
   isLaunchBlocked: boolean
   onLaunchStart: (gameKey: string) => void
-  onLaunchEnd: (gameKey: string, cooldownMs?: number) => void
+  // `primaryLaunch` marks a fresh game launch (vs a profile switch / relaunch-
+  // missing) so the launch-block only speaks the "now running" cue after a real
+  // launch.
+  onLaunchEnd: (gameKey: string, cooldownMs?: number, options?: { primaryLaunch?: boolean }) => void
   onRunningStateRefresh: () => Promise<void>
   onToggleEditor: () => void
   // Explicit close for this row's editor (key-guarded functional update) so the
@@ -62,7 +72,7 @@ export function GameRow({
   onCloseEditor: () => void
   cacheInitialized: boolean
 }): ReactNode {
-  const { notify } = useNotify()
+  const { notify, announce } = useNotify()
   const [profileSwitchConfirm, setProfileSwitchConfirm] = useState<{
     nextProfileId: string
     nextProfileName: string
@@ -330,10 +340,21 @@ export function GameRow({
       return
     }
 
+    // Capture BEFORE launching: this is a fresh game start only if the GAME EXE
+    // wasn't already running. Use isGameRunning, not the aggregate isRunning — if
+    // only a companion was up (game not running), launching the game IS a primary
+    // launch and the "now running" cue should fire; the aggregate would suppress
+    // it (#587).
+    const wasRunning = isGameRunning
     let cooldownMs = 0
 
     try {
       onLaunchStart(game.key)
+      // Polite SR cue that a launch has begun. The button's spinner + aria-busy
+      // are visual/verbosity-dependent; this live-region announcement is the
+      // reliable spoken "launch started" feedback, paired with the existing
+      // "X is now running" settle cue (#612).
+      announce(`Launching ${game.name}`)
       const result = await launchProfile(game.key)
       if (!result.success) {
         cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
@@ -351,7 +372,7 @@ export function GameRow({
       notify('Failed to launch profile', 'error')
       console.error(err)
     } finally {
-      onLaunchEnd(game.key, cooldownMs)
+      onLaunchEnd(game.key, cooldownMs, { primaryLaunch: !wasRunning })
     }
   }
 
@@ -436,6 +457,11 @@ export function GameRow({
 
   return (
     <div
+      role="listitem"
+      // Name the list item so Narrator announces the game (e.g. "Assetto Corsa,
+      // 3 of 7") instead of synthesizing a bare list marker ("bullet") in front
+      // of each focused control in the row (#612). Keeps the list semantics.
+      aria-label={game.name}
       className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
@@ -443,10 +469,10 @@ export function GameRow({
         className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? 'isolation-auto! z-20' : 'z-0'}`}
       >
         <div className="flex items-center gap-5">
-          <GameIcon game={game} isRunning={isRunning} iconUrl={gameIconUrl} />
+          <GameIcon game={game} isRunning={isGameRunning} iconUrl={gameIconUrl} />
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h3 className="game-title font-normal text-(--text-primary)">{game.name}</h3>
+              <h2 className="game-title font-normal text-(--text-primary)">{game.name}</h2>
             </div>
             <RunningAppsStrip
               runningAppIcons={runningAppIcons}
@@ -511,8 +537,18 @@ export function GameRow({
                 onLaunchRequest={(launcher) => {
                   handleLaunchRequest.current = launcher
                 }}
-                onLaunchStart={() => onLaunchStart(game.key)}
-                onLaunchEnd={(cooldownMs) => onLaunchEnd(game.key, cooldownMs)}
+                onLaunchStart={() => {
+                  announce(`Launching ${game.name}`)
+                  onLaunchStart(game.key)
+                }}
+                // primaryLaunch only when the game EXE wasn't already running
+                // (isGameRunning, not the aggregate), so the "now running" cue
+                // isn't spoken for a launch that merely (re)starts companion apps
+                // for an already-running game — but still fires when only a
+                // companion was up (#587).
+                onLaunchEnd={(cooldownMs) =>
+                  onLaunchEnd(game.key, cooldownMs, { primaryLaunch: !isGameRunning })
+                }
               />
             </div>
           )}

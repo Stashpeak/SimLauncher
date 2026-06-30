@@ -3,18 +3,21 @@ import { NotifyProvider, useNotify } from './components/Notify'
 import { WindowControls } from './components/WindowControls'
 import { GameList } from './components/GameList'
 import { SettingsView } from './components/SettingsView'
+import type { SettingsSectionKey } from './components/settings/types'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { StickySaveBar } from './components/StickySaveBar'
 import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import {
   forceClose,
   forceMinimizeToTray,
+  getStartupNotice,
   getUpdateInfo,
   onCloseRequested,
   onUpdateAvailable,
   setPendingMinimizeToTray,
   setRendererDirty
 } from './lib/electron'
+import { subscribeGlobalErrors } from './lib/globalErrors'
 import { runStartupMigrations } from './lib/migrations'
 import { useTheme } from './contexts/ThemeContext'
 import { SettingsProvider } from './components/settings/SettingsContext'
@@ -36,10 +39,15 @@ export default function App(): ReactNode {
 function AppContent() {
   const [view, setView] = useState<'games' | 'settings'>('games')
   const { accentBgTint, syncThemeFromStore } = useTheme()
-  const { notify } = useNotify()
+  const { notify, announce } = useNotify()
   const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
   const [showImportWarning, setShowImportWarning] = useState(false)
   const [pendingView, setPendingView] = useState<'games' | 'settings' | null>(null)
+  // Deep-link target: which Settings section to open + scroll to when Settings
+  // becomes the active view. `pendingTarget` mirrors `pendingView` so a target
+  // requested while there are unsaved changes survives the save/discard confirm.
+  const [settingsTarget, setSettingsTarget] = useState<SettingsSectionKey | null>(null)
+  const [pendingTarget, setPendingTarget] = useState<SettingsSectionKey | null>(null)
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false)
   // When true, the close dialog's actions minimize to tray instead of fully
   // quitting. Set from the `close-requested` payload so the dialog labels and
@@ -53,6 +61,17 @@ function AppContent() {
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
 
+  // Remembers the version we last announced so the live event and the
+  // getUpdateInfo() hydration (which can both deliver the same version) don't
+  // announce it twice.
+  const announcedUpdateRef = useRef<string | null>(null)
+
+  // Focus targets for re-homing keyboard focus into the visible view on a view
+  // switch (see the effect below). viewFocusReadyRef skips the initial mount.
+  const gamesRegionRef = useRef<HTMLDivElement>(null)
+  const settingsRegionRef = useRef<HTMLDivElement>(null)
+  const viewFocusReadyRef = useRef(false)
+
   // Mirror so the once-registered close-request handler reads the latest value
   // without re-subscribing.
   const discardConfirmOpenRef = useRef(false)
@@ -65,6 +84,50 @@ function AppContent() {
   useEffect(() => {
     runStartupMigrations()
   }, [])
+
+  // Reflect the active view in the document title and the banner heading so
+  // Narrator (and the OS task switcher) announce which screen is active — the
+  // two views were otherwise indistinguishable.
+  const viewLabel = view === 'settings' ? 'Settings' : 'Games'
+  useEffect(() => {
+    document.title = `SimLauncher — ${viewLabel}`
+  }, [viewLabel])
+
+  // Re-home keyboard focus into the now-visible view whenever the view changes
+  // (tab switch, Escape-from-Settings). Otherwise focus stays on the control
+  // that triggered the switch — which is about to become `inert` — and drops to
+  // <body>, so the next Tab restarts at the titlebar. Skip the first run so the
+  // app doesn't steal focus on initial load. preventScroll keeps the viewport
+  // from jumping.
+  useEffect(() => {
+    if (!viewFocusReadyRef.current) {
+      viewFocusReadyRef.current = true
+      return
+    }
+    const region = view === 'settings' ? settingsRegionRef.current : gamesRegionRef.current
+    region?.focus({ preventScroll: true })
+  }, [view])
+
+  // Surface non-React errors (async rejections, event-handler throws, errors
+  // outside the render tree) as a toast — the ErrorBoundary only covers render.
+  useEffect(() => subscribeGlobalErrors((message) => notify(message, 'error', 6000)), [notify])
+
+  // One-shot: if the persisted config was unreadable on boot and reset to
+  // defaults, tell the user why their settings reverted. Consumed server-side,
+  // so a StrictMode double-mount can't double-toast.
+  useEffect(() => {
+    let cancelled = false
+    getStartupNotice()
+      .then((notice: { type: 'success' | 'warn' | 'error'; message: string } | null) => {
+        if (!cancelled && notice) notify(notice.message, notice.type, 8000)
+      })
+      .catch((err: unknown) => {
+        console.error('Failed to load startup notice', err)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [notify])
 
   // Keep the main process in sync so it can show a native "unsaved changes"
   // prompt if the OS sends a close signal before the React dialog is open.
@@ -98,7 +161,14 @@ function AppContent() {
     })
 
     const applyUpdateInfo = (info: { version?: string } | null) => {
-      if (info?.version) setUpdateInfo({ version: info.version })
+      if (!info?.version) return
+      setUpdateInfo({ version: info.version })
+      // The update pill is otherwise silent on the Games view — announce it once
+      // per version through the SR live region.
+      if (announcedUpdateRef.current !== info.version) {
+        announcedUpdateRef.current = info.version
+        announce(`Update version ${info.version} available`)
+      }
     }
 
     // Listen for auto-updates, then hydrate any update result that arrived before React mounted.
@@ -116,19 +186,29 @@ function AppContent() {
       cancelled = true
       unsubscribe()
     }
-  }, [syncThemeFromStore])
+  }, [syncThemeFromStore, announce])
 
   // Gate tab navigation behind the discard/save confirm dialog when dirty.
   // The actual view switch is deferred to handleConfirmDiscard/Save so the
   // user's choice (save vs discard) determines the transition.
-  const handleNavigate = (nextView: 'games' | 'settings') => {
-    if (view === nextView) return
+  const handleNavigate = (
+    nextView: 'games' | 'settings',
+    target: SettingsSectionKey | null = null
+  ) => {
+    if (view === nextView) {
+      // Already on this view; still surface a requested section (e.g. clicking
+      // a deep-link CTA again) so it re-opens + scrolls.
+      if (nextView === 'settings' && target) setSettingsTarget(target)
+      return
+    }
 
     if (isAnyDirty) {
       setPendingView(nextView)
+      setPendingTarget(target)
       return
     }
     setView(nextView)
+    setSettingsTarget(target)
   }
 
   const handleDiscardAll = useCallback(async () => {
@@ -152,12 +232,15 @@ function AppContent() {
     await handleDiscardAll()
     if (pendingView) {
       setView(pendingView)
+      setSettingsTarget(pendingTarget)
       setPendingView(null)
+      setPendingTarget(null)
     }
-  }, [handleDiscardAll, pendingView])
+  }, [handleDiscardAll, pendingView, pendingTarget])
 
   const handleConfirmCancel = () => {
     setPendingView(null)
+    setPendingTarget(null)
   }
 
   const handleConfirmSave = useCallback(async () => {
@@ -178,9 +261,11 @@ function AppContent() {
     setRefreshKey((k) => k + 1)
     if (pendingView) {
       setView(pendingView)
+      setSettingsTarget(pendingTarget)
       setPendingView(null)
+      setPendingTarget(null)
     }
-  }, [pendingView, requestSaveAll])
+  }, [pendingView, pendingTarget, requestSaveAll])
 
   const handleCloseConfirmSave = useCallback(async () => {
     let success: boolean
@@ -237,13 +322,19 @@ function AppContent() {
     setShowImportWarning(true)
   }
 
+  // SettingsView clears the deep-link target once it has opened + scrolled to
+  // it, so re-requesting the SAME section produces a real state change and
+  // re-fires the open/scroll effect.
+  const handleTargetConsumed = useCallback(() => setSettingsTarget(null), [])
+
   return (
     <div
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
     >
-      <div className="absolute top-0 left-0 w-full z-20 header-glass">
+      <header className="absolute top-0 left-0 w-full z-20 header-glass">
+        <h1 className="sr-only">SimLauncher — {viewLabel}</h1>
         <WindowControls view={view} onNavigate={handleNavigate} updateInfo={updateInfo} />
-      </div>
+      </header>
 
       {showImportWarning && (
         <div
@@ -286,7 +377,10 @@ function AppContent() {
             }`}
           >
             <div
-              className={`flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
+              ref={gamesRegionRef}
+              tabIndex={-1}
+              aria-label="Games"
+              className={`view-focus-region flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
             >
               <GameList key={refreshKey} onNavigate={handleNavigate} />
             </div>
@@ -302,9 +396,17 @@ function AppContent() {
             }`}
           >
             <div
-              className={`flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
+              ref={settingsRegionRef}
+              tabIndex={-1}
+              aria-label="Settings"
+              className={`view-focus-region flex-1 overflow-y-auto pt-16 px-4 ${isAnyDirty ? 'pb-24' : ''} custom-scrollbar`}
             >
-              <SettingsView onClose={() => handleNavigate('games')} updateInfo={updateInfo} />
+              <SettingsView
+                onClose={() => handleNavigate('games')}
+                updateInfo={updateInfo}
+                targetSection={settingsTarget}
+                onTargetConsumed={handleTargetConsumed}
+              />
             </div>
           </div>
         </main>

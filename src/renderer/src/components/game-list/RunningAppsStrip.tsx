@@ -9,6 +9,7 @@ import {
   FloatingPortal,
   offset,
   shift,
+  useClick,
   useDismiss,
   useFloating,
   useInteractions,
@@ -55,9 +56,13 @@ function RunningAppIconItem({
     whileElementsMounted: autoUpdate
   })
 
+  // useClick makes the trigger keyboard-operable (Enter/Space) and opens on a
+  // plain left-click, alongside the existing right-click — only when there's a
+  // warning, so non-warning icons stay inert.
+  const click = useClick(context, { enabled: !!app.warning })
   const dismiss = useDismiss(context)
   const role = useRole(context, { role: 'menu' })
-  const { getReferenceProps, getFloatingProps } = useInteractions([dismiss, role])
+  const { getReferenceProps, getFloatingProps } = useInteractions([click, dismiss, role])
 
   // Only show the context menu when there is a warning (e.g. process-name
   // mismatch). Apps without warnings get no right-click menu so the native
@@ -93,38 +98,68 @@ function RunningAppIconItem({
     name: app.name
   })
 
+  // Icon still loading (cache not yet populated) and nothing actionable to
+  // surface: show a skeleton so the strip doesn't collapse then jump when icons
+  // arrive. Once the cache is initialized, a null icon means "no icon found" and
+  // falls through to the initial. A warning always renders the button below.
+  if (app.icon === null && !isFailed && !cacheInitialized && !app.warning) {
+    return <div aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
+  }
+
+  const initials = app.name
+    .replace(/\.exe$/i, '')
+    .slice(0, 2)
+    .toUpperCase()
+
   let content: ReactElement<Record<string, unknown>>
 
-  if (isAvailable) {
+  if (app.warning) {
+    // A warning icon is actionable (it opens a Dismiss menu), so the trigger is
+    // a real focusable <button>: keyboard/Narrator users can reach it, hear that
+    // it's actionable (aria-haspopup) and open the menu via Enter/Space or click
+    // (useClick) — not just right-click (WCAG 2.1.1). The inner icon/initial is
+    // decorative; the button's aria-label carries the name + warning.
+    content = (
+      <button
+        ref={refs.setReference}
+        type="button"
+        aria-label={`${app.name}: ${app.warning}`}
+        className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-(--warning-border)"
+        {...triggerProps}
+      >
+        {isAvailable ? (
+          <img
+            src={app.icon ?? undefined}
+            alt=""
+            className="h-4 w-4 object-contain opacity-80"
+            onError={onError}
+          />
+        ) : (
+          <span aria-hidden="true" className="text-[6px] font-black">
+            {initials}
+          </span>
+        )}
+      </button>
+    )
+  } else if (isAvailable) {
     content = (
       <img
         ref={refs.setReference}
         src={app.icon ?? undefined}
-        alt={app.warning ? `${app.name}: ${app.warning}` : ''}
-        className={`h-4 w-4 object-contain opacity-80 ${app.warning ? 'cursor-pointer rounded-sm ring-1 ring-(--warning-text)' : ''}`}
+        alt=""
+        className="h-4 w-4 object-contain opacity-80"
         onError={onError}
-        {...triggerProps}
       />
     )
-  } else if (app.icon === null && !isFailed && !cacheInitialized) {
-    // Icon is still loading (cache not yet populated): show a skeleton so
-    // the strip does not collapse and then jump when icons arrive. Once the
-    // cache is initialized, a null icon means "no icon found" — fall through
-    // to the fallback initial so there's no empty hole.
-    return <div aria-hidden="true" className="h-4 w-4 skeleton-icon animate-pulse" />
   } else {
     content = (
       <div
         ref={refs.setReference}
         role="img"
-        aria-label={app.warning ? `${app.name}: ${app.warning}` : app.name}
-        className={`fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0 ${app.warning ? 'cursor-pointer ring-1 ring-(--warning-text)' : ''}`}
-        {...triggerProps}
+        aria-label={app.name}
+        className="fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0"
       >
-        {app.name
-          .replace(/\.exe$/i, '')
-          .slice(0, 2)
-          .toUpperCase()}
+        {initials}
       </div>
     )
   }

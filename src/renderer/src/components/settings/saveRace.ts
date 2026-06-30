@@ -1,6 +1,8 @@
 // These four fields are dictionary-typed (Record<string, string>) and can be
-// edited concurrently while a save is in flight. All other settings fields are
-// scalars whose last-writer-wins behaviour is acceptable, so they are not tracked.
+// edited concurrently while a save is in flight, so they carry per-field edit
+// versions to detect mid-save edits. Other dictionary-typed state such as
+// `profiles` is intentionally NOT version-tracked (its last-writer-wins
+// behaviour is accepted); the remaining settings are scalars.
 export const SETTINGS_OBJECT_FIELDS = ['appPaths', 'appNames', 'appArgs', 'gamePaths'] as const
 
 export type SettingsObjectField = (typeof SETTINGS_OBJECT_FIELDS)[number]

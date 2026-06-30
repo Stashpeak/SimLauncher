@@ -111,10 +111,6 @@ function isFullExePath(appPath: string | undefined): appPath is string {
   )
 }
 
-function escapeWmiString(value: string) {
-  return value.replace(/'/g, "''")
-}
-
 function parseProcessIds(output: string) {
   const trimmedOutput = output.trim()
 
@@ -144,15 +140,23 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
     accessDenied?: boolean
   }>((resolve) => {
     const script = [
-      // The target path is injected via an environment variable rather than
-      // interpolated directly into the script string. This prevents a path
-      // containing single-quotes or special PowerShell metacharacters from
-      // breaking out of the string literal or injecting arbitrary commands.
+      // Both the target path and the process name are injected via environment
+      // variables rather than interpolated into the script string. This prevents
+      // a value containing single-quotes or PowerShell metacharacters from
+      // breaking out of a string literal or injecting arbitrary commands.
       '$target = $env:SIMLAUNCHER_TARGET_PROCESS_PATH',
-      `$name = '${escapeWmiString(processName)}'`,
+      '$name = $env:SIMLAUNCHER_TARGET_PROCESS_NAME',
       '$targetPath = [System.IO.Path]::GetFullPath($target)',
-      'Get-CimInstance Win32_Process -Filter "Name = \'$name\'" |',
-      '  Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
+      // Match the process name in PowerShell with -ieq rather than in a WQL
+      // `Name = '...'` filter. WQL string-literal quote escaping is ambiguous and
+      // version-dependent (SQL-style doubling vs backslash), and getting it wrong
+      // silently breaks the lookup for exe names containing a single quote — the
+      // exact case this guards (#531). Comparing $_.Name to the env-injected $name
+      // in the host language sidesteps WQL escaping entirely and handles any
+      // character. The (rare, user-initiated) full-process enumeration is bounded
+      // by WMI_LOOKUP_TIMEOUT_MS; precision still comes from the ExecutablePath match.
+      'Get-CimInstance Win32_Process |',
+      '  Where-Object { $_.Name -ieq $name -and $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -ieq $targetPath) } |',
       '  Select-Object -ExpandProperty ProcessId |',
       '  ConvertTo-Json -Compress'
     ].join('\n')
@@ -168,7 +172,11 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
         // which would break the path-scoping safety guarantee and kill
         // same-named processes the user started outside SimLauncher (#503).
         timeout: WMI_LOOKUP_TIMEOUT_MS,
-        env: { ...process.env, SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath) }
+        env: {
+          ...process.env,
+          SIMLAUNCHER_TARGET_PROCESS_PATH: path.resolve(appPath),
+          SIMLAUNCHER_TARGET_PROCESS_NAME: processName
+        }
       },
       (error, stdout, stderr) => {
         if (error) {
@@ -489,6 +497,23 @@ export async function finalizeKillAttempts(
   }
 }
 
+// Normalized full paths of every configured game executable, across all
+// profiles. A game must NEVER be a kill target — not via a companion target, and
+// not via a runningProcesses entry whose cached isGame flag is unreliable (the
+// same exe launched under a non-owning profile is recorded isGame=false). Match
+// by full PATH, not basename: two games — or a game and a utility — can share a
+// basename, and a basename filter would wrongly drop legitimate companions (#519).
+function getConfiguredGameExePaths(): Set<string> {
+  const gamePaths = getStoredStringRecord('gamePaths')
+  const gameExePaths = new Set<string>()
+  Object.values(gamePaths || {}).forEach((gamePath) => {
+    if (isValidExePath(gamePath)) {
+      gameExePaths.add(normalizePathForComparison(gamePath))
+    }
+  })
+  return gameExePaths
+}
+
 function getProfileCompanionTargets(gameKey?: string) {
   const profiles = getStoredProfiles()
   const gamePaths = getStoredStringRecord('gamePaths')
@@ -498,16 +523,18 @@ function getProfileCompanionTargets(gameKey?: string) {
     { processName: string; appPath: string; gameKey: string }
   >()
 
+  const gameExePaths = getConfiguredGameExePaths()
+
   Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
       return
     }
 
     const profile = getActiveStoredProfile(profileEntry)
-    const gameExeName = isValidExePath(gamePaths?.[profileGameKey])
-      ? getExeName(gamePaths![profileGameKey])
-      : null
 
+    // The hardcoded list is curated utility process names — never a game — so it
+    // needs no game filtering. Only the path-based tracked companions can name a
+    // game exe, and those are excluded by full path below.
     Object.entries(UTILITY_COMPANION_PROCESS_NAMES).forEach(([utilityKey, processNames]) => {
       if (isUtilityEnabled(profile, utilityKey)) {
         processNames.forEach((processName) => {
@@ -523,14 +550,15 @@ function getProfileCompanionTargets(gameKey?: string) {
 
     getProfileTrackablePaths(profileGameKey, profile, appPaths, gamePaths).forEach(
       (processPath) => {
-        const processName = getExeName(processPath)
-        if (processName !== gameExeName) {
-          companionTargets.set(processName, {
-            processName,
-            appPath: processPath,
-            gameKey: profileGameKey
-          })
+        if (gameExePaths.has(normalizePathForComparison(processPath))) {
+          return
         }
+        const processName = getExeName(processPath)
+        companionTargets.set(processName, {
+          processName,
+          appPath: processPath,
+          gameKey: profileGameKey
+        })
       }
     )
   })
@@ -540,6 +568,7 @@ function getProfileCompanionTargets(gameKey?: string) {
 
 export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
+  const gameExePaths = getConfiguredGameExePaths()
   const companionTargets = getProfileCompanionTargets(gameKey)
   const killTasks: Promise<KillAttemptResult>[] = []
 
@@ -548,7 +577,10 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     if (gameKey && appProcess.gameKey !== gameKey) {
       return
     }
-    if (appProcess.isGame) {
+    // Never terminate a configured game. The isGame flag alone is not enough:
+    // the same exe launched under a non-owning profile is recorded isGame=false,
+    // so the all-profiles close would otherwise kill it (#519).
+    if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appPath))) {
       return
     }
 
@@ -572,6 +604,44 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
   return result
+}
+
+/**
+ * Whether killLaunchedApps(gameKey) currently has at least one target it would
+ * try to close: a tracked non-game process whose exe is running, or a configured
+ * / hardcoded companion whose process is running. Drives the tray "Close Apps"
+ * enabled state (#519).
+ *
+ * KEEP IN SYNC with killLaunchedApps above — the two membership conditions here
+ * mirror its two kill-task branches. Deliberately NOT derived from
+ * getRunningApps(): that list gates companions on the owning game being launched
+ * or adopted, while killLaunchedApps closes configured companions regardless, so
+ * the surfaced list would under-report closable targets.
+ */
+export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean> {
+  const { processNames } = await readRunningProcessNames()
+  const gameExePaths = getConfiguredGameExePaths()
+
+  for (const appProcess of runningProcesses.values()) {
+    if (gameKey && appProcess.gameKey !== gameKey) {
+      continue
+    }
+    if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
+      continue
+    }
+    if (processNames.has(getExeName(appProcess.path))) {
+      return true
+    }
+  }
+
+  const companionTargets = getProfileCompanionTargets(gameKey)
+  for (const target of companionTargets.values()) {
+    if (processNames.has(target.processName)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 export async function killProfileApps(

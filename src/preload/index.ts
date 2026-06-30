@@ -4,7 +4,8 @@ import type {
   ElectronAPI,
   ProcessNameMismatchWarningPayload,
   RunningAppsChangedPayload,
-  StoreConfigChangePayload
+  StoreConfigChangePayload,
+  UpdateErrorPayload
 } from './api'
 
 // The channel strings used in ipcRenderer.invoke / ipcRenderer.on must match
@@ -91,8 +92,8 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('update-download-progress', handler)
     return () => ipcRenderer.removeListener('update-download-progress', handler)
   },
-  onUpdateError: (cb: (error: Error) => void) => {
-    const handler = (_: unknown, error: Error) => cb(error)
+  onUpdateError: (cb: (error: UpdateErrorPayload) => void) => {
+    const handler = (_: unknown, error: UpdateErrorPayload) => cb(error)
     ipcRenderer.on('update-error', handler)
     return () => ipcRenderer.removeListener('update-error', handler)
   },
@@ -125,6 +126,9 @@ const electronAPI: ElectronAPI = {
   getAssetData: (filename: string) => ipcRenderer.invoke('get-asset-data', filename),
   getFileIcon: (filePath: string) => ipcRenderer.invoke('get-file-icon', filePath),
   getVersion: () => ipcRenderer.invoke('get-version'),
+  getStartupNotice: () => ipcRenderer.invoke('get-startup-notice'),
+  openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
+  openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
   dismissAppIcon: (appPath: string, gameKey: string) =>
     ipcRenderer.invoke('dismiss-app-icon', appPath, gameKey)
 }

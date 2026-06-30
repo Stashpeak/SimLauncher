@@ -10,7 +10,8 @@ import {
   onUpdateError,
   onUpdateNotAvailable
 } from '../../lib/electron'
-import type { UpdateInfo, UpdateStatus } from './types'
+import type { Announce } from '../Notify'
+import type { UpdateErrorInfo, UpdateInfo, UpdateStatus } from './types'
 
 type Notify = (message: string, type: 'success' | 'warn' | 'error', durationMs?: number) => void
 
@@ -26,10 +27,12 @@ export interface UseUpdateStatusResult {
 
 export function useUpdateStatus({
   updateInfo,
-  notify
+  notify,
+  announce
 }: {
   updateInfo: UpdateInfo
   notify: Notify
+  announce: Announce
 }): UseUpdateStatusResult {
   const [appVersion, setAppVersion] = useState<string>('')
   const [checkingUpdate, setCheckingUpdate] = useState(false)
@@ -75,12 +78,21 @@ export function useUpdateStatus({
       setUpdateProgress(null)
       setUpdateStatus('downloaded')
     })
-    const unsubscribeError = onUpdateError((error: Error) => {
+    const unsubscribeError = onUpdateError((error: UpdateErrorInfo) => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
       setUpdateProgress(null)
-      setUpdateStatus('error')
-      notify(error?.message || 'Update check failed', 'error')
+      if (error?.isNetworkError) {
+        // Offline (common on a dedicated rig) is not a real failure — show a
+        // calm INLINE notice only (no toast), like "up to date" does. The update
+        // status block in AboutSection is already an aria-live region, so the
+        // inline notice is still announced to a screen reader without a redundant
+        // toast of the same text (#595).
+        setUpdateStatus('offline')
+      } else {
+        setUpdateStatus('error')
+        notify(error?.message || 'Update check failed', 'error')
+      }
       clearStatusLater(4000)
     })
 
@@ -121,6 +133,11 @@ export function useUpdateStatus({
       setInstallingUpdate(true)
       setUpdateProgress(null)
       setUpdateStatus(null)
+      // The download has no screen-reader-visible text (the button is
+      // aria-live=off so it doesn't announce every percent), so announce that
+      // the install started. Success ends in an app restart; failures are
+      // announced via notify().
+      announce('Downloading update…')
 
       try {
         await installUpdate()
@@ -132,7 +149,7 @@ export function useUpdateStatus({
         console.error(err)
       }
     }
-  }, [notify, updateInfo])
+  }, [announce, notify, updateInfo])
 
   return {
     appVersion,

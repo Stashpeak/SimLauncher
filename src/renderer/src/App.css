@@ -1,11 +1,6 @@
 @import 'tailwindcss' source('./');
 
 :root {
-  --purple-primary: #ad46ff;
-  --purple-solid-hover: #c06cff;
-  --purple-accent: rgba(173, 70, 255, 0.2);
-  --purple-accent-strong: rgba(173, 70, 255, 0.34);
-  --purple-button-text: #e9d4ff;
   --glass-bg: rgba(255, 255, 255, 0.02);
   --glass-bg-elevated: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.4);
@@ -14,12 +9,19 @@
   --text-secondary: rgba(255, 255, 255, 0.7);
   --text-muted: rgba(255, 255, 255, 0.5);
   --text-subtle: rgba(255, 255, 255, 0.3);
-  --accent: var(--purple-primary);
+  --accent: #008c99;
   --accent-foreground: #000000;
+  /* Readable accent for accent-colored TEXT (section headings, update pill,
+     launch-order badge): the raw accent is ~3.5-4.2:1 on these surfaces, below
+     WCAG AA 4.5:1. theme.ts recomputes a contrast-tuned variant at runtime for
+     the live/custom accent; this is the static default for the brand teal. */
+  --accent-text: #66bac2;
   --accent-action-foreground: var(--text-primary);
   --accent-glow-opacity: 0.25;
-  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
-  --focus-ring: rgba(173, 70, 255, 0.25);
+  --accent-glow: rgba(0, 140, 153, var(--accent-glow-opacity));
+  /* Derived from --accent so the keyboard focus ring tracks the live accent
+     (theme.ts sets --accent at runtime); default resolves to the teal brand. */
+  --focus-ring: color-mix(in srgb, var(--accent) 25%, transparent);
   --danger-surface: rgba(244, 63, 94, 0.14);
   --danger-border: rgba(251, 113, 133, 0.28);
   --danger-text: rgba(254, 205, 211, 0.95);
@@ -79,12 +81,15 @@
   --text-secondary: rgba(20, 20, 24, 0.7);
   --text-muted: rgba(20, 20, 24, 0.5);
   --text-subtle: rgba(20, 20, 24, 0.5);
-  --accent: var(--purple-primary);
+  --accent: #008c99;
   --accent-foreground: #000000;
+  /* Darker readable accent for accent-colored text on the light background
+     (theme.ts recomputes at runtime; static default for the brand teal). */
+  --accent-text: #00626b;
   --accent-action-foreground: var(--text-primary);
   --accent-glow-opacity: 0.22;
-  --accent-glow: rgba(173, 70, 255, var(--accent-glow-opacity));
-  --focus-ring: rgba(173, 70, 255, 0.45);
+  --accent-glow: rgba(0, 140, 153, var(--accent-glow-opacity));
+  --focus-ring: color-mix(in srgb, var(--accent) 45%, transparent);
   --danger-surface: rgba(244, 63, 94, 0.1);
   --danger-border: rgba(200, 35, 60, 0.35);
   --danger-text: rgba(145, 25, 45, 0.95);
@@ -394,13 +399,11 @@ textarea {
   transform: scale(1.04);
 }
 
-.action-hover-scale {
-  will-change: transform;
-}
-
 .icon-action {
   background: transparent;
-  color: var(--text-subtle);
+  /* --text-muted (not --text-subtle) so resting icon glyphs clear the 3:1
+     non-text contrast minimum; --text-subtle (~2.3:1) was below it. */
+  color: var(--text-muted);
 }
 
 .icon-action.icon-action-active {
@@ -425,7 +428,7 @@ textarea {
 .icon-action.danger-action {
   background: transparent;
   box-shadow: none;
-  color: var(--text-subtle);
+  color: var(--text-muted);
 }
 
 .icon-action.danger-action:hover {
@@ -721,9 +724,9 @@ textarea {
 }
 
 .settings-sublabel {
-  font-size: 0.625rem;
-  color: var(--text-muted);
-  line-height: 1.2;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.25;
 }
 
 .settings-control {
@@ -769,4 +772,120 @@ textarea {
 
 .settings-control-preset {
   width: 4.75rem;
+}
+
+/* Keyboard focus for the Settings toggle switches: the real checkbox is
+   sr-only, so the focus ring goes on the visual track when the peer input is
+   focus-visible. Matches the outline treatment used elsewhere. */
+.peer:focus-visible ~ .toggle-track {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Keyboard reorder buttons (launch order) — visible focus consistent with the
+   app's outline treatment. */
+.reorder-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Fallback keyboard focus ring for any button / role=button that doesn't carry
+   one of the dedicated .accent-action/.icon-action/etc. rules above — e.g. the
+   wordmark, the profile-menu trigger, the accent swatches and the section
+   disclosure headers, which otherwise showed only the faint UA outline on dark
+   glass. outline-offset keeps it clear of round swatches. */
+button:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* View re-homing focus target (App.tsx) — focused programmatically on a view
+   switch to keep keyboard focus inside the visible view. It's not user-tabbable
+   (tabIndex=-1), so it must not paint a ring around the whole scroll region. */
+.view-focus-region:focus {
+  outline: none;
+}
+
+/* Respect the OS "reduce motion" preference: neutralize transitions and stop
+   the infinite loops (ping/pulse/spin, toast progress) for vestibular safety.
+   Mirrors the marketing site's reduced-motion support. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Windows High Contrast / forced-colors: the OS swaps author colours for a small
+   system palette and strips most backgrounds, gradients and box-shadows. Our UI
+   leans on accent-tinted surfaces, glass borders and glow shadows, so without
+   these overrides the focus ring, button boundaries, the toggle on/off cue and
+   the status dots all collapse into one flat colour. Restore them with system
+   colour keywords (CanvasText = foreground, ButtonText = control outline,
+   Highlight = active selection). !important is needed to beat the Tailwind
+   utility / runtime custom-property colours at equal specificity, mirroring the
+   reduced-motion block above. */
+@media (forced-colors: active) {
+  /* Keyboard focus must stay visible — the accent color-mix ring resolves to a
+     non-system colour and is dropped here. */
+  *:focus-visible {
+    outline: 2px solid CanvasText !important;
+    outline-offset: 2px;
+  }
+
+  /* The toggle's real focus target is the sr-only checkbox, so its visible ring
+     lives on the sibling track. */
+  .peer:focus-visible ~ .toggle-track {
+    outline: 2px solid CanvasText !important;
+  }
+
+  /* Interactive surfaces lose their tinted/glass fill — give them a real edge. */
+  .accent-action,
+  .accent-surface-action,
+  .neutral-action,
+  .danger-action,
+  .icon-action,
+  .dropdown-trigger-surface,
+  .settings-control-pill {
+    border: 1px solid ButtonText !important;
+  }
+
+  /* Selected / checked controls stand out via the system Highlight. */
+  .selected-surface,
+  .dropdown-item[aria-checked='true'] {
+    border: 1px solid Highlight !important;
+  }
+
+  /* Toggle switch: outline the track, fill the checked track with Highlight, and
+     keep a solid system-colour thumb so on vs off is unmistakable (position is a
+     second cue). */
+  .toggle-track {
+    border: 1px solid CanvasText !important;
+  }
+
+  .toggle-track::after {
+    background: CanvasText !important;
+    border-color: CanvasText !important;
+  }
+
+  .peer:checked ~ .toggle-track {
+    background: Highlight !important;
+  }
+
+  /* Status dots (running / unsaved / selected): their accent/green fills and glow
+     shadows vanish — render a solid system-colour disc instead. */
+  .status-dot {
+    background: CanvasText !important;
+    box-shadow: none !important;
+  }
+
+  /* Don't dim inactive game rows below contrast — keep every title fully legible. */
+  .game-row-container {
+    opacity: 1 !important;
+  }
 }

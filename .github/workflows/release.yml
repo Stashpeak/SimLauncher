@@ -22,6 +22,17 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Verify tag matches package.json version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (version ${tag_version}) does not match package.json version ${pkg_version}. Bump package.json before tagging."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches package.json version ${pkg_version}."
+
       - name: Install dependencies
         run: npm ci
 
@@ -48,7 +59,7 @@ jobs:
           sha256sum *.exe | tee SHA256SUMS.txt
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         env:
           # Electron is a devDependency but electron-builder embeds its
           # Chromium runtime into the installer, so dev deps must be included

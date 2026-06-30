@@ -16,6 +16,32 @@ let availableUpdate: UpdateAvailability | null = null
 // without consent would consume bandwidth and could interrupt a race session.
 autoUpdater.autoDownload = false
 
+// A dedicated sim rig is often offline, so the most common update "failure" is
+// simply no connectivity. Distinguish that from a real updater error (corrupt
+// download, server 4xx/5xx, signature mismatch) so the UI can show a calm
+// "can't reach the server" notice instead of a scary generic failure.
+export function isUpdateNetworkError(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code
+  if (
+    typeof code === 'string' &&
+    /^(ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN)$/.test(
+      code
+    )
+  ) {
+    return true
+  }
+
+  // Match only genuine connectivity failures. In particular do NOT match the
+  // broad `net::ERR_` prefix: that would also classify TLS/security errors like
+  // net::ERR_CERT_AUTHORITY_INVALID as "offline" and (via check-for-updates
+  // swallowing them) hide a real update-server/security misconfiguration behind
+  // the calm offline notice.
+  const message = err instanceof Error ? err.message : String(err ?? '')
+  return /\b(ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ENETDOWN)\b|getaddrinfo|net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NAME_RESOLUTION_FAILED|NETWORK_CHANGED|CONNECTION_(REFUSED|TIMED_OUT|RESET|CLOSED|ABORTED)|ADDRESS_UNREACHABLE|PROXY_CONNECTION_FAILED|TIMED_OUT|NETWORK_ACCESS_DENIED)/i.test(
+    message
+  )
+}
+
 export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
   sendToRenderer = rendererSender
 
@@ -49,7 +75,10 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
 
   autoUpdater.on('error', (err) => {
     installAfterDownload = false
-    sendToRenderer('update-error', { message: err.message })
+    sendToRenderer('update-error', {
+      message: err.message,
+      isNetworkError: isUpdateNetworkError(err)
+    })
   })
 }
 
@@ -107,12 +136,32 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
       return { success: true }
     } catch (err) {
       installAfterDownload = false
+      // downloadUpdate() both emits the 'error' event AND rejects. The event
+      // already surfaced a categorized message to the renderer, so for a network
+      // failure swallow the rejection here — otherwise the renderer's install
+      // catch fires a second, generic "Failed to install update" error that
+      // overrides the calmer offline notice (mirrors the check-for-updates
+      // handler). Re-throw anything else so genuine failures still surface.
+      if (isUpdateNetworkError(err)) {
+        return { success: false, offline: true }
+      }
       throw err
     }
   })
 
   ipcMain.handle('check-for-updates', async () => {
-    return await checkForUpdates()
+    try {
+      return await checkForUpdates()
+    } catch (err) {
+      // The autoUpdater 'error' event already reported this to the renderer with
+      // a categorized message. For a network failure, swallow the rejection so
+      // the manual-check flow doesn't additionally surface a generic error that
+      // would override the calmer offline notice; re-throw anything else.
+      if (isUpdateNetworkError(err)) {
+        return null
+      }
+      throw err
+    }
   })
 
   ipcMain.handle('get-update-info', async () => {

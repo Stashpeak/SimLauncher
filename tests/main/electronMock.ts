@@ -98,6 +98,7 @@ export class BrowserWindow extends MockEventTarget {
   isDestroyed = vi.fn(() => this.destroyed)
   isMaximized = vi.fn(() => false)
   getBounds = vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 }))
+  getNormalBounds = vi.fn(() => ({ x: 0, y: 0, width: 800, height: 600 }))
   loadFile = vi.fn()
   loadURL = vi.fn()
 }
@@ -134,6 +135,7 @@ export class Tray extends MockEventTarget {
 export interface MockMenuItem {
   label?: string
   type?: string
+  enabled?: boolean
   click?: () => void
 }
 
@@ -153,6 +155,7 @@ class MockApp extends MockEventTarget {
   isPackaged = false
   getVersion = vi.fn().mockReturnValue('1.0.0')
   getAppPath = vi.fn().mockReturnValue(process.cwd())
+  getPath = vi.fn().mockReturnValue(process.cwd())
   setLoginItemSettings = vi.fn()
   quit = vi.fn()
   exit = vi.fn()
@@ -166,7 +169,14 @@ export const app = new MockApp()
 
 export const dialog = {
   showOpenDialog: vi.fn(),
-  showSaveDialog: vi.fn()
+  showSaveDialog: vi.fn(),
+  showErrorBox: vi.fn(),
+  showMessageBox: vi.fn().mockResolvedValue({ response: 1 })
+}
+
+export const shell = {
+  openPath: vi.fn().mockResolvedValue(''),
+  showItemInFolder: vi.fn()
 }
 
 export const ipcMain = {

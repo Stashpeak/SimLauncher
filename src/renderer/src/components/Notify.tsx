@@ -16,6 +16,8 @@ import { CheckIcon, WarningTriangleIcon, ErrorIcon } from './icons'
 
 type ToastType = 'success' | 'warn' | 'error'
 
+type Politeness = 'polite' | 'assertive'
+
 interface Toast {
   id: number
   message: string
@@ -24,10 +26,27 @@ interface Toast {
 }
 
 interface NotifyContextValue {
+  /** Show a visual toast AND announce its message to screen readers. */
   notify: (message: string, type: ToastType, durationMs?: number) => void
+  /**
+   * Announce a message to screen readers only (no visual toast) — for state
+   * changes that already have their own visible indicator (update pill, a row
+   * going green). Errors should pass 'assertive' so they interrupt.
+   */
+  announce: (message: string, politeness?: Politeness) => void
 }
 
+/** Standalone screen-reader announcement (no toast) — shared so consumers like
+ *  useUpdateStatus don't redefine (and risk drifting from) this signature. */
+export type Announce = NotifyContextValue['announce']
+
 export const NotifyContext = createContext<NotifyContextValue | null>(null)
+
+// Appended to alternating announcements so two identical consecutive messages
+// still register as a DOM text change (otherwise a screen reader stays silent on
+// the repeat). U+200B is zero-width and not spoken, so it is invisible to both
+// sighted and AT users.
+const ANNOUNCE_SEPARATOR = '​'
 
 const TOAST_PROGRESS_CLASSES: Record<ToastType, string> = {
   success: 'toast-progress-success',
@@ -101,6 +120,14 @@ function ToastCard({
       return undefined
     }
 
+    // Honor reduced-motion: this progress bar is WAAPI-driven, so the CSS
+    // reduced-motion rules don't cover it. The toast still auto-dismisses on its
+    // own timer; we just skip the shrinking animation. (Optional chaining keeps
+    // it safe in jsdom, which doesn't implement matchMedia.)
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+      return undefined
+    }
+
     const animation = progressElement.animate([{ width: '100%' }, { width: '0%' }], {
       duration: toast.duration,
       easing: 'linear',
@@ -111,9 +138,17 @@ function ToastCard({
   }, [toast.duration, toast.id])
 
   return (
+    // The toast is a purely visual echo: the message is spoken through the
+    // dedicated live-region announcer (see NotifyProvider), so the whole card is
+    // aria-hidden to avoid double-announcement and the old "— dismiss
+    // notification" pollution. tabIndex={-1} keeps this focusable control out of
+    // the Tab order so it isn't a focusable node inside an aria-hidden subtree;
+    // keyboard/AT users rely on the auto-dismiss timer, mouse users can click.
     <button
       type="button"
-      aria-label={`${toast.message} — dismiss notification`}
+      aria-hidden="true"
+      tabIndex={-1}
+      title="Dismiss"
       className={`toast-card glass-surface overflow-hidden relative rounded-[18px] text-left px-[16px] py-[14px] min-w-[280px] max-w-[400px] shadow-[0_8px_30px_#00000050] transition-all duration-250 ease-out ${TOAST_STYLES[toast.type]} ${isDismissing ? 'toast-card-dismissing opacity-0 translate-x-5 scale-95' : 'opacity-100 translate-x-0 scale-100'}`}
       onClick={() => onDismiss(toast.id)}
     >
@@ -136,6 +171,26 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
   const [toasts, setToasts] = useState<Toast[]>([])
   const [dismissingToastIds, setDismissingToastIds] = useState<Set<number>>(() => new Set())
   const dismissTimersRef = useRef<Map<number, number>>(new Map())
+
+  // Dedicated screen-reader announcer: two always-rendered visually-hidden live
+  // regions. Keeping them mounted (rather than conditionally rendering on a
+  // message) is what makes the announcement reliable — the region exists before
+  // its text changes. Errors go to the assertive region so they interrupt;
+  // everything else is polite.
+  const [politeMessage, setPoliteMessage] = useState('')
+  const [assertiveMessage, setAssertiveMessage] = useState('')
+  const politeAltRef = useRef(false)
+  const assertiveAltRef = useRef(false)
+
+  const announce = useCallback<NotifyContextValue['announce']>((message, politeness = 'polite') => {
+    if (politeness === 'assertive') {
+      assertiveAltRef.current = !assertiveAltRef.current
+      setAssertiveMessage(assertiveAltRef.current ? message : message + ANNOUNCE_SEPARATOR)
+    } else {
+      politeAltRef.current = !politeAltRef.current
+      setPoliteMessage(politeAltRef.current ? message : message + ANNOUNCE_SEPARATOR)
+    }
+  }, [])
 
   const removeToast = useCallback((id: number) => {
     const dismissTimer = dismissTimersRef.current.get(id)
@@ -183,16 +238,22 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
     }
   }, [])
 
-  const notify = useCallback<NotifyContextValue['notify']>((message, type, durationMs = 3000) => {
-    const toast: Toast = {
-      id: ++toastId,
-      message,
-      type,
-      duration: durationMs
-    }
+  const notify = useCallback<NotifyContextValue['notify']>(
+    (message, type, durationMs = 3000) => {
+      const toast: Toast = {
+        id: ++toastId,
+        message,
+        type,
+        duration: durationMs
+      }
 
-    setToasts((current) => [...current, toast])
-  }, [])
+      setToasts((current) => [...current, toast])
+      // Speak the same message through the live-region announcer; errors
+      // interrupt (assertive), success/warn wait their turn (polite).
+      announce(message, type === 'error' ? 'assertive' : 'polite')
+    },
+    [announce]
+  )
 
   useEffect(() => {
     return onAppLaunchError((data: unknown) => {
@@ -206,27 +267,45 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
     })
   }, [notify])
 
-  const value = useMemo(() => ({ notify }), [notify])
+  const value = useMemo(() => ({ notify, announce }), [notify, announce])
 
   return (
     <NotifyContext.Provider value={value}>
       {children}
       {createPortal(
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="false"
-          className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-9999"
-        >
-          {toasts.map((toast) => (
-            <ToastCard
-              key={toast.id}
-              toast={toast}
-              isDismissing={dismissingToastIds.has(toast.id)}
-              onDismiss={dismissToast}
-            />
-          ))}
-        </div>,
+        <>
+          {/* Always-rendered visually-hidden announcer. It MUST be portaled to
+              document.body (a sibling of #root) rather than rendered inline:
+              useFocusTrap marks #root `inert` while any modal is open, and
+              aria-live mutations inside an inert subtree are not announced — so
+              an inline announcer would go silent for screen-reader users for
+              every notify()/announce() fired while a dialog is up (e.g. a save
+              failure that keeps the close-confirm dialog open). role + aria-live
+              are stated explicitly (role=status implies polite, role=alert
+              implies assertive) for cross-AT reliability; aria-atomic so the
+              full message is re-read on every change. */}
+          <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {politeMessage}
+          </div>
+          <div className="sr-only" role="alert" aria-live="assertive" aria-atomic="true">
+            {assertiveMessage}
+          </div>
+          {/* Visual-only toast stack — aria-hidden because the announcer above
+              carries the message to assistive tech. */}
+          <div
+            aria-hidden="true"
+            className="fixed right-[25px] bottom-[25px] flex flex-col gap-3 z-9999"
+          >
+            {toasts.map((toast) => (
+              <ToastCard
+                key={toast.id}
+                toast={toast}
+                isDismissing={dismissingToastIds.has(toast.id)}
+                onDismiss={dismissToast}
+              />
+            ))}
+          </div>
+        </>,
         document.body
       )}
     </NotifyContext.Provider>
