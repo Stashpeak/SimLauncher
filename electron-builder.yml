@@ -17,13 +17,13 @@ win:
   # AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET env vars set in CI.
   azureSignOptions:
     # MUST exactly match the certificate's CommonName (CN) = the validated
-    # organization name, or SmartScreen reports a publisher mismatch.
-    publisherName: 'TODO: validated organization CN (from the cert profile)'
+    # identity (here CN=David Kohout), or SmartScreen reports a publisher mismatch.
+    publisherName: 'David Kohout'
     # West Europe region endpoint (matches where the signing account was created).
     endpoint: 'https://weu.codesigning.azure.net/'
     # The Trusted/Artifact Signing account name (NOT the app registration).
-    codeSigningAccountName: 'SimLauncher' # TODO: confirm against the signing account
-    certificateProfileName: 'TODO: certificate profile name'
+    codeSigningAccountName: 'SimLauncher'
+    certificateProfileName: 'SimLauncher'
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
