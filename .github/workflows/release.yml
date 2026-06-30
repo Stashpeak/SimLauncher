@@ -50,7 +50,11 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        run: npx electron-builder --win --publish always
+        # forceCodeSigning is enforced here (release-only) instead of in
+        # electron-builder.yml so contributors can still build unsigned from
+        # source (npm run dist:win) without Azure creds. On a release, a signing
+        # failure now fails the build instead of silently shipping unsigned.
+        run: npx electron-builder --win --publish always -c.win.forceCodeSigning=true
 
       - name: Generate SHA-256 checksums
         shell: bash
