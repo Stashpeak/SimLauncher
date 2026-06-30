@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/0befc41c-ad71-4d75-930c-9bfa680c3ece
 
 **➡️ [Download SimLauncher for Windows](../../releases/latest)** · 💬 **[Join the Discord](https://discord.gg/37BPprjazF)**
 
-> On first launch Windows SmartScreen may warn that the publisher is unrecognized — the installer isn't code-signed yet. Click **More info → Run anyway**.
+> The installer is **code-signed** — Windows SmartScreen now shows the verified publisher (**David Kohout**). It may still warn on first launch until the new signature builds reputation; click **More info → Run anyway**.
 
 ## Screenshots
 
@@ -134,7 +134,7 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ### "Windows protected your PC" (SmartScreen)
 
-The installer isn't code-signed yet, so SmartScreen may warn on first launch. Click **More info → Run anyway**.
+The installer **is** code-signed (verified publisher: David Kohout), but Windows SmartScreen reputation builds up over downloads and time — so it may still warn on first launch until then. Click **More info → Run anyway**. You can confirm the signature yourself in the installer's **Properties → Digital Signatures** tab.
 
 ### A game won't launch
 
