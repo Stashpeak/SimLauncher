@@ -115,11 +115,9 @@ async function renderApp(): Promise<{ unmount: () => void }> {
 }
 
 function modalHeading(): HTMLElement | null {
-  return (
-    (Array.from(document.body.querySelectorAll('h2')).find(
-      (el) => el.textContent === 'Welcome to SimLauncher'
-    ) as HTMLElement | undefined) ?? null
-  )
+  // The heading renders the brand wordmark (decorative SVG) with the accessible
+  // name carried by aria-label, so match on that rather than text content.
+  return document.body.querySelector('h2[aria-label="Welcome to SimLauncher"]')
 }
 
 function button(name: RegExp): HTMLButtonElement | null {

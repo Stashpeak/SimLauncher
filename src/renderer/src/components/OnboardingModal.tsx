@@ -6,6 +6,7 @@ import { setZoom } from '../lib/electron'
 import { getSettings, saveSettings } from '../lib/store'
 import { AccentSwatchRow } from './AccentSwatchRow'
 import { ZoomControl } from './ZoomControl'
+import { BrandWordmarkIcon } from './icons'
 
 interface OnboardingModalProps {
   isOpen: boolean
@@ -92,11 +93,20 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
         aria-describedby={descId}
         className="glass-surface-elevated animate-fade-slide relative w-full max-w-lg rounded-[24px] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] isolation-auto"
       >
-        <h2
-          id={titleId}
-          className="text-2xl font-black italic tracking-tighter uppercase text-(--text-primary) mb-3"
-        >
-          Welcome to SimLauncher
+        {/* Brand wordmark stands in for the title text. It is the same single-vector
+            "SimLauncher" + play-mark used in the header, so the play-mark stays
+            aligned at every zoom. "Launcher" follows the accent (text-(--accent))
+            to tie into the accent picker below; the play-mark keeps its own
+            --launcher-play. The h2 carries the accessible name via aria-label
+            since the logo itself is decorative SVG. #641 */}
+        <h2 id={titleId} aria-label="Welcome to SimLauncher" className="mb-3">
+          <span
+            aria-hidden="true"
+            className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-(--text-muted)"
+          >
+            Welcome to
+          </span>
+          <BrandWordmarkIcon aria-hidden="true" className="h-7 w-auto text-(--accent)" />
         </h2>
         <p id={descId} className="text-sm text-(--text-secondary) leading-relaxed mb-6">
           Pick your sims and their companion apps once. One click launches the whole stack in the
