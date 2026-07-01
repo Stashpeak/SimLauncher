@@ -85,7 +85,12 @@ const STORE_OPTIONS = {
     windowBounds: { type: 'object', default: {} },
     profileUtilityOrderMigrated: { type: 'boolean', default: false },
     profileSetsMigrated: { type: 'boolean', default: false },
-    migrated: { type: 'boolean', default: false }
+    migrated: { type: 'boolean', default: false },
+    // Internal, LOCAL-only first-run flag (onboarding shown once). Deliberately
+    // NOT added to EXPECTED_CONFIG_KEYS so it is excluded from config
+    // export/import - it is a local UX flag and must not travel between
+    // machines. #641
+    onboardingSeen: { type: 'boolean', default: false }
   }
 } as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string }
 

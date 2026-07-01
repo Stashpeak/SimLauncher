@@ -526,4 +526,18 @@ export function registerConfigHandlers(): void {
       notifyStoreConfigChanged({ reason: 'set-migration-flags', keys: changedKeys })
     }
   })
+
+  // onboardingSeen is a LOCAL-only UX flag: the first-run onboarding modal is
+  // shown once, then this is set so it never reappears. Kept out of the config
+  // export/import surface (not in EXPECTED_CONFIG_KEYS) so it never travels
+  // between machines. No store-config-changed broadcast is needed: the modal
+  // manages its own dismissal via renderer state. #641
+  ipcMain.handle('get-onboarding-seen', () => {
+    return store.get('onboardingSeen')
+  })
+
+  ipcMain.handle('set-onboarding-seen', (_event, seen: unknown) => {
+    if (typeof seen !== 'boolean') return
+    store.set('onboardingSeen', seen)
+  })
 }
