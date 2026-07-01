@@ -6,6 +6,7 @@ import { SettingsView } from './components/SettingsView'
 import type { SettingsSectionKey } from './components/settings/types'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { StickySaveBar } from './components/StickySaveBar'
+import { OnboardingModal } from './components/OnboardingModal'
 import { WarningTriangleIcon, CloseIcon } from './components/icons'
 import {
   forceClose,
@@ -19,6 +20,13 @@ import {
 } from './lib/electron'
 import { subscribeGlobalErrors } from './lib/globalErrors'
 import { runStartupMigrations } from './lib/migrations'
+import { GAMES } from './lib/config'
+import {
+  getOnboardingSeen,
+  getSettings,
+  onStoreConfigChanged,
+  setOnboardingSeen as persistOnboardingSeen
+} from './lib/store'
 import { useTheme } from './contexts/ThemeContext'
 import { SettingsProvider } from './components/settings/SettingsContext'
 import { AppDirtyProvider, useAppDirty } from './contexts/AppDirtyContext'
@@ -61,6 +69,14 @@ function AppContent() {
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
 
+  // First-run onboarding gate. Both start null (loading) so the modal never
+  // flashes before the real values are known. Shown only for a brand-new user:
+  // onboarding not yet seen AND no game configured yet. Existing users have a
+  // game, so the zero-games half is false and they are never onboarded - no
+  // backfill migration needed. #641
+  const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null)
+  const [hasConfiguredGame, setHasConfiguredGame] = useState<boolean | null>(null)
+
   // Remembers the version we last announced so the live event and the
   // getUpdateInfo() hydration (which can both deliver the same version) don't
   // announce it twice.
@@ -83,6 +99,38 @@ function AppContent() {
   // reload in dev is safe and gives no false positives.
   useEffect(() => {
     runStartupMigrations()
+  }, [])
+
+  // Load the first-run onboarding inputs: the seen flag and whether any game is
+  // configured (mirrors GameList's getSettings + onStoreConfigChanged read).
+  useEffect(() => {
+    let cancelled = false
+    void getOnboardingSeen().then((seen) => {
+      if (!cancelled) setOnboardingSeen(seen)
+    })
+
+    const readConfiguredGames = () => {
+      void getSettings()
+        .then((settings) => {
+          if (!cancelled) {
+            setHasConfiguredGame(GAMES.some((game) => !!settings.gamePaths[game.key]))
+          }
+        })
+        .catch((err: unknown) => {
+          console.error('Failed to read games for onboarding gate', err)
+        })
+    }
+    readConfiguredGames()
+    // Only 'import-config' / 'save-settings' can carry gamePaths (mirror GameList).
+    const unsubscribe = onStoreConfigChanged((payload) => {
+      if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
+      readConfiguredGames()
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [])
 
   // Reflect the active view in the document title and the banner heading so
@@ -327,6 +375,22 @@ function AppContent() {
   // re-fires the open/scroll effect.
   const handleTargetConsumed = useCallback(() => setSettingsTarget(null), [])
 
+  // Brand-new user: not yet onboarded AND no game configured. Both flags must be
+  // resolved (non-null) so the modal never flashes during the initial reads.
+  const showOnboarding = onboardingSeen === false && hasConfiguredGame === false
+
+  const handleOnboardingSetup = () => {
+    setOnboardingSeen(true)
+    void persistOnboardingSeen(true)
+    // Hand off to the Games section, opened + scrolled via the #648 deep-link.
+    handleNavigate('settings', 'games')
+  }
+
+  const handleOnboardingSkip = () => {
+    setOnboardingSeen(true)
+    void persistOnboardingSeen(true)
+  }
+
   return (
     <div
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
@@ -460,6 +524,12 @@ function AppContent() {
         }}
         onDiscard={() => setDiscardConfirmOpen(false)}
         onCancel={() => setDiscardConfirmOpen(false)}
+      />
+
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onSetup={handleOnboardingSetup}
+        onSkip={handleOnboardingSkip}
       />
     </div>
   )
