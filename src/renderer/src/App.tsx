@@ -105,9 +105,13 @@ function AppContent() {
   // configured (mirrors GameList's getSettings + onStoreConfigChanged read).
   useEffect(() => {
     let cancelled = false
-    void getOnboardingSeen().then((seen: boolean) => {
-      if (!cancelled) setOnboardingSeen(seen)
-    })
+    void getOnboardingSeen()
+      .then((seen: boolean) => {
+        if (!cancelled) setOnboardingSeen(seen)
+      })
+      .catch((err: unknown) => {
+        console.error('Failed to read onboarding-seen flag', err)
+      })
 
     const readConfiguredGames = () => {
       void getSettings()
@@ -379,16 +383,22 @@ function AppContent() {
   // resolved (non-null) so the modal never flashes during the initial reads.
   const showOnboarding = onboardingSeen === false && hasConfiguredGame === false
 
+  const persistOnboardingSeenFlag = () => {
+    void persistOnboardingSeen(true).catch((err: unknown) => {
+      console.error('Failed to persist onboarding-seen flag', err)
+    })
+  }
+
   const handleOnboardingSetup = () => {
     setOnboardingSeen(true)
-    void persistOnboardingSeen(true)
+    persistOnboardingSeenFlag()
     // Hand off to the Games section, opened + scrolled via the #648 deep-link.
     handleNavigate('settings', 'games')
   }
 
   const handleOnboardingSkip = () => {
     setOnboardingSeen(true)
-    void persistOnboardingSeen(true)
+    persistOnboardingSeenFlag()
   }
 
   return (

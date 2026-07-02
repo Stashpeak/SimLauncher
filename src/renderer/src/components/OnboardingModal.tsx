@@ -62,16 +62,23 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
 
   const handleAccentChange = (hex: string): void => {
     theme.setAccentPreset(hex) // apply live
-    void saveSettings({ accentPreset: hex }) // persist now (no save bar here)
+    // persist now (no save bar here)
+    void saveSettings({ accentPreset: hex }).catch((err: unknown) => {
+      console.error('Failed to persist onboarding accent preset', err)
+    })
   }
   const handleCustomColorChange = (hex: string): void => {
     theme.setAccentCustom(hex)
-    void saveSettings({ accentCustom: hex })
+    void saveSettings({ accentCustom: hex }).catch((err: unknown) => {
+      console.error('Failed to persist onboarding accent custom color', err)
+    })
   }
   const handleZoomFactorChange = (factor: number): void => {
-    setZoom(factor) // apply live
+    void setZoom(factor) // apply live
     setZoomFactorState(factor)
-    void saveSettings({ zoomFactor: factor })
+    void saveSettings({ zoomFactor: factor }).catch((err: unknown) => {
+      console.error('Failed to persist onboarding zoom factor', err)
+    })
   }
 
   if (!isOpen) return null

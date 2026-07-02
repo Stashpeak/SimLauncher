@@ -312,6 +312,10 @@ export const EXPECTED_CONFIG_KEYS = new Set([
 ])
 const LEGACY_CONFIG_KEYS = new Set(['killOnClose'])
 const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFIG_KEYS])
+// Keys that live in the store but are deliberately NOT in EXPECTED_CONFIG_KEYS
+// (excluded from config export/import). A config import clears the store, so
+// these local-only UX flags must be preserved across it or they silently reset. #641
+export const LOCAL_ONLY_STORE_KEYS = ['onboardingSeen'] as const
 const BOOLEAN_CONFIG_KEYS = new Set([
   'accentBgTint',
   'focusActiveTitle',
