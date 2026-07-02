@@ -45,7 +45,7 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
     if (!isOpen) return
     let cancelled = false
     getSettings()
-      .then((settings) => {
+      .then((settings: Settings) => {
         if (!cancelled && Number.isFinite(settings.zoomFactor)) {
           setZoomFactorState(settings.zoomFactor)
         }

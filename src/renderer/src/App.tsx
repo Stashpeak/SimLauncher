@@ -105,13 +105,13 @@ function AppContent() {
   // configured (mirrors GameList's getSettings + onStoreConfigChanged read).
   useEffect(() => {
     let cancelled = false
-    void getOnboardingSeen().then((seen) => {
+    void getOnboardingSeen().then((seen: boolean) => {
       if (!cancelled) setOnboardingSeen(seen)
     })
 
     const readConfiguredGames = () => {
       void getSettings()
-        .then((settings) => {
+        .then((settings: Settings) => {
           if (!cancelled) {
             setHasConfiguredGame(GAMES.some((game) => !!settings.gamePaths[game.key]))
           }
@@ -122,7 +122,7 @@ function AppContent() {
     }
     readConfiguredGames()
     // Only 'import-config' / 'save-settings' can carry gamePaths (mirror GameList).
-    const unsubscribe = onStoreConfigChanged((payload) => {
+    const unsubscribe = onStoreConfigChanged((payload: StoreConfigChangePayload) => {
       if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
       readConfiguredGames()
     })
