@@ -16,6 +16,16 @@ let availableUpdate: UpdateAvailability | null = null
 // without consent would consume bandwidth and could interrupt a race session.
 autoUpdater.autoDownload = false
 
+// Opt out of electron-updater's built-in install-on-quit hook. Once a download
+// completes, electron-updater arms its own app 'quit' handler that installs the
+// pending update on the NEXT normal quit (autoInstallOnAppQuit defaults to
+// true). That would silently bypass the dirty-defer guard below (#671): a user
+// who chose "keep working, install later" would get the update installed anyway
+// the next time they close the app, with no consent at that moment. Make this
+// code the sole authority on when an install happens — it only ever installs
+// via an explicit quitAndInstallUpdate() call (mirrors autoDownload=false).
+autoUpdater.autoInstallOnAppQuit = false
+
 // A dedicated sim rig is often offline, so the most common update "failure" is
 // simply no connectivity. Distinguish that from a real updater error (corrupt
 // download, server 4xx/5xx, signature mismatch) so the UI can show a calm
@@ -136,6 +146,17 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
     installAfterDownload = true
 
     if (updateDownloaded) {
+      // The update is already on disk. Re-check dirty state at THIS click — not
+      // just at download-complete — because the "Download & Install" button
+      // stays visible after the user cancels the dirty prompt once. Re-clicking
+      // it while still dirty must re-surface the same non-destructive prompt,
+      // not force-quit past the close-confirm and silently discard the edits
+      // (that would reopen #671 through the very flow the prompt tells users to
+      // take: "keep working, install later from Settings").
+      if (getRendererDirty()) {
+        sendToRenderer('update-ready-while-dirty', availableUpdate ?? { version: '' })
+        return { success: true }
+      }
       quitAndInstallUpdate()
       return { success: true }
     }

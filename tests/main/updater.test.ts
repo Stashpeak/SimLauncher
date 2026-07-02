@@ -15,7 +15,10 @@ async function loadUpdaterModule({ isPackaged = true } = {}) {
   Object.keys(autoUpdaterHandlers).forEach((key) => delete autoUpdaterHandlers[key])
   vi.doMock('electron-updater', () => ({
     autoUpdater: {
+      // Mirror electron-updater's real defaults so the module's opt-outs are
+      // provably exercised (both start true, the module forces both false).
       autoDownload: true,
+      autoInstallOnAppQuit: true,
       on: vi.fn((event: string, handler: UpdaterEventHandler) => {
         autoUpdaterHandlers[event] = handler
       }),
@@ -117,6 +120,53 @@ test('a deferred install with a CLEAN renderer auto-installs as before (#671)', 
   // do not surface the "restart while dirty" prompt.
   expect(quitAndInstall).toHaveBeenCalledTimes(1)
   expect(sendToRenderer).not.toHaveBeenCalledWith('update-ready-while-dirty', expect.anything())
+})
+
+test('re-installing after a dirty deferral defers AGAIN instead of force-quitting (#671)', async () => {
+  const { appState, handlers, sendToRenderer } = await loadUpdaterModule()
+  downloadUpdate.mockResolvedValue(undefined)
+
+  // The download lands while the renderer is dirty, so the app defers.
+  await handlers['install-update']({})
+  appState.setRendererDirty(true)
+  autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
+  expect(quitAndInstall).not.toHaveBeenCalled()
+  sendToRenderer.mockClear()
+
+  // The user cancels the prompt but keeps editing (still dirty), then clicks
+  // the still-visible "Download & Install" button again. Because the update is
+  // already downloaded, this hits the install-update fast path — which must
+  // re-check dirty state and re-surface the prompt, NOT force-quit and discard
+  // the unsaved edits. Without the re-check this silently reopened #671.
+  await handlers['install-update']({})
+  expect(quitAndInstall).not.toHaveBeenCalled()
+  expect(sendToRenderer).toHaveBeenCalledWith('update-ready-while-dirty', { version: '1.2.3' })
+})
+
+test('re-installing once the renderer is clean installs immediately (#671)', async () => {
+  const { appState, handlers } = await loadUpdaterModule()
+  downloadUpdate.mockResolvedValue(undefined)
+
+  await handlers['install-update']({})
+  appState.setRendererDirty(true)
+  autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
+  expect(quitAndInstall).not.toHaveBeenCalled()
+
+  // User saves (renderer clean) and clicks "Restart now"/install again: the
+  // already-downloaded update installs without a further prompt.
+  appState.setRendererDirty(false)
+  await handlers['install-update']({})
+  expect(quitAndInstall).toHaveBeenCalledTimes(1)
+})
+
+test('autoInstallOnAppQuit is forced off so the app alone controls install timing (#671)', async () => {
+  const { autoUpdater } = await loadUpdaterModule()
+
+  // electron-updater's default arms an install on the next normal app quit,
+  // which would bypass the dirty-defer guard entirely (the update installs on
+  // close no matter what the user chose). The app must never auto-install on
+  // quit — only via its own explicit quitAndInstallUpdate() call.
+  expect(autoUpdater.autoInstallOnAppQuit).toBe(false)
 })
 
 test('install-update before download latches and installs when the download lands', async () => {
