@@ -114,6 +114,8 @@ const electronAPI: ElectronAPI = {
   saveProfiles: (profiles: unknown) => ipcRenderer.invoke('save-profiles', profiles),
   getMigrationFlags: () => ipcRenderer.invoke('get-migration-flags'),
   setMigrationFlags: (patch: unknown) => ipcRenderer.invoke('set-migration-flags', patch),
+  getOnboardingSeen: () => ipcRenderer.invoke('get-onboarding-seen'),
+  setOnboardingSeen: (seen: boolean) => ipcRenderer.invoke('set-onboarding-seen', seen),
   onStoreConfigChanged: (cb: (payload: StoreConfigChangePayload) => void) => {
     const handler = (_: unknown, payload: StoreConfigChangePayload) => cb(payload)
     ipcRenderer.on('store-config-changed', handler)

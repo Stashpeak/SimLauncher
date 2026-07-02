@@ -13,6 +13,13 @@ const FOCUSABLE_SELECTOR = [
 // the last one closes.
 let trapDepth = 0
 
+// Stack of active Escape-capable traps (most recently opened on top). Each trap
+// pushes a unique token while active; only the token on top reacts to Escape, so
+// a stacked picker/dialog dismisses itself before the surface that opened it
+// (both register document-capture listeners, and the first-registered would
+// otherwise stopImmediatePropagation and win). #641
+const escapeStack: object[] = []
+
 function setBackgroundInert(inert: boolean): void {
   const root = document.getElementById('root')
   if (!root) return
@@ -100,20 +107,30 @@ export function useFocusTrap(
     container.addEventListener('keydown', handleKeyDown)
 
     // Escape-to-dismiss (when a handler was supplied). Capture phase so it wins
-    // over background document listeners; a no-op when no onEscape was passed.
+    // over background document listeners. Only the topmost Escape-capable trap
+    // reacts, so a stacked picker/dialog closes itself first instead of the
+    // surface underneath it (see escapeStack). A no-op when no onEscape.
+    const escapeToken = onEscapeRef.current ? {} : null
+    if (escapeToken) escapeStack.push(escapeToken)
     const handleEscape = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       const onEscape = onEscapeRef.current
       if (!onEscape) return
+      // Not the topmost trap — let the event reach the one that is.
+      if (escapeStack[escapeStack.length - 1] !== escapeToken) return
       e.preventDefault()
       e.stopImmediatePropagation()
       onEscape()
     }
-    document.addEventListener('keydown', handleEscape, true)
+    if (escapeToken) document.addEventListener('keydown', handleEscape, true)
 
     return () => {
       container.removeEventListener('keydown', handleKeyDown)
-      document.removeEventListener('keydown', handleEscape, true)
+      if (escapeToken) {
+        document.removeEventListener('keydown', handleEscape, true)
+        const idx = escapeStack.lastIndexOf(escapeToken)
+        if (idx !== -1) escapeStack.splice(idx, 1)
+      }
       trapDepth = Math.max(0, trapDepth - 1)
       if (trapDepth === 0) setBackgroundInert(false)
       // Restore focus only AFTER un-inerting; focusing an element inside an inert

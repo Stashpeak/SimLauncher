@@ -30,6 +30,7 @@ async function loadConfigModule() {
   const storeModuleMock = {
     CONFIG_FILE_NAME: 'simlauncher-config.json',
     KNOWN_GAME_KEYS: new Set(['ac', 'acc']),
+    LOCAL_ONLY_STORE_KEYS: ['onboardingSeen'],
     MAX_CONFIG_IMPORT_BYTES: 1_000_000,
     MAX_CUSTOM_SLOTS: 20,
     consumeConfigRecoveryNotice: vi.fn(() => null),
