@@ -218,6 +218,7 @@ export interface ElectronAPI {
   killLaunchedApps: (gameKey?: string) => Promise<KillResult>
   onUpdateAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
   onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => Unsubscribe
+  onUpdateReadyWhileDirty: (cb: (info: UpdateInfo) => void) => Unsubscribe
   onUpdateNotAvailable: (cb: (info: UpdateInfo) => void) => Unsubscribe
   onUpdateDownloadProgress: (cb: (progress: ProgressInfo) => void) => Unsubscribe
   onUpdateError: (cb: (error: UpdateErrorPayload) => void) => Unsubscribe

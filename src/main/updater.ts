@@ -1,7 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
 
-import { setIsQuitting } from './app-state'
+import { getRendererDirty, setIsQuitting } from './app-state'
 
 type SendToRenderer = (channel: string, payload: unknown) => void
 type UpdateAvailability = { version: string }
@@ -57,9 +57,18 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
     sendToRenderer('update-downloaded', info)
 
     // installAfterDownload is set when the user clicked Install while the
-    // download was still in progress. Complete the deferred install now.
+    // download was still in progress. Their consent could be minutes old, so
+    // if they've since made unsaved settings/profile edits, force-quitting now
+    // would bypass the close-confirm machinery (via isQuitting) and silently
+    // discard those edits (#671). In that case defer: tell the renderer the
+    // update is ready and let the user pick restart-now vs keep-working. Only
+    // auto-install when the renderer is clean (the original behavior).
     if (installAfterDownload) {
-      quitAndInstallUpdate()
+      if (getRendererDirty()) {
+        sendToRenderer('update-ready-while-dirty', info)
+      } else {
+        quitAndInstallUpdate()
+      }
     }
   })
 

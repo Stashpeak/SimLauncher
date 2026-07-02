@@ -23,6 +23,7 @@ export const onRunningAppsChanged = window.electronAPI.onRunningAppsChanged
 export const killLaunchedApps = window.electronAPI.killLaunchedApps
 export const onUpdateAvailable = window.electronAPI.onUpdateAvailable
 export const onUpdateDownloaded = window.electronAPI.onUpdateDownloaded
+export const onUpdateReadyWhileDirty = window.electronAPI.onUpdateReadyWhileDirty
 export const onUpdateNotAvailable = window.electronAPI.onUpdateNotAvailable
 export const onUpdateDownloadProgress = window.electronAPI.onUpdateDownloadProgress
 export const onUpdateError = window.electronAPI.onUpdateError

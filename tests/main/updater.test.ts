@@ -87,6 +87,38 @@ test('install-update with a downloaded update sets isQuitting before quitAndInst
   expect(isQuittingWhenInstalling).toBe(true)
 })
 
+test('a deferred install with a DIRTY renderer does NOT force-quit (#671)', async () => {
+  const { appState, handlers, sendToRenderer } = await loadUpdaterModule()
+  downloadUpdate.mockResolvedValue(undefined)
+
+  // The user consents to install while the download is still in progress...
+  await handlers['install-update']({})
+  expect(downloadUpdate).toHaveBeenCalledTimes(1)
+
+  // ...then keeps editing, so the renderer is dirty when the download lands.
+  appState.setRendererDirty(true)
+  autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
+
+  // The app must NOT quit past the dirty close-confirm machinery. Instead it
+  // tells the renderer the update is ready so the user can decide.
+  expect(quitAndInstall).not.toHaveBeenCalled()
+  expect(sendToRenderer).toHaveBeenCalledWith('update-ready-while-dirty', { version: '1.2.3' })
+})
+
+test('a deferred install with a CLEAN renderer auto-installs as before (#671)', async () => {
+  const { appState, handlers, sendToRenderer } = await loadUpdaterModule()
+  downloadUpdate.mockResolvedValue(undefined)
+
+  await handlers['install-update']({})
+  appState.setRendererDirty(false)
+  autoUpdaterHandlers['update-downloaded']({ version: '1.2.3' })
+
+  // Clean renderer: preserve the original behavior — install immediately, and
+  // do not surface the "restart while dirty" prompt.
+  expect(quitAndInstall).toHaveBeenCalledTimes(1)
+  expect(sendToRenderer).not.toHaveBeenCalledWith('update-ready-while-dirty', expect.anything())
+})
+
 test('install-update before download latches and installs when the download lands', async () => {
   const { handlers } = await loadUpdaterModule()
   downloadUpdate.mockResolvedValue(undefined)
