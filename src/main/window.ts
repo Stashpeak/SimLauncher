@@ -10,7 +10,7 @@ import {
   setRendererDirty
 } from './app-state'
 import { markRecentlyBrowsedPath } from './ipc/icons'
-import { setRunningAppsWindowVisible } from './processes'
+import { setRunningAppsWindowVisible } from './processes/running'
 import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
 import { checkForUpdates, registerUpdaterEvents } from './updater'
 import { clamp } from './utils'

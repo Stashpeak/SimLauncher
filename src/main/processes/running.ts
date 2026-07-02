@@ -352,8 +352,14 @@ export function publishRunningApps(
  * external-launch adoption still works, just detected a few seconds later.
  */
 function computeRunningAppsScanDelayMs(): number {
+  // lastRunningAppsActivityAt === 0 means "no activity yet this session"; guard
+  // that sentinel and a backward clock jump (negative delta) so neither wedges
+  // the poll on FAST.
+  const activityDelta = Date.now() - lastRunningAppsActivityAt
   const withinPostActivityWindow =
-    Date.now() - lastRunningAppsActivityAt < POST_ACTIVITY_FAST_WINDOW_MS
+    lastRunningAppsActivityAt !== 0 &&
+    activityDelta >= 0 &&
+    activityDelta < POST_ACTIVITY_FAST_WINDOW_MS
   const hasTrackedProcesses = runningProcesses.size > 0 || unclosedProcesses.size > 0
 
   if (withinPostActivityWindow || runningAppsWindowVisible || hasTrackedProcesses) {
