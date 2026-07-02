@@ -1,7 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
 
-import { setIsQuitting } from './app-state'
+import { getRendererDirty, setIsQuitting } from './app-state'
 
 type SendToRenderer = (channel: string, payload: unknown) => void
 type UpdateAvailability = { version: string }
@@ -15,6 +15,16 @@ let availableUpdate: UpdateAvailability | null = null
 // update is fetched (via the 'install-update' IPC). Downloading silently
 // without consent would consume bandwidth and could interrupt a race session.
 autoUpdater.autoDownload = false
+
+// Opt out of electron-updater's built-in install-on-quit hook. Once a download
+// completes, electron-updater arms its own app 'quit' handler that installs the
+// pending update on the NEXT normal quit (autoInstallOnAppQuit defaults to
+// true). That would silently bypass the dirty-defer guard below (#671): a user
+// who chose "keep working, install later" would get the update installed anyway
+// the next time they close the app, with no consent at that moment. Make this
+// code the sole authority on when an install happens — it only ever installs
+// via an explicit quitAndInstallUpdate() call (mirrors autoDownload=false).
+autoUpdater.autoInstallOnAppQuit = false
 
 // A dedicated sim rig is often offline, so the most common update "failure" is
 // simply no connectivity. Distinguish that from a real updater error (corrupt
@@ -57,9 +67,18 @@ export function registerUpdaterEvents(rendererSender: SendToRenderer): void {
     sendToRenderer('update-downloaded', info)
 
     // installAfterDownload is set when the user clicked Install while the
-    // download was still in progress. Complete the deferred install now.
+    // download was still in progress. Their consent could be minutes old, so
+    // if they've since made unsaved settings/profile edits, force-quitting now
+    // would bypass the close-confirm machinery (via isQuitting) and silently
+    // discard those edits (#671). In that case defer: tell the renderer the
+    // update is ready and let the user pick restart-now vs keep-working. Only
+    // auto-install when the renderer is clean (the original behavior).
     if (installAfterDownload) {
-      quitAndInstallUpdate()
+      if (getRendererDirty()) {
+        sendToRenderer('update-ready-while-dirty', info)
+      } else {
+        quitAndInstallUpdate()
+      }
     }
   })
 
@@ -127,6 +146,17 @@ export function registerUpdaterHandlers(rendererSender: SendToRenderer): void {
     installAfterDownload = true
 
     if (updateDownloaded) {
+      // The update is already on disk. Re-check dirty state at THIS click — not
+      // just at download-complete — because the "Download & Install" button
+      // stays visible after the user cancels the dirty prompt once. Re-clicking
+      // it while still dirty must re-surface the same non-destructive prompt,
+      // not force-quit past the close-confirm and silently discard the edits
+      // (that would reopen #671 through the very flow the prompt tells users to
+      // take: "keep working, install later from Settings").
+      if (getRendererDirty()) {
+        sendToRenderer('update-ready-while-dirty', availableUpdate ?? { version: '' })
+        return { success: true }
+      }
       quitAndInstallUpdate()
       return { success: true }
     }

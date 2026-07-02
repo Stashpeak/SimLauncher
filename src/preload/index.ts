@@ -82,6 +82,11 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('update-downloaded', handler)
     return () => ipcRenderer.removeListener('update-downloaded', handler)
   },
+  onUpdateReadyWhileDirty: (cb: (info: UpdateInfo) => void) => {
+    const handler = (_: unknown, info: UpdateInfo) => cb(info)
+    ipcRenderer.on('update-ready-while-dirty', handler)
+    return () => ipcRenderer.removeListener('update-ready-while-dirty', handler)
+  },
   onUpdateNotAvailable: (cb: (info: UpdateInfo) => void) => {
     const handler = (_: unknown, info: UpdateInfo) => cb(info)
     ipcRenderer.on('update-not-available', handler)

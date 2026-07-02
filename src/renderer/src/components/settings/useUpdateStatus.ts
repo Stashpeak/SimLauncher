@@ -8,7 +8,8 @@ import {
   onUpdateDownloaded,
   onUpdateDownloadProgress,
   onUpdateError,
-  onUpdateNotAvailable
+  onUpdateNotAvailable,
+  onUpdateReadyWhileDirty
 } from '../../lib/electron'
 import type { Announce } from '../Notify'
 import type { UpdateErrorInfo, UpdateInfo, UpdateStatus } from './types'
@@ -78,6 +79,33 @@ export function useUpdateStatus({
       setUpdateProgress(null)
       setUpdateStatus('downloaded')
     })
+    // The user consented to auto-install earlier, but the download finished
+    // while they had unsaved edits, so the main process deferred instead of
+    // force-quitting past the close-confirm (#671). Surface a non-destructive
+    // prompt so they decide: restart now (discarding the edits they've
+    // consented to lose) or keep working and install later from Settings.
+    const unsubscribeReadyWhileDirty = onUpdateReadyWhileDirty((info: UpdateInfo) => {
+      setCheckingUpdate(false)
+      setInstallingUpdate(false)
+      setUpdateProgress(null)
+      setUpdateStatus('downloaded')
+      const versionSuffix = info?.version ? ` (version ${info.version})` : ''
+      announce(`Update ready${versionSuffix}. Restart to apply.`)
+
+      if (
+        window.confirm(
+          `Update${versionSuffix} is ready to install. Restart now to apply it? ` +
+            'Your unsaved changes will be lost. Choose Cancel to keep working — ' +
+            'you can install later from Settings.'
+        )
+      ) {
+        installUpdate().catch((err: unknown) => {
+          setUpdateStatus('error')
+          notify('Failed to install update', 'error')
+          console.error(err)
+        })
+      }
+    })
     const unsubscribeError = onUpdateError((error: UpdateErrorInfo) => {
       setCheckingUpdate(false)
       setInstallingUpdate(false)
@@ -101,10 +129,11 @@ export function useUpdateStatus({
       unsubscribeNotAvailable()
       unsubscribeProgress()
       unsubscribeDownloaded()
+      unsubscribeReadyWhileDirty()
       unsubscribeError()
       statusTimers.forEach((timer) => window.clearTimeout(timer))
     }
-  }, [notify])
+  }, [announce, notify])
 
   const handleManualCheck = useCallback(async () => {
     setCheckingUpdate(true)
