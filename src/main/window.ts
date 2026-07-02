@@ -10,6 +10,7 @@ import {
   setRendererDirty
 } from './app-state'
 import { markRecentlyBrowsedPath } from './ipc/icons'
+import { setRunningAppsWindowVisible } from './processes/running'
 import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
 import { checkForUpdates, registerUpdaterEvents } from './updater'
 import { clamp } from './utils'
@@ -212,6 +213,13 @@ export function createWindow(): void {
   // this state on its own (#500).
   mainWindow.on('maximize', () => sendToRenderer('window-maximized-changed', true))
   mainWindow.on('unmaximize', () => sendToRenderer('window-maximized-changed', false))
+
+  // Drive the adaptive running-apps poll cadence (#672): a visible window keeps
+  // the poll on its FAST tick, while hiding to the tray lets it back off to SLOW
+  // once nothing is tracked. Hooking 'show'/'hide' specifically targets the
+  // tray case (the primary idle scenario); a taskbar minimize is left as-is.
+  mainWindow.on('show', () => setRunningAppsWindowVisible(true))
+  mainWindow.on('hide', () => setRunningAppsWindowVisible(false))
 
   // Show window once ready, or keep it hidden when starting minimized to tray.
   // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the

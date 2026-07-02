@@ -37,10 +37,34 @@ export interface RunningAppsChangedPayload {
 }
 
 const RUNNING_APPS_CHANGED_CHANNEL = 'running-apps-changed'
-const RUNNING_APPS_SCAN_INTERVAL_MS = 2000
+// The process scan spawns `tasklist.exe` (plus a `conhost.exe`) every tick, so
+// the cadence is adaptive (#672): keep the responsive FAST poll only while it
+// earns that cost and back off to SLOW when idle in the tray, where a stale-by-
+// a-few-seconds list costs the user nothing.
+const FAST_RUNNING_APPS_SCAN_INTERVAL_MS = 2000
+const SLOW_RUNNING_APPS_SCAN_INTERVAL_MS = 12000
+// After any launch/exit/kill, stay on FAST for this long so a settling launch
+// sequence (spawn → child re-exec → external adoption) is still tracked live
+// even once the window is hidden.
+const POST_ACTIVITY_FAST_WINDOW_MS = 30000
 const runningAppsSubscribers = new Set<WebContents>()
-let runningAppsMonitor: ReturnType<typeof setInterval> | undefined
+let runningAppsScanTimer: ReturnType<typeof setTimeout> | undefined
+let runningAppsMonitorActive = false
+// Whether the main window is currently visible, fed by its 'show'/'hide' events
+// via setRunningAppsWindowVisible. Starts false because the window is created
+// hidden (`show: false`) and only reveals once the renderer is ready — a
+// start-minimized-to-tray session therefore begins on the SLOW cadence.
+let runningAppsWindowVisible = false
+// Timestamp of the last non-scan publish (launch/exit/kill). 0 means "no
+// activity yet this session"; it keeps the poll FAST for POST_ACTIVITY_FAST_WINDOW_MS.
+let lastRunningAppsActivityAt = 0
 let lastRunningAppsSnapshot = ''
+// Number of apps in the last published snapshot. Includes externally-ADOPTED
+// apps (a configured game started outside SimLauncher) which are surfaced via
+// the scan but never populate runningProcesses/unclosedProcesses — so the
+// cadence must consult this, not only the launcher-owned maps, or an adopted
+// external session would wrongly back off to SLOW. #672
+let lastPublishedRunningAppsCount = 0
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
 
 /**
@@ -255,9 +279,8 @@ function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
 function removeRunningAppsSubscriber(webContents: WebContents) {
   runningAppsSubscribers.delete(webContents)
 
-  if (runningAppsSubscribers.size === 0 && runningAppsMonitor) {
-    clearInterval(runningAppsMonitor)
-    runningAppsMonitor = undefined
+  if (runningAppsSubscribers.size === 0 && runningAppsMonitorActive) {
+    stopRunningAppsMonitor()
     // Reset the snapshot so the first emission after the next subscriber
     // re-subscribes is always sent regardless of whether the app list changed
     // while there were no subscribers.
@@ -284,6 +307,9 @@ async function publishRunningAppsInternal(
   }
 
   const apps = await getRunningApps()
+  // Refresh on every scan (before the change-gate below) so the cadence always
+  // reflects what's actually surfaced, including adopted external apps.
+  lastPublishedRunningAppsCount = apps.length
   const snapshot = normalizeRunningAppsSnapshot(apps)
 
   if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
@@ -307,6 +333,13 @@ async function publishRunningAppsInternal(
 export function publishRunningApps(
   reason: RunningAppsChangeReason = 'scan'
 ): Promise<RunningAppsChangedPayload | null> {
+  // Any non-scan publish is real activity (launch/exit/kill) — pull the poll
+  // back to FAST and hold it there for POST_ACTIVITY_FAST_WINDOW_MS so the
+  // settling process set is tracked live even if the window is hidden.
+  if (reason !== 'scan') {
+    noteRunningAppsActivity()
+  }
+
   const next = (publishRunningAppsPromise || Promise.resolve(null))
     .catch(() => null)
     .then(() => publishRunningAppsInternal(reason))
@@ -320,16 +353,99 @@ export function publishRunningApps(
   return publishRunningAppsPromise
 }
 
-function startRunningAppsMonitor() {
-  if (runningAppsMonitor) {
+/**
+ * Pick the delay until the next process scan. FAST while the poll is earning its
+ * `tasklist.exe` spawn — recent launch activity, a visible window, or any app
+ * currently running (launcher-owned OR externally adopted, via the last
+ * published count) — and SLOW only when the window is hidden AND nothing is
+ * running (the idle-in-tray case #672 targets). The poll never stops, so a
+ * first external launch is still adopted within one slow tick, then held FAST.
+ */
+function computeRunningAppsScanDelayMs(): number {
+  // lastRunningAppsActivityAt === 0 means "no activity yet this session"; guard
+  // that sentinel and a backward clock jump (negative delta) so neither wedges
+  // the poll on FAST.
+  const activityDelta = Date.now() - lastRunningAppsActivityAt
+  const withinPostActivityWindow =
+    lastRunningAppsActivityAt !== 0 &&
+    activityDelta >= 0 &&
+    activityDelta < POST_ACTIVITY_FAST_WINDOW_MS
+  const hasTrackedProcesses = runningProcesses.size > 0 || unclosedProcesses.size > 0
+
+  if (
+    withinPostActivityWindow ||
+    runningAppsWindowVisible ||
+    hasTrackedProcesses ||
+    lastPublishedRunningAppsCount > 0
+  ) {
+    return FAST_RUNNING_APPS_SCAN_INTERVAL_MS
+  }
+
+  return SLOW_RUNNING_APPS_SCAN_INTERVAL_MS
+}
+
+// Self-rescheduling scan: each tick re-evaluates the cadence, so the poll can
+// move between FAST and SLOW as visibility/activity/tracking change without ever
+// stopping. A one-shot setTimeout (not setInterval) is what lets the delay vary.
+function scheduleNextRunningAppsScan() {
+  if (!runningAppsMonitorActive) {
     return
   }
 
-  runningAppsMonitor = setInterval(() => {
-    publishRunningApps('scan').catch((err) => {
-      console.error('Running apps monitor error:', err)
-    })
-  }, RUNNING_APPS_SCAN_INTERVAL_MS)
+  if (runningAppsScanTimer) {
+    clearTimeout(runningAppsScanTimer)
+  }
+
+  runningAppsScanTimer = setTimeout(() => {
+    publishRunningApps('scan')
+      .catch((err) => {
+        console.error('Running apps monitor error:', err)
+      })
+      .finally(scheduleNextRunningAppsScan)
+  }, computeRunningAppsScanDelayMs())
+}
+
+function startRunningAppsMonitor() {
+  if (runningAppsMonitorActive) {
+    return
+  }
+
+  runningAppsMonitorActive = true
+  scheduleNextRunningAppsScan()
+}
+
+function stopRunningAppsMonitor() {
+  runningAppsMonitorActive = false
+  if (runningAppsScanTimer) {
+    clearTimeout(runningAppsScanTimer)
+    runningAppsScanTimer = undefined
+  }
+}
+
+// Recompute the cadence now instead of waiting out a pending SLOW timer. Called
+// when something should pull the poll back to FAST (launch activity, the window
+// becoming visible); a no-op when the monitor isn't running.
+function resetRunningAppsCadence() {
+  if (runningAppsMonitorActive) {
+    scheduleNextRunningAppsScan()
+  }
+}
+
+function noteRunningAppsActivity() {
+  lastRunningAppsActivityAt = Date.now()
+  resetRunningAppsCadence()
+}
+
+/**
+ * Signal from the main window's 'show'/'hide' events. A visible window pulls the
+ * poll back to FAST; hiding lets it fall back to SLOW once nothing is tracked.
+ * Safe to call before any subscriber exists — it only records state.
+ */
+export function setRunningAppsWindowVisible(visible: boolean): void {
+  runningAppsWindowVisible = visible
+  if (visible) {
+    resetRunningAppsCadence()
+  }
 }
 
 export async function subscribeRunningApps(

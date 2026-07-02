@@ -1,10 +1,23 @@
 import type { ChildProcess } from 'child_process'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const readRunningProcessNamesMock = vi.fn()
 const pruneUnclosedProcessesMock = vi.fn()
 
-async function loadRunningModule() {
+async function loadRunningModule(opts?: {
+  profiles?: Record<string, unknown>
+  gamePaths?: Record<string, string>
+  appPaths?: Record<string, string>
+  trackablePaths?: string[]
+}) {
+  // utils.isValidExePath checks fs.existsSync; pretend every .exe exists so
+  // adoption (which validates the configured game path) works host-independently.
+  vi.doMock('fs', () => ({
+    default: {
+      existsSync: (filePath: unknown) => typeof filePath === 'string' && /\.exe$/i.test(filePath)
+    }
+  }))
+
   const tasklistMock = {
     readRunningProcessNames: readRunningProcessNamesMock,
     invalidateProcessNameCache: vi.fn()
@@ -25,9 +38,9 @@ async function loadRunningModule() {
   vi.doMock('../../src/main/processes/kill.ts', () => killMock)
 
   const profilesMock = {
-    getStoredProfiles: vi.fn(() => ({})),
+    getStoredProfiles: vi.fn(() => opts?.profiles ?? {}),
     getActiveStoredProfile: vi.fn(() => undefined),
-    getProfileTrackablePaths: vi.fn(() => [])
+    getProfileTrackablePaths: vi.fn(() => opts?.trackablePaths ?? [])
   }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
@@ -35,7 +48,9 @@ async function loadRunningModule() {
   vi.doMock('../../src/main/profiles.ts', () => profilesMock)
 
   const storeMock = {
-    getStoredStringRecord: vi.fn(() => ({}))
+    getStoredStringRecord: vi.fn((key: string) =>
+      key === 'gamePaths' ? (opts?.gamePaths ?? {}) : (opts?.appPaths ?? {})
+    )
   }
   vi.doMock('../store', () => storeMock)
   vi.doMock('/src/main/store.ts', () => storeMock)
@@ -67,6 +82,10 @@ function seedState(stateModule: Awaited<ReturnType<typeof loadRunningModule>>['s
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 // A failed tasklist read returns an empty Set carrying no signal value.
@@ -113,4 +132,158 @@ test('a successful tasklist read keeps entries whose exe is still running', asyn
     'C:/Tools/CrewChief.exe',
     'C:/Tools/SimHub.exe'
   ])
+})
+
+// --- Adaptive poll cadence (#672) ---
+//
+// These must stay in sync with the constants in running.ts.
+const FAST_SCAN_MS = 2000
+const SLOW_SCAN_MS = 12000
+
+// A fixed, large clock so `Date.now() - lastActivityAt` starts well outside the
+// 30s post-activity window (lastActivityAt defaults to 0) — otherwise a faked
+// clock starting near 0 would read as "just had activity" and force FAST.
+const CLOCK_START_MS = 2_000_000_000_000
+
+function createMockWebContents() {
+  return {
+    once: vi.fn(),
+    isDestroyed: vi.fn(() => false),
+    send: vi.fn()
+  }
+}
+
+async function startMonitorHidden(
+  runningModule: Awaited<ReturnType<typeof loadRunningModule>>['runningModule']
+) {
+  vi.useFakeTimers()
+  vi.setSystemTime(CLOCK_START_MS)
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  // Window hidden in the tray + zero tracked processes = the backoff condition.
+  runningModule.setRunningAppsWindowVisible(false)
+  const webContents = createMockWebContents()
+  await runningModule.subscribeRunningApps(webContents as never)
+  return webContents
+}
+
+test('hidden + empty backs off to the slow scan interval (#672)', async () => {
+  const { runningModule } = await loadRunningModule()
+  await startMonitorHidden(runningModule)
+
+  // No scan fires on the FAST cadence — the poll has backed off.
+  const readsAfterSubscribe = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBe(readsAfterSubscribe)
+
+  // It still fires once the SLOW interval elapses (polling is never stopped).
+  await vi.advanceTimersByTimeAsync(SLOW_SCAN_MS - FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(readsAfterSubscribe)
+})
+
+test('polling keeps firing on the slow cadence — it is never stopped (#672)', async () => {
+  const { runningModule } = await loadRunningModule()
+  await startMonitorHidden(runningModule)
+
+  let reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(SLOW_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+
+  // A second slow interval also fires — the self-rescheduling timer persists.
+  reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(SLOW_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
+test('a launch/activity resets the cadence back to fast (#672)', async () => {
+  const { runningModule } = await loadRunningModule()
+  await startMonitorHidden(runningModule)
+
+  // Baseline: on the slow cadence nothing fires within a FAST interval.
+  let reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBe(reads)
+
+  // A non-scan publish (launch/exit/kill) is activity → pull back to FAST.
+  await runningModule.publishRunningApps('launch')
+  reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
+test('the window becoming visible resets the cadence back to fast (#672)', async () => {
+  const { runningModule } = await loadRunningModule()
+  await startMonitorHidden(runningModule)
+
+  // Baseline: hidden + empty stays slow (no FAST-interval tick).
+  let reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBe(reads)
+
+  // Showing the window pulls the poll back to FAST.
+  runningModule.setRunningAppsWindowVisible(true)
+  reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
+test('tracked processes keep the poll fast even while hidden and idle (#672)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule()
+  await startMonitorHidden(runningModule)
+
+  // A tracked launched process is part of the backoff condition (state must be
+  // empty to go slow). Keep it alive across the scan by having the tasklist read
+  // still report its exe, so the prune does not clear it.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe']),
+    succeeded: true
+  })
+  stateModule.runningProcesses.set('launched', {
+    process: {} as ChildProcess,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  // Drain the pending SLOW interval so the cadence is recomputed with the
+  // tracked process present — no launch activity, still hidden.
+  await vi.advanceTimersByTimeAsync(SLOW_SCAN_MS)
+
+  // The recomputed cadence is FAST: a scan now fires within a FAST interval.
+  const reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
+test('an externally-adopted app keeps the poll fast even with empty maps (#672)', async () => {
+  // A configured game started OUTSIDE SimLauncher is adopted and surfaced via
+  // the scan, but never populates runningProcesses/unclosedProcesses. Keying the
+  // cadence only on those maps would let an adopted external session poll at the
+  // SLOW 12s cadence for its whole duration (Codex review) — the published count
+  // must hold it FAST.
+  const { runningModule } = await loadRunningModule({
+    profiles: { iracing: {} },
+    gamePaths: { iracing: 'C:/Games/iRacingSim64DX11.exe' },
+    trackablePaths: ['C:/Games/iRacingSim64DX11.exe']
+  })
+  vi.useFakeTimers()
+  vi.setSystemTime(CLOCK_START_MS)
+  // The game's exe is running externally (adopted); the launcher-owned maps stay empty.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingsim64dx11.exe']),
+    succeeded: true
+  })
+  runningModule.setRunningAppsWindowVisible(false)
+  const webContents = createMockWebContents()
+  await runningModule.subscribeRunningApps(webContents as never)
+
+  // Drain the initial SLOW interval so a scan runs and publishes the adopted app
+  // (published count > 0) and the cadence recomputes.
+  await vi.advanceTimersByTimeAsync(SLOW_SCAN_MS)
+
+  // Despite hidden + empty maps, the published count now holds it FAST: a scan
+  // fires within a FAST interval (on the old maps-only condition it stayed SLOW).
+  const reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
 })
