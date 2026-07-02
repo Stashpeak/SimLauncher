@@ -85,7 +85,12 @@ const STORE_OPTIONS = {
     windowBounds: { type: 'object', default: {} },
     profileUtilityOrderMigrated: { type: 'boolean', default: false },
     profileSetsMigrated: { type: 'boolean', default: false },
-    migrated: { type: 'boolean', default: false }
+    migrated: { type: 'boolean', default: false },
+    // Internal, LOCAL-only first-run flag (onboarding shown once). Deliberately
+    // NOT added to EXPECTED_CONFIG_KEYS so it is excluded from config
+    // export/import - it is a local UX flag and must not travel between
+    // machines. #641
+    onboardingSeen: { type: 'boolean', default: false }
   }
 } as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string }
 
@@ -307,6 +312,10 @@ export const EXPECTED_CONFIG_KEYS = new Set([
 ])
 const LEGACY_CONFIG_KEYS = new Set(['killOnClose'])
 const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFIG_KEYS])
+// Keys that live in the store but are deliberately NOT in EXPECTED_CONFIG_KEYS
+// (excluded from config export/import). A config import clears the store, so
+// these local-only UX flags must be preserved across it or they silently reset. #641
+export const LOCAL_ONLY_STORE_KEYS = ['onboardingSeen'] as const
 const BOOLEAN_CONFIG_KEYS = new Set([
   'accentBgTint',
   'focusActiveTitle',
