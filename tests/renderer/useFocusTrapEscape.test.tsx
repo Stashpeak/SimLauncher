@@ -83,3 +83,42 @@ test('Escape with no onEscape is a no-op and lets the event reach background han
   expect(background).toHaveBeenCalledTimes(1)
   document.removeEventListener('keydown', background)
 })
+
+// #641: a color picker opened from within the onboarding modal stacks two traps.
+// Both register document-capture Escape listeners; without a stack the outer
+// (first-registered) one would stopImmediatePropagation and skip onboarding
+// instead of just closing the picker.
+test('with stacked traps, only the topmost (most recently opened) reacts to Escape', async () => {
+  const outerEscape = vi.fn()
+  const innerEscape = vi.fn()
+
+  const outerContainer = document.createElement('div')
+  document.body.appendChild(outerContainer)
+  const outerRoot = createRoot(outerContainer)
+  await act(async () => {
+    outerRoot.render(<Harness onEscape={outerEscape} />)
+  })
+
+  const innerContainer = document.createElement('div')
+  document.body.appendChild(innerContainer)
+  const innerRoot = createRoot(innerContainer)
+  await act(async () => {
+    innerRoot.render(<Harness onEscape={innerEscape} />)
+  })
+
+  // Topmost (inner) trap handles Escape; the outer one underneath does not.
+  pressEscape(innerContainer.querySelector('button')!)
+  expect(innerEscape).toHaveBeenCalledTimes(1)
+  expect(outerEscape).not.toHaveBeenCalled()
+
+  // Close the inner trap → the outer becomes topmost and now handles Escape.
+  await act(async () => innerRoot.unmount())
+  innerContainer.remove()
+
+  pressEscape(outerContainer.querySelector('button')!)
+  expect(outerEscape).toHaveBeenCalledTimes(1)
+  expect(innerEscape).toHaveBeenCalledTimes(1)
+
+  await act(async () => outerRoot.unmount())
+  outerContainer.remove()
+})

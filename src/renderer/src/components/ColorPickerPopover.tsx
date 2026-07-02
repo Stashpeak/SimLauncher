@@ -87,7 +87,12 @@ export function ColorPickerPopover({
   }, [anchorRef])
 
   return createPortal(
-    <div className="fixed inset-0 z-50">
+    // z-110 sits above the app's modal tier (ConfirmDialog / the onboarding modal
+    // are z-100). The picker is a transient interaction owned by whatever surface
+    // opened it, so it must render above that surface - including a modal. In
+    // Settings it stays above the page content as before (nothing else is open at
+    // this tier there). #641
+    <div className="fixed inset-0 z-110">
       {/* Backdrop dismisses the picker on click without affecting underlying layout. */}
       <div aria-hidden="true" className="absolute inset-0" onClick={onClose} />
       <div

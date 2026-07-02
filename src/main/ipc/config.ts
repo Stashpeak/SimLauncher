@@ -7,6 +7,7 @@ import { isStoredProfileSet, type StoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
+  LOCAL_ONLY_STORE_KEYS,
   MAX_CONFIG_IMPORT_BYTES,
   MAX_CUSTOM_SLOTS,
   consumeConfigRecoveryNotice,
@@ -211,6 +212,11 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
   try {
     store.clear()
     setStoreEntries(supportedConfig)
+    // Import replaces the whole store; carry local-only UX flags (e.g.
+    // onboardingSeen) over from the snapshot so they don't reset on import. #641
+    for (const key of LOCAL_ONLY_STORE_KEYS) {
+      if (key in snapshot) store.set(key, snapshot[key])
+    }
     migrateProfilesToNamedSets()
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
@@ -525,5 +531,19 @@ export function registerConfigHandlers(): void {
       setStoreEntries(safe)
       notifyStoreConfigChanged({ reason: 'set-migration-flags', keys: changedKeys })
     }
+  })
+
+  // onboardingSeen is a LOCAL-only UX flag: the first-run onboarding modal is
+  // shown once, then this is set so it never reappears. Kept out of the config
+  // export/import surface (not in EXPECTED_CONFIG_KEYS) so it never travels
+  // between machines. No store-config-changed broadcast is needed: the modal
+  // manages its own dismissal via renderer state. #641
+  ipcMain.handle('get-onboarding-seen', () => {
+    return store.get('onboardingSeen')
+  })
+
+  ipcMain.handle('set-onboarding-seen', (_event, seen: unknown) => {
+    if (typeof seen !== 'boolean') return
+    store.set('onboardingSeen', seen)
   })
 }

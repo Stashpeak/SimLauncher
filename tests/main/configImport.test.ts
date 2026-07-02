@@ -73,6 +73,7 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
   const storeMock = {
     CONFIG_FILE_NAME: 'simlauncher-config.json',
     KNOWN_GAME_KEYS: new Set(['iracing']),
+    LOCAL_ONLY_STORE_KEYS: ['onboardingSeen'],
     MAX_CONFIG_IMPORT_BYTES: 1024 * 1024,
     MAX_CUSTOM_SLOTS: 20,
     consumeConfigRecoveryNotice: vi.fn(() => null),
@@ -137,6 +138,19 @@ test('applying an import replaces the store with the sanitized config', async ()
   // clear() before apply: keys absent from the import must not survive.
   expect(mockStore.data).toEqual(importedConfig)
   expect(migrateProfilesToNamedSets).toHaveBeenCalled()
+})
+
+// Local-only UX flags (onboardingSeen) are excluded from import by design, but
+// import clears the whole store — they must be carried over or they silently
+// reset and re-trigger onboarding for an existing user. #641
+test('applying an import preserves local-only keys (onboardingSeen)', async () => {
+  const { handlers, mockStore } = await loadConfigHandlers({
+    customSlots: 5,
+    onboardingSeen: true
+  })
+
+  await expect(previewThenApply(handlers)).resolves.toMatchObject({ success: true })
+  expect(mockStore.data).toEqual({ ...importedConfig, onboardingSeen: true })
 })
 
 // Data-loss guard: a mid-apply failure leaves the store half-written unless

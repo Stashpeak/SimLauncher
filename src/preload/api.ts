@@ -231,6 +231,8 @@ export interface ElectronAPI {
   saveProfiles: (profiles: unknown) => Promise<void>
   getMigrationFlags: () => Promise<MigrationFlags>
   setMigrationFlags: (patch: Partial<MigrationFlags>) => Promise<void>
+  getOnboardingSeen: () => Promise<boolean>
+  setOnboardingSeen: (seen: boolean) => Promise<void>
   onStoreConfigChanged: (cb: (payload: StoreConfigChangePayload) => void) => Unsubscribe
   exportConfig: () => Promise<ConfigFileResult>
   previewImportConfig: () => Promise<ConfigImportPreviewResult>
