@@ -22,7 +22,7 @@
  */
 
 import { describe, expect, test, vi, beforeEach } from 'vitest'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 import { useSettingsSave } from '../../src/renderer/src/components/settings/useSettingsSave'
@@ -108,7 +108,11 @@ function Probe({
   onCapture: (h: () => Promise<boolean>) => void
 }) {
   const { handleSave } = useSettingsSave(args)
-  onCapture(handleSave)
+  // Capture in an effect, not during render — matches the other probe tests and
+  // avoids a render-time side effect that can run more than once.
+  useEffect(() => {
+    onCapture(handleSave)
+  }, [onCapture, handleSave])
   return null
 }
 
@@ -301,7 +305,7 @@ describe('useSettingsSave (#645)', () => {
     }
   })
 
-  test('error path: a rejected persistSettings notifies, returns false, and writes no partial state', async () => {
+  test('error path: a rejected persistSettings notifies, returns false, and writes no partial renderer state', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     saveSettingsMock.mockRejectedValue(new Error('disk write failed'))
 
@@ -316,8 +320,12 @@ describe('useSettingsSave (#645)', () => {
       expect(result).toBe(false)
       expect(notifyMock).toHaveBeenCalledWith('Failed to save settings', 'error')
 
-      // No partial-state corruption: none of the write-back setters, the delay
-      // setter, or the dirty re-baseline run when the persist fails.
+      // "No partial state" here means no partial RENDERER-state updates: none of
+      // the write-back setters, the delay setter, or the dirty re-baseline run
+      // when the persist fails. Persistence itself is NOT atomic — handleSave
+      // fires persistSettings + saveProfiles in one Promise.all, so a failed
+      // settings write does not stop the profiles write from being attempted.
+      expect(saveProfilesMock).toHaveBeenCalledTimes(1)
       expect(setAppPathsMock).not.toHaveBeenCalled()
       expect(setGamePathsMock).not.toHaveBeenCalled()
       expect(setAppArgsMock).not.toHaveBeenCalled()
