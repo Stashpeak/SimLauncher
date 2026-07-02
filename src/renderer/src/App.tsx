@@ -383,22 +383,27 @@ function AppContent() {
   // resolved (non-null) so the modal never flashes during the initial reads.
   const showOnboarding = onboardingSeen === false && hasConfiguredGame === false
 
-  const persistOnboardingSeenFlag = () => {
+  const finishOnboarding = () => {
+    setOnboardingSeen(true)
     void persistOnboardingSeen(true).catch((err: unknown) => {
       console.error('Failed to persist onboarding-seen flag', err)
     })
+    // The modal may have persisted accent/zoom directly via saveSettings, which
+    // the already-mounted SettingsProvider ignores (it skips its own
+    // save-settings broadcasts). Remount it (refreshKey) so its in-memory copy
+    // reflects the persisted values — otherwise the next full Settings save
+    // would overwrite the onboarding choices with stale defaults. #641
+    setRefreshKey((key) => key + 1)
   }
 
   const handleOnboardingSetup = () => {
-    setOnboardingSeen(true)
-    persistOnboardingSeenFlag()
+    finishOnboarding()
     // Hand off to the Games section, opened + scrolled via the #648 deep-link.
     handleNavigate('settings', 'games')
   }
 
   const handleOnboardingSkip = () => {
-    setOnboardingSeen(true)
-    persistOnboardingSeenFlag()
+    finishOnboarding()
   }
 
   return (
