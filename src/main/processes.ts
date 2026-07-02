@@ -2,6 +2,7 @@ export { hasClosableLaunchedApps, killLaunchedApps, killProfileApps } from './pr
 export {
   getRunningApps,
   publishRunningApps,
+  setRunningAppsWindowVisible,
   subscribeRunningApps,
   unsubscribeRunningApps
 } from './processes/running'
