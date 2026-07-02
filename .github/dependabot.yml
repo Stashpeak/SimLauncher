@@ -5,13 +5,23 @@ updates:
     schedule:
       interval: 'monthly'
     # Bundle updates into a few grouped PRs instead of one per dependency.
-    # Production deps are grouped separately from dev deps so runtime changes
-    # still get their own reviewable PR.
+    # The electron stack (runtime, packaging, build, updater, store) is isolated
+    # into its own PR so a major bump — which needs a real-launch smoke and a
+    # signed-build check — never rides a batch of lint/test tooling (#634).
+    # Remaining production deps are grouped separately from dev deps so runtime
+    # changes still get their own reviewable PR.
     groups:
+      electron:
+        patterns:
+          - 'electron*'
       production-dependencies:
         dependency-type: 'production'
+        exclude-patterns:
+          - 'electron*'
       development-dependencies:
         dependency-type: 'development'
+        exclude-patterns:
+          - 'electron*'
 
   - package-ecosystem: 'github-actions'
     directory: '/'
