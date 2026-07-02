@@ -59,6 +59,12 @@ let runningAppsWindowVisible = false
 // activity yet this session"; it keeps the poll FAST for POST_ACTIVITY_FAST_WINDOW_MS.
 let lastRunningAppsActivityAt = 0
 let lastRunningAppsSnapshot = ''
+// Number of apps in the last published snapshot. Includes externally-ADOPTED
+// apps (a configured game started outside SimLauncher) which are surfaced via
+// the scan but never populate runningProcesses/unclosedProcesses — so the
+// cadence must consult this, not only the launcher-owned maps, or an adopted
+// external session would wrongly back off to SLOW. #672
+let lastPublishedRunningAppsCount = 0
 let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undefined
 
 /**
@@ -301,6 +307,9 @@ async function publishRunningAppsInternal(
   }
 
   const apps = await getRunningApps()
+  // Refresh on every scan (before the change-gate below) so the cadence always
+  // reflects what's actually surfaced, including adopted external apps.
+  lastPublishedRunningAppsCount = apps.length
   const snapshot = normalizeRunningAppsSnapshot(apps)
 
   if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
@@ -347,9 +356,10 @@ export function publishRunningApps(
 /**
  * Pick the delay until the next process scan. FAST while the poll is earning its
  * `tasklist.exe` spawn — recent launch activity, a visible window, or any app
- * currently tracked — and SLOW only when the window is hidden AND nothing is
- * tracked (the idle-in-tray case #672 targets). The poll never stops, so
- * external-launch adoption still works, just detected a few seconds later.
+ * currently running (launcher-owned OR externally adopted, via the last
+ * published count) — and SLOW only when the window is hidden AND nothing is
+ * running (the idle-in-tray case #672 targets). The poll never stops, so a
+ * first external launch is still adopted within one slow tick, then held FAST.
  */
 function computeRunningAppsScanDelayMs(): number {
   // lastRunningAppsActivityAt === 0 means "no activity yet this session"; guard
@@ -362,7 +372,12 @@ function computeRunningAppsScanDelayMs(): number {
     activityDelta < POST_ACTIVITY_FAST_WINDOW_MS
   const hasTrackedProcesses = runningProcesses.size > 0 || unclosedProcesses.size > 0
 
-  if (withinPostActivityWindow || runningAppsWindowVisible || hasTrackedProcesses) {
+  if (
+    withinPostActivityWindow ||
+    runningAppsWindowVisible ||
+    hasTrackedProcesses ||
+    lastPublishedRunningAppsCount > 0
+  ) {
     return FAST_RUNNING_APPS_SCAN_INTERVAL_MS
   }
 
