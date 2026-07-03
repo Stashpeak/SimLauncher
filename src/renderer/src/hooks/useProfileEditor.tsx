@@ -468,7 +468,10 @@ export function useProfileEditor({
         const launchWarning = launchWarnings.length > 0 ? launchWarnings.join(' ') : undefined
         notify(
           launchWarning || result.message || 'Launching profile',
-          launchWarning ? 'warn' : 'success'
+          launchWarning ? 'warn' : 'success',
+          // Longer, more informative warning (names what was skipped) — keep it
+          // up as long as the row-level launch toasts do.
+          launchWarning ? 5000 : undefined
         )
       }
     } catch (err) {
