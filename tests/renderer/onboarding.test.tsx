@@ -144,7 +144,7 @@ describe('First-run onboarding (#641)', () => {
     const harness = await renderApp()
     try {
       expect(modalHeading()).not.toBeNull()
-      expect(document.activeElement).toBe(button(/set up your sims/i))
+      expect(document.activeElement).toBe(button(/configure games/i))
     } finally {
       harness.unmount()
     }
@@ -187,7 +187,7 @@ describe('First-run onboarding (#641)', () => {
     const harness = await renderApp()
     try {
       await act(async () => {
-        button(/set up your sims/i)?.click()
+        button(/configure games/i)?.click()
       })
       expect(h.persistOnboardingSeen).toHaveBeenCalledWith(true)
       expect(h.settingsTarget.current).toBe('games')

@@ -153,7 +153,7 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
             onClick={onSetup}
             className="accent-action action-hover-scale w-full cursor-pointer rounded-xl py-3 text-sm font-bold"
           >
-            Set up your sims →
+            Configure Games
           </button>
           <button
             type="button"
