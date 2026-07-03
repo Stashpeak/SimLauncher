@@ -98,19 +98,42 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Validate the exact asset set before anything touches GitHub, so a
+          # non-matching glob can never reach gh as a literal pattern and a
+          # changed electron-builder output shape fails loudly here instead.
+          exes=(dist/*.exe)
+          blockmaps=(dist/*.exe.blockmap)
+          if [ "${#exes[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one installer (.exe) in dist/, found ${#exes[@]}: ${exes[*]:-<none>}"
+            exit 1
+          fi
+          if [ "${#blockmaps[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one .exe.blockmap in dist/, found ${#blockmaps[@]}: ${blockmaps[*]:-<none>}"
+            exit 1
+          fi
+          if [ ! -f dist/latest.yml ]; then
+            echo "::error::dist/latest.yml is missing — the auto-update feed would break."
+            exit 1
+          fi
+          assets=("${exes[0]}" dist/latest.yml "${blockmaps[0]}")
+          echo "Validated release assets: ${assets[*]}"
+
           existing_is_draft="$(gh release view "${{ github.ref_name }}" \
-            --repo Stashpeak/SimLauncher --json isDraft -q '.isDraft' 2>/dev/null || true)"
+            --json isDraft -q '.isDraft' 2>/dev/null || true)"
           if [ "$existing_is_draft" = "true" ]; then
             echo "Removing leftover draft release for ${{ github.ref_name }} from a prior run."
-            gh release delete "${{ github.ref_name }}" --repo Stashpeak/SimLauncher --yes
+            gh release delete "${{ github.ref_name }}" --yes
           fi
           gh release create "${{ github.ref_name }}" \
-            --repo Stashpeak/SimLauncher \
             --draft \
             --title "${{ steps.version.outputs.version }}" \
             --notes "" \
-            dist/*.exe dist/latest.yml dist/*.exe.blockmap
+            "${assets[@]}"
 
       - name: Generate SHA-256 checksums
         shell: bash
