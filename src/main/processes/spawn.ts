@@ -18,7 +18,9 @@ import {
 import {
   consumeProcessNameMismatchWarningSuppression,
   processNameMismatchWarnings,
-  runningProcesses
+  registerActiveLaunch,
+  runningProcesses,
+  unregisterActiveLaunch
 } from './state'
 import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
@@ -60,6 +62,11 @@ export async function launchProfileApps(
   }
 
   activeLaunches.add(gameKey)
+  // Registered for the duration of the sequence so killLaunchedApps/
+  // killProfileApps can cancel it mid-flight (#670). Deliberately separate
+  // from `activeLaunches` above, whose Set-of-gameKeys semantics only gate
+  // concurrent launches and stay untouched.
+  const launchController = registerActiveLaunch(gameKey)
   const launchDelayMs = getLaunchDelayMs()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
@@ -101,6 +108,7 @@ export async function launchProfileApps(
 
   if (validApps.length === 0) {
     activeLaunches.delete(gameKey)
+    unregisterActiveLaunch(gameKey, launchController)
     return { success: false, error: 'No valid executable paths configured.', skipped }
   }
 
@@ -123,11 +131,20 @@ export async function launchProfileApps(
     const launchResults: AppLaunchResult[] = []
 
     for (let index = 0; index < appsToLaunch.length; index += 1) {
+      // Checked at the TOP of every iteration, not just after the wait below:
+      // a kill can land in the gap between spawnDetachedApp resolving and the
+      // wait call starting, and an already-aborted signal resolves wait()
+      // immediately — without this check the loop would still spawn one more
+      // app on that immediate resolution (#670).
+      if (launchController.signal.aborted) {
+        break
+      }
+
       launchedAny = true
       launchResults.push(await spawnDetachedApp(sender, gameKey, appsToLaunch[index], gamePath))
 
       if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
-        await wait(launchDelayMs)
+        await wait(launchDelayMs, launchController.signal)
       }
     }
 
@@ -140,6 +157,23 @@ export async function launchProfileApps(
         result.status === 'failed'
     )
     const launchedCount = launchResults.length - failedResults.length
+
+    // A kill (Close Apps) mid-sequence aborts launchController before doing its
+    // own work (#670) — report this as neither success nor failure, and stop
+    // before the failure/success branches below account for apps that were
+    // deliberately never spawned.
+    if (launchController.signal.aborted) {
+      return {
+        success: false,
+        cancelled: true,
+        message: 'Launch cancelled — closed apps instead.',
+        launchedCount,
+        skippedCount,
+        elevatedCount: elevatedResults.length,
+        failedCount: failedResults.length,
+        skipped
+      }
+    }
 
     if (failedResults.length > 0) {
       const firstFailure = failedResults[0]
@@ -183,6 +217,7 @@ export async function launchProfileApps(
       launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
     }
     activeLaunches.delete(gameKey)
+    unregisterActiveLaunch(gameKey, launchController)
   }
 }
 

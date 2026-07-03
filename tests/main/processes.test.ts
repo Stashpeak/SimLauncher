@@ -417,6 +417,15 @@ function asWebContents(webContents: MockWebContents) {
   return webContents as unknown as WebContents
 }
 
+// Flushes the microtask queue via a macrotask boundary (setImmediate always
+// runs after every microtask already queued). Used to let launchProfileApps'
+// loop advance past a spawned app and reach its (real, unmocked) inter-app
+// `wait()` call — at which point its setTimeout/abort-listener is already
+// registered — without needing fake timers (#670).
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 const sender = {
   isDestroyed: () => false,
   send: vi.fn()
@@ -2174,6 +2183,128 @@ test('launchBlockedUntil is not set when no apps were actually launched (#342)',
     launchedCount: 0,
     skippedCount: 1
   })
+
+  dateNow.mockRestore()
+})
+
+// #670: a kill mid-sequence used to only stop what was already running — the
+// launch loop kept going and spawned the remaining profile apps regardless,
+// ending in a success toast for apps the user had just asked to close.
+test('killLaunchedApps mid-sequence cancels the launch loop before remaining apps spawn (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  markExistingPath('C:/Tools/App3.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Tools/App1.exe',
+    'C:/Tools/App2.exe',
+    'C:/Tools/App3.exe'
+  ])
+
+  // Let App1 spawn and the loop reach its (real, 5s) inter-app delay before
+  // the kill lands, proving the abort interrupts THIS wait rather than
+  // merely preventing a future one.
+  await flushMicrotasks()
+
+  const killResult = await killLaunchedApps('ac')
+  const launchResult = await launchPromise
+
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+  expect(launchResult).toMatchObject({
+    success: false,
+    cancelled: true,
+    launchedCount: 1
+  })
+  expect(killResult.success).toBe(true)
+  expect(killResult.closedCount).toBe(1)
+})
+
+test('killProfileApps mid-sequence also cancels the launch loop before remaining apps spawn (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/App1.exe', customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  await killProfileApps('ac', ['C:/Tools/App1.exe'])
+  const launchResult = await launchPromise
+
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+  expect(launchResult).toMatchObject({ success: false, cancelled: true, launchedCount: 1 })
+})
+
+test('two concurrent Close Apps clicks during the same sequence do not throw (idempotent abort, #670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  const [firstKill, secondKill] = await Promise.all([
+    killLaunchedApps('ac'),
+    killLaunchedApps('ac')
+  ])
+  const launchResult = await launchPromise
+
+  expect(firstKill.success).toBe(true)
+  expect(secondKill.success).toBe(true)
+  expect(launchResult).toMatchObject({ success: false, cancelled: true, launchedCount: 1 })
+  // App2 must never have spawned, regardless of the double kill.
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+})
+
+test('Close Apps clicked again after the sequence already ended is a clean no-op (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({ success: true, closedCount: 1 })
+  await expect(launchPromise).resolves.toMatchObject({ cancelled: true })
+
+  // The in-flight sequence's controller was already unregistered when it
+  // ended above — this must find nothing to abort and resolve cleanly, not
+  // throw (#670).
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({ success: true, closedCount: 0 })
+})
+
+test('a fresh launch for the same gameKey after a cancelled one proceeds normally (#670)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  dateNow.mockReturnValue(0)
+
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  markExistingPath('C:/Tools/App3.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const firstLaunch = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+  await killLaunchedApps('ac')
+  await expect(firstLaunch).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
+
+  // Past the post-launch cooldown (#342), with a fresh controller for the
+  // same gameKey — must launch normally, not inherit the previous
+  // cancellation's aborted signal (#670).
+  dateNow.mockReturnValue(20_000)
+  storeData.launchDelayMs = 0
+  const secondResult = await launchProfileApps(sender, 'ac', ['C:/Tools/App3.exe'])
+
+  expect(secondResult.success).toBe(true)
+  expect(secondResult.launchedCount).toBe(1)
+  expect(secondResult.cancelled).toBeUndefined()
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe', 'C:/Tools/App3.exe'])
 
   dateNow.mockRestore()
 })

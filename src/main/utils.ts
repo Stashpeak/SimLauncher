@@ -81,8 +81,29 @@ export function pathsEqual(a: unknown, b: unknown): boolean {
   return normalizedA === normalizedB
 }
 
-export function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+/**
+ * Resolves after `ms`, or immediately if `signal` is already aborted or gets
+ * aborted before the timer fires. Abort resolves rather than rejects — a
+ * cancelled wait is a normal early-exit for the launch loop (#670), not an
+ * error condition callers need to catch.
+ */
+export function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve()
+      return
+    }
+
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      { once: true }
+    )
+  })
 }
 
 export function getErrorMessage(err: unknown): string {
