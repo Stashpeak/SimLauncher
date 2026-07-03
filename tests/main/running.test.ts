@@ -255,6 +255,66 @@ test('tracked processes keep the poll fast even while hidden and idle (#672)', a
   expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
 })
 
+// --- Taskbar-minimize backoff gap + related residuals (#708) ---
+
+test('the bootstrap read seeds the cadence count, so an already-running adopted app schedules fast on the very first tick (#708)', async () => {
+  // Previously subscribeRunningApps started the monitor BEFORE its own
+  // bootstrap getRunningApps() read updated lastPublishedRunningAppsCount, so
+  // the FIRST scheduled scan used a stale (often 0) count and scheduled SLOW
+  // for one tick even though an adopted game was already running at
+  // subscribe time. Unlike the "keeps the poll fast" test below (which drains
+  // a full SLOW interval before asserting), this checks the very first
+  // scheduled tick, which is exactly where the stale-count bug lived.
+  const { runningModule } = await loadRunningModule({
+    profiles: { iracing: {} },
+    gamePaths: { iracing: 'C:/Games/iRacingSim64DX11.exe' },
+    trackablePaths: ['C:/Games/iRacingSim64DX11.exe']
+  })
+  vi.useFakeTimers()
+  vi.setSystemTime(CLOCK_START_MS)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingsim64dx11.exe']),
+    succeeded: true
+  })
+  runningModule.setRunningAppsWindowVisible(false)
+  const webContents = createMockWebContents()
+  await runningModule.subscribeRunningApps(webContents as never)
+
+  // No draining: the first scheduled scan alone must already be FAST.
+  const readsAfterSubscribe = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(readsAfterSubscribe)
+})
+
+test('a forward wall-clock jump does not prematurely end the post-activity fast window (#708)', async () => {
+  // The post-activity FAST window is keyed off a monotonic clock
+  // (performance.now()) rather than Date.now(), specifically so a wall-clock
+  // correction (NTP sync, VM host suspend/resume) cannot collapse it early.
+  // Force a large forward Date jump right after activity and verify the poll
+  // still runs FAST across two more ticks afterward — a Date.now()-keyed
+  // window would see the jump as "30s+ have passed" on the very next
+  // reschedule and fall back to SLOW.
+  const { runningModule } = await loadRunningModule()
+  await startMonitorHidden(runningModule)
+
+  await runningModule.publishRunningApps('launch')
+
+  // NTP-style forward correction: hours ahead of where the activity was stamped.
+  vi.setSystemTime(CLOCK_START_MS + 60 * 60 * 1000)
+
+  // Tick 1: already scheduled FAST before the jump, fires regardless.
+  let reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+
+  // Tick 2: this is the reschedule that would observe the jumped wall clock.
+  // On the monotonic clock, only ~2 FAST intervals of real time have passed,
+  // so it stays FAST.
+  reads = readRunningProcessNamesMock.mock.calls.length
+  await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
+  expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
 test('an externally-adopted app keeps the poll fast even with empty maps (#672)', async () => {
   // A configured game started OUTSIDE SimLauncher is adopted and surfaced via
   // the scan, but never populates runningProcesses/unclosedProcesses. Keying the

@@ -1,4 +1,5 @@
 import path from 'path'
+import { performance } from 'perf_hooks'
 import type { WebContents } from 'electron'
 
 import {
@@ -55,8 +56,11 @@ let runningAppsMonitorActive = false
 // hidden (`show: false`) and only reveals once the renderer is ready — a
 // start-minimized-to-tray session therefore begins on the SLOW cadence.
 let runningAppsWindowVisible = false
-// Timestamp of the last non-scan publish (launch/exit/kill). 0 means "no
-// activity yet this session"; it keeps the poll FAST for POST_ACTIVITY_FAST_WINDOW_MS.
+// Monotonic (performance.now()) timestamp of the last non-scan publish
+// (launch/exit/kill). 0 means "no activity yet this session"; it keeps the poll
+// FAST for POST_ACTIVITY_FAST_WINDOW_MS. Monotonic rather than Date.now() (#708)
+// so a wall-clock jump (NTP sync, VM host suspend/resume) cannot collapse or
+// extend the window — it can only elapse at real wall-clock speed.
 let lastRunningAppsActivityAt = 0
 let lastRunningAppsSnapshot = ''
 // Number of apps in the last published snapshot. Includes externally-ADOPTED
@@ -363,9 +367,10 @@ export function publishRunningApps(
  */
 function computeRunningAppsScanDelayMs(): number {
   // lastRunningAppsActivityAt === 0 means "no activity yet this session"; guard
-  // that sentinel and a backward clock jump (negative delta) so neither wedges
-  // the poll on FAST.
-  const activityDelta = Date.now() - lastRunningAppsActivityAt
+  // that sentinel. performance.now() is monotonic, so a backward delta can only
+  // come from that sentinel (never a real wall-clock jump), but the guard is
+  // kept as defense in depth.
+  const activityDelta = performance.now() - lastRunningAppsActivityAt
   const withinPostActivityWindow =
     lastRunningAppsActivityAt !== 0 &&
     activityDelta >= 0 &&
@@ -432,14 +437,15 @@ function resetRunningAppsCadence() {
 }
 
 function noteRunningAppsActivity() {
-  lastRunningAppsActivityAt = Date.now()
+  lastRunningAppsActivityAt = performance.now()
   resetRunningAppsCadence()
 }
 
 /**
- * Signal from the main window's 'show'/'hide' events. A visible window pulls the
- * poll back to FAST; hiding lets it fall back to SLOW once nothing is tracked.
- * Safe to call before any subscriber exists — it only records state.
+ * Signal from the main window's visibility state (show/hide AND minimize/restore,
+ * see the #708 comment in window.ts). A visible, non-minimized window pulls the
+ * poll back to FAST; anything else lets it fall back to SLOW once nothing is
+ * tracked. Safe to call before any subscriber exists — it only records state.
  */
 export function setRunningAppsWindowVisible(visible: boolean): void {
   runningAppsWindowVisible = visible
@@ -453,10 +459,18 @@ export async function subscribeRunningApps(
 ): Promise<RunningAppsChangedPayload> {
   runningAppsSubscribers.add(webContents)
   webContents.once('destroyed', () => removeRunningAppsSubscriber(webContents))
-  startRunningAppsMonitor()
 
   const apps = await getRunningApps()
+  // Seed the cadence-gating count from this bootstrap read BEFORE starting the
+  // monitor (#708). Previously the monitor started first and scheduled its
+  // first scan off the pre-subscription (stale, often 0) count, so a
+  // start-minimized launch with an already-running adopted game would
+  // bootstrap on the SLOW cadence for one tick (<=12s) before the first scan
+  // self-corrected it. One-time and self-healing, but avoidable.
+  lastPublishedRunningAppsCount = apps.length
   lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
+  startRunningAppsMonitor()
+
   return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
 }
 
