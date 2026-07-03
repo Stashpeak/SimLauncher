@@ -293,6 +293,25 @@ export function registerLaunchHandlers(): void {
         )
 
         if (entriesToStart.length === 0) {
+          // A Close Apps click during the pre-scan or the kill phase above
+          // aborts launchController. When profile B has apps to start, the
+          // launchProfileApps call below reports that abort as cancelled —
+          // this early return must do the same (mirroring launchProfileApps'
+          // exact cancelled shape), or a switch with nothing new to start
+          // would return plain success and the renderer would commit the
+          // profile switch the user just cancelled (#716 Codex P2).
+          if (launchController.signal.aborted) {
+            return {
+              success: false,
+              cancelled: true,
+              message: 'Launch cancelled — closed apps instead.',
+              launchedCount: 0,
+              skippedCount: 0,
+              failedCount: killResult?.failedCount,
+              killFailures: killResult?.failures
+            }
+          }
+
           return {
             success: true,
             message: killResult?.message,

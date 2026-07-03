@@ -487,6 +487,58 @@ test('switch-profile-apps honors a Close Apps click landing during its own kill 
   })
 })
 
+// #716 Codex P2: the entries-to-start === 0 early-success return never
+// checked the abort signal. A Close Apps click during the pre-scan or the
+// kill phase, on a switch where profile B has nothing new to start, returned
+// plain success — and the renderer committed the profile switch the user had
+// just cancelled. Inconsistent with the has-apps-to-start path, which reports
+// the same abort as cancelled via launchProfileApps.
+test('switch-profile-apps with nothing to start reports cancelled when Close Apps aborted mid-switch', async () => {
+  const handlers = await loadLaunchHandlers()
+  const state = await import('../../src/main/processes/state')
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  // Profile B carries only the game exe, which the handler filters out of the
+  // switch — so entriesToStart is guaranteed empty and the early return runs.
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe']),
+    succeeded: true
+  })
+
+  let resolveKill!: (value: {
+    success: boolean
+    closedCount: number
+    failedCount: number
+    failures: unknown[]
+  }) => void
+  killProfileApps.mockReturnValue(
+    new Promise((resolve) => {
+      resolveKill = resolve
+    })
+  )
+
+  const resultPromise = handlers['switch-profile-apps'](event, 'iracing', 'p-from', 'p-to')
+
+  // Let the handler reach the kill phase, then land the Close Apps abort
+  // while the kill is still pending.
+  await flushMicrotasks()
+  state.abortActiveLaunches('iracing')
+  resolveKill({ success: true, closedCount: 1, failedCount: 0, failures: [] })
+
+  // Must be the same cancelled shape launchProfileApps produces on abort —
+  // NOT success — so the renderer's `result.cancelled` branch handles both
+  // paths identically and does not commit the cancelled switch.
+  await expect(resultPromise).resolves.toMatchObject({
+    success: false,
+    cancelled: true,
+    message: 'Launch cancelled — closed apps instead.',
+    launchedCount: 0
+  })
+  expect(launchProfileApps).not.toHaveBeenCalled()
+})
+
 // #716: the entries-to-start === 0 branch returns before ever calling
 // launchProfileApps (nothing new needs to start), so — like the analogous
 // relaunch-missing-profile no-op path — the handler itself must release the
