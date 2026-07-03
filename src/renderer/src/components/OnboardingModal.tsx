@@ -116,8 +116,7 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
           <BrandWordmarkIcon aria-hidden="true" className="h-7 w-auto text-(--accent)" />
         </h2>
         <p id={descId} className="text-sm text-(--text-secondary) leading-relaxed mb-6">
-          Pick your sims and their companion apps once. One click launches the whole stack in the
-          right order, and one click closes it all again.
+          Configure your simulation games and companion apps.
         </p>
 
         <div className="mb-8">
@@ -154,7 +153,7 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
             onClick={onSetup}
             className="accent-action action-hover-scale w-full cursor-pointer rounded-xl py-3 text-sm font-bold"
           >
-            Set up your sims →
+            Configure Games
           </button>
           <button
             type="button"
