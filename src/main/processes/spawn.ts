@@ -67,54 +67,69 @@ export async function launchProfileApps(
   // from `activeLaunches` above, whose Set-of-gameKeys semantics only gate
   // concurrent launches and stay untouched.
   const launchController = registerActiveLaunch(gameKey)
-  const launchDelayMs = getLaunchDelayMs()
-  const gamePaths = getStoredStringRecord('gamePaths')
-  const gamePath = gamePaths?.[gameKey]
-  const { processNames } = await readRunningProcessNames()
-  const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
-  // Entries filtered out below never reach spawn — tracked here (not just
-  // console.error'd) so the caller can tell "some apps launched, one was
-  // silently skipped" apart from a plain success (#639).
-  const skipped: SkippedLaunchEntry[] = []
-  const validApps = normalizedEntries.filter((entry) => {
-    if (!isValidExePath(entry.path)) {
-      // isValidExePath also checks the resolved path's existence, so a
-      // well-formed .exe path that simply no longer exists fails here too —
-      // attribute those as 'missing' (not 'invalid') so the reason AND the
-      // log text reflect the actual problem (moved/uninstalled exe, #639)
-      // rather than a malformed path.
-      const trimmedPath = entry.path.trim()
-      const looksLikeExePath = trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath)
-      const skipLogText = looksLikeExePath
-        ? `Skipping missing executable: ${entry.path}`
-        : `Skipping invalid path: ${entry.path}`
-      console.error(skipLogText)
-      writeAppErrorLog('launch', `[${gameKey}] ${skipLogText}`)
-      skipped.push({
-        key: entry.key,
-        path: entry.path,
-        reason: looksLikeExePath ? 'missing' : 'invalid'
-      })
-      return false
-    }
-    if (!fs.existsSync(entry.path.trim())) {
-      console.error(`Skipping missing executable: ${entry.path}`)
-      writeAppErrorLog('launch', `[${gameKey}] Skipping missing executable: ${entry.path}`)
-      skipped.push({ key: entry.key, path: entry.path, reason: 'missing' })
-      return false
-    }
-    return true
-  })
-
-  if (validApps.length === 0) {
-    activeLaunches.delete(gameKey)
-    unregisterActiveLaunch(gameKey, launchController)
-    return { success: false, error: 'No valid executable paths configured.', skipped }
-  }
-
   let launchedAny = false
 
+  // Everything from here runs under the finally — a throw anywhere below
+  // (store read, tasklist scan, path checks) must still release the launch
+  // guard and the abort registration, or every future launch stays blocked
+  // behind the stale `activeLaunches` entry.
   try {
+    const launchDelayMs = getLaunchDelayMs()
+    const gamePaths = getStoredStringRecord('gamePaths')
+    const gamePath = gamePaths?.[gameKey]
+    const { processNames } = await readRunningProcessNames()
+    const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
+    // Entries filtered out below never reach spawn — tracked here (not just
+    // console.error'd) so the caller can tell "some apps launched, one was
+    // silently skipped" apart from a plain success (#639).
+    const skipped: SkippedLaunchEntry[] = []
+    const validApps = normalizedEntries.filter((entry) => {
+      if (!isValidExePath(entry.path)) {
+        // isValidExePath also checks the resolved path's existence, so a
+        // well-formed .exe path that simply no longer exists fails here too —
+        // attribute those as 'missing' (not 'invalid') so the reason AND the
+        // log text reflect the actual problem (moved/uninstalled exe, #639)
+        // rather than a malformed path.
+        const trimmedPath = entry.path.trim()
+        const looksLikeExePath = trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath)
+        const skipLogText = looksLikeExePath
+          ? `Skipping missing executable: ${entry.path}`
+          : `Skipping invalid path: ${entry.path}`
+        console.error(skipLogText)
+        writeAppErrorLog('launch', `[${gameKey}] ${skipLogText}`)
+        skipped.push({
+          key: entry.key,
+          path: entry.path,
+          reason: looksLikeExePath ? 'missing' : 'invalid'
+        })
+        return false
+      }
+      if (!fs.existsSync(entry.path.trim())) {
+        console.error(`Skipping missing executable: ${entry.path}`)
+        writeAppErrorLog('launch', `[${gameKey}] Skipping missing executable: ${entry.path}`)
+        skipped.push({ key: entry.key, path: entry.path, reason: 'missing' })
+        return false
+      }
+      return true
+    })
+
+    // A kill can land during the pre-loop awaits (the tasklist scan above) —
+    // the early returns below must report the cancellation like the loop
+    // paths do, not a plain success/error the user's Close Apps contradicts.
+    if (launchController.signal.aborted) {
+      return {
+        success: false,
+        cancelled: true,
+        message: 'Launch cancelled — closed apps instead.',
+        launchedCount: 0,
+        skipped
+      }
+    }
+
+    if (validApps.length === 0) {
+      return { success: false, error: 'No valid executable paths configured.', skipped }
+    }
+
     const appsToLaunch = validApps.filter((entry) => !isRunningExePath(processNames, entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
 

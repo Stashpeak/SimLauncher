@@ -40,6 +40,8 @@ const pidsAccessDeniedButImageGone = new Set<string>()
 // kill verification doesn't treat an empty Set as evidence-of-exit when the
 // read itself was invalid (see #399).
 let tasklistReadShouldFail = false
+// Flips the mocked store read into a throwing mode — see storeModuleMock.
+let storeReadShouldThrow = false
 // When >0, the mocked readRunningProcessNames returns a successful response
 // for the first N calls, then starts failing. Lets a single test simulate a
 // transient tasklist failure on the post-kill recheck only — without breaking
@@ -303,6 +305,11 @@ async function loadProcessModules() {
 
   const storeModuleMock = {
     getStoredStringRecord: (key: string) => {
+      // Models a corrupted/unreadable store so a test can prove a throw during
+      // launch prep releases the launch guard instead of wedging it (#670).
+      if (storeReadShouldThrow) {
+        throw new Error('store corrupted')
+      }
       const value = storeData[key]
 
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -451,6 +458,7 @@ beforeEach(async () => {
   processNamesGoneAfterKill.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
+  storeReadShouldThrow = false
   tasklistReadFailAfterCalls = 0
   tasklistReadCallCount = 0
   wmiLookupCounts.clear()
@@ -2307,6 +2315,45 @@ test('a fresh launch for the same gameKey after a cancelled one proceeds normall
   expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe', 'C:/Tools/App3.exe'])
 
   dateNow.mockRestore()
+})
+
+// A kill landing during the pre-loop prep (the tasklist scan await) must be
+// reported as cancelled by the early-return paths too — an "All profile
+// applications are already running." success toast right after the user's
+// Close Apps click would contradict what they just did (#670 review finding).
+test('a kill landing during launch prep reports cancelled, not success (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  // launchProfileApps suspends on the tasklist read; the kill's abort fires
+  // synchronously before that continuation runs.
+  const launch = launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  await killLaunchedApps('ac')
+
+  await expect(launch).resolves.toMatchObject({ cancelled: true, success: false })
+})
+
+// The launch guard + abort registration are armed before any prep work (store
+// read, tasklist scan, path checks). A throw during that prep must still
+// release both via the finally — otherwise every future launch is permanently
+// blocked behind the stale activeLaunches entry (#670 review finding).
+test('a throw during launch prep releases the launch guard instead of wedging it (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  storeReadShouldThrow = true
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).rejects.toThrow(
+    'store corrupted'
+  )
+
+  // The next launch must proceed normally — NOT "Another profile is already
+  // launching." from a leaked guard entry.
+  storeReadShouldThrow = false
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
 })
 
 test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {

@@ -263,6 +263,14 @@ export function GameRow({
 
           onLaunchStart(game.key)
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
+          // Close Apps mid-switch cancels the new profile's launch sequence
+          // (#670) — the user asked to stop, so this is neither a success nor
+          // an error; the switch is not saved and can simply be retried.
+          if (result.cancelled) {
+            notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+            onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+            return
+          }
           if (!result.success) {
             const failedSkippedDetail =
               result.skipped && result.skipped.length > 0
