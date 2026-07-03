@@ -40,6 +40,18 @@ const pidsAccessDeniedButImageGone = new Set<string>()
 // kill verification doesn't treat an empty Set as evidence-of-exit when the
 // read itself was invalid (see #399).
 let tasklistReadShouldFail = false
+// Flips the mocked store read into a throwing mode — see storeModuleMock.
+let storeReadShouldThrow = false
+// When set, the NEXT readRunningProcessNames call resolves only after this
+// promise does — models a slow tasklist scan so a test can prove ordering
+// against it (#670). Consumed once, then cleared.
+let tasklistReadBlocker: Promise<void> | null = null
+// When set, the `atCall`-th isConsoleExecutable call (1-based) resolves only
+// after `promise` does — models a slow PE-subsystem probe so the abort-point
+// sweep can land a kill inside spawnDetachedApp's pre-spawn window for a
+// specific app in the sequence (#670). Consumed once, then cleared.
+let consoleProbeBlocker: { atCall: number; promise: Promise<void> } | null = null
+let consoleProbeCallCount = 0
 // When >0, the mocked readRunningProcessNames returns a successful response
 // for the first N calls, then starts failing. Lets a single test simulate a
 // transient tasklist failure on the post-kill recheck only — without breaking
@@ -269,7 +281,19 @@ async function loadProcessModules() {
   }))
 
   const subsystemMock = {
-    isConsoleExecutable: vi.fn((exePath: string) => Promise.resolve(consoleExePaths.has(exePath)))
+    isConsoleExecutable: vi.fn((exePath: string) => {
+      consoleProbeCallCount += 1
+      const result = consoleExePaths.has(exePath)
+      // One-shot blocker, same shape as tasklistReadBlocker above: only the
+      // call it was armed for is delayed; every other call keeps its exact
+      // microtask timing (other tests depend on it).
+      if (consoleProbeBlocker && consoleProbeCallCount === consoleProbeBlocker.atCall) {
+        const blocker = consoleProbeBlocker.promise
+        consoleProbeBlocker = null
+        return blocker.then(() => result)
+      }
+      return Promise.resolve(result)
+    })
   }
   vi.doMock('./subsystem', () => subsystemMock)
   vi.doMock('/src/main/processes/subsystem.ts', () => subsystemMock)
@@ -288,11 +312,18 @@ async function loadProcessModules() {
       // errors and resolves with an empty Set + succeeded: false. Modelling
       // the empty-Set here is what lets the regression test distinguish
       // "image is gone" from "we don't know" (see #399).
-      return Promise.resolve(
-        shouldFailNow
-          ? { processNames: new Set<string>(), succeeded: false }
-          : { processNames: new Set(processNames), succeeded: true }
-      )
+      const result = shouldFailNow
+        ? { processNames: new Set<string>(), succeeded: false }
+        : { processNames: new Set(processNames), succeeded: true }
+      // A one-shot blocker models a slow tasklist scan (#670). Consumed here
+      // so only the call it was armed for is delayed; the unarmed path keeps
+      // its exact microtask timing (other tests depend on it).
+      if (tasklistReadBlocker) {
+        const blocker = tasklistReadBlocker
+        tasklistReadBlocker = null
+        return blocker.then(() => result)
+      }
+      return Promise.resolve(result)
     })
   }
   vi.doMock('./tasklist', () => tasklistMock)
@@ -303,6 +334,11 @@ async function loadProcessModules() {
 
   const storeModuleMock = {
     getStoredStringRecord: (key: string) => {
+      // Models a corrupted/unreadable store so a test can prove a throw during
+      // launch prep releases the launch guard instead of wedging it (#670).
+      if (storeReadShouldThrow) {
+        throw new Error('store corrupted')
+      }
       const value = storeData[key]
 
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -417,6 +453,15 @@ function asWebContents(webContents: MockWebContents) {
   return webContents as unknown as WebContents
 }
 
+// Flushes the microtask queue via a macrotask boundary (setImmediate always
+// runs after every microtask already queued). Used to let launchProfileApps'
+// loop advance past a spawned app and reach its (real, unmocked) inter-app
+// `wait()` call — at which point its setTimeout/abort-listener is already
+// registered — without needing fake timers (#670).
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 const sender = {
   isDestroyed: () => false,
   send: vi.fn()
@@ -442,6 +487,10 @@ beforeEach(async () => {
   processNamesGoneAfterKill.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
+  storeReadShouldThrow = false
+  tasklistReadBlocker = null
+  consoleProbeBlocker = null
+  consoleProbeCallCount = 0
   tasklistReadFailAfterCalls = 0
   tasklistReadCallCount = 0
   wmiLookupCounts.clear()
@@ -2176,6 +2225,473 @@ test('launchBlockedUntil is not set when no apps were actually launched (#342)',
   })
 
   dateNow.mockRestore()
+})
+
+// #670: a kill mid-sequence used to only stop what was already running — the
+// launch loop kept going and spawned the remaining profile apps regardless,
+// ending in a success toast for apps the user had just asked to close.
+test('killLaunchedApps mid-sequence cancels the launch loop before remaining apps spawn (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  markExistingPath('C:/Tools/App3.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', [
+    'C:/Tools/App1.exe',
+    'C:/Tools/App2.exe',
+    'C:/Tools/App3.exe'
+  ])
+
+  // Let App1 spawn and the loop reach its (real, 5s) inter-app delay before
+  // the kill lands, proving the abort interrupts THIS wait rather than
+  // merely preventing a future one.
+  await flushMicrotasks()
+
+  const killResult = await killLaunchedApps('ac')
+  const launchResult = await launchPromise
+
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+  expect(launchResult).toMatchObject({
+    success: false,
+    cancelled: true,
+    launchedCount: 1
+  })
+  expect(killResult.success).toBe(true)
+  expect(killResult.closedCount).toBe(1)
+})
+
+test('killProfileApps mid-sequence also cancels the launch loop before remaining apps spawn (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/App1.exe', customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  await killProfileApps('ac', ['C:/Tools/App1.exe'])
+  const launchResult = await launchPromise
+
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+  expect(launchResult).toMatchObject({ success: false, cancelled: true, launchedCount: 1 })
+})
+
+test('two concurrent Close Apps clicks during the same sequence do not throw (idempotent abort, #670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  const [firstKill, secondKill] = await Promise.all([
+    killLaunchedApps('ac'),
+    killLaunchedApps('ac')
+  ])
+  const launchResult = await launchPromise
+
+  expect(firstKill.success).toBe(true)
+  expect(secondKill.success).toBe(true)
+  expect(launchResult).toMatchObject({ success: false, cancelled: true, launchedCount: 1 })
+  // App2 must never have spawned, regardless of the double kill.
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+})
+
+test('Close Apps clicked again after the sequence already ended is a clean no-op (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({ success: true, closedCount: 1 })
+  await expect(launchPromise).resolves.toMatchObject({ cancelled: true })
+
+  // The in-flight sequence's controller was already unregistered when it
+  // ended above — this must find nothing to abort and resolve cleanly, not
+  // throw (#670).
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({ success: true, closedCount: 0 })
+})
+
+test('a fresh launch for the same gameKey after a cancelled one proceeds normally (#670)', async () => {
+  const dateNow = vi.spyOn(Date, 'now')
+  dateNow.mockReturnValue(0)
+
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  markExistingPath('C:/Tools/App3.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const firstLaunch = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+  await killLaunchedApps('ac')
+  await expect(firstLaunch).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
+
+  // Past the post-launch cooldown (#342), with a fresh controller for the
+  // same gameKey — must launch normally, not inherit the previous
+  // cancellation's aborted signal (#670).
+  dateNow.mockReturnValue(20_000)
+  storeData.launchDelayMs = 0
+  const secondResult = await launchProfileApps(sender, 'ac', ['C:/Tools/App3.exe'])
+
+  expect(secondResult.success).toBe(true)
+  expect(secondResult.launchedCount).toBe(1)
+  expect(secondResult.cancelled).toBeUndefined()
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe', 'C:/Tools/App3.exe'])
+
+  dateNow.mockRestore()
+})
+
+// killProfileApps must signal the in-flight launch BEFORE its own tasklist
+// scan — that await can be slow, and a launch loop sitting in a short
+// inter-app wait would otherwise spawn its next app past the kill's snapshot
+// (#670 Codex P2). The blocked tasklist read below models the slow scan: the
+// launch must still resolve cancelled while the kill is stuck in it.
+test('killProfileApps aborts the launch before waiting on its tasklist scan (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/App1.exe', customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  // Arm AFTER the launch's own scan: only the kill's entry scan is delayed.
+  let releaseTasklistRead: () => void = () => {}
+  tasklistReadBlocker = new Promise((resolve) => (releaseTasklistRead = resolve))
+
+  const killPromise = killProfileApps('ac', ['C:/Tools/App1.exe'])
+  // The abort fired in killProfileApps' synchronous prefix, so the launch
+  // resolves cancelled even though the kill is still stuck in its scan.
+  await expect(launchPromise).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+
+  releaseTasklistRead()
+  await killPromise
+})
+
+// The abort can land while spawnDetachedApp is still in its async pre-spawn
+// probe (PE subsystem read). The kill's snapshot can't include a process that
+// hasn't spawned yet — spawning after the abort would leave an app running
+// that the user just closed (#670 Codex P1). The signal is re-checked right
+// before spawn(), with no await in between.
+test('spawnDetachedApp does not spawn when the abort landed during its pre-spawn probe (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { spawnDetachedApp } = await loadProcessModules()
+
+  const controller = new AbortController()
+  controller.abort()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    undefined,
+    controller.signal
+  )
+
+  expect(result).toEqual({ status: 'cancelled', appPath: 'C:/Tools/SimHub.exe' })
+  expect(spawnCalls).toEqual([])
+})
+
+// A kill landing during the pre-loop prep (the tasklist scan await) must be
+// reported as cancelled by the early-return paths too — an "All profile
+// applications are already running." success toast right after the user's
+// Close Apps click would contradict what they just did (#670 review finding).
+test('a kill landing during launch prep reports cancelled, not success (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  // launchProfileApps suspends on the tasklist read; the kill's abort fires
+  // synchronously before that continuation runs.
+  const launch = launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  await killLaunchedApps('ac')
+
+  await expect(launch).resolves.toMatchObject({ cancelled: true, success: false })
+})
+
+// The launch guard + abort registration are armed before any prep work (store
+// read, tasklist scan, path checks). A throw during that prep must still
+// release both via the finally — otherwise every future launch is permanently
+// blocked behind the stale activeLaunches entry (#670 review finding).
+test('a throw during launch prep releases the launch guard instead of wedging it (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  storeReadShouldThrow = true
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).rejects.toThrow(
+    'store corrupted'
+  )
+
+  // The next launch must proceed normally — NOT "Another profile is already
+  // launching." from a leaked guard entry.
+  storeReadShouldThrow = false
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+})
+
+// Abort-point sweep (#670): the "nothing spawns after a kill's abort" invariant
+// is enforced by a separate check at EVERY await in the launch path — each
+// suspension point is its own race window, and all five #714 review findings
+// were instances of this one class landing at different points. The sweep
+// drives the full launch sequence through each suspension point in turn, lands
+// the abort while the launch is provably parked there, and asserts nothing
+// further spawned. Adding a new await to the launch path? Add a row here.
+// (The post-spawn EACCES elevation handoff is the one abortable point this
+// table can't reach — it has its own test right below.)
+const abortPointSweep: {
+  point: string
+  launchDelayMs: number
+  arm: () => { release: () => void; consumed: () => boolean } | null
+  spawnsBeforeAbort: number
+  launchedCount: number
+}[] = [
+  {
+    point: 'pre-loop tasklist scan',
+    launchDelayMs: 0,
+    arm: () => {
+      let release: () => void = () => {}
+      tasklistReadBlocker = new Promise((resolve) => (release = resolve))
+      return { release, consumed: () => tasklistReadBlocker === null }
+    },
+    spawnsBeforeAbort: 0,
+    launchedCount: 0
+  },
+  {
+    point: "first app's pre-spawn console probe",
+    launchDelayMs: 0,
+    arm: () => {
+      let release: () => void = () => {}
+      consoleProbeBlocker = { atCall: 1, promise: new Promise((resolve) => (release = resolve)) }
+      return { release, consumed: () => consoleProbeBlocker === null }
+    },
+    spawnsBeforeAbort: 0,
+    launchedCount: 0
+  },
+  {
+    point: "second app's pre-spawn console probe",
+    launchDelayMs: 0,
+    arm: () => {
+      let release: () => void = () => {}
+      consoleProbeBlocker = { atCall: 2, promise: new Promise((resolve) => (release = resolve)) }
+      return { release, consumed: () => consoleProbeBlocker === null }
+    },
+    spawnsBeforeAbort: 1,
+    launchedCount: 1
+  },
+  {
+    point: 'inter-app delay wait',
+    launchDelayMs: 5000,
+    // The real (unmocked) wait() is abortable by design — the kill's abort
+    // itself releases this point, so there is nothing to arm.
+    arm: () => null,
+    spawnsBeforeAbort: 1,
+    launchedCount: 1
+  }
+]
+
+test.each(abortPointSweep)(
+  'no app spawns after an abort landing during the $point (#670)',
+  async ({ launchDelayMs, arm, spawnsBeforeAbort, launchedCount }) => {
+    markExistingPath('C:/Tools/App1.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    storeData.launchDelayMs = launchDelayMs
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+    const blocker = arm()
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/App1.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await flushMicrotasks()
+
+    // Prove the launch is parked at the swept point before aborting: the armed
+    // blocker was consumed (so the point still exists in the launch path — a
+    // refactor that removes it must fail here, not pass vacuously) and only
+    // the spawns from BEFORE the point have landed.
+    if (blocker) {
+      expect(blocker.consumed()).toBe(true)
+    }
+    expect(spawnCalls.length).toBe(spawnsBeforeAbort)
+
+    await killLaunchedApps('ac')
+    blocker?.release()
+
+    await expect(launchPromise).resolves.toMatchObject({
+      success: false,
+      cancelled: true,
+      launchedCount
+    })
+    // The invariant under sweep: after the abort, not one more spawn.
+    expect(spawnCalls.length).toBe(spawnsBeforeAbort)
+  }
+)
+
+// The abort can also land AFTER spawn() was attempted: the child fails with
+// EACCES (asynchronously, some time after spawn returns) and the error handler
+// hands off to an elevated launch — which would pop a UAC prompt right after
+// the user's Close Apps click and start an elevated app the kill's snapshot
+// can never include (and that SimLauncher cannot close). The handoff must
+// re-check the signal and report the attempt as cancelled instead (#670).
+test('an EACCES elevation handoff arriving after the abort does not launch elevated (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  const { spawnDetachedApp } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const controller = new AbortController()
+  const resultPromise = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    undefined,
+    controller.signal
+  )
+  // Let the pre-spawn probe resolve and spawn() run — the child's handlers are
+  // registered but no event has fired yet.
+  await flushMicrotasks()
+
+  // The abort lands in the window between spawn() and the error event.
+  controller.abort()
+  childHandlers.get('error')!(makeAccessDeniedError())
+
+  await expect(resultPromise).resolves.toEqual({
+    status: 'cancelled',
+    appPath: 'C:/Tools/SimHub.exe'
+  })
+  // The elevated relaunch (powershell Start-Process -Verb RunAs) must never fire.
+  expect(execFileCalls.filter((call) => call.command === 'powershell.exe')).toEqual([])
+})
+
+// Sets up spawnDetachedApp parked in a PENDING UAC handoff: the child fails
+// with EACCES, launchElevated starts, and the powershell callback is held so
+// the test controls when (and how) the handoff concludes (#670 Codex P2).
+async function startPendingElevationHandoff() {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  const { spawnDetachedApp } = await loadProcessModules()
+  const childProcessModule = vi.mocked(await import('child_process'))
+  childProcessModule.spawn.mockReturnValueOnce(child as never)
+
+  let concludeHandoff: (error: Error | null) => void = () => {}
+  const elevationHostKill = vi.fn()
+  childProcessModule.execFile.mockImplementationOnce(((
+    _command: string,
+    _args: string[],
+    _options: unknown,
+    callback: (error: Error | null, stdout: string, stderr: string) => void
+  ) => {
+    concludeHandoff = (error) => callback(error, '', '')
+    return { kill: elevationHostKill }
+  }) as never)
+
+  const controller = new AbortController()
+  const resultPromise = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    undefined,
+    controller.signal
+  )
+  await flushMicrotasks()
+  // EACCES arrives with the signal still clean → the handoff starts and parks
+  // on the held powershell callback.
+  childHandlers.get('error')!(makeAccessDeniedError())
+  await flushMicrotasks()
+
+  return { resultPromise, controller, concludeHandoff, elevationHostKill }
+}
+
+// The abort can land while the UAC handoff itself is pending — the consent
+// prompt sits on screen until the user answers, so this window is wide. The
+// abort must kill the powershell host (best-effort stop + unblocks the launch
+// sequence immediately) and the resulting execFile error must be reported as
+// cancelled, not logged as a launch failure (#670 Codex P2).
+test('an abort during the pending UAC handoff kills the host and reports cancelled (#670)', async () => {
+  const { resultPromise, controller, concludeHandoff, elevationHostKill } =
+    await startPendingElevationHandoff()
+
+  controller.abort()
+  expect(elevationHostKill).toHaveBeenCalledTimes(1)
+  // The killed host surfaces as an execFile error.
+  concludeHandoff(new Error('powershell host killed'))
+
+  await expect(resultPromise).resolves.toEqual({
+    status: 'cancelled',
+    appPath: 'C:/Tools/SimHub.exe'
+  })
+  const launchLogLines = appErrorLogFsMock.appendFileSync.mock.calls.map((call) => String(call[1]))
+  expect(launchLogLines.filter((line) => line.includes('administrator'))).toEqual([])
+})
+
+// If the user accepts the UAC prompt before the host kill takes effect, the
+// elevated app IS running — the result must say so (status 'elevated'), not
+// pretend the cancellation prevented it (#670 Codex P2).
+test('a UAC handoff accepted despite the abort still reports elevated (#670)', async () => {
+  const { resultPromise, controller, concludeHandoff } = await startPendingElevationHandoff()
+
+  controller.abort()
+  concludeHandoff(null)
+
+  await expect(resultPromise).resolves.toMatchObject({
+    status: 'elevated',
+    appPath: 'C:/Tools/SimHub.exe'
+  })
+})
+
+// Sequence-level honesty: elevated apps that completed their handoff survive
+// the kill (SimLauncher cannot close them) — the cancellation toast must name
+// them instead of implying everything was closed (#670 Codex P2).
+test('the cancellation message names elevated apps the kill cannot close (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+  // App1's spawn fails EACCES; the default execFile mock resolves the
+  // powershell handoff immediately as success → status 'elevated'.
+  spawnErrors.set('C:/Tools/App1.exe', makeAccessDeniedError())
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+  await killLaunchedApps('ac')
+
+  await expect(launchPromise).resolves.toMatchObject({
+    success: false,
+    cancelled: true,
+    elevatedCount: 1,
+    message:
+      'Launch cancelled — closed apps instead. One app started with administrator permission and cannot be closed from here.'
+  })
 })
 
 test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {

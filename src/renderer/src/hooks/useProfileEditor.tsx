@@ -433,7 +433,13 @@ export function useProfileEditor({
     try {
       const result = await launchProfile(gameKey)
       cooldownMs = result.launchedCount === 0 ? 0 : 10000
-      if (!result.success) {
+
+      // A kill (Close Apps) mid-sequence stopped the loop before it spawned
+      // everything (#670) — neither a success nor a failure, so it gets its
+      // own toast rather than the error/success branches below.
+      if (result.cancelled) {
+        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+      } else if (!result.success) {
         const failedSkippedDetail =
           result.skipped && result.skipped.length > 0
             ? ` ${formatSkippedLaunchEntries(result.skipped, {

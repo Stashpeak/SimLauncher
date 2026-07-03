@@ -18,6 +18,7 @@ import {
 } from '../utils'
 
 import {
+  abortActiveLaunches,
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
@@ -571,6 +572,12 @@ function getProfileCompanionTargets(gameKey?: string) {
 }
 
 export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
+  // Cancel any in-flight launchProfileApps sequence for this gameKey (or all
+  // of them, for the gameKey-less tray/global kill) before touching the
+  // process list — otherwise the launch loop can spawn its next queued app
+  // during or after this kill (#670).
+  abortActiveLaunches(gameKey)
+
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
   const companionTargets = getProfileCompanionTargets(gameKey)
@@ -652,7 +659,6 @@ export async function killProfileApps(
   gameKey: string,
   appPathsToKill: string[]
 ): Promise<KillResult> {
-  const { processNames } = await readRunningProcessNames()
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
   const storedAppPathTargets = getStoredAppPathTargets()
@@ -679,6 +685,17 @@ export async function killProfileApps(
 
     validAppPathsToKill.push(appPath)
   }
+
+  // Cancel any in-flight launchProfileApps sequence for this gameKey before
+  // doing kill work, same reasoning as killLaunchedApps above (#670). Placed
+  // after the synchronous validation so a rejected (not-configured-path)
+  // request doesn't cancel a legitimate in-flight launch as a side effect —
+  // but BEFORE the tasklist scan below: that await can be slow, and a launch
+  // loop sitting in a short inter-app wait could otherwise spawn its next app
+  // before the abort lands, leaving it running past this kill's snapshot.
+  abortActiveLaunches(gameKey)
+
+  const { processNames } = await readRunningProcessNames()
 
   // First pass: prefer killing via the ChildProcess handle (PID-based /T /F
   // tree kill) for apps that SimLauncher itself spawned and still owns. This

@@ -13,6 +13,48 @@ export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 
+// One AbortController per gameKey with an in-flight launchProfileApps sequence.
+// Lives here (not spawn.ts) so kill.ts can abort a sequence without a circular
+// import between the two process-lifecycle modules (#670).
+const activeLaunchControllers = new Map<string, AbortController>()
+
+export function registerActiveLaunch(gameKey: string): AbortController {
+  const controller = new AbortController()
+  activeLaunchControllers.set(gameKey, controller)
+  return controller
+}
+
+/**
+ * Clear the registry entry once launchProfileApps' sequence ends. Only clears
+ * it if `controller` is still the registered one — a new launch for the same
+ * gameKey may have already installed its own fresh controller (started right
+ * after this one was cancelled), and that must not be torn down early.
+ */
+export function unregisterActiveLaunch(gameKey: string, controller: AbortController): void {
+  if (activeLaunchControllers.get(gameKey) === controller) {
+    activeLaunchControllers.delete(gameKey)
+  }
+}
+
+/**
+ * Abort the in-flight launch sequence for `gameKey`, or every in-flight
+ * sequence when `gameKey` is undefined (the tray/global "close everything"
+ * kill has no single gameKey to target). Called from kill.ts before it does
+ * any kill work, so a launch loop already mid-sequence cannot spawn the next
+ * queued app during or after the kill (#670).
+ *
+ * `AbortController.abort()` is itself idempotent (a second call is a no-op),
+ * so this is safe to call on every kill request even when nothing is
+ * currently launching for the target gameKey.
+ */
+export function abortActiveLaunches(gameKey?: string): void {
+  activeLaunchControllers.forEach((controller, key) => {
+    if (gameKey === undefined || key === gameKey) {
+      controller.abort()
+    }
+  })
+}
+
 /**
  * Signal that the upcoming exit of `appPath` is intentional (user-initiated
  * kill). The suppression is consumed exactly once by

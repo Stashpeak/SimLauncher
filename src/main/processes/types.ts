@@ -47,6 +47,12 @@ export interface LaunchResult {
   killFailures?: KillFailure[]
   /** Entries excluded before spawn for an invalid/missing exe path (#639). NOT counted by `skippedCount`. */
   skipped?: SkippedLaunchEntry[]
+  /**
+   * True when a kill (Close Apps) aborted this sequence mid-flight (#670).
+   * `success` is false in this case, but it is not a failure either — the
+   * renderer should show a neutral "cancelled" toast, not an error toast.
+   */
+  cancelled?: boolean
 }
 
 export interface KillResult {
@@ -62,6 +68,9 @@ export type AppLaunchResult =
   | { status: 'launched'; appPath: string }
   | { status: 'elevated'; appPath: string; warning: string }
   | { status: 'failed'; appPath: string; error: string }
+  // The launch was aborted (Close Apps) during the async pre-spawn work, so
+  // the process was deliberately never spawned (#670).
+  | { status: 'cancelled'; appPath: string }
 
 export interface ProfileLaunchEntry {
   /**

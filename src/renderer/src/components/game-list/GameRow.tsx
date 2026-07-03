@@ -263,6 +263,14 @@ export function GameRow({
 
           onLaunchStart(game.key)
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
+          // Close Apps mid-switch cancels the new profile's launch sequence
+          // (#670) — the user asked to stop, so this is neither a success nor
+          // an error; the switch is not saved and can simply be retried.
+          if (result.cancelled) {
+            notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+            onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+            return
+          }
           if (!result.success) {
             const failedSkippedDetail =
               result.skipped && result.skipped.length > 0
@@ -366,8 +374,17 @@ export function GameRow({
       // "X is now running" settle cue (#612).
       announce(`Launching ${game.name}`)
       const result = await launchProfile(game.key)
+      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+
+      // A kill (Close Apps) mid-sequence stopped the loop before it spawned
+      // everything (#670) — this is neither a success nor a failure, so it
+      // gets its own toast rather than falling into either branch below.
+      if (result.cancelled) {
+        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        return
+      }
+
       if (!result.success) {
-        cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         // The all-invalid failure ("No valid executable paths configured.")
         // carries the skipped detail too — name what's broken (#639).
         const failedSkippedDetail =
@@ -378,7 +395,6 @@ export function GameRow({
         return
       }
 
-      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
       // A moved/deleted exe is filtered out before spawn but must not read as
       // a plain success (#639) — surface it as a warning naming what was
       // skipped, alongside any elevated-launch warning.
@@ -438,8 +454,15 @@ export function GameRow({
     try {
       onLaunchStart(game.key)
       const result = await relaunchMissingProfile(game.key)
+      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+
+      // Same cancellation case as handleLaunch above (#670).
+      if (result.cancelled) {
+        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        return
+      }
+
       if (!result.success) {
-        cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
         const failedSkippedDetail =
           result.skipped && result.skipped.length > 0
             ? ` ${formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })}`
@@ -451,7 +474,6 @@ export function GameRow({
         return
       }
 
-      cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
       const relaunchWarnings: string[] = []
       if (result.skipped && result.skipped.length > 0) {
         relaunchWarnings.push(

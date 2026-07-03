@@ -157,6 +157,12 @@ export interface LaunchResult {
   failedCount?: number
   killFailures?: KillFailure[]
   skipped?: SkippedLaunchEntry[]
+  /**
+   * True when a kill (Close Apps) aborted this sequence mid-flight (#670).
+   * `success` is false in this case, but it is not a failure either — the
+   * renderer should show a neutral "cancelled" toast, not an error toast.
+   */
+  cancelled?: boolean
 }
 
 export interface KillResult {

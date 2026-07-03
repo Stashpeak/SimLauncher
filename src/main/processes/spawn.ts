@@ -18,7 +18,9 @@ import {
 import {
   consumeProcessNameMismatchWarningSuppression,
   processNameMismatchWarnings,
-  runningProcesses
+  registerActiveLaunch,
+  runningProcesses,
+  unregisterActiveLaunch
 } from './state'
 import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
@@ -60,53 +62,74 @@ export async function launchProfileApps(
   }
 
   activeLaunches.add(gameKey)
-  const launchDelayMs = getLaunchDelayMs()
-  const gamePaths = getStoredStringRecord('gamePaths')
-  const gamePath = gamePaths?.[gameKey]
-  const { processNames } = await readRunningProcessNames()
-  const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
-  // Entries filtered out below never reach spawn — tracked here (not just
-  // console.error'd) so the caller can tell "some apps launched, one was
-  // silently skipped" apart from a plain success (#639).
-  const skipped: SkippedLaunchEntry[] = []
-  const validApps = normalizedEntries.filter((entry) => {
-    if (!isValidExePath(entry.path)) {
-      // isValidExePath also checks the resolved path's existence, so a
-      // well-formed .exe path that simply no longer exists fails here too —
-      // attribute those as 'missing' (not 'invalid') so the reason AND the
-      // log text reflect the actual problem (moved/uninstalled exe, #639)
-      // rather than a malformed path.
-      const trimmedPath = entry.path.trim()
-      const looksLikeExePath = trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath)
-      const skipLogText = looksLikeExePath
-        ? `Skipping missing executable: ${entry.path}`
-        : `Skipping invalid path: ${entry.path}`
-      console.error(skipLogText)
-      writeAppErrorLog('launch', `[${gameKey}] ${skipLogText}`)
-      skipped.push({
-        key: entry.key,
-        path: entry.path,
-        reason: looksLikeExePath ? 'missing' : 'invalid'
-      })
-      return false
-    }
-    if (!fs.existsSync(entry.path.trim())) {
-      console.error(`Skipping missing executable: ${entry.path}`)
-      writeAppErrorLog('launch', `[${gameKey}] Skipping missing executable: ${entry.path}`)
-      skipped.push({ key: entry.key, path: entry.path, reason: 'missing' })
-      return false
-    }
-    return true
-  })
-
-  if (validApps.length === 0) {
-    activeLaunches.delete(gameKey)
-    return { success: false, error: 'No valid executable paths configured.', skipped }
-  }
-
+  // Registered for the duration of the sequence so killLaunchedApps/
+  // killProfileApps can cancel it mid-flight (#670). Deliberately separate
+  // from `activeLaunches` above, whose Set-of-gameKeys semantics only gate
+  // concurrent launches and stay untouched.
+  const launchController = registerActiveLaunch(gameKey)
   let launchedAny = false
 
+  // Everything from here runs under the finally — a throw anywhere below
+  // (store read, tasklist scan, path checks) must still release the launch
+  // guard and the abort registration, or every future launch stays blocked
+  // behind the stale `activeLaunches` entry.
   try {
+    const launchDelayMs = getLaunchDelayMs()
+    const gamePaths = getStoredStringRecord('gamePaths')
+    const gamePath = gamePaths?.[gameKey]
+    const { processNames } = await readRunningProcessNames()
+    const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
+    // Entries filtered out below never reach spawn — tracked here (not just
+    // console.error'd) so the caller can tell "some apps launched, one was
+    // silently skipped" apart from a plain success (#639).
+    const skipped: SkippedLaunchEntry[] = []
+    const validApps = normalizedEntries.filter((entry) => {
+      if (!isValidExePath(entry.path)) {
+        // isValidExePath also checks the resolved path's existence, so a
+        // well-formed .exe path that simply no longer exists fails here too —
+        // attribute those as 'missing' (not 'invalid') so the reason AND the
+        // log text reflect the actual problem (moved/uninstalled exe, #639)
+        // rather than a malformed path.
+        const trimmedPath = entry.path.trim()
+        const looksLikeExePath = trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath)
+        const skipLogText = looksLikeExePath
+          ? `Skipping missing executable: ${entry.path}`
+          : `Skipping invalid path: ${entry.path}`
+        console.error(skipLogText)
+        writeAppErrorLog('launch', `[${gameKey}] ${skipLogText}`)
+        skipped.push({
+          key: entry.key,
+          path: entry.path,
+          reason: looksLikeExePath ? 'missing' : 'invalid'
+        })
+        return false
+      }
+      if (!fs.existsSync(entry.path.trim())) {
+        console.error(`Skipping missing executable: ${entry.path}`)
+        writeAppErrorLog('launch', `[${gameKey}] Skipping missing executable: ${entry.path}`)
+        skipped.push({ key: entry.key, path: entry.path, reason: 'missing' })
+        return false
+      }
+      return true
+    })
+
+    // A kill can land during the pre-loop awaits (the tasklist scan above) —
+    // the early returns below must report the cancellation like the loop
+    // paths do, not a plain success/error the user's Close Apps contradicts.
+    if (launchController.signal.aborted) {
+      return {
+        success: false,
+        cancelled: true,
+        message: 'Launch cancelled — closed apps instead.',
+        launchedCount: 0,
+        skipped
+      }
+    }
+
+    if (validApps.length === 0) {
+      return { success: false, error: 'No valid executable paths configured.', skipped }
+    }
+
     const appsToLaunch = validApps.filter((entry) => !isRunningExePath(processNames, entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
 
@@ -123,11 +146,33 @@ export async function launchProfileApps(
     const launchResults: AppLaunchResult[] = []
 
     for (let index = 0; index < appsToLaunch.length; index += 1) {
+      // Checked at the TOP of every iteration, not just after the wait below:
+      // a kill can land in the gap between spawnDetachedApp resolving and the
+      // wait call starting, and an already-aborted signal resolves wait()
+      // immediately — without this check the loop would still spawn one more
+      // app on that immediate resolution (#670).
+      if (launchController.signal.aborted) {
+        break
+      }
+
+      const launchResult = await spawnDetachedApp(
+        sender,
+        gameKey,
+        appsToLaunch[index],
+        gamePath,
+        launchController.signal
+      )
+      // The abort landed during spawnDetachedApp's pre-spawn probe — nothing
+      // was spawned, so don't count it (and don't arm the post-launch
+      // cooldown for an attempt that never happened).
+      if (launchResult.status === 'cancelled') {
+        break
+      }
       launchedAny = true
-      launchResults.push(await spawnDetachedApp(sender, gameKey, appsToLaunch[index], gamePath))
+      launchResults.push(launchResult)
 
       if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
-        await wait(launchDelayMs)
+        await wait(launchDelayMs, launchController.signal)
       }
     }
 
@@ -140,6 +185,32 @@ export async function launchProfileApps(
         result.status === 'failed'
     )
     const launchedCount = launchResults.length - failedResults.length
+
+    // A kill (Close Apps) mid-sequence aborts launchController before doing its
+    // own work (#670) — report this as neither success nor failure, and stop
+    // before the failure/success branches below account for apps that were
+    // deliberately never spawned.
+    if (launchController.signal.aborted) {
+      // Elevated apps that completed their UAC handoff before (or despite)
+      // the abort survive the kill — SimLauncher cannot close them (#670
+      // Codex P2). Name them instead of implying everything was closed.
+      const elevatedNote =
+        elevatedResults.length === 1
+          ? ' One app started with administrator permission and cannot be closed from here.'
+          : elevatedResults.length > 1
+            ? ` ${elevatedResults.length} apps started with administrator permission and cannot be closed from here.`
+            : ''
+      return {
+        success: false,
+        cancelled: true,
+        message: `Launch cancelled — closed apps instead.${elevatedNote}`,
+        launchedCount,
+        skippedCount,
+        elevatedCount: elevatedResults.length,
+        failedCount: failedResults.length,
+        skipped
+      }
+    }
 
     if (failedResults.length > 0) {
       const firstFailure = failedResults[0]
@@ -183,6 +254,7 @@ export async function launchProfileApps(
       launchBlockedUntil = Date.now() + POST_LAUNCH_BLOCK_MS
     }
     activeLaunches.delete(gameKey)
+    unregisterActiveLaunch(gameKey, launchController)
   }
 }
 
@@ -375,9 +447,26 @@ function createElevatedLaunchCommand(appPath: string, args: string[]) {
   )
 }
 
-function launchElevated(appPath: string, args: string[] = [], gameKey?: string) {
+function launchElevated(
+  appPath: string,
+  args: string[] = [],
+  gameKey?: string,
+  signal?: AbortSignal
+) {
   return new Promise<AppLaunchResult>((resolve) => {
-    execFile(
+    // A kill (Close Apps) can land while the UAC handoff is still pending —
+    // the consent prompt sits on screen until the user answers it, so this
+    // window is wide (#670 Codex P2). Killing the PowerShell host is a best
+    // effort to stop the pending Start-Process from proceeding, and it
+    // unblocks the launch sequence immediately instead of leaving it parked
+    // until the user answers a prompt they no longer want.
+    let handoffPending = true
+    const onAbort = () => {
+      if (handoffPending) {
+        child.kill()
+      }
+    }
+    const child = execFile(
       'powershell.exe',
       [
         '-NoProfile',
@@ -387,7 +476,16 @@ function launchElevated(appPath: string, args: string[] = [], gameKey?: string) 
       ],
       { windowsHide: true },
       (error) => {
+        handoffPending = false
+        signal?.removeEventListener('abort', onAbort)
         if (error) {
+          // An error after the abort is the expected shape of a cancelled
+          // handoff (our own host kill, or the user denying a prompt they no
+          // longer want) — report cancelled, and don't log it as a failure.
+          if (signal?.aborted) {
+            resolve({ status: 'cancelled', appPath })
+            return
+          }
           const message = `Administrator permission was requested for ${path.basename(appPath)}, but Windows did not start it. ${getErrorMessage(error)}`
           console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
           // execFile's error.message embeds the full command line — including
@@ -402,6 +500,10 @@ function launchElevated(appPath: string, args: string[] = [], gameKey?: string) 
           return
         }
 
+        // Success is reported truthfully even when an abort landed mid-handoff
+        // (the user accepted the prompt before the host kill took effect): the
+        // elevated app IS running and the kill cannot close it — the sequence's
+        // cancellation message names it rather than implying it was closed.
         resolve({
           status: 'elevated',
           appPath,
@@ -409,6 +511,7 @@ function launchElevated(appPath: string, args: string[] = [], gameKey?: string) 
         })
       }
     )
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -416,7 +519,8 @@ export async function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
   entry: ProfileLaunchEntry,
-  gamePath?: string
+  gamePath?: string,
+  signal?: AbortSignal
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
@@ -425,6 +529,15 @@ export async function spawnDetachedApp(
   // and children outlive the parent on Windows either way. GUI apps keep the
   // long-standing detached behavior.
   const consoleApp = await isConsoleExecutable(appPath)
+
+  // A kill (Close Apps) can land while the PE-subsystem probe above is in
+  // flight. The kill's snapshot cannot include a process that hasn't spawned
+  // yet, so spawning now would leave an app running that the user just asked
+  // to close (#670). There is no further await between this check and spawn()
+  // below, so the window is fully closed.
+  if (signal?.aborted) {
+    return { status: 'cancelled', appPath }
+  }
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -489,7 +602,16 @@ export async function spawnDetachedApp(
         // A UAC elevation request is a handoff, not a failure — don't write a
         // failure entry for it; launchElevated logs its own genuine failures.
         if (isElevatedLaunchError(err)) {
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey))
+          // A kill (Close Apps) can land between spawn() and this error event.
+          // Handing off now would pop a UAC prompt right after the user's
+          // Close Apps click — and start an elevated app the kill's snapshot
+          // can never include (#670). Nothing is running (the spawn failed),
+          // so report the attempt as cancelled instead.
+          if (signal?.aborted) {
+            resolveOnce({ status: 'cancelled', appPath })
+            return
+          }
+          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal))
           return
         }
 
@@ -545,7 +667,7 @@ export async function spawnDetachedApp(
 
       // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey), gameKey).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey, signal).then(resolveOnce)
         return
       }
 
