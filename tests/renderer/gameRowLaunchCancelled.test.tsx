@@ -159,11 +159,9 @@ describe('GameRow launch cancellation toast (#670)', () => {
     await clickPlayButton()
 
     expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
-    expect(notifyMock).not.toHaveBeenCalledWith(
-      expect.stringContaining('All profile applications launched.'),
-      'success',
-      expect.anything()
-    )
+    // Arg-shape-independent: a cancellation must not produce ANY success
+    // toast, however many args the call carries.
+    expect(notifyMock.mock.calls.some((call) => call[1] === 'success')).toBe(false)
   })
 
   test('falls back to a default message when the result carries no message', async () => {
