@@ -21,10 +21,16 @@ export function formatMainError(kind: string, value: unknown): string {
   return `[${time}] ${kind}: ${String(value)}\n\n`
 }
 
-// Best-effort append. The crash logger must NEVER throw — a failure here would
-// itself surface as an uncaught error and defeat the purpose — so every fs
-// operation is guarded and swallowed.
-export function writeMainErrorLog(kind: string, value: unknown): void {
+// Single-line variant for operational failures (failed launch/kill) — see
+// writeAppErrorLog below for why these share the crash log's file.
+export function formatAppErrorLog(operation: string, detail: string): string {
+  return `[${new Date().toISOString()}] ${operation}: ${detail}\n`
+}
+
+// Best-effort append shared by writeMainErrorLog and writeAppErrorLog. Must
+// NEVER throw — a failure here would itself surface as an uncaught error and
+// defeat the purpose — so every fs operation is guarded and swallowed.
+function appendToLog(line: string): void {
   try {
     const file = logFilePath()
 
@@ -36,10 +42,26 @@ export function writeMainErrorLog(kind: string, value: unknown): void {
       // No existing file (ENOENT) or stat failed — nothing to rotate.
     }
 
-    fs.appendFileSync(file, formatMainError(kind, value))
+    fs.appendFileSync(file, line)
   } catch {
     // Disk full / file locked / permission denied — give up silently.
   }
+}
+
+export function writeMainErrorLog(kind: string, value: unknown): void {
+  appendToLog(formatMainError(kind, value))
+}
+
+// Routes operational failures (failed launch, failed kill — #638) into the
+// same on-disk log as crash reports, instead of console.error only, which is
+// not written to disk in a packaged build (DevTools is disabled in prod). We
+// reuse main-error.log rather than a second file: it already has a rotation
+// guard, and it's already what "Open logs folder" points users at, so there is
+// nothing new for the user to find. `detail` should be a short, privacy-safe
+// description (app/game name, exe path, error message) — never raw launch
+// args, which may carry tokens.
+export function writeAppErrorLog(operation: string, detail: string): void {
+  appendToLog(formatAppErrorLog(operation, detail))
 }
 
 let installed = false

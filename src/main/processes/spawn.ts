@@ -3,6 +3,7 @@ import type { WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
 
+import { writeAppErrorLog } from '../errorLog'
 import { getStoredStringRecord, store } from '../store'
 import {
   getErrorCode,
@@ -61,10 +62,12 @@ export async function launchProfileApps(
   const validApps = normalizedEntries.filter((entry) => {
     if (!isValidExePath(entry.path)) {
       console.error(`Skipping invalid path: ${entry.path}`)
+      writeAppErrorLog('launch', `[${gameKey}] Skipping invalid path: ${entry.path}`)
       return false
     }
     if (!fs.existsSync(entry.path.trim())) {
       console.error(`Skipping missing executable: ${entry.path}`)
+      writeAppErrorLog('launch', `[${gameKey}] Skipping missing executable: ${entry.path}`)
       return false
     }
     return true
@@ -358,6 +361,10 @@ function launchElevated(appPath: string, args: string[] = []) {
         if (error) {
           const message = `Administrator permission was requested for ${path.basename(appPath)}, but Windows did not start it. ${getErrorMessage(error)}`
           console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
+          writeAppErrorLog(
+            'launch',
+            `Error launching ${appPath} as administrator: ${getErrorMessage(error)}`
+          )
           resolve({ status: 'failed', appPath, error: message })
           return
         }
@@ -439,6 +446,7 @@ export async function spawnDetachedApp(
         }
         const message = getErrorMessage(err)
         console.error(`Error launching ${appPath}: ${message}`)
+        writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
 
         if (settled) {
           sendLaunchError(sender, appPath, message)
@@ -498,6 +506,7 @@ export async function spawnDetachedApp(
     } catch (err) {
       const message = getErrorMessage(err)
       console.error(`Error launching ${appPath}: ${message}`)
+      writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
 
       if (isElevatedLaunchError(err)) {
         launchElevated(appPath, getAppArgs(appKey)).then(resolveOnce)

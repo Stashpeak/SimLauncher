@@ -54,6 +54,16 @@ const invalidateProcessNameCacheMock = vi.fn()
 // Paths the mocked PE-subsystem sniffer reports as console-subsystem exes —
 // those must spawn WITHOUT detached so they get a console (#486).
 const consoleExePaths = new Set<string>()
+// Spies on the fs calls errorLog.ts's writeAppErrorLog makes (#638). statSync
+// always reports "no existing file" — rotation itself is covered by
+// errorLog.test.ts, so these tests only need to see the append call land.
+const appErrorLogFsMock = {
+  statSync: vi.fn(() => {
+    throw Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' })
+  }),
+  renameSync: vi.fn(),
+  appendFileSync: vi.fn()
+}
 
 type ProcessRegistryEntry = {
   pid: string
@@ -122,7 +132,10 @@ async function loadProcessModules() {
 
   vi.doMock('fs', () => ({
     default: {
-      existsSync: (filePath: string) => existingPaths.has(filePath)
+      existsSync: (filePath: string) => existingPaths.has(filePath),
+      statSync: appErrorLogFsMock.statSync,
+      renameSync: appErrorLogFsMock.renameSync,
+      appendFileSync: appErrorLogFsMock.appendFileSync
     }
   }))
 
@@ -437,6 +450,10 @@ beforeEach(async () => {
   spawnCalls.length = 0
   spawnErrors.clear()
   consoleExePaths.clear()
+  appErrorLogFsMock.statSync.mockClear()
+  appErrorLogFsMock.renameSync.mockClear()
+  appErrorLogFsMock.appendFileSync.mockClear()
+  appErrorLogFsMock.appendFileSync.mockImplementation(() => undefined)
   sender.send.mockClear()
   invalidateProcessNameCacheMock.mockClear()
   processNameMismatchWarnings.clear()
@@ -1620,6 +1637,38 @@ test('killLaunchedApps keeps elevated access-denied app unclosed when path reche
   )
 })
 
+// #638: a kill failure must be written to main-error.log, not just
+// console.error, so "Open logs folder" has something for it.
+test('killLaunchedApps writes an access-denied kill failure to the on-disk log', async () => {
+  const { killLaunchedApps, runningProcesses } = await loadProcessModules()
+
+  storeData.profiles = {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  }
+  storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+  accessDeniedPids.add('1234')
+  inaccessibleExecutablePathProcesses.add('simhub.exe')
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  await killLaunchedApps('ac')
+
+  expect(appErrorLogFsMock.appendFileSync).toHaveBeenCalledWith(
+    expect.stringContaining('main-error.log'),
+    expect.stringContaining('kill')
+  )
+  const [, loggedLine] = appErrorLogFsMock.appendFileSync.mock.calls[0]
+  expect(loggedLine).toContain('C:/Tools/SimHub.exe')
+  expect(loggedLine).toContain('Access is denied')
+})
+
 test('killLaunchedApps marks not-found full-path app as elevated when image still exists', async () => {
   const { killLaunchedApps, runningProcesses, unclosedProcesses } =
     await loadProcessModulesWithStore({
@@ -2708,6 +2757,57 @@ test('spawnDetachedApp returns elevated when the OS rejects the spawn with EACCE
     expect(result.warning).toContain('administrator permission')
   }
   expect(execFileCalls.some((call) => call.command === 'powershell.exe')).toBe(true)
+})
+
+// #638: a non-elevated launch failure must be written to main-error.log, not
+// just console.error, so "Open logs folder" has something for it.
+test('spawnDetachedApp writes a failed (non-elevated) launch error to the on-disk log', async () => {
+  markExistingPath('C:/Apps/Broken.exe')
+  spawnErrors.set(
+    'C:/Apps/Broken.exe',
+    Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })
+  )
+  const { spawnDetachedApp } = await loadProcessModules()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Broken.exe' },
+    undefined
+  )
+
+  expect(result).toEqual({ status: 'failed', appPath: 'C:/Apps/Broken.exe', error: 'spawn ENOENT' })
+  expect(appErrorLogFsMock.appendFileSync).toHaveBeenCalledWith(
+    expect.stringContaining('main-error.log'),
+    expect.stringContaining('launch')
+  )
+  const [, loggedLine] = appErrorLogFsMock.appendFileSync.mock.calls[0]
+  expect(loggedLine).toContain('C:/Apps/Broken.exe')
+  expect(loggedLine).toContain('spawn ENOENT')
+})
+
+// Logging must never break the launch path even if the write itself fails
+// (disk full, locked file, etc.) — errorLog.ts's appendToLog already swallows
+// this, but the call site must not assume otherwise.
+test('a failing on-disk log write does not affect the spawnDetachedApp result', async () => {
+  markExistingPath('C:/Apps/Broken.exe')
+  spawnErrors.set(
+    'C:/Apps/Broken.exe',
+    Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })
+  )
+  const { spawnDetachedApp } = await loadProcessModules()
+  appErrorLogFsMock.appendFileSync.mockImplementation(() => {
+    throw new Error('ENOSPC: no space left on device')
+  })
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Broken.exe' },
+    undefined
+  )
+
+  expect(result).toEqual({ status: 'failed', appPath: 'C:/Apps/Broken.exe', error: 'spawn ENOENT' })
 })
 
 // --- Direct unit tests for finalizeKillAttempts (#344) ---

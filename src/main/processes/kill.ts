@@ -1,6 +1,7 @@
 import { execFile, type ChildProcess } from 'child_process'
 import path from 'path'
 
+import { writeAppErrorLog } from '../errorLog'
 import {
   getActiveStoredProfile,
   getProfileTrackablePaths,
@@ -85,6 +86,7 @@ function runTaskkill(args: string[], description: string) {
 
       if (!notFound) {
         console.error(`Failed to ${description}: ${detail}`)
+        writeAppErrorLog('kill', `Failed to ${description}: ${detail}`)
       }
 
       resolve({
@@ -186,6 +188,7 @@ function findProcessIdsByExecutablePath(processName: string, appPath: string) {
             ? `Process lookup timed out after ${WMI_LOOKUP_TIMEOUT_MS / 1000} seconds.`
             : stderr.trim() || stdout.trim() || error.message
           console.error(`Failed to find process IDs for ${appPath}: ${detail}`)
+          writeAppErrorLog('kill', `Failed to find process IDs for ${appPath}: ${detail}`)
           resolve({ processIds: [], detail, accessDenied: isAccessDeniedMessage(detail) })
           return
         }
@@ -226,6 +229,7 @@ async function killProcessTree(
   } catch (err) {
     const error = getErrorMessage(err)
     console.error(`Error killing ${appPath}:`, err)
+    writeAppErrorLog('kill', `Error killing ${appPath}: ${error}`)
     return {
       processName,
       appPath,
