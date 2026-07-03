@@ -78,6 +78,7 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
     MAX_CUSTOM_SLOTS: 20,
     consumeConfigRecoveryNotice: vi.fn(() => null),
     formatConfigRecoveryNotice: vi.fn(),
+    getDroppedSettingsEntries: vi.fn(() => []),
     getSupportedConfigValues: vi.fn(() => ({})),
     getStoredZoomFactor: vi.fn(() => 1),
     requireSafeZoomFactor: vi.fn((value: unknown) => value),

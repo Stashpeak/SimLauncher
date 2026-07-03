@@ -2,8 +2,11 @@
 // Do not edit directly. Update src/preload/api.ts, then run npm run preload:types.
 
 import type {
+  DroppedSettingsEntry as PreloadDroppedSettingsEntry,
+  DroppedSettingsRecordField as PreloadDroppedSettingsRecordField,
   ElectronAPI,
   MigrationFlags as PreloadMigrationFlags,
+  SaveSettingsResult as PreloadSaveSettingsResult,
   Settings as PreloadSettings,
   StoreConfigChangePayload as PreloadStoreConfigChangePayload,
   StoreConfigChangeReason as PreloadStoreConfigChangeReason,
@@ -22,6 +25,12 @@ declare global {
   type StoreConfigChangeReason = PreloadStoreConfigChangeReason
 
   type StoreConfigChangePayload = PreloadStoreConfigChangePayload
+
+  type DroppedSettingsRecordField = PreloadDroppedSettingsRecordField
+
+  type DroppedSettingsEntry = PreloadDroppedSettingsEntry
+
+  type SaveSettingsResult = PreloadSaveSettingsResult
 
   interface Window {
     electronAPI: ElectronAPI
