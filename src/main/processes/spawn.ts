@@ -71,15 +71,18 @@ export async function launchProfileApps(
   const skipped: SkippedLaunchEntry[] = []
   const validApps = normalizedEntries.filter((entry) => {
     if (!isValidExePath(entry.path)) {
-      console.error(`Skipping invalid path: ${entry.path}`)
-      writeAppErrorLog('launch', `[${gameKey}] Skipping invalid path: ${entry.path}`)
       // isValidExePath also checks the resolved path's existence, so a
       // well-formed .exe path that simply no longer exists fails here too —
-      // attribute those as 'missing' (not 'invalid') so the reason reflects
-      // the actual problem (moved/uninstalled exe, #639) rather than a
-      // malformed path.
+      // attribute those as 'missing' (not 'invalid') so the reason AND the
+      // log text reflect the actual problem (moved/uninstalled exe, #639)
+      // rather than a malformed path.
       const trimmedPath = entry.path.trim()
       const looksLikeExePath = trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath)
+      const skipLogText = looksLikeExePath
+        ? `Skipping missing executable: ${entry.path}`
+        : `Skipping invalid path: ${entry.path}`
+      console.error(skipLogText)
+      writeAppErrorLog('launch', `[${gameKey}] ${skipLogText}`)
       skipped.push({
         key: entry.key,
         path: entry.path,

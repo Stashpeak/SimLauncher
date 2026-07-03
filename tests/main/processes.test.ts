@@ -923,6 +923,21 @@ test('launchProfileApps reports skipped entries when some profile apps launch an
   })
 })
 
+// The on-disk log line must match the attributed reason: a well-formed .exe
+// that no longer exists is "missing", not "invalid" (#639).
+test('a well-formed but missing exe is logged as missing, not invalid', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe', 'C:/Games/AC/acs.exe'])
+
+  const loggedLines = appErrorLogFsMock.appendFileSync.mock.calls.map((call) => String(call[1]))
+  expect(
+    loggedLines.some((line) => line.includes('Skipping missing executable: C:/Games/AC/acs.exe'))
+  ).toBe(true)
+  expect(loggedLines.some((line) => line.includes('Skipping invalid path'))).toBe(false)
+})
+
 test('launchProfileApps skips profile apps that are already running', async () => {
   const { launchProfileApps } = await loadProcessModules()
 

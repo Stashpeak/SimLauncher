@@ -194,4 +194,44 @@ describe('GameRow launch skipped-entry warning (#639)', () => {
       undefined
     )
   })
+
+  // The skipped warning must not swallow the launch summary — "skipped 1
+  // already running" and "path no longer exists" are independent facts.
+  test('keeps the launch summary message alongside the skipped warning', async () => {
+    launchProfileMock.mockResolvedValue({
+      success: true,
+      launchedCount: 1,
+      skippedCount: 1,
+      message: 'Started 1 app; skipped 1 already running.',
+      skipped: [{ key: 'simhub', path: 'C:/Tools/SimHub.exe', reason: 'missing' }]
+    })
+
+    await renderRow()
+    await clickPlayButton()
+
+    expect(notifyMock).toHaveBeenCalledWith(
+      'SimHub was skipped — its path no longer exists. Started 1 app; skipped 1 already running.',
+      'warn',
+      5000
+    )
+  })
+
+  // The all-invalid failure carries the skipped detail too — the single-app
+  // moved-exe case is the most common #639 trigger and must name the culprit.
+  test('a total launch failure names the skipped entries in the error toast', async () => {
+    launchProfileMock.mockResolvedValue({
+      success: false,
+      launchedCount: 0,
+      error: 'No valid executable paths configured.',
+      skipped: [{ key: 'ac', path: 'C:/Games/AC/acs.exe', reason: 'missing' }]
+    })
+
+    await renderRow()
+    await clickPlayButton()
+
+    expect(notifyMock).toHaveBeenCalledWith(
+      'No valid executable paths configured. Assetto Corsa was skipped — its path no longer exists.',
+      'error'
+    )
+  })
 })

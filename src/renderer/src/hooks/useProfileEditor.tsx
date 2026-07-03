@@ -434,7 +434,16 @@ export function useProfileEditor({
       const result = await launchProfile(gameKey)
       cooldownMs = result.launchedCount === 0 ? 0 : 10000
       if (!result.success) {
-        notify(result.error || 'Failed to launch profile', 'error')
+        const failedSkippedDetail =
+          result.skipped && result.skipped.length > 0
+            ? ` ${formatSkippedLaunchEntries(result.skipped, {
+                gameKey,
+                gameName: GAMES.find((game) => game.key === gameKey)?.name ?? gameKey,
+                appNames,
+                utilities
+              })}`
+            : ''
+        notify(`${result.error || 'Failed to launch profile'}${failedSkippedDetail}`, 'error')
       } else {
         // A moved/deleted exe is filtered out before spawn but must not read
         // as a plain success (#639) — surface it as a warning naming what was
@@ -452,6 +461,9 @@ export function useProfileEditor({
         }
         if (result.warning) {
           launchWarnings.push(result.warning)
+        }
+        if (launchWarnings.length > 0 && result.message) {
+          launchWarnings.push(result.message)
         }
         const launchWarning = launchWarnings.length > 0 ? launchWarnings.join(' ') : undefined
         notify(
