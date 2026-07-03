@@ -42,6 +42,10 @@ const pidsAccessDeniedButImageGone = new Set<string>()
 let tasklistReadShouldFail = false
 // Flips the mocked store read into a throwing mode — see storeModuleMock.
 let storeReadShouldThrow = false
+// When set, the NEXT readRunningProcessNames call resolves only after this
+// promise does — models a slow tasklist scan so a test can prove ordering
+// against it (#670). Consumed once, then cleared.
+let tasklistReadBlocker: Promise<void> | null = null
 // When >0, the mocked readRunningProcessNames returns a successful response
 // for the first N calls, then starts failing. Lets a single test simulate a
 // transient tasklist failure on the post-kill recheck only — without breaking
@@ -290,11 +294,18 @@ async function loadProcessModules() {
       // errors and resolves with an empty Set + succeeded: false. Modelling
       // the empty-Set here is what lets the regression test distinguish
       // "image is gone" from "we don't know" (see #399).
-      return Promise.resolve(
-        shouldFailNow
-          ? { processNames: new Set<string>(), succeeded: false }
-          : { processNames: new Set(processNames), succeeded: true }
-      )
+      const result = shouldFailNow
+        ? { processNames: new Set<string>(), succeeded: false }
+        : { processNames: new Set(processNames), succeeded: true }
+      // A one-shot blocker models a slow tasklist scan (#670). Consumed here
+      // so only the call it was armed for is delayed; the unarmed path keeps
+      // its exact microtask timing (other tests depend on it).
+      if (tasklistReadBlocker) {
+        const blocker = tasklistReadBlocker
+        tasklistReadBlocker = null
+        return blocker.then(() => result)
+      }
+      return Promise.resolve(result)
     })
   }
   vi.doMock('./tasklist', () => tasklistMock)
@@ -459,6 +470,7 @@ beforeEach(async () => {
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
+  tasklistReadBlocker = null
   tasklistReadFailAfterCalls = 0
   tasklistReadCallCount = 0
   wmiLookupCounts.clear()
@@ -2315,6 +2327,36 @@ test('a fresh launch for the same gameKey after a cancelled one proceeds normall
   expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe', 'C:/Tools/App3.exe'])
 
   dateNow.mockRestore()
+})
+
+// killProfileApps must signal the in-flight launch BEFORE its own tasklist
+// scan — that await can be slow, and a launch loop sitting in a short
+// inter-app wait would otherwise spawn its next app past the kill's snapshot
+// (#670 Codex P2). The blocked tasklist read below models the slow scan: the
+// launch must still resolve cancelled while the kill is stuck in it.
+test('killProfileApps aborts the launch before waiting on its tasklist scan (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp1: 'C:/Tools/App1.exe', customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+
+  // Arm AFTER the launch's own scan: only the kill's entry scan is delayed.
+  let releaseTasklistRead: () => void = () => {}
+  tasklistReadBlocker = new Promise((resolve) => (releaseTasklistRead = resolve))
+
+  const killPromise = killProfileApps('ac', ['C:/Tools/App1.exe'])
+  // The abort fired in killProfileApps' synchronous prefix, so the launch
+  // resolves cancelled even though the kill is still stuck in its scan.
+  await expect(launchPromise).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
+
+  releaseTasklistRead()
+  await killPromise
 })
 
 // The abort can land while spawnDetachedApp is still in its async pre-spawn
