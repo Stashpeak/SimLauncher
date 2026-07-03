@@ -891,8 +891,51 @@ test('launchProfileApps rejects empty launches when every configured executable 
     launchProfileApps(sender, 'ac', ['C:/Tools/not-an-exe.txt', 'C:/Tools/Missing.exe'])
   ).resolves.toMatchObject({
     success: false,
-    error: 'No valid executable paths configured.'
+    error: 'No valid executable paths configured.',
+    skipped: [
+      { key: 'C:/Tools/not-an-exe.txt', path: 'C:/Tools/not-an-exe.txt', reason: 'invalid' },
+      { key: 'C:/Tools/Missing.exe', path: 'C:/Tools/Missing.exe', reason: 'missing' }
+    ]
   })
+})
+
+// #639: a moved/deleted game exe used to be filtered out silently, and the
+// launch still reported plain success as long as one other app started. The
+// caller must be able to tell "some apps launched, one was skipped" apart
+// from a full success via the new `skipped` field.
+test('launchProfileApps reports skipped entries when some profile apps launch and others have a missing or invalid path (#639)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  await expect(
+    launchProfileApps(sender, 'ac', [
+      'C:/Tools/SimHub.exe',
+      'C:/Games/AC/acs.exe',
+      'C:/Tools/not-an-exe.txt'
+    ])
+  ).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1,
+    skipped: [
+      { key: 'C:/Games/AC/acs.exe', path: 'C:/Games/AC/acs.exe', reason: 'missing' },
+      { key: 'C:/Tools/not-an-exe.txt', path: 'C:/Tools/not-an-exe.txt', reason: 'invalid' }
+    ]
+  })
+})
+
+// The on-disk log line must match the attributed reason: a well-formed .exe
+// that no longer exists is "missing", not "invalid" (#639).
+test('a well-formed but missing exe is logged as missing, not invalid', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModules()
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe', 'C:/Games/AC/acs.exe'])
+
+  const loggedLines = appErrorLogFsMock.appendFileSync.mock.calls.map((call) => String(call[1]))
+  expect(
+    loggedLines.some((line) => line.includes('Skipping missing executable: C:/Games/AC/acs.exe'))
+  ).toBe(true)
+  expect(loggedLines.some((line) => line.includes('Skipping invalid path'))).toBe(false)
 })
 
 test('launchProfileApps skips profile apps that are already running', async () => {

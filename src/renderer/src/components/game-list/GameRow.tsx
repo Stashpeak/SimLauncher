@@ -15,6 +15,7 @@ import {
   relaunchMissingProfile
 } from '../../lib/electron'
 import { formatKillFailures } from '../../lib/killFailures'
+import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
 import { GameIcon } from './GameIcon'
@@ -263,7 +264,11 @@ export function GameRow({
           onLaunchStart(game.key)
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           if (!result.success) {
-            notify(result.error || 'Failed to switch profile', 'error')
+            const failedSkippedDetail =
+              result.skipped && result.skipped.length > 0
+                ? ` ${formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })}`
+                : ''
+            notify(`${result.error || 'Failed to switch profile'}${failedSkippedDetail}`, 'error')
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
@@ -272,6 +277,11 @@ export function GameRow({
           const switchWarnings: string[] = []
           if (result.killFailures && result.killFailures.length > 0) {
             switchWarnings.push(formatKillFailures(result.killFailures))
+          }
+          if (result.skipped && result.skipped.length > 0) {
+            switchWarnings.push(
+              formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })
+            )
           }
           if (result.warning) {
             switchWarnings.push(result.warning)
@@ -358,15 +368,39 @@ export function GameRow({
       const result = await launchProfile(game.key)
       if (!result.success) {
         cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-        notify(result.error || 'Failed to launch profile', 'error')
+        // The all-invalid failure ("No valid executable paths configured.")
+        // carries the skipped detail too — name what's broken (#639).
+        const failedSkippedDetail =
+          result.skipped && result.skipped.length > 0
+            ? ` ${formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })}`
+            : ''
+        notify(`${result.error || 'Failed to launch profile'}${failedSkippedDetail}`, 'error')
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+      // A moved/deleted exe is filtered out before spawn but must not read as
+      // a plain success (#639) — surface it as a warning naming what was
+      // skipped, alongside any elevated-launch warning.
+      const launchWarnings: string[] = []
+      if (result.skipped && result.skipped.length > 0) {
+        launchWarnings.push(
+          formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })
+        )
+      }
+      if (result.warning) {
+        launchWarnings.push(result.warning)
+      }
+      // The warning changes the toast type, not the story — keep the launch
+      // summary (e.g. "skipped N already running") instead of dropping it.
+      if (launchWarnings.length > 0 && result.message) {
+        launchWarnings.push(result.message)
+      }
+      const launchWarning = launchWarnings.length > 0 ? launchWarnings.join(' ') : undefined
       notify(
-        result.warning || result.message || `Launching ${game.name}`,
-        result.warning ? 'warn' : 'success',
-        result.warning ? 5000 : undefined
+        launchWarning || result.message || `Launching ${game.name}`,
+        launchWarning ? 'warn' : 'success',
+        launchWarning ? 5000 : undefined
       )
     } catch (err) {
       notify('Failed to launch profile', 'error')
@@ -406,15 +440,35 @@ export function GameRow({
       const result = await relaunchMissingProfile(game.key)
       if (!result.success) {
         cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-        notify(result.error || 'Failed to relaunch missing apps', 'error')
+        const failedSkippedDetail =
+          result.skipped && result.skipped.length > 0
+            ? ` ${formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })}`
+            : ''
+        notify(
+          `${result.error || 'Failed to relaunch missing apps'}${failedSkippedDetail}`,
+          'error'
+        )
         return
       }
 
       cooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+      const relaunchWarnings: string[] = []
+      if (result.skipped && result.skipped.length > 0) {
+        relaunchWarnings.push(
+          formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })
+        )
+      }
+      if (result.warning) {
+        relaunchWarnings.push(result.warning)
+      }
+      if (relaunchWarnings.length > 0 && result.message) {
+        relaunchWarnings.push(result.message)
+      }
+      const relaunchWarning = relaunchWarnings.length > 0 ? relaunchWarnings.join(' ') : undefined
       notify(
-        result.warning || result.message || 'Relaunching missing apps',
-        result.warning ? 'warn' : 'success',
-        result.warning ? 5000 : undefined
+        relaunchWarning || result.message || 'Relaunching missing apps',
+        relaunchWarning ? 'warn' : 'success',
+        relaunchWarning ? 5000 : undefined
       )
     } catch (err) {
       notify('Failed to relaunch missing apps', 'error')
