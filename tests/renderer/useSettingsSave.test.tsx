@@ -359,7 +359,7 @@ describe('useSettingsSave (#645)', () => {
       )
       return Promise.resolve({
         settings: { ...patch, appPaths: persistedAppPaths },
-        dropped: [{ field: 'appPaths', key: 'simhub' }]
+        dropped: [{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }]
       })
     })
 
@@ -386,6 +386,29 @@ describe('useSettingsSave (#645)', () => {
       // the renderer's local (pre-drop) copy.
       expect(resetDirtyMock).toHaveBeenCalledTimes(1)
       expect(resetDirtyMock.mock.calls[0][0].appPaths).toEqual({ iracing: '' })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // A legitimately-named .exe rejected purely for the 300-char path cap must
+  // say so — "must be an .exe path" would send the user chasing the wrong fix.
+  test('#669: a too-long path drop reports the length cap, not the extension', async () => {
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) =>
+      Promise.resolve({
+        settings: { ...patch, gamePaths: { iracing: '' } },
+        dropped: [{ field: 'gamePaths', key: 'iracing', reason: 'too-long' }]
+      })
+    )
+
+    const harness = await renderSave(buildArgs())
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('path is too long'), 'warn')
+      expect(notifyMock).not.toHaveBeenCalledWith(expect.stringContaining('.exe path'), 'warn')
     } finally {
       harness.unmount()
     }

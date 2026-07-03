@@ -28,9 +28,12 @@ export type WritableSettings = Settings
 
 export type DroppedSettingsRecordField = 'gamePaths' | 'appPaths' | 'appNames' | 'appArgs'
 
+export type DroppedSettingsReason = 'not-an-exe' | 'too-long'
+
 export interface DroppedSettingsEntry {
   field: DroppedSettingsRecordField
   key: string
+  reason: DroppedSettingsReason
 }
 
 /**

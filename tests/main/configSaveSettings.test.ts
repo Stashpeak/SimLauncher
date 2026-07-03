@@ -13,7 +13,7 @@ import { expect, test, vi, beforeEach } from 'vitest'
 type MockIpcHandler = (...args: unknown[]) => unknown
 interface SaveSettingsResult {
   settings: { appPaths: Record<string, string>; gamePaths: Record<string, string> }
-  dropped: { field: string; key: string }[]
+  dropped: { field: string; key: string; reason: string }[]
 }
 
 async function invokeSaveSettings(patch: unknown): Promise<SaveSettingsResult> {
@@ -84,7 +84,7 @@ test('save-settings reports (rather than silently drops) an invalid appPaths ent
     customSlots: 1
   })
 
-  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub' }])
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
   // And it genuinely isn't persisted — the returned settings is the truth.
   expect(result.settings.appPaths).toEqual({})
 })
@@ -99,7 +99,8 @@ test('save-settings reports an over-length gamePaths entry as dropped', async ()
     customSlots: 1
   })
 
-  expect(result.dropped).toEqual([{ field: 'gamePaths', key: 'iracing' }])
+  // Reason must be the length cap, NOT the extension — the path IS an .exe.
+  expect(result.dropped).toEqual([{ field: 'gamePaths', key: 'iracing', reason: 'too-long' }])
   expect(result.settings.gamePaths).toEqual({})
 })
 

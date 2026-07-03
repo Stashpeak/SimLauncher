@@ -435,18 +435,29 @@ function getSafeThemeMode(value: unknown) {
   return typeof value === 'string' && THEME_MODES.has(value) ? value : undefined
 }
 
-function isImportableExePath(value: unknown): value is string {
+// Single source of truth for WHY an exe path is rejected, so the sanitizer's
+// accept/reject decision and the dropped-entry reason reported to the renderer
+// (#669) can never disagree. Returns null when the path is acceptable.
+function getExePathRejectReason(value: unknown): DroppedSettingsReason | null {
   if (typeof value !== 'string') {
-    return false
+    return 'not-an-exe'
   }
 
   const trimmedPath = value.trim()
 
-  return (
-    trimmedPath.length > 0 &&
-    trimmedPath.length <= MAX_IMPORT_PATH_LENGTH &&
-    /\.exe$/i.test(trimmedPath)
-  )
+  if (trimmedPath.length === 0 || !/\.exe$/i.test(trimmedPath)) {
+    return 'not-an-exe'
+  }
+
+  if (trimmedPath.length > MAX_IMPORT_PATH_LENGTH) {
+    return 'too-long'
+  }
+
+  return null
+}
+
+function isImportableExePath(value: unknown): value is string {
+  return typeof value === 'string' && getExePathRejectReason(value) === null
 }
 
 function getImportableExePath(value: unknown) {
@@ -877,9 +888,15 @@ export function sanitizeSettingsPatch(patch: Record<string, unknown>): Record<st
 
 export type DroppedSettingsRecordField = 'gamePaths' | 'appPaths' | 'appNames' | 'appArgs'
 
+// Why the sanitizer rejected the value — the renderer picks the warning text
+// from this, so it must reflect the check that actually failed (a legit .exe
+// path can be rejected purely for length).
+export type DroppedSettingsReason = 'not-an-exe' | 'too-long'
+
 export interface DroppedSettingsEntry {
   field: DroppedSettingsRecordField
   key: string
+  reason: DroppedSettingsReason
 }
 
 /**
@@ -899,7 +916,7 @@ export function getDroppedSettingsEntries(patch: Record<string, unknown>): Dropp
   const checkRecord = (
     field: DroppedSettingsRecordField,
     allowedKeys: Set<string>,
-    isValid: (value: unknown) => boolean
+    getRejectReason: (value: unknown) => DroppedSettingsReason | null
   ) => {
     const rawValue = patch[field]
     if (!isRecord(rawValue)) return
@@ -907,23 +924,22 @@ export function getDroppedSettingsEntries(patch: Record<string, unknown>): Dropp
     getSafeObjectEntries(rawValue).forEach(([key, entry]) => {
       if (!allowedKeys.has(key)) return
       if (typeof entry === 'string' && entry.trim().length === 0) return
-      if (!isValid(entry)) {
-        dropped.push({ field, key })
+      const reason = getRejectReason(entry)
+      if (reason) {
+        dropped.push({ field, key, reason })
       }
     })
   }
 
-  checkRecord('gamePaths', KNOWN_GAME_KEYS, isImportableExePath)
-  checkRecord('appPaths', utilityKeys, isImportableExePath)
-  checkRecord(
-    'appNames',
-    utilityKeys,
-    (value) => getSafeString(value, MAX_CONFIG_STRING_LENGTH) !== undefined
+  checkRecord('gamePaths', KNOWN_GAME_KEYS, getExePathRejectReason)
+  checkRecord('appPaths', utilityKeys, getExePathRejectReason)
+  // Names/args have a single sanitizer rule (the length cap), so any rejection
+  // of a non-empty value is 'too-long'.
+  checkRecord('appNames', utilityKeys, (value) =>
+    getSafeString(value, MAX_CONFIG_STRING_LENGTH) !== undefined ? null : 'too-long'
   )
-  checkRecord(
-    'appArgs',
-    utilityKeys,
-    (value) => getSafeString(value, MAX_CONFIG_ARGS_LENGTH) !== undefined
+  checkRecord('appArgs', utilityKeys, (value) =>
+    getSafeString(value, MAX_CONFIG_ARGS_LENGTH) !== undefined ? null : 'too-long'
   )
 
   return dropped

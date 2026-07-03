@@ -5,13 +5,26 @@ import type { ThemeMode } from '../../lib/theme'
 import { getSettingsObjectChangesDuringSave, type SettingsObjectVersions } from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 
-// Reason shown per field type when the main-process sanitizer rejects an
-// entry (bad extension, over the length cap) rather than persisting it. #669
-const DROPPED_FIELD_REASON: Record<DroppedSettingsRecordField, string> = {
-  gamePaths: 'must be an .exe path',
-  appPaths: 'must be an .exe path',
-  appNames: 'name is too long',
-  appArgs: 'arguments are too long'
+// A dropped custom app name can itself be the too-long value being reported —
+// cap the label so the toast stays readable instead of echoing 100+ chars.
+const MAX_DROPPED_LABEL_LENGTH = 40
+
+// Reason shown when the main-process sanitizer rejects an entry rather than
+// persisting it. Driven by the reason the sanitizer actually rejected FOR —
+// a legitimately-named .exe can be rejected purely for path length, and the
+// warning must not misstate that as an extension problem. #669
+function getDroppedEntryReason(entry: DroppedSettingsEntry): string {
+  if (entry.reason === 'not-an-exe') {
+    return 'must be an .exe path'
+  }
+  switch (entry.field) {
+    case 'appNames':
+      return 'name is too long'
+    case 'appArgs':
+      return 'arguments are too long'
+    default:
+      return 'path is too long'
+  }
 }
 
 // Resolves a dropped entry's key to the label the user sees in the UI (game
@@ -22,12 +35,17 @@ function getDroppedEntryLabel(
   appNames: Record<string, string>,
   customSlots: number
 ): string {
+  let label: string
   if (entry.field === 'gamePaths') {
-    return GAMES.find((game) => game.key === entry.key)?.name ?? entry.key
+    label = GAMES.find((game) => game.key === entry.key)?.name ?? entry.key
+  } else {
+    const utility = getUtilities(customSlots).find((candidate) => candidate.key === entry.key)
+    label = appNames[entry.key] || utility?.name || entry.key
   }
 
-  const utility = getUtilities(customSlots).find((candidate) => candidate.key === entry.key)
-  return appNames[entry.key] || utility?.name || entry.key
+  return label.length > MAX_DROPPED_LABEL_LENGTH
+    ? `${label.slice(0, MAX_DROPPED_LABEL_LENGTH)}…`
+    : label
 }
 
 function buildDroppedEntriesWarning(
@@ -38,7 +56,7 @@ function buildDroppedEntriesWarning(
   const details = dropped
     .map(
       (entry) =>
-        `${getDroppedEntryLabel(entry, appNames, customSlots)} (${DROPPED_FIELD_REASON[entry.field]})`
+        `${getDroppedEntryLabel(entry, appNames, customSlots)} (${getDroppedEntryReason(entry)})`
     )
     .join(', ')
 
