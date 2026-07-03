@@ -12,6 +12,7 @@ import {
   MAX_CUSTOM_SLOTS,
   consumeConfigRecoveryNotice,
   formatConfigRecoveryNotice,
+  getDroppedSettingsEntries,
   getSupportedConfigValues,
   getStoredZoomFactor,
   requireSafeZoomFactor,
@@ -227,6 +228,31 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
     throw err
+  }
+}
+
+// Shared by 'get-settings' and 'save-settings' so the latter can hand the
+// renderer the actual on-disk truth to re-baseline from, rather than the
+// renderer's own (possibly-rejected) copy of what it tried to save. #669
+function getPersistedSettings() {
+  return {
+    appPaths: store.get('appPaths'),
+    gamePaths: store.get('gamePaths'),
+    appNames: store.get('appNames'),
+    appArgs: store.get('appArgs'),
+    customSlots: store.get('customSlots'),
+    accentPreset: store.get('accentPreset'),
+    accentCustom: store.get('accentCustom'),
+    accentBgTint: store.get('accentBgTint'),
+    themeMode: store.get('themeMode'),
+    focusActiveTitle: store.get('focusActiveTitle'),
+    launchDelayMs: store.get('launchDelayMs'),
+    startWithWindows: store.get('startWithWindows'),
+    startMinimized: store.get('startMinimized'),
+    minimizeToTray: store.get('minimizeToTray'),
+    showTrayIcon: store.get('showTrayIcon'),
+    autoCheckUpdates: store.get('autoCheckUpdates'),
+    zoomFactor: getStoredZoomFactor()
   }
 }
 
@@ -448,30 +474,14 @@ export function registerConfigHandlers(): void {
   })
 
   ipcMain.handle('get-settings', () => {
-    return {
-      appPaths: store.get('appPaths'),
-      gamePaths: store.get('gamePaths'),
-      appNames: store.get('appNames'),
-      appArgs: store.get('appArgs'),
-      customSlots: store.get('customSlots'),
-      accentPreset: store.get('accentPreset'),
-      accentCustom: store.get('accentCustom'),
-      accentBgTint: store.get('accentBgTint'),
-      themeMode: store.get('themeMode'),
-      focusActiveTitle: store.get('focusActiveTitle'),
-      launchDelayMs: store.get('launchDelayMs'),
-      startWithWindows: store.get('startWithWindows'),
-      startMinimized: store.get('startMinimized'),
-      minimizeToTray: store.get('minimizeToTray'),
-      showTrayIcon: store.get('showTrayIcon'),
-      autoCheckUpdates: store.get('autoCheckUpdates'),
-      zoomFactor: getStoredZoomFactor()
-    }
+    return getPersistedSettings()
   })
 
   ipcMain.handle('save-settings', (_event, patch: unknown) => {
-    if (!isRecord(patch)) return
+    if (!isRecord(patch)) return { settings: getPersistedSettings(), dropped: [] }
+
     const safe = sanitizeSettingsPatch(patch)
+    const dropped = getDroppedSettingsEntries(patch)
     const changedKeys = Object.keys(safe)
     if (changedKeys.length > 0) {
       setStoreEntries(safe)
@@ -480,6 +490,11 @@ export function registerConfigHandlers(): void {
       }
       notifyStoreConfigChanged({ reason: 'save-settings', keys: changedKeys })
     }
+
+    // The renderer re-baselines from `settings` (the actual on-disk truth)
+    // rather than its own pre-save copy, so entries the sanitizer rejected
+    // above are never silently re-shown as saved. #669
+    return { settings: getPersistedSettings(), dropped }
   })
 
   ipcMain.handle('get-profiles', () => {

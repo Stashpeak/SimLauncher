@@ -21,6 +21,7 @@ async function loadConfigZoomHandler() {
     MAX_CUSTOM_SLOTS: 20,
     consumeConfigRecoveryNotice: vi.fn(() => null),
     formatConfigRecoveryNotice: vi.fn(),
+    getDroppedSettingsEntries: vi.fn(() => []),
     getSupportedConfigValues: vi.fn(() => ({})),
     getStoredZoomFactor: vi.fn(() => 1.5),
     requireSafeZoomFactor: vi.fn((value: unknown) => {

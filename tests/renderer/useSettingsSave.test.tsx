@@ -1,5 +1,5 @@
 /**
- * Characterization tests for the renderer settings-save path (#645).
+ * Characterization tests for the renderer settings-save path (#645, #669).
  *
  * `useSettingsSave.handleSave` is the flagged under-tested code the upcoming
  * share / non-destructive import-merge work will refactor. These tests pin its
@@ -11,14 +11,17 @@
  *      `persistSettings` AND profiles via `saveProfiles`; paths keep the
  *      empty-string sentinel while whitespace is trimmed, blank args are
  *      dropped, and `launchDelayMs` is normalized.
- *   2. The resetDirty baseline is rebuilt from the SAVED (trimmed / normalized)
- *      objects — not the live pre-trim renderer state — so on-disk truth is the
+ *   2. The resetDirty baseline is rebuilt from the RETURNED persisted settings
+ *      — not the live pre-trim renderer state — so on-disk truth is the
  *      baseline and mid-save edits stay visibly dirty.
  *   3. The save-race guard: a field edited while the IPC write is in flight is
- *      NOT clobbered by the stale pre-save trimmed copy; untouched fields ARE
+ *      NOT clobbered by the stale pre-save persisted copy; untouched fields ARE
  *      pushed back.
  *   4. The error path surfaces a toast, returns false, never throws, and leaves
  *      no partial-state writes.
+ *   5. (#669) When the main process reports dropped entries, the baseline uses
+ *      the persisted (post-drop) settings, a warning naming what was not saved
+ *      is shown, and the plain "Settings saved!" success toast is NOT shown.
  */
 
 import { describe, expect, test, vi, beforeEach } from 'vitest'
@@ -144,7 +147,12 @@ async function renderSave(
 
 beforeEach(() => {
   vi.clearAllMocks()
-  saveSettingsMock.mockResolvedValue(undefined)
+  // Default stand-in for the main process: nothing is dropped, and the
+  // "persisted" settings echoed back are exactly what was sent — matching a
+  // sanitizer that accepts the whole patch unchanged.
+  saveSettingsMock.mockImplementation((patch: Record<string, unknown>) =>
+    Promise.resolve({ settings: patch, dropped: [] })
+  )
   saveProfilesMock.mockResolvedValue(undefined)
 })
 
@@ -261,9 +269,9 @@ describe('useSettingsSave (#645)', () => {
     const editVersions = { current: createSettingsObjectVersions() }
     let resolveSave: () => void = () => {}
     saveSettingsMock.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveSave = () => resolve()
+      (patch: Record<string, unknown>) =>
+        new Promise((resolve) => {
+          resolveSave = () => resolve({ settings: patch, dropped: [] })
         })
     )
 
@@ -334,6 +342,75 @@ describe('useSettingsSave (#645)', () => {
     } finally {
       harness.unmount()
       consoleSpy.mockRestore()
+    }
+  })
+
+  // #669: the main-process sanitizer rejects (rather than persists) an
+  // invalid entry. This must never show a plain "Settings saved!" over data
+  // that silently didn't make it to disk, and the renderer must re-baseline
+  // from what the main process actually persisted, not its own pre-save copy.
+  test('#669: a dropped entry surfaces a warning instead of "Settings saved!" and the baseline drops it too', async () => {
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      const sentAppPaths = patch.appPaths as Record<string, string>
+      // Simulate the main process rejecting the simhub entry (e.g. a pasted
+      // .bat path) — the persisted appPaths omits it entirely.
+      const persistedAppPaths = Object.fromEntries(
+        Object.entries(sentAppPaths).filter(([key]) => key !== 'simhub')
+      )
+      return Promise.resolve({
+        settings: { ...patch, appPaths: persistedAppPaths },
+        dropped: [{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }]
+      })
+    })
+
+    const harness = await renderSave(buildArgs())
+    try {
+      let result: boolean | undefined
+      await act(async () => {
+        result = await harness.handleSave()
+      })
+
+      expect(result).toBe(true)
+
+      // No plain success toast when something was silently rejected.
+      expect(notifyMock).not.toHaveBeenCalledWith('Settings saved!', 'success', 2500)
+      // A clearly-worded warning names the affected field and why.
+      expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('SimHub'), 'warn')
+      expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('.exe'), 'warn')
+
+      // The renderer's own appPaths state is corrected to match the persisted
+      // truth — the rejected entry does not linger in the input as if saved.
+      expect(setAppPathsMock).toHaveBeenCalledWith({ iracing: '' })
+
+      // The dirty baseline reflects the persisted (post-drop) settings, not
+      // the renderer's local (pre-drop) copy.
+      expect(resetDirtyMock).toHaveBeenCalledTimes(1)
+      expect(resetDirtyMock.mock.calls[0][0].appPaths).toEqual({ iracing: '' })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // A legitimately-named .exe rejected purely for the 300-char path cap must
+  // say so — "must be an .exe path" would send the user chasing the wrong fix.
+  test('#669: a too-long path drop reports the length cap, not the extension', async () => {
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) =>
+      Promise.resolve({
+        settings: { ...patch, gamePaths: { iracing: '' } },
+        dropped: [{ field: 'gamePaths', key: 'iracing', reason: 'too-long' }]
+      })
+    )
+
+    const harness = await renderSave(buildArgs())
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('path is too long'), 'warn')
+      expect(notifyMock).not.toHaveBeenCalledWith(expect.stringContaining('.exe path'), 'warn')
+    } finally {
+      harness.unmount()
     }
   })
 })
