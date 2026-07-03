@@ -836,7 +836,12 @@ export function getSupportedConfigValues(config: Record<string, unknown>): Recor
 
     if (key === 'windowBounds') {
       if (isWindowBounds(value)) {
-        supportedConfig.windowBounds = value
+        supportedConfig.windowBounds = {
+          x: value.x,
+          y: value.y,
+          width: value.width,
+          height: value.height
+        }
       }
       return
     }

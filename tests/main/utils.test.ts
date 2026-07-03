@@ -80,4 +80,10 @@ describe('getExeName (relaxed input)', () => {
   test('preserves current happy-path behaviour', () => {
     expect(getExeName('C:\\Apps\\Foo.exe')).toBe('foo.exe')
   })
+
+  test('trims leading/trailing whitespace before extracting the basename (#679)', () => {
+    expect(getExeName('  C:\\Apps\\Foo.exe  ')).toBe('foo.exe')
+    expect(getExeName('C:\\Apps\\Foo.exe ')).toBe('foo.exe')
+    expect(getExeName(' C:\\Apps\\Foo.exe')).toBe('foo.exe')
+  })
 })

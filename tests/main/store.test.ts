@@ -252,6 +252,27 @@ test('sanitizeImportedConfig filters path, name, args, and prototype pollution k
   })
 })
 
+// #691: windowBounds must go through the same forbidden-key stripping as
+// every other imported record instead of being assigned wholesale.
+// JSON.parse (unlike an object literal) creates a genuine own '__proto__'
+// property, which is the real-world hand-crafted-config attack shape.
+test('sanitizeImportedConfig rebuilds windowBounds from validated fields only', async () => {
+  const { sanitizeImportedConfig } = await loadStoreModule()
+  const polluted = JSON.parse(
+    '{"windowBounds":{"x":10,"y":20,"width":800,"height":600,"__proto__":"polluted","extra":"nope"}}'
+  )
+
+  const sanitized = sanitizeImportedConfig(polluted)
+
+  expect(sanitized.windowBounds).toEqual({ x: 10, y: 20, width: 800, height: 600 })
+  expect(Object.keys(sanitized.windowBounds as object).sort()).toEqual([
+    'height',
+    'width',
+    'x',
+    'y'
+  ])
+})
+
 test('sanitizeSettingsPatch filters object settings like config import', async () => {
   const { sanitizeSettingsPatch, store } = await loadStoreModule()
   store.set('customSlots', 2)
