@@ -40,10 +40,12 @@ export interface LaunchResult {
   warning?: string
   error?: string
   launchedCount?: number
+  /** Apps not (re)launched because they were ALREADY RUNNING. Unrelated to `skipped`. */
   skippedCount?: number
   elevatedCount?: number
   failedCount?: number
   killFailures?: KillFailure[]
+  /** Entries excluded before spawn for an invalid/missing exe path (#639). NOT counted by `skippedCount`. */
   skipped?: SkippedLaunchEntry[]
 }
 
