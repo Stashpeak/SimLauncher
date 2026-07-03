@@ -34,7 +34,7 @@ export function getExeName(filePath: unknown): string {
   // CI/tests run on Linux where the platform-native path module treats
   // backslashes as literal characters. Forcing win32 keeps the result
   // consistent across host OSes.
-  return path.win32.basename(filePath).toLowerCase()
+  return path.win32.basename(trimmed).toLowerCase()
 }
 
 /**
