@@ -176,7 +176,8 @@ export const dialog = {
 
 export const shell = {
   openPath: vi.fn().mockResolvedValue(''),
-  showItemInFolder: vi.fn()
+  showItemInFolder: vi.fn(),
+  openExternal: vi.fn().mockResolvedValue(undefined)
 }
 
 export const ipcMain = {

@@ -29,6 +29,7 @@ export function AppsSection(): ReactNode {
     appNames,
     appArgs,
     appIcons,
+    utilityIcons,
     iconLoadErrors,
     customSlots,
     onAppNameChange,
@@ -124,6 +125,15 @@ export function AppsSection(): ReactNode {
                 alt="Icon"
                 className="h-8 w-8 object-contain drop-shadow-md shrink-0"
                 onError={() => onIconLoadError(utility.key)}
+              />
+            ) : utilityIcons[utility.key] ? (
+              // Bundled fallback (#652): the configured exe's Windows shell
+              // icon extraction above came back empty (common for tray-only
+              // apps), but this built-in ships its own icon asset.
+              <img
+                src={utilityIcons[utility.key]}
+                alt="Icon"
+                className="h-8 w-8 object-contain drop-shadow-md shrink-0"
               />
             ) : (
               <Tooltip label={`${appNames[utility.key] || utility.name} icon fallback`}>
