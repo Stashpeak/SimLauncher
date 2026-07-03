@@ -1,9 +1,49 @@
 import { useCallback, type MutableRefObject } from 'react'
 import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
-import type { Profiles } from '../../lib/config'
+import { GAMES, getUtilities, type Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { getSettingsObjectChangesDuringSave, type SettingsObjectVersions } from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
+
+// Reason shown per field type when the main-process sanitizer rejects an
+// entry (bad extension, over the length cap) rather than persisting it. #669
+const DROPPED_FIELD_REASON: Record<DroppedSettingsRecordField, string> = {
+  gamePaths: 'must be an .exe path',
+  appPaths: 'must be an .exe path',
+  appNames: 'name is too long',
+  appArgs: 'arguments are too long'
+}
+
+// Resolves a dropped entry's key to the label the user sees in the UI (game
+// title, or app slot name/custom label) so the warning is legible instead of
+// showing a raw internal key like "customapp3".
+function getDroppedEntryLabel(
+  entry: DroppedSettingsEntry,
+  appNames: Record<string, string>,
+  customSlots: number
+): string {
+  if (entry.field === 'gamePaths') {
+    return GAMES.find((game) => game.key === entry.key)?.name ?? entry.key
+  }
+
+  const utility = getUtilities(customSlots).find((candidate) => candidate.key === entry.key)
+  return appNames[entry.key] || utility?.name || entry.key
+}
+
+function buildDroppedEntriesWarning(
+  dropped: DroppedSettingsEntry[],
+  appNames: Record<string, string>,
+  customSlots: number
+): string {
+  const details = dropped
+    .map(
+      (entry) =>
+        `${getDroppedEntryLabel(entry, appNames, customSlots)} (${DROPPED_FIELD_REASON[entry.field]})`
+    )
+    .join(', ')
+
+  return `Not saved: ${details}`
+}
 
 interface SettingsStateSnapshot {
   appPaths: Record<string, string>
@@ -116,7 +156,7 @@ export function useSettingsSave({
         gamePaths: trimmedGamePaths
       }
 
-      await Promise.all([
+      const [saveResult] = await Promise.all([
         persistSettings({
           appPaths: savedSettingsObjects.appPaths,
           appNames: savedSettingsObjects.appNames,
@@ -138,28 +178,38 @@ export function useSettingsSave({
         }),
         saveProfiles(profiles)
       ])
+      const persistedSettings = saveResult.settings
       const changedDuringSave = getSettingsObjectChangesDuringSave(
         settingsObjectEditVersionsAtSave,
         settingsObjectEditVersions.current
       )
 
-      // Only push the trimmed value back into state when the user hasn't edited
-      // the field since the save started — avoids overwriting a concurrent edit
-      // with the (now-stale) pre-save trimmed copy.
-      if (!changedDuringSave.appPaths) setAppPaths(savedSettingsObjects.appPaths)
-      if (!changedDuringSave.gamePaths) setGamePaths(savedSettingsObjects.gamePaths)
-      if (!changedDuringSave.appArgs) setAppArgs(savedSettingsObjects.appArgs)
+      // Only push the persisted value back into state when the user hasn't
+      // edited the field since the save started — avoids overwriting a
+      // concurrent edit with the (now-stale) pre-save copy. Using the
+      // RETURNED persisted value (not the renderer's pre-save copy) means an
+      // entry the sanitizer rejected is reflected as gone here too, instead
+      // of lingering in the input as if it had been saved. #669
+      if (!changedDuringSave.appPaths) setAppPaths(persistedSettings.appPaths)
+      if (!changedDuringSave.gamePaths) setGamePaths(persistedSettings.gamePaths)
+      if (!changedDuringSave.appArgs) setAppArgs(persistedSettings.appArgs)
 
-      setLaunchDelayMs(normalizedLaunchDelayMs)
-      notify('Settings saved!', 'success', 2500)
-      // The new dirty baseline uses the SAVED object records, not the live
-      // renderer state: the baseline must reflect what is on disk, so edits
-      // made while the save was awaiting stay visibly dirty (re-saveable)
-      // instead of silently looking already-saved.
+      setLaunchDelayMs(persistedSettings.launchDelayMs)
+
+      if (saveResult.dropped.length > 0) {
+        notify(buildDroppedEntriesWarning(saveResult.dropped, appNames, customSlots), 'warn')
+      } else {
+        notify('Settings saved!', 'success', 2500)
+      }
+
+      // The new dirty baseline uses the PERSISTED settings, not the renderer's
+      // pre-save copy: the baseline must reflect what is actually on disk, so
+      // edits made while the save was awaiting stay visibly dirty (re-saveable)
+      // instead of silently looking already-saved, and rejected entries never
+      // silently re-baseline as if they had been saved.
       resetDirty({
         ...currentSettingsState,
-        ...savedSettingsObjects,
-        launchDelayMs: normalizedLaunchDelayMs
+        ...persistedSettings
       })
       return true
     } catch (err) {

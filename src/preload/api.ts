@@ -26,6 +26,26 @@ export interface Settings {
 // fields) without changing the Settings surface.
 export type WritableSettings = Settings
 
+export type DroppedSettingsRecordField = 'gamePaths' | 'appPaths' | 'appNames' | 'appArgs'
+
+export interface DroppedSettingsEntry {
+  field: DroppedSettingsRecordField
+  key: string
+}
+
+/**
+ * Result of a 'save-settings' call. `settings` is the actual on-disk state
+ * after the save (not an echo of the request), so the renderer can re-baseline
+ * dirty-tracking from the persisted truth instead of its own pre-save copy.
+ * `dropped` lists entries the main-process sanitizer rejected (bad extension,
+ * over the length cap) so the renderer can warn instead of showing a plain
+ * success message when data was silently not saved. #669
+ */
+export interface SaveSettingsResult {
+  settings: Settings
+  dropped: DroppedSettingsEntry[]
+}
+
 export interface MigrationFlags {
   migrated: boolean
   profileUtilityOrderMigrated: boolean
@@ -226,7 +246,7 @@ export interface ElectronAPI {
   checkForUpdates: () => Promise<unknown>
   getUpdateInfo: () => Promise<UpdateAvailability | null>
   getSettings: () => Promise<Settings>
-  saveSettings: (patch: Partial<WritableSettings>) => Promise<void>
+  saveSettings: (patch: Partial<WritableSettings>) => Promise<SaveSettingsResult>
   getProfiles: () => Promise<Record<string, unknown>>
   saveProfile: (gameKey: string, profileSet: unknown) => Promise<void>
   saveProfiles: (profiles: unknown) => Promise<void>

@@ -826,6 +826,15 @@ export function getSupportedConfigValues(config: Record<string, unknown>): Recor
   return supportedConfig
 }
 
+// customSlots is resolved first because the utility-key whitelist used by
+// all other record sanitizers depends on it. Shared by sanitizeSettingsPatch
+// and getDroppedSettingsEntries so both agree on the same whitelist.
+function resolveEffectiveCustomSlots(patch: Record<string, unknown>): number {
+  const currentCustomSlots = getSafeCustomSlots(store.get('customSlots'))
+  const patchCustomSlots = getSafeCustomSlots(patch.customSlots)
+  return patchCustomSlots ?? currentCustomSlots ?? 1
+}
+
 /**
  * Validate and sanitize a partial settings object sent from the renderer via
  * the save-settings IPC. Only scalar/UI settings are accepted here:
@@ -835,12 +844,8 @@ export function getSupportedConfigValues(config: Record<string, unknown>): Recor
  *   'migrated') are internal and must not be reset by the renderer.
  */
 export function sanitizeSettingsPatch(patch: Record<string, unknown>): Record<string, unknown> {
-  const currentCustomSlots = getSafeCustomSlots(store.get('customSlots'))
-  const patchCustomSlots = getSafeCustomSlots(patch.customSlots)
-  // customSlots is resolved first because the utility-key whitelist used by
-  // all other sanitizers depends on it.
   const config: Record<string, unknown> = {
-    customSlots: patchCustomSlots ?? currentCustomSlots ?? 1
+    customSlots: resolveEffectiveCustomSlots(patch)
   }
 
   EXPECTED_CONFIG_KEYS.forEach((key) => {
@@ -868,4 +873,58 @@ export function sanitizeSettingsPatch(patch: Record<string, unknown>): Record<st
   }
 
   return supportedConfig
+}
+
+export type DroppedSettingsRecordField = 'gamePaths' | 'appPaths' | 'appNames' | 'appArgs'
+
+export interface DroppedSettingsEntry {
+  field: DroppedSettingsRecordField
+  key: string
+}
+
+/**
+ * Reports which appPaths/gamePaths/appNames/appArgs entries in a save-settings
+ * patch belong to a known slot/game key but hold a value the sanitizer
+ * rejects (bad extension, over the length cap) — as opposed to an
+ * unrecognized key or an empty value, both of which are an intentional
+ * "clear this field", not data loss. sanitizeSettingsPatch silently drops
+ * both cases identically; this lets 'save-settings' tell the renderer
+ * specifically what was NOT saved so it can warn instead of showing a plain
+ * "Settings saved!". #669
+ */
+export function getDroppedSettingsEntries(patch: Record<string, unknown>): DroppedSettingsEntry[] {
+  const utilityKeys = getUtilityKeySet(resolveEffectiveCustomSlots(patch))
+  const dropped: DroppedSettingsEntry[] = []
+
+  const checkRecord = (
+    field: DroppedSettingsRecordField,
+    allowedKeys: Set<string>,
+    isValid: (value: unknown) => boolean
+  ) => {
+    const rawValue = patch[field]
+    if (!isRecord(rawValue)) return
+
+    getSafeObjectEntries(rawValue).forEach(([key, entry]) => {
+      if (!allowedKeys.has(key)) return
+      if (typeof entry === 'string' && entry.trim().length === 0) return
+      if (!isValid(entry)) {
+        dropped.push({ field, key })
+      }
+    })
+  }
+
+  checkRecord('gamePaths', KNOWN_GAME_KEYS, isImportableExePath)
+  checkRecord('appPaths', utilityKeys, isImportableExePath)
+  checkRecord(
+    'appNames',
+    utilityKeys,
+    (value) => getSafeString(value, MAX_CONFIG_STRING_LENGTH) !== undefined
+  )
+  checkRecord(
+    'appArgs',
+    utilityKeys,
+    (value) => getSafeString(value, MAX_CONFIG_ARGS_LENGTH) !== undefined
+  )
+
+  return dropped
 }
