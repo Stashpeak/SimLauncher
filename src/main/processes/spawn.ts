@@ -45,6 +45,20 @@ const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
 let launchBlockedUntil = 0
 
+/**
+ * Whether ANY launch sequence is currently in flight — the same condition as
+ * launchProfileApps' own entry gate below. Exposed for the IPC handlers that
+ * register their own cancellation controller BEFORE calling launchProfileApps
+ * (#716): they must mirror this gate before registering, because
+ * registerActiveLaunch overwrites per gameKey — registering while a sequence
+ * for the same gameKey is mid-flight would EVICT that sequence's controller
+ * from the registry, leaving its still-running loop unreachable by Close Apps
+ * (the #670 bug class, via a new path).
+ */
+export function isAnyLaunchActive(): boolean {
+  return activeLaunches.size > 0
+}
+
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,

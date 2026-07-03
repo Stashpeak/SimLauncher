@@ -14,6 +14,9 @@ const buildNamedProfileLaunchEntries = vi.fn()
 // so they need the actual AbortController bookkeeping, not a mock of it.
 const registerActiveLaunch = vi.fn()
 const unregisterActiveLaunch = vi.fn()
+// Models spawn.ts's `activeLaunches.size > 0` gate. Default false (nothing in
+// flight); the eviction-guard regression tests below flip it to true.
+const isAnyLaunchActive = vi.fn(() => false)
 
 const GAME_ENTRY = { key: 'iracing', path: 'C:/Games/iRacingUI.exe' }
 const SIMHUB_ENTRY = { key: 'simhub', path: 'C:/Tools/SimHub.exe' }
@@ -51,7 +54,8 @@ async function loadLaunchHandlers() {
     subscribeRunningApps: vi.fn(),
     unsubscribeRunningApps: vi.fn(),
     registerActiveLaunch,
-    unregisterActiveLaunch
+    unregisterActiveLaunch,
+    isAnyLaunchActive
   }
   vi.doMock('../processes', () => processesMock)
   vi.doMock('/src/main/processes.ts', () => processesMock)
@@ -87,6 +91,7 @@ const event = { sender }
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  isAnyLaunchActive.mockReturnValue(false)
   readRunningProcessNames.mockResolvedValue({ processNames: new Set(), succeeded: true })
   launchProfileApps.mockResolvedValue({ success: true, launchedCount: 1, skippedCount: 0 })
   killProfileApps.mockResolvedValue({
@@ -244,6 +249,88 @@ test('relaunch-missing-profile keeps its controller registered until launchProfi
   await resultPromise
 
   expect(unregisterActiveLaunch).toHaveBeenCalled()
+})
+
+// #716 review finding (registry eviction): the handlers register BEFORE
+// launchProfileApps' `activeLaunches.size > 0` gate ever runs. Without their
+// own mirror of that gate, a second request for the same gameKey while a
+// launch is already in flight would registerActiveLaunch → EVICT the
+// in-flight sequence's controller from the registry, then bounce off the
+// gate, then its finally would delete its own controller — leaving the
+// registry EMPTY while the first launch loop still runs. A Close Apps click
+// after that finds nothing to abort: the #670 bug class, reintroduced via a
+// new path. The handler must bail out via isAnyLaunchActive() BEFORE
+// registering.
+test('relaunch-missing-profile while a launch is in flight does not evict the in-flight controller', async () => {
+  const handlers = await loadLaunchHandlers()
+  const state = await import('../../src/main/processes/state')
+  buildActiveProfileLaunchEntries.mockReturnValue([GAME_ENTRY, SIMHUB_ENTRY])
+
+  // The in-flight launch loop's own controller (what spawn.ts registered).
+  const inFlight = state.registerActiveLaunch('iracing')
+  isAnyLaunchActive.mockReturnValue(true)
+  // Faithful to the real gate: launchProfileApps would refuse anyway. The
+  // point of this test is that the handler must never get far enough to
+  // evict `inFlight` from the registry on the way to that refusal.
+  launchProfileApps.mockResolvedValue({
+    success: false,
+    error: 'Another profile is already launching.'
+  })
+
+  try {
+    await expect(handlers['relaunch-missing-profile'](event, 'iracing')).resolves.toEqual({
+      success: false,
+      error: 'Another profile is already launching.'
+    })
+
+    // The handler must not have registered (and thus evicted) anything...
+    expect(registerActiveLaunch).not.toHaveBeenCalled()
+    // ...so a Close Apps click still reaches the in-flight launch loop.
+    state.abortActiveLaunches('iracing')
+    expect(inFlight.signal.aborted).toBe(true)
+  } finally {
+    state.unregisterActiveLaunch('iracing', inFlight)
+  }
+})
+
+test('switch-profile-apps while a launch is in flight does not evict the in-flight controller', async () => {
+  const handlers = await loadLaunchHandlers()
+  const state = await import('../../src/main/processes/state')
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  const utilB = { key: 'customapp2', path: 'C:/Tools/UtilB.exe' }
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY, utilB]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe']),
+    succeeded: true
+  })
+
+  const inFlight = state.registerActiveLaunch('iracing')
+  isAnyLaunchActive.mockReturnValue(true)
+  launchProfileApps.mockResolvedValue({
+    success: false,
+    error: 'Another profile is already launching.'
+  })
+
+  try {
+    await expect(
+      handlers['switch-profile-apps'](event, 'iracing', 'p-from', 'p-to')
+    ).resolves.toEqual({
+      success: false,
+      error: 'Another profile is already launching.'
+    })
+
+    expect(registerActiveLaunch).not.toHaveBeenCalled()
+    // The bail-out must also come before the kill phase: killing the outgoing
+    // profile's apps as part of a switch that can never proceed would leave
+    // the user with apps closed and nothing started.
+    expect(killProfileApps).not.toHaveBeenCalled()
+    state.abortActiveLaunches('iracing')
+    expect(inFlight.signal.aborted).toBe(true)
+  } finally {
+    state.unregisterActiveLaunch('iracing', inFlight)
+  }
 })
 
 // THE profile-switch invariant: switching profiles mid-session must never

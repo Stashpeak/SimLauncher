@@ -5,6 +5,7 @@ import {
   type KillResult,
   type ProfileLaunchEntry,
   getRunningApps,
+  isAnyLaunchActive,
   isRunningExePath,
   killLaunchedApps,
   killProfileApps,
@@ -97,6 +98,19 @@ export function registerLaunchHandlers(): void {
 
     if (allEntries.length === 0) {
       return { success: false, error: 'No executable paths configured for this profile.' }
+    }
+
+    // Mirrors launchProfileApps' own entry gate, and must run BEFORE the
+    // registerActiveLaunch below: registerActiveLaunch overwrites per gameKey,
+    // so registering while a launch sequence is already mid-flight would EVICT
+    // that sequence's controller from the registry — this handler would then
+    // bounce off launchProfileApps' gate and its finally would delete its own
+    // controller, leaving the registry EMPTY while the first loop still runs,
+    // unreachable by Close Apps (the #670 bug class via a new path). There is
+    // no await between this check and the registration, so the event loop
+    // makes the check-then-register pair atomic.
+    if (isAnyLaunchActive()) {
+      return { success: false, error: 'Another profile is already launching.' }
     }
 
     // Registered BEFORE the tasklist scan below (not inside launchProfileApps,
@@ -215,6 +229,16 @@ export function registerLaunchHandlers(): void {
       // move must still trigger a stop + relaunch even though the path is
       // unchanged.
       const toEntryIds = new Set(toEntries.map(getProfileLaunchEntryId))
+
+      // Mirrors launchProfileApps' own entry gate, and must run BEFORE the
+      // registerActiveLaunch below — same eviction reasoning as the
+      // relaunch-missing-profile handler above (#716 review finding). Bailing
+      // out here also means the switch never kills the outgoing profile's
+      // apps for a launch that could not proceed anyway. No await sits
+      // between this check and the registration, so the pair is atomic.
+      if (isAnyLaunchActive()) {
+        return { success: false, error: 'Another profile is already launching.' }
+      }
 
       // Registered BEFORE the pre-switch scan below — covers that scan, the
       // whole kill phase (killProfileApps can take seconds with WMI lookups),

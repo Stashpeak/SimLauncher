@@ -96,7 +96,10 @@ vi.mock('../../src/main/processes', async () => {
     subscribeRunningApps: vi.fn(),
     unsubscribeRunningApps: vi.fn(),
     registerActiveLaunch: state.registerActiveLaunch,
-    unregisterActiveLaunch: state.unregisterActiveLaunch
+    unregisterActiveLaunch: state.unregisterActiveLaunch,
+    // These tests never simulate a concurrent in-flight launch, so the
+    // handlers' eviction guard (#716 review finding) always passes.
+    isAnyLaunchActive: () => false
   }
 })
 
