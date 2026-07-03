@@ -562,6 +562,15 @@ export async function spawnDetachedApp(
         // A UAC elevation request is a handoff, not a failure — don't write a
         // failure entry for it; launchElevated logs its own genuine failures.
         if (isElevatedLaunchError(err)) {
+          // A kill (Close Apps) can land between spawn() and this error event.
+          // Handing off now would pop a UAC prompt right after the user's
+          // Close Apps click — and start an elevated app the kill's snapshot
+          // can never include (#670). Nothing is running (the spawn failed),
+          // so report the attempt as cancelled instead.
+          if (signal?.aborted) {
+            resolveOnce({ status: 'cancelled', appPath })
+            return
+          }
           resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey))
           return
         }

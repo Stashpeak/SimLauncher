@@ -46,6 +46,12 @@ let storeReadShouldThrow = false
 // promise does — models a slow tasklist scan so a test can prove ordering
 // against it (#670). Consumed once, then cleared.
 let tasklistReadBlocker: Promise<void> | null = null
+// When set, the `atCall`-th isConsoleExecutable call (1-based) resolves only
+// after `promise` does — models a slow PE-subsystem probe so the abort-point
+// sweep can land a kill inside spawnDetachedApp's pre-spawn window for a
+// specific app in the sequence (#670). Consumed once, then cleared.
+let consoleProbeBlocker: { atCall: number; promise: Promise<void> } | null = null
+let consoleProbeCallCount = 0
 // When >0, the mocked readRunningProcessNames returns a successful response
 // for the first N calls, then starts failing. Lets a single test simulate a
 // transient tasklist failure on the post-kill recheck only — without breaking
@@ -275,7 +281,19 @@ async function loadProcessModules() {
   }))
 
   const subsystemMock = {
-    isConsoleExecutable: vi.fn((exePath: string) => Promise.resolve(consoleExePaths.has(exePath)))
+    isConsoleExecutable: vi.fn((exePath: string) => {
+      consoleProbeCallCount += 1
+      const result = consoleExePaths.has(exePath)
+      // One-shot blocker, same shape as tasklistReadBlocker above: only the
+      // call it was armed for is delayed; every other call keeps its exact
+      // microtask timing (other tests depend on it).
+      if (consoleProbeBlocker && consoleProbeCallCount === consoleProbeBlocker.atCall) {
+        const blocker = consoleProbeBlocker.promise
+        consoleProbeBlocker = null
+        return blocker.then(() => result)
+      }
+      return Promise.resolve(result)
+    })
   }
   vi.doMock('./subsystem', () => subsystemMock)
   vi.doMock('/src/main/processes/subsystem.ts', () => subsystemMock)
@@ -471,6 +489,8 @@ beforeEach(async () => {
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
   tasklistReadBlocker = null
+  consoleProbeBlocker = null
+  consoleProbeCallCount = 0
   tasklistReadFailAfterCalls = 0
   tasklistReadCallCount = 0
   wmiLookupCounts.clear()
@@ -2420,6 +2440,148 @@ test('a throw during launch prep releases the launch guard instead of wedging it
     success: true,
     launchedCount: 1
   })
+})
+
+// Abort-point sweep (#670): the "nothing spawns after a kill's abort" invariant
+// is enforced by a separate check at EVERY await in the launch path — each
+// suspension point is its own race window, and all five #714 review findings
+// were instances of this one class landing at different points. The sweep
+// drives the full launch sequence through each suspension point in turn, lands
+// the abort while the launch is provably parked there, and asserts nothing
+// further spawned. Adding a new await to the launch path? Add a row here.
+// (The post-spawn EACCES elevation handoff is the one abortable point this
+// table can't reach — it has its own test right below.)
+const abortPointSweep: {
+  point: string
+  launchDelayMs: number
+  arm: () => { release: () => void; consumed: () => boolean } | null
+  spawnsBeforeAbort: number
+  launchedCount: number
+}[] = [
+  {
+    point: 'pre-loop tasklist scan',
+    launchDelayMs: 0,
+    arm: () => {
+      let release: () => void = () => {}
+      tasklistReadBlocker = new Promise((resolve) => (release = resolve))
+      return { release, consumed: () => tasklistReadBlocker === null }
+    },
+    spawnsBeforeAbort: 0,
+    launchedCount: 0
+  },
+  {
+    point: "first app's pre-spawn console probe",
+    launchDelayMs: 0,
+    arm: () => {
+      let release: () => void = () => {}
+      consoleProbeBlocker = { atCall: 1, promise: new Promise((resolve) => (release = resolve)) }
+      return { release, consumed: () => consoleProbeBlocker === null }
+    },
+    spawnsBeforeAbort: 0,
+    launchedCount: 0
+  },
+  {
+    point: "second app's pre-spawn console probe",
+    launchDelayMs: 0,
+    arm: () => {
+      let release: () => void = () => {}
+      consoleProbeBlocker = { atCall: 2, promise: new Promise((resolve) => (release = resolve)) }
+      return { release, consumed: () => consoleProbeBlocker === null }
+    },
+    spawnsBeforeAbort: 1,
+    launchedCount: 1
+  },
+  {
+    point: 'inter-app delay wait',
+    launchDelayMs: 5000,
+    // The real (unmocked) wait() is abortable by design — the kill's abort
+    // itself releases this point, so there is nothing to arm.
+    arm: () => null,
+    spawnsBeforeAbort: 1,
+    launchedCount: 1
+  }
+]
+
+test.each(abortPointSweep)(
+  'no app spawns after an abort landing during the $point (#670)',
+  async ({ launchDelayMs, arm, spawnsBeforeAbort, launchedCount }) => {
+    markExistingPath('C:/Tools/App1.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    storeData.launchDelayMs = launchDelayMs
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+    const blocker = arm()
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/App1.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await flushMicrotasks()
+
+    // Prove the launch is parked at the swept point before aborting: the armed
+    // blocker was consumed (so the point still exists in the launch path — a
+    // refactor that removes it must fail here, not pass vacuously) and only
+    // the spawns from BEFORE the point have landed.
+    if (blocker) {
+      expect(blocker.consumed()).toBe(true)
+    }
+    expect(spawnCalls.length).toBe(spawnsBeforeAbort)
+
+    await killLaunchedApps('ac')
+    blocker?.release()
+
+    await expect(launchPromise).resolves.toMatchObject({
+      success: false,
+      cancelled: true,
+      launchedCount
+    })
+    // The invariant under sweep: after the abort, not one more spawn.
+    expect(spawnCalls.length).toBe(spawnsBeforeAbort)
+  }
+)
+
+// The abort can also land AFTER spawn() was attempted: the child fails with
+// EACCES (asynchronously, some time after spawn returns) and the error handler
+// hands off to an elevated launch — which would pop a UAC prompt right after
+// the user's Close Apps click and start an elevated app the kill's snapshot
+// can never include (and that SimLauncher cannot close). The handoff must
+// re-check the signal and report the attempt as cancelled instead (#670).
+test('an EACCES elevation handoff arriving after the abort does not launch elevated (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  const { spawnDetachedApp } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const controller = new AbortController()
+  const resultPromise = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    undefined,
+    controller.signal
+  )
+  // Let the pre-spawn probe resolve and spawn() run — the child's handlers are
+  // registered but no event has fired yet.
+  await flushMicrotasks()
+
+  // The abort lands in the window between spawn() and the error event.
+  controller.abort()
+  childHandlers.get('error')!(makeAccessDeniedError())
+
+  await expect(resultPromise).resolves.toEqual({
+    status: 'cancelled',
+    appPath: 'C:/Tools/SimHub.exe'
+  })
+  // The elevated relaunch (powershell Start-Process -Verb RunAs) must never fire.
+  expect(execFileCalls.filter((call) => call.command === 'powershell.exe')).toEqual([])
 })
 
 test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {
