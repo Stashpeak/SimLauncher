@@ -51,10 +51,12 @@ const POST_ACTIVITY_FAST_WINDOW_MS = 30000
 const runningAppsSubscribers = new Set<WebContents>()
 let runningAppsScanTimer: ReturnType<typeof setTimeout> | undefined
 let runningAppsMonitorActive = false
-// Whether the main window is currently visible, fed by its 'show'/'hide' events
-// via setRunningAppsWindowVisible. Starts false because the window is created
-// hidden (`show: false`) and only reveals once the renderer is ready — a
-// start-minimized-to-tray session therefore begins on the SLOW cadence.
+// Whether the main window is currently both shown AND un-minimized, recomputed
+// from live window state on its 'show'/'hide'/'minimize'/'restore'/'focus'
+// events (#708) via setRunningAppsWindowVisible. Starts false because the
+// window is created hidden (`show: false`) and only reveals once the renderer
+// is ready — a start-minimized-to-tray session therefore begins on the SLOW
+// cadence.
 let runningAppsWindowVisible = false
 // Monotonic (performance.now()) timestamp of the last non-scan publish
 // (launch/exit/kill). 0 means "no activity yet this session"; it keeps the poll
