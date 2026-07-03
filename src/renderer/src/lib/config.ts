@@ -7,6 +7,10 @@ export interface Utility {
   key: string
   name: string
   isCustom?: boolean
+  // Bundled fallback icon path (mirrors Game.icon), shown when Windows shell
+  // icon extraction from the user's configured exe returns nothing — e.g.
+  // tray-only apps whose exe carries no usable icon resource (#652).
+  icon?: string
 }
 export interface ProfileUtility {
   id: string
@@ -81,6 +85,10 @@ export const GAMES: Game[] = [
 ]
 
 export const BUILT_IN_UTILITIES: Utility[] = [
+  // Listed first: a telemetry recorder needs to be alive before/at session
+  // start to capture the whole lap, so it defaults to the front of the launch
+  // order (#652).
+  { key: 'tracktitan', name: 'Track Titan', icon: 'assets/tracktitan.png' },
   { key: 'simhub', name: 'SimHub' },
   { key: 'crewchief', name: 'Crew Chief' },
   { key: 'tradingpaints', name: 'Trading Paints' },

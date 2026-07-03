@@ -38,7 +38,11 @@ export interface StoredProfileUtility {
   enabled: boolean
 }
 
+// Must stay in sync with BUILT_IN_UTILITIES in renderer/src/lib/config.ts (key
+// set AND order — order is the default launch-order for legacy flat-boolean
+// profiles, see getEnabledUtilityEntries below).
 export const BUILT_IN_UTILITY_KEYS = [
+  'tracktitan',
   'simhub',
   'crewchief',
   'tradingpaints',

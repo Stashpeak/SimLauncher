@@ -31,3 +31,36 @@ export function getPathDisplayName(filePath: string): string {
   const last = segments[segments.length - 1]
   return last && last.length > 0 ? last : trimmed
 }
+
+/**
+ * Renderer-safe approximation of main's `normalizePathForComparison`
+ * (src/main/utils.ts): trim, unify separators to backslash, collapse duplicate
+ * separators (preserving a leading UNC `\\`), lowercase.
+ *
+ * WHY an approximation: the main-process canonicaliser uses Node's
+ * `path.win32.resolve`, which is not available in the renderer. Full resolve
+ * additionally absolutises relative paths and strips `.`/`..` segments — but
+ * the paths compared here are absolute exe paths from the settings store and
+ * from main-process process snapshots, so slash style, stray whitespace and
+ * case are the differences that actually occur (#652: a configured
+ * `C:/Tools\App.exe ` must match the running entry's `c:\tools\app.exe`, which
+ * a bare `toLowerCase()` key misses).
+ *
+ * Use for comparison keys only, never for display (see getPathDisplayName).
+ */
+export function getPathComparisonKey(filePath: string): string {
+  if (typeof filePath !== 'string') {
+    return ''
+  }
+
+  const trimmed = filePath.trim()
+  if (trimmed.length === 0) {
+    return ''
+  }
+
+  const unified = trimmed.replace(/\//g, '\\')
+  const isUncPath = unified.startsWith('\\\\')
+  const collapsed = unified.replace(/\\+/g, '\\')
+
+  return `${isUncPath ? '\\' : ''}${collapsed}`.toLowerCase()
+}

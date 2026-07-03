@@ -64,6 +64,7 @@ export function SettingsProvider({
       isCustomColor,
       appIcons,
       gameIcons,
+      utilityIcons,
       iconLoadErrors
     },
     setters: {
@@ -89,6 +90,7 @@ export function SettingsProvider({
       setIsCustomColor,
       setAppIcons,
       setGameIcons,
+      setUtilityIcons,
       setIconLoadErrors
     },
     updateSettingsObject,
@@ -153,7 +155,8 @@ export function SettingsProvider({
     setZoomFactor,
     setIsCustomColor,
     setAppIcons,
-    setGameIcons
+    setGameIcons,
+    setUtilityIcons
   })
 
   useEffect(() => {
@@ -413,6 +416,7 @@ export function SettingsProvider({
       appNames,
       appArgs,
       appIcons,
+      utilityIcons,
       iconLoadErrors,
       customSlots,
       utilities,
@@ -430,6 +434,7 @@ export function SettingsProvider({
       appNames,
       appArgs,
       appIcons,
+      utilityIcons,
       iconLoadErrors,
       customSlots,
       utilities,

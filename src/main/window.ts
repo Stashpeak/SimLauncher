@@ -214,12 +214,31 @@ export function createWindow(): void {
   mainWindow.on('maximize', () => sendToRenderer('window-maximized-changed', true))
   mainWindow.on('unmaximize', () => sendToRenderer('window-maximized-changed', false))
 
-  // Drive the adaptive running-apps poll cadence (#672): a visible window keeps
-  // the poll on its FAST tick, while hiding to the tray lets it back off to SLOW
-  // once nothing is tracked. Hooking 'show'/'hide' specifically targets the
-  // tray case (the primary idle scenario); a taskbar minimize is left as-is.
-  mainWindow.on('show', () => setRunningAppsWindowVisible(true))
-  mainWindow.on('hide', () => setRunningAppsWindowVisible(false))
+  // Drive the adaptive running-apps poll cadence (#672): a visible, non-minimized
+  // window keeps the poll on its FAST tick, while hiding to the tray OR minimizing
+  // to the taskbar lets it back off to SLOW once nothing is tracked.
+  //
+  // #672 only hooked 'show'/'hide', which covers tray-hide but not a plain OS
+  // taskbar minimize: that fires 'minimize'/'restore' instead, and isVisible()
+  // stays true while minimized, so the FAST cadence ran forever (#708). Rather
+  // than track minimize/hide as separate flags that can disagree, every event
+  // recomputes visibility straight from the window's own live state — robust to
+  // a platform occasionally skipping one event of a pair (e.g. 'restore' without
+  // a preceding 'minimize', or vice versa), since any later event self-corrects.
+  // 'focus' is included as an extra safety net for the restore path: taskbar
+  // click-to-restore always focuses the window even on a setup that drops the
+  // 'restore' event itself.
+  const updateRunningAppsVisibility = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+    setRunningAppsWindowVisible(mainWindow.isVisible() && !mainWindow.isMinimized())
+  }
+  mainWindow.on('show', updateRunningAppsVisibility)
+  mainWindow.on('hide', updateRunningAppsVisibility)
+  mainWindow.on('minimize', updateRunningAppsVisibility)
+  mainWindow.on('restore', updateRunningAppsVisibility)
+  mainWindow.on('focus', updateRunningAppsVisibility)
 
   // Show window once ready, or keep it hidden when starting minimized to tray.
   // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the

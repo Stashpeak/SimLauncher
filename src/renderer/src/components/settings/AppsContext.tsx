@@ -6,6 +6,9 @@ export interface AppsContextValue {
   appNames: Record<string, string>
   appArgs: Record<string, string>
   appIcons: Record<string, string>
+  // Bundled fallback icons for built-in utilities that ship one (#652), keyed
+  // by utility key. Used when the shell-extracted appIcons entry is missing.
+  utilityIcons: Record<string, string>
   iconLoadErrors: Set<string>
   customSlots: number
   utilities: Utility[]
