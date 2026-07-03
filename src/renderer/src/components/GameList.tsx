@@ -9,7 +9,7 @@ import { useNotify } from './Notify'
 import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
-import { GamepadIcon } from './icons'
+import { BrandedGhostIcon } from './icons'
 import type { SettingsSectionKey } from './settings/types'
 
 // Derive the payload type from the store binding (same approach as
@@ -169,7 +169,7 @@ export function GameList({
   if (configuredGames.length === 0) {
     return (
       <EmptyState
-        icon={<GamepadIcon width={40} height={40} />}
+        icon={<BrandedGhostIcon width={43} height={40} />}
         title="No games configured"
         description="Configure your simulation game paths in settings to manage their companion apps and profiles here."
         action={{
