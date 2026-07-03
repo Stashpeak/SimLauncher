@@ -15,12 +15,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
     <div className="relative flex flex-col items-center justify-center py-20 px-8 text-center">
       <div className="relative glass-surface-elevated animate-fade-slide max-w-md w-full rounded-3xl p-10 flex flex-col items-center gap-6 shadow-2xl">
         {/* Icon Container */}
-        <div className="relative">
-          <div className="absolute inset-0 bg-(--accent) opacity-20 rounded-full blur-2xl animate-pulse" />
-          <div className="relative h-20 w-20 flex items-center justify-center bg-(--glass-bg-elevated) border border-(--glass-border) rounded-2xl text-(--accent) shadow-inner">
-            {icon}
-          </div>
-        </div>
+        <div className="relative flex items-center justify-center">{icon}</div>
 
         {/* Text Content */}
         <div className="space-y-3">

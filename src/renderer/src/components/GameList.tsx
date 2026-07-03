@@ -169,7 +169,7 @@ export function GameList({
   if (configuredGames.length === 0) {
     return (
       <EmptyState
-        icon={<BrandedGhostIcon width={43} height={40} />}
+        icon={<BrandedGhostIcon width={86} height={80} />}
         title="No games configured"
         description="Configure your simulation game paths in settings to manage their companion apps and profiles here."
         action={{
