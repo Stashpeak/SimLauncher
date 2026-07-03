@@ -2584,6 +2584,116 @@ test('an EACCES elevation handoff arriving after the abort does not launch eleva
   expect(execFileCalls.filter((call) => call.command === 'powershell.exe')).toEqual([])
 })
 
+// Sets up spawnDetachedApp parked in a PENDING UAC handoff: the child fails
+// with EACCES, launchElevated starts, and the powershell callback is held so
+// the test controls when (and how) the handoff concludes (#670 Codex P2).
+async function startPendingElevationHandoff() {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  const { spawnDetachedApp } = await loadProcessModules()
+  const childProcessModule = vi.mocked(await import('child_process'))
+  childProcessModule.spawn.mockReturnValueOnce(child as never)
+
+  let concludeHandoff: (error: Error | null) => void = () => {}
+  const elevationHostKill = vi.fn()
+  childProcessModule.execFile.mockImplementationOnce(((
+    _command: string,
+    _args: string[],
+    _options: unknown,
+    callback: (error: Error | null, stdout: string, stderr: string) => void
+  ) => {
+    concludeHandoff = (error) => callback(error, '', '')
+    return { kill: elevationHostKill }
+  }) as never)
+
+  const controller = new AbortController()
+  const resultPromise = spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    undefined,
+    controller.signal
+  )
+  await flushMicrotasks()
+  // EACCES arrives with the signal still clean → the handoff starts and parks
+  // on the held powershell callback.
+  childHandlers.get('error')!(makeAccessDeniedError())
+  await flushMicrotasks()
+
+  return { resultPromise, controller, concludeHandoff, elevationHostKill }
+}
+
+// The abort can land while the UAC handoff itself is pending — the consent
+// prompt sits on screen until the user answers, so this window is wide. The
+// abort must kill the powershell host (best-effort stop + unblocks the launch
+// sequence immediately) and the resulting execFile error must be reported as
+// cancelled, not logged as a launch failure (#670 Codex P2).
+test('an abort during the pending UAC handoff kills the host and reports cancelled (#670)', async () => {
+  const { resultPromise, controller, concludeHandoff, elevationHostKill } =
+    await startPendingElevationHandoff()
+
+  controller.abort()
+  expect(elevationHostKill).toHaveBeenCalledTimes(1)
+  // The killed host surfaces as an execFile error.
+  concludeHandoff(new Error('powershell host killed'))
+
+  await expect(resultPromise).resolves.toEqual({
+    status: 'cancelled',
+    appPath: 'C:/Tools/SimHub.exe'
+  })
+  const launchLogLines = appErrorLogFsMock.appendFileSync.mock.calls.map((call) => String(call[1]))
+  expect(launchLogLines.filter((line) => line.includes('administrator'))).toEqual([])
+})
+
+// If the user accepts the UAC prompt before the host kill takes effect, the
+// elevated app IS running — the result must say so (status 'elevated'), not
+// pretend the cancellation prevented it (#670 Codex P2).
+test('a UAC handoff accepted despite the abort still reports elevated (#670)', async () => {
+  const { resultPromise, controller, concludeHandoff } = await startPendingElevationHandoff()
+
+  controller.abort()
+  concludeHandoff(null)
+
+  await expect(resultPromise).resolves.toMatchObject({
+    status: 'elevated',
+    appPath: 'C:/Tools/SimHub.exe'
+  })
+})
+
+// Sequence-level honesty: elevated apps that completed their handoff survive
+// the kill (SimLauncher cannot close them) — the cancellation toast must name
+// them instead of implying everything was closed (#670 Codex P2).
+test('the cancellation message names elevated apps the kill cannot close (#670)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+  // App1's spawn fails EACCES; the default execFile mock resolves the
+  // powershell handoff immediately as success → status 'elevated'.
+  spawnErrors.set('C:/Tools/App1.exe', makeAccessDeniedError())
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+  await killLaunchedApps('ac')
+
+  await expect(launchPromise).resolves.toMatchObject({
+    success: false,
+    cancelled: true,
+    elevatedCount: 1,
+    message:
+      'Launch cancelled — closed apps instead. One app started with administrator permission and cannot be closed from here.'
+  })
+})
+
 test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {
   markExistingPath('C:/Games/AssettoCorsa.exe')
   markExistingPath('C:/Tools/SimHub.exe')

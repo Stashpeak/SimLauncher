@@ -191,10 +191,19 @@ export async function launchProfileApps(
     // before the failure/success branches below account for apps that were
     // deliberately never spawned.
     if (launchController.signal.aborted) {
+      // Elevated apps that completed their UAC handoff before (or despite)
+      // the abort survive the kill — SimLauncher cannot close them (#670
+      // Codex P2). Name them instead of implying everything was closed.
+      const elevatedNote =
+        elevatedResults.length === 1
+          ? ' One app started with administrator permission and cannot be closed from here.'
+          : elevatedResults.length > 1
+            ? ` ${elevatedResults.length} apps started with administrator permission and cannot be closed from here.`
+            : ''
       return {
         success: false,
         cancelled: true,
-        message: 'Launch cancelled — closed apps instead.',
+        message: `Launch cancelled — closed apps instead.${elevatedNote}`,
         launchedCount,
         skippedCount,
         elevatedCount: elevatedResults.length,
@@ -438,9 +447,26 @@ function createElevatedLaunchCommand(appPath: string, args: string[]) {
   )
 }
 
-function launchElevated(appPath: string, args: string[] = [], gameKey?: string) {
+function launchElevated(
+  appPath: string,
+  args: string[] = [],
+  gameKey?: string,
+  signal?: AbortSignal
+) {
   return new Promise<AppLaunchResult>((resolve) => {
-    execFile(
+    // A kill (Close Apps) can land while the UAC handoff is still pending —
+    // the consent prompt sits on screen until the user answers it, so this
+    // window is wide (#670 Codex P2). Killing the PowerShell host is a best
+    // effort to stop the pending Start-Process from proceeding, and it
+    // unblocks the launch sequence immediately instead of leaving it parked
+    // until the user answers a prompt they no longer want.
+    let handoffPending = true
+    const onAbort = () => {
+      if (handoffPending) {
+        child.kill()
+      }
+    }
+    const child = execFile(
       'powershell.exe',
       [
         '-NoProfile',
@@ -450,7 +476,16 @@ function launchElevated(appPath: string, args: string[] = [], gameKey?: string) 
       ],
       { windowsHide: true },
       (error) => {
+        handoffPending = false
+        signal?.removeEventListener('abort', onAbort)
         if (error) {
+          // An error after the abort is the expected shape of a cancelled
+          // handoff (our own host kill, or the user denying a prompt they no
+          // longer want) — report cancelled, and don't log it as a failure.
+          if (signal?.aborted) {
+            resolve({ status: 'cancelled', appPath })
+            return
+          }
           const message = `Administrator permission was requested for ${path.basename(appPath)}, but Windows did not start it. ${getErrorMessage(error)}`
           console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
           // execFile's error.message embeds the full command line — including
@@ -465,6 +500,10 @@ function launchElevated(appPath: string, args: string[] = [], gameKey?: string) 
           return
         }
 
+        // Success is reported truthfully even when an abort landed mid-handoff
+        // (the user accepted the prompt before the host kill took effect): the
+        // elevated app IS running and the kill cannot close it — the sequence's
+        // cancellation message names it rather than implying it was closed.
         resolve({
           status: 'elevated',
           appPath,
@@ -472,6 +511,7 @@ function launchElevated(appPath: string, args: string[] = [], gameKey?: string) 
         })
       }
     )
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
@@ -571,7 +611,7 @@ export async function spawnDetachedApp(
             resolveOnce({ status: 'cancelled', appPath })
             return
           }
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey))
+          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal))
           return
         }
 
@@ -627,7 +667,7 @@ export async function spawnDetachedApp(
 
       // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey), gameKey).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey, signal).then(resolveOnce)
         return
       }
 
