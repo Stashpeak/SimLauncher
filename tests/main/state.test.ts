@@ -2,16 +2,19 @@ import type { ChildProcess } from 'child_process'
 import { beforeEach, expect, test } from 'vitest'
 
 import {
+  abortActiveLaunches,
   consumeProcessNameMismatchWarningSuppression,
   dismissAppIcon,
   getUnclosedProcessKey,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
   pruneStoppedRunningProcesses,
+  registerActiveLaunch,
   runningProcesses,
   suppressProcessNameMismatchWarning,
   suppressedProcessNameMismatchWarnings,
-  unclosedProcesses
+  unclosedProcesses,
+  unregisterActiveLaunch
 } from '../../src/main/processes/state'
 import { normalizePathForComparison } from '../../src/main/utils'
 
@@ -108,4 +111,35 @@ test('dismissAppIcon clears both the mismatch warning and the unclosed entry for
   expect(processNameMismatchWarnings.size).toBe(0)
   // Only the matching game's unclosed entry is dismissed.
   expect([...unclosedProcesses.keys()]).toEqual([getUnclosedProcessKey('acc', appPath, 'foo.exe')])
+})
+
+// #716: switch-profile-apps registers its OWN launch controller before it
+// kills the outgoing profile's apps, and passes that same controller as
+// `except` to killProfileApps so its own kill step doesn't self-abort the
+// switch it is in the middle of performing (the "self-abort trap" named in
+// the issue's fix sketch). A real user's Close Apps click never passes
+// `except`, so it must still abort everything as before.
+test('abortActiveLaunches skips the except controller but still aborts every other one', () => {
+  const ownSwitchController = registerActiveLaunch('iracing')
+  const unrelatedController = registerActiveLaunch('acc')
+
+  try {
+    abortActiveLaunches('iracing', { except: ownSwitchController })
+    expect(ownSwitchController.signal.aborted).toBe(false)
+    expect(unrelatedController.signal.aborted).toBe(false)
+
+    // The gameKey-less "close everything" form (tray/global kill) must also
+    // respect `except` — a real Close Apps click for a DIFFERENT gameKey
+    // (or the global kill) must still leave the excluded controller alone.
+    abortActiveLaunches(undefined, { except: ownSwitchController })
+    expect(ownSwitchController.signal.aborted).toBe(false)
+    expect(unrelatedController.signal.aborted).toBe(true)
+
+    // A real Close Apps click (no `except`) must still abort it.
+    abortActiveLaunches('iracing')
+    expect(ownSwitchController.signal.aborted).toBe(true)
+  } finally {
+    unregisterActiveLaunch('iracing', ownSwitchController)
+    unregisterActiveLaunch('acc', unrelatedController)
+  }
 })

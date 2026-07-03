@@ -17,6 +17,7 @@ import {
 
 import {
   consumeProcessNameMismatchWarningSuppression,
+  hasOtherActiveLaunchControllers,
   processNameMismatchWarnings,
   registerActiveLaunch,
   runningProcesses,
@@ -26,6 +27,7 @@ import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type {
   AppLaunchResult,
+  LaunchProfileAppsOptions,
   LaunchResult,
   ProfileLaunchEntry,
   ProfileLaunchInput,
@@ -44,12 +46,38 @@ const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
 let launchBlockedUntil = 0
 
+/**
+ * Whether ANY launch sequence is currently in flight — the same condition as
+ * launchProfileApps' own entry gate below. Exposed for the IPC handlers that
+ * register their own cancellation controller BEFORE calling launchProfileApps
+ * (#716): they must mirror this gate before registering, because
+ * registerActiveLaunch overwrites per gameKey — registering while a sequence
+ * for the same gameKey is mid-flight would EVICT that sequence's controller
+ * from the registry, leaving its still-running loop unreachable by Close Apps
+ * (the #670 bug class, via a new path).
+ */
+export function isAnyLaunchActive(): boolean {
+  return activeLaunches.size > 0
+}
+
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
-  profileApps: ProfileLaunchInput[]
+  profileApps: ProfileLaunchInput[],
+  options?: LaunchProfileAppsOptions
 ): Promise<LaunchResult> {
-  if (activeLaunches.size > 0) {
+  // Two-part gate (#716 review finding). `activeLaunches` alone misses two
+  // windows where a relaunch/switch handler has REGISTERED its controller but
+  // not yet reached this function (its pre-launch scans / kill phase run
+  // first, and only this function fills `activeLaunches`):
+  //   (a) a plain launch-profile call landing in that window would pass an
+  //       activeLaunches-only gate and self-register below — evicting the
+  //       handler's controller from the registry, and
+  //   (b) the two handlers' own mirror of this gate has the same blind spot,
+  //       covered by the same registry check on their side.
+  // `options?.controller` as the `except` keeps a handler's own pre-registered
+  // controller from blocking the very launch it was registered for.
+  if (activeLaunches.size > 0 || hasOtherActiveLaunchControllers(options?.controller)) {
     return { success: false, error: 'Another profile is already launching.' }
   }
 
@@ -62,11 +90,12 @@ export async function launchProfileApps(
   }
 
   activeLaunches.add(gameKey)
-  // Registered for the duration of the sequence so killLaunchedApps/
-  // killProfileApps can cancel it mid-flight (#670). Deliberately separate
-  // from `activeLaunches` above, whose Set-of-gameKeys semantics only gate
-  // concurrent launches and stay untouched.
-  const launchController = registerActiveLaunch(gameKey)
+  // Use the caller's pre-registered controller when one is supplied — the
+  // two IPC flows with async work BEFORE this call (relaunch-missing-profile,
+  // switch-profile-apps) register early so a Close Apps click during that
+  // pre-launch window has something to abort (#716). Every other caller falls
+  // back to self-registration here, unchanged from #670.
+  const launchController = options?.controller ?? registerActiveLaunch(gameKey)
   let launchedAny = false
 
   // Everything from here runs under the finally — a throw anywhere below

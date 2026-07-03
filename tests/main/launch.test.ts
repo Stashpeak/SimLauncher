@@ -26,9 +26,16 @@ const mocks = vi.hoisted(() => ({
     async () => ({ processNames: new Set<string>(), succeeded: true })
   ),
   launchProfileApps: vi.fn<
-    (sender: WebContents, gameKey: string, entries: ProfileLaunchInput[]) => Promise<unknown>
+    (
+      sender: WebContents,
+      gameKey: string,
+      entries: ProfileLaunchInput[],
+      options?: { controller?: AbortController }
+    ) => Promise<unknown>
   >(async () => ({ success: true, launchedCount: 0, skippedCount: 0 })),
-  killProfileApps: vi.fn<(gameKey: string, paths: string[]) => Promise<unknown>>(async () => ({
+  killProfileApps: vi.fn<
+    (gameKey: string, paths: string[], options?: { except?: AbortController }) => Promise<unknown>
+  >(async () => ({
     success: true,
     closedCount: 0,
     failedCount: 0,
@@ -61,18 +68,43 @@ vi.mock('../../src/main/profiles', () => ({
     mocks.buildNamedProfileLaunchEntries(gameKey, profileId)
 }))
 
-vi.mock('../../src/main/processes', () => ({
-  readRunningProcessNames: () => mocks.readRunningProcessNames(),
-  launchProfileApps: (sender: WebContents, gameKey: string, entries: ProfileLaunchInput[]) =>
-    mocks.launchProfileApps(sender, gameKey, entries),
-  killProfileApps: (gameKey: string, paths: string[]) => mocks.killProfileApps(gameKey, paths),
-  killLaunchedApps: vi.fn(),
-  getRunningApps: vi.fn(),
-  isRunningExePath: (processNames: Set<string>, appPath: string) =>
-    processNames.has(appPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''),
-  subscribeRunningApps: vi.fn(),
-  unsubscribeRunningApps: vi.fn()
-}))
+vi.mock('../../src/main/processes', async () => {
+  // registerActiveLaunch/unregisterActiveLaunch are backed by the REAL
+  // src/main/processes/state.ts implementation rather than bare vi.fn()
+  // stubs — the switch-profile-apps tests below assert on the exact
+  // controller threaded through killProfileApps' `except` option and
+  // launchProfileApps' `controller` option (#716), which needs a real
+  // AbortController, not a mock return value.
+  const state = await vi.importActual<typeof import('../../src/main/processes/state')>(
+    '../../src/main/processes/state'
+  )
+
+  return {
+    readRunningProcessNames: () => mocks.readRunningProcessNames(),
+    launchProfileApps: (
+      sender: WebContents,
+      gameKey: string,
+      entries: ProfileLaunchInput[],
+      options?: { controller?: AbortController }
+    ) => mocks.launchProfileApps(sender, gameKey, entries, options),
+    killProfileApps: (gameKey: string, paths: string[], options?: { except?: AbortController }) =>
+      mocks.killProfileApps(gameKey, paths, options),
+    killLaunchedApps: vi.fn(),
+    getRunningApps: vi.fn(),
+    isRunningExePath: (processNames: Set<string>, appPath: string) =>
+      processNames.has(appPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''),
+    subscribeRunningApps: vi.fn(),
+    unsubscribeRunningApps: vi.fn(),
+    registerActiveLaunch: state.registerActiveLaunch,
+    unregisterActiveLaunch: state.unregisterActiveLaunch,
+    // These tests never simulate a concurrent in-flight launch, so the
+    // handlers' eviction guard (#716 review finding) always passes. The
+    // registry half of the gate reads the real (empty-at-handler-entry)
+    // registry, so it passes too.
+    isAnyLaunchActive: () => false,
+    hasOtherActiveLaunchControllers: state.hasOtherActiveLaunchControllers
+  }
+})
 
 vi.mock('../../src/main/utils', () => {
   const normalizePathForComparison = (p: unknown) =>
@@ -238,10 +270,17 @@ test('switch-profile-apps stops and relaunches when a slot moves to a new key bu
   const sender = { isDestroyed: () => false, send: vi.fn() } as unknown as WebContents
   await handler({ sender } as never, 'ac', 'from', 'to')
 
-  expect(mocks.killProfileApps).toHaveBeenCalledWith('ac', ['C:/Tools/Shared Utility.exe'])
-  expect(mocks.launchProfileApps).toHaveBeenCalledWith(sender, 'ac', [
-    { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
-  ])
+  expect(mocks.killProfileApps).toHaveBeenCalledWith(
+    'ac',
+    ['C:/Tools/Shared Utility.exe'],
+    expect.objectContaining({ except: expect.any(AbortController) })
+  )
+  expect(mocks.launchProfileApps).toHaveBeenCalledWith(
+    sender,
+    'ac',
+    [{ key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }],
+    expect.objectContaining({ controller: expect.any(AbortController) })
+  )
 })
 
 test('switch-profile-apps relaunches the incoming slot even when its exe is still in tasklist after the kill', async () => {
@@ -272,9 +311,12 @@ test('switch-profile-apps relaunches the incoming slot even when its exe is stil
   const sender = { isDestroyed: () => false, send: vi.fn() } as unknown as WebContents
   await handler({ sender } as never, 'ac', 'from', 'to')
 
-  expect(mocks.launchProfileApps).toHaveBeenCalledWith(sender, 'ac', [
-    { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
-  ])
+  expect(mocks.launchProfileApps).toHaveBeenCalledWith(
+    sender,
+    'ac',
+    [{ key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }],
+    expect.objectContaining({ controller: expect.any(AbortController) })
+  )
 })
 
 test('switch-profile-apps treats unchanged {key, path} entries as no-op', async () => {

@@ -426,6 +426,9 @@ async function loadProcessModules() {
     finalizeKillAttempts: killModule.finalizeKillAttempts,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
     dismissAppIcon: stateModule.dismissAppIcon,
+    registerActiveLaunch: stateModule.registerActiveLaunch,
+    unregisterActiveLaunch: stateModule.unregisterActiveLaunch,
+    abortActiveLaunches: stateModule.abortActiveLaunches,
     processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
     suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
@@ -2172,6 +2175,55 @@ test('concurrent launchProfileApps rejects with the active-launch message (#342)
   // Release the first launch so the test does not leak the active-launch flag.
   childHandlers.get('spawn')?.()
   await firstLaunch
+})
+
+// #716 review finding (inverse window): a plain launch-profile call landing
+// while a relaunch/switch IPC handler is still in its pre-launch async window
+// (its controller registered via registerActiveLaunch, but launchProfileApps
+// not yet entered — so activeLaunches is still EMPTY) used to pass the
+// activeLaunches gate and SELF-REGISTER for the same gameKey, evicting the
+// handler's controller from the registry. Close Apps then aborted only the
+// newer controller and the handler's sequence still proceeded. The gate must
+// also count pre-registered controllers.
+test('launchProfileApps is rejected while a foreign launch controller is pre-registered (#716)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, registerActiveLaunch, unregisterActiveLaunch, abortActiveLaunches } =
+    await loadProcessModules()
+
+  // Models an IPC handler mid pre-launch window for the same game.
+  const preRegistered = registerActiveLaunch('ac')
+
+  try {
+    await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toEqual({
+      success: false,
+      error: 'Another profile is already launching.'
+    })
+
+    // Nothing spawned, and the handler's controller was NOT evicted — a
+    // Close Apps click still reaches it.
+    expect(spawnCalls).toHaveLength(0)
+    abortActiveLaunches('ac')
+    expect(preRegistered.signal.aborted).toBe(true)
+  } finally {
+    unregisterActiveLaunch('ac', preRegistered)
+  }
+})
+
+// Positive control for the gate above: the controller threaded through
+// options IS the pre-registered one, so it must not block its own launch —
+// otherwise the relaunch/switch handlers could never launch at all.
+test('launchProfileApps with its own pre-registered controller via options is not self-blocked (#716)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, registerActiveLaunch } = await loadProcessModules()
+
+  const controller = registerActiveLaunch('ac')
+
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'], { controller })
+  ).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
 })
 
 test('rapid re-launch within the cooldown window returns the settling message (#342)', async () => {
