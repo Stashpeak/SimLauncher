@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { DEFAULT_PROFILE_NAME } from '../../lib/config'
 import { GameRowProfileMenu, type GameRowProfileMenuProps } from './GameRowProfileMenu'
 import { RefreshIcon, KillIcon, PlayMarkIcon, SettingsIcon } from '../icons'
 import { Tooltip } from '../Tooltip'
@@ -15,6 +16,11 @@ export interface GameRowActionsProps {
   onRelaunchMissing: () => void
   onToggleEditor: () => void
   gameName: string
+  // Name of the profile that will actually launch (#643). Suppressed from the
+  // label when it's the default single-profile case (DEFAULT_PROFILE_NAME) so
+  // the common "one profile per game" user never sees redundant noise — it
+  // only surfaces once a game has more than one named profile to disambiguate.
+  activeProfileName: string
   editorId: string
   profileMenuProps: GameRowProfileMenuProps
 }
@@ -30,12 +36,21 @@ export function GameRowActions({
   onRelaunchMissing,
   onToggleEditor,
   gameName,
+  activeProfileName,
   editorId,
   profileMenuProps
 }: GameRowActionsProps): ReactNode {
   const primaryAction = canKill ? onKill : onPrimary
   const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
-  const primaryTitle = isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : 'Launch'
+  // What will actually start: the game, plus its named profile when the user
+  // has more than the trivial default one to choose from (#643 — the launch
+  // button previously just said "Launch", leaving which profile/apps ambiguous).
+  const launchTarget =
+    activeProfileName === DEFAULT_PROFILE_NAME
+      ? gameName
+      : `${gameName} — ${activeProfileName} profile`
+  const primaryTitle =
+    isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : `Launch ${launchTarget}`
 
   return (
     <div className="flex items-center gap-3 no-drag">
@@ -76,7 +91,7 @@ export function GameRowActions({
                 ? `Launching ${gameName}`
                 : canKill
                   ? `Close companion apps for ${gameName}`
-                  : `Launch ${gameName}`
+                  : `Launch ${launchTarget}`
             }
             aria-busy={isLaunching && !canKill ? true : undefined}
           >
