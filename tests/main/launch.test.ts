@@ -98,8 +98,11 @@ vi.mock('../../src/main/processes', async () => {
     registerActiveLaunch: state.registerActiveLaunch,
     unregisterActiveLaunch: state.unregisterActiveLaunch,
     // These tests never simulate a concurrent in-flight launch, so the
-    // handlers' eviction guard (#716 review finding) always passes.
-    isAnyLaunchActive: () => false
+    // handlers' eviction guard (#716 review finding) always passes. The
+    // registry half of the gate reads the real (empty-at-handler-entry)
+    // registry, so it passes too.
+    isAnyLaunchActive: () => false,
+    hasOtherActiveLaunchControllers: state.hasOtherActiveLaunchControllers
   }
 })
 

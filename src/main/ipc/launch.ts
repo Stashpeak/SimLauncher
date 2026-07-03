@@ -5,6 +5,7 @@ import {
   type KillResult,
   type ProfileLaunchEntry,
   getRunningApps,
+  hasOtherActiveLaunchControllers,
   isAnyLaunchActive,
   isRunningExePath,
   killLaunchedApps,
@@ -109,7 +110,13 @@ export function registerLaunchHandlers(): void {
     // unreachable by Close Apps (the #670 bug class via a new path). There is
     // no await between this check and the registration, so the event loop
     // makes the check-then-register pair atomic.
-    if (isAnyLaunchActive()) {
+    //
+    // Both halves are required: isAnyLaunchActive() covers a sequence already
+    // inside launchProfileApps, while hasOtherActiveLaunchControllers() covers
+    // another handler still in its PRE-launch window — registered, but not yet
+    // in launchProfileApps, so activeLaunches is still empty (#716 review
+    // finding, inverse window).
+    if (isAnyLaunchActive() || hasOtherActiveLaunchControllers()) {
       return { success: false, error: 'Another profile is already launching.' }
     }
 
@@ -232,11 +239,14 @@ export function registerLaunchHandlers(): void {
 
       // Mirrors launchProfileApps' own entry gate, and must run BEFORE the
       // registerActiveLaunch below — same eviction reasoning as the
-      // relaunch-missing-profile handler above (#716 review finding). Bailing
-      // out here also means the switch never kills the outgoing profile's
-      // apps for a launch that could not proceed anyway. No await sits
-      // between this check and the registration, so the pair is atomic.
-      if (isAnyLaunchActive()) {
+      // relaunch-missing-profile handler above (#716 review finding), and the
+      // same two-half gate: hasOtherActiveLaunchControllers() catches another
+      // handler still in its pre-launch window, which isAnyLaunchActive()
+      // cannot see (activeLaunches fills only once launchProfileApps starts).
+      // Bailing out here also means the switch never kills the outgoing
+      // profile's apps for a launch that could not proceed anyway. No await
+      // sits between this check and the registration, so the pair is atomic.
+      if (isAnyLaunchActive() || hasOtherActiveLaunchControllers()) {
         return { success: false, error: 'Another profile is already launching.' }
       }
 

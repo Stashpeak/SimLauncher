@@ -55,7 +55,12 @@ async function loadLaunchHandlers() {
     unsubscribeRunningApps: vi.fn(),
     registerActiveLaunch,
     unregisterActiveLaunch,
-    isAnyLaunchActive
+    isAnyLaunchActive,
+    // Real implementation, resolved lazily so the handlers' second gate half
+    // reads the same registry the tests pre-register controllers into (#716
+    // inverse window).
+    hasOtherActiveLaunchControllers: (except?: AbortController) =>
+      stateModule.hasOtherActiveLaunchControllers(except)
   }
   vi.doMock('../processes', () => processesMock)
   vi.doMock('/src/main/processes.ts', () => processesMock)
@@ -325,6 +330,70 @@ test('switch-profile-apps while a launch is in flight does not evict the in-flig
     // The bail-out must also come before the kill phase: killing the outgoing
     // profile's apps as part of a switch that can never proceed would leave
     // the user with apps closed and nothing started.
+    expect(killProfileApps).not.toHaveBeenCalled()
+    state.abortActiveLaunches('iracing')
+    expect(inFlight.signal.aborted).toBe(true)
+  } finally {
+    state.unregisterActiveLaunch('iracing', inFlight)
+  }
+})
+
+// #716 review finding, INVERSE window of the isAnyLaunchActive guard: during
+// another handler's pre-launch async window (relaunch's scan / the switch's
+// kill phase) the controller IS registered but launchProfileApps has not
+// started yet — spawn.ts's activeLaunches Set is still empty, so
+// isAnyLaunchActive() reports false. A second relaunch/switch for the same
+// game used to pass the guard on that alone and registerActiveLaunch would
+// evict the first handler's controller: Close Apps then aborted only the
+// newer one and the first sequence still proceeded to launch. The gate must
+// also count pre-registered controllers (hasOtherActiveLaunchControllers).
+test('relaunch-missing-profile is rejected while another handler is in its pre-launch window (no eviction)', async () => {
+  const handlers = await loadLaunchHandlers()
+  const state = await import('../../src/main/processes/state')
+  buildActiveProfileLaunchEntries.mockReturnValue([GAME_ENTRY, SIMHUB_ENTRY])
+
+  // Another handler's pre-launch window: registered, but no active launch —
+  // isAnyLaunchActive stays at its default false. That's the whole point.
+  const inFlight = state.registerActiveLaunch('iracing')
+
+  try {
+    await expect(handlers['relaunch-missing-profile'](event, 'iracing')).resolves.toEqual({
+      success: false,
+      error: 'Another profile is already launching.'
+    })
+
+    expect(registerActiveLaunch).not.toHaveBeenCalled()
+    state.abortActiveLaunches('iracing')
+    expect(inFlight.signal.aborted).toBe(true)
+  } finally {
+    state.unregisterActiveLaunch('iracing', inFlight)
+  }
+})
+
+test('switch-profile-apps is rejected while another handler is in its pre-launch window (no eviction)', async () => {
+  const handlers = await loadLaunchHandlers()
+  const state = await import('../../src/main/processes/state')
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  const utilB = { key: 'customapp2', path: 'C:/Tools/UtilB.exe' }
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY, utilB]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe']),
+    succeeded: true
+  })
+
+  const inFlight = state.registerActiveLaunch('iracing')
+
+  try {
+    await expect(
+      handlers['switch-profile-apps'](event, 'iracing', 'p-from', 'p-to')
+    ).resolves.toEqual({
+      success: false,
+      error: 'Another profile is already launching.'
+    })
+
+    expect(registerActiveLaunch).not.toHaveBeenCalled()
     expect(killProfileApps).not.toHaveBeenCalled()
     state.abortActiveLaunches('iracing')
     expect(inFlight.signal.aborted).toBe(true)

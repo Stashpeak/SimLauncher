@@ -17,6 +17,7 @@ import {
 
 import {
   consumeProcessNameMismatchWarningSuppression,
+  hasOtherActiveLaunchControllers,
   processNameMismatchWarnings,
   registerActiveLaunch,
   runningProcesses,
@@ -65,7 +66,18 @@ export async function launchProfileApps(
   profileApps: ProfileLaunchInput[],
   options?: LaunchProfileAppsOptions
 ): Promise<LaunchResult> {
-  if (activeLaunches.size > 0) {
+  // Two-part gate (#716 review finding). `activeLaunches` alone misses two
+  // windows where a relaunch/switch handler has REGISTERED its controller but
+  // not yet reached this function (its pre-launch scans / kill phase run
+  // first, and only this function fills `activeLaunches`):
+  //   (a) a plain launch-profile call landing in that window would pass an
+  //       activeLaunches-only gate and self-register below — evicting the
+  //       handler's controller from the registry, and
+  //   (b) the two handlers' own mirror of this gate has the same blind spot,
+  //       covered by the same registry check on their side.
+  // `options?.controller` as the `except` keeps a handler's own pre-registered
+  // controller from blocking the very launch it was registered for.
+  if (activeLaunches.size > 0 || hasOtherActiveLaunchControllers(options?.controller)) {
     return { success: false, error: 'Another profile is already launching.' }
   }
 

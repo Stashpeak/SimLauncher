@@ -38,6 +38,28 @@ export function unregisterActiveLaunch(gameKey: string, controller: AbortControl
 }
 
 /**
+ * Whether the registry holds any controller other than `except`. This is the
+ * second half of the launch gate (#716 review finding): spawn.ts's
+ * `activeLaunches` Set only fills once launchProfileApps starts, but the
+ * relaunch/switch IPC handlers register their controller BEFORE their
+ * pre-launch async work (tasklist scans, the switch's kill phase). During
+ * that window `activeLaunches` is still empty, so any gate reading only it
+ * would let a competing launch through — whose registration would then evict
+ * the first handler's controller from this registry, leaving its sequence
+ * unreachable by Close Apps. `except` lets launchProfileApps' own gate skip
+ * the caller's own threaded-through controller, so a handler's launch is not
+ * blocked by its own registration.
+ */
+export function hasOtherActiveLaunchControllers(except?: AbortController): boolean {
+  for (const controller of activeLaunchControllers.values()) {
+    if (controller !== except) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
  * Abort the in-flight launch sequence for `gameKey`, or every in-flight
  * sequence when `gameKey` is undefined (the tray/global "close everything"
  * kill has no single gameKey to target). Called from kill.ts before it does
