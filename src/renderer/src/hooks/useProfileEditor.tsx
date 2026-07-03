@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { useDirtyTracking } from './useDirtyTracking'
 import {
+  GAMES,
   getActiveGameProfile,
   getUtilities,
   normalizeGameProfileSet,
@@ -23,6 +24,7 @@ import { getSettings, getProfiles, saveProfile } from '../lib/store'
 import { getFileIcon, browsePath, launchProfile } from '../lib/electron'
 import { useAppsSettings } from '../components/settings/AppsContext'
 import { syncProfileUtilitiesWithSettings } from '../lib/profileEditorSettingsSync'
+import { formatSkippedLaunchEntries } from '../lib/skippedLaunchEntries'
 
 export interface ProfileEditorProps {
   gameKey: string
@@ -434,9 +436,27 @@ export function useProfileEditor({
       if (!result.success) {
         notify(result.error || 'Failed to launch profile', 'error')
       } else {
+        // A moved/deleted exe is filtered out before spawn but must not read
+        // as a plain success (#639) — surface it as a warning naming what was
+        // skipped, alongside any elevated-launch warning.
+        const launchWarnings: string[] = []
+        if (result.skipped && result.skipped.length > 0) {
+          launchWarnings.push(
+            formatSkippedLaunchEntries(result.skipped, {
+              gameKey,
+              gameName: GAMES.find((game) => game.key === gameKey)?.name ?? gameKey,
+              appNames,
+              utilities
+            })
+          )
+        }
+        if (result.warning) {
+          launchWarnings.push(result.warning)
+        }
+        const launchWarning = launchWarnings.length > 0 ? launchWarnings.join(' ') : undefined
         notify(
-          result.warning || result.message || 'Launching profile',
-          result.warning ? 'warn' : 'success'
+          launchWarning || result.message || 'Launching profile',
+          launchWarning ? 'warn' : 'success'
         )
       }
     } catch (err) {
@@ -446,13 +466,15 @@ export function useProfileEditor({
       onLaunchEnd?.(cooldownMs)
     }
   }, [
+    appNames,
     gameKey,
     notify,
     onClose,
     onLaunchEnd,
     onLaunchStart,
     onProfileCommitted,
-    setShowLaunchConfirm
+    setShowLaunchConfirm,
+    utilities
   ])
 
   const handleLaunch = useCallback(async () => {

@@ -15,6 +15,25 @@ export interface KillFailure {
   reason: KillFailureReason
 }
 
+/**
+ * `invalid` — the configured path failed the .exe path-shape check
+ * (isValidExePath). `missing` — the path is a well-formed .exe path but the
+ * file no longer exists on disk (moved after a game update, or uninstalled).
+ */
+export type SkippedLaunchReason = 'invalid' | 'missing'
+
+/**
+ * A profile entry that was filtered out of a launch before any process was
+ * spawned. `key` is the game/utility key (see ProfileLaunchEntry) so the
+ * renderer can resolve it to the display name the user actually configured,
+ * rather than showing the raw path (#639).
+ */
+export interface SkippedLaunchEntry {
+  key: string
+  path: string
+  reason: SkippedLaunchReason
+}
+
 export interface LaunchResult {
   success: boolean
   message?: string
@@ -25,6 +44,7 @@ export interface LaunchResult {
   elevatedCount?: number
   failedCount?: number
   killFailures?: KillFailure[]
+  skipped?: SkippedLaunchEntry[]
 }
 
 export interface KillResult {
