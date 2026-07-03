@@ -346,7 +346,7 @@ function createElevatedLaunchCommand(appPath: string, args: string[]) {
   )
 }
 
-function launchElevated(appPath: string, args: string[] = []) {
+function launchElevated(appPath: string, args: string[] = [], gameKey?: string) {
   return new Promise<AppLaunchResult>((resolve) => {
     execFile(
       'powershell.exe',
@@ -361,9 +361,13 @@ function launchElevated(appPath: string, args: string[] = []) {
         if (error) {
           const message = `Administrator permission was requested for ${path.basename(appPath)}, but Windows did not start it. ${getErrorMessage(error)}`
           console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
+          // execFile's error.message embeds the full command line — including
+          // the encoded launch args, which may carry tokens — so the on-disk
+          // entry gets only the exe path + error code, never the message.
+          const code = getErrorCode(error)
           writeAppErrorLog(
             'launch',
-            `Error launching ${appPath} as administrator: ${getErrorMessage(error)}`
+            `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
           resolve({ status: 'failed', appPath, error: message })
           return
@@ -446,18 +450,21 @@ export async function spawnDetachedApp(
         }
         const message = getErrorMessage(err)
         console.error(`Error launching ${appPath}: ${message}`)
-        writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
 
         if (settled) {
+          writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
           sendLaunchError(sender, appPath, message)
           return
         }
 
+        // A UAC elevation request is a handoff, not a failure — don't write a
+        // failure entry for it; launchElevated logs its own genuine failures.
         if (isElevatedLaunchError(err)) {
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey)))
+          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey))
           return
         }
 
+        writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
         resolveOnce({ status: 'failed', appPath, error: message })
       })
 
@@ -506,13 +513,14 @@ export async function spawnDetachedApp(
     } catch (err) {
       const message = getErrorMessage(err)
       console.error(`Error launching ${appPath}: ${message}`)
-      writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
 
+      // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey)).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey).then(resolveOnce)
         return
       }
 
+      writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
       resolveOnce({ status: 'failed', appPath, error: message })
     }
   })

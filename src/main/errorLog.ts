@@ -24,7 +24,11 @@ export function formatMainError(kind: string, value: unknown): string {
 // Single-line variant for operational failures (failed launch/kill) — see
 // writeAppErrorLog below for why these share the crash log's file.
 export function formatAppErrorLog(operation: string, detail: string): string {
-  return `[${new Date().toISOString()}] ${operation}: ${detail}\n`
+  // detail often carries stderr/stdout text (taskkill, PowerShell) with
+  // embedded newlines; collapse them so one failure is always exactly one
+  // line in the log.
+  const singleLine = detail.replace(/\s*[\r\n]+\s*/g, ' ').trim()
+  return `[${new Date().toISOString()}] ${operation}: ${singleLine}\n`
 }
 
 // Best-effort append shared by writeMainErrorLog and writeAppErrorLog. Must

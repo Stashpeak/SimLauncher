@@ -101,6 +101,16 @@ test('formatAppErrorLog renders an operation, detail and an ISO timestamp on a s
   )
 })
 
+test('formatAppErrorLog collapses stderr-style embedded newlines into one line', async () => {
+  const { mod } = await loadModule()
+
+  // taskkill/PowerShell stderr routinely carries \r\n; a single failure must
+  // never span multiple log lines.
+  const out = mod.formatAppErrorLog('kill', 'Failed to close app:\r\nAccess is denied.\n')
+
+  expect(out).toMatch(/^\[[^\]]+\] kill: Failed to close app: Access is denied\.\n$/)
+})
+
 test('writeAppErrorLog appends to the same <userData>/main-error.log used by crash logging (#638)', async () => {
   const { mod, fsMock } = await loadModule()
   fsMock.statSync.mockReturnValue({ size: 100 })
