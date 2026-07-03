@@ -3,6 +3,7 @@ import path from 'path'
 import { getExeName, normalizePathForComparison } from '../utils'
 
 import type {
+  KillProfileAppsOptions,
   ProcessNameMismatchWarningEntry,
   RunningProcessEntry,
   UnclosedProcessEntry
@@ -43,12 +44,23 @@ export function unregisterActiveLaunch(gameKey: string, controller: AbortControl
  * any kill work, so a launch loop already mid-sequence cannot spawn the next
  * queued app during or after the kill (#670).
  *
+ * `options.except` skips one specific controller regardless of which gameKey
+ * it is registered under. This is for a caller that registered its OWN
+ * controller before doing kill work as part of a launch sequence it is
+ * itself orchestrating (`switch-profile-apps`, #716) — without it, that
+ * kill's own `abortActiveLaunches(gameKey)` call would self-abort the very
+ * sequence it belongs to. A real Close Apps click never passes `except`, so
+ * it still aborts everything as before.
+ *
  * `AbortController.abort()` is itself idempotent (a second call is a no-op),
  * so this is safe to call on every kill request even when nothing is
  * currently launching for the target gameKey.
  */
-export function abortActiveLaunches(gameKey?: string): void {
+export function abortActiveLaunches(gameKey?: string, options?: KillProfileAppsOptions): void {
   activeLaunchControllers.forEach((controller, key) => {
+    if (controller === options?.except) {
+      return
+    }
     if (gameKey === undefined || key === gameKey) {
       controller.abort()
     }

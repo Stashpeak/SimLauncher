@@ -26,6 +26,7 @@ import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type {
   AppLaunchResult,
+  LaunchProfileAppsOptions,
   LaunchResult,
   ProfileLaunchEntry,
   ProfileLaunchInput,
@@ -47,7 +48,8 @@ let launchBlockedUntil = 0
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
-  profileApps: ProfileLaunchInput[]
+  profileApps: ProfileLaunchInput[],
+  options?: LaunchProfileAppsOptions
 ): Promise<LaunchResult> {
   if (activeLaunches.size > 0) {
     return { success: false, error: 'Another profile is already launching.' }
@@ -62,11 +64,12 @@ export async function launchProfileApps(
   }
 
   activeLaunches.add(gameKey)
-  // Registered for the duration of the sequence so killLaunchedApps/
-  // killProfileApps can cancel it mid-flight (#670). Deliberately separate
-  // from `activeLaunches` above, whose Set-of-gameKeys semantics only gate
-  // concurrent launches and stay untouched.
-  const launchController = registerActiveLaunch(gameKey)
+  // Use the caller's pre-registered controller when one is supplied — the
+  // two IPC flows with async work BEFORE this call (relaunch-missing-profile,
+  // switch-profile-apps) register early so a Close Apps click during that
+  // pre-launch window has something to abort (#716). Every other caller falls
+  // back to self-registration here, unchanged from #670.
+  const launchController = options?.controller ?? registerActiveLaunch(gameKey)
   let launchedAny = false
 
   // Everything from here runs under the finally — a throw anywhere below

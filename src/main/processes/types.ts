@@ -64,6 +64,30 @@ export interface KillResult {
   failures: KillFailure[]
 }
 
+/**
+ * Options threaded into `launchProfileApps` by a caller that has already
+ * registered its own cancellation token before the sequence starts. The two
+ * IPC flows with async work ahead of the launch call (`relaunch-missing-profile`,
+ * `switch-profile-apps` — see `ipc/launch.ts`) register early so a Close Apps
+ * click during that pre-launch window has something to abort (#716). When
+ * omitted, `launchProfileApps` registers its own controller, unchanged from
+ * #670.
+ */
+export interface LaunchProfileAppsOptions {
+  controller?: AbortController
+}
+
+/**
+ * Options threaded into `killProfileApps` so a caller that has already
+ * registered its OWN in-flight launch controller for the same `gameKey` (the
+ * `switch-profile-apps` handler, mid-switch) can kill the outgoing profile's
+ * apps without self-aborting that registration (#716) — see
+ * `abortActiveLaunches`'s `except` parameter.
+ */
+export interface KillProfileAppsOptions {
+  except?: AbortController
+}
+
 export type AppLaunchResult =
   | { status: 'launched'; appPath: string }
   | { status: 'elevated'; appPath: string; warning: string }
