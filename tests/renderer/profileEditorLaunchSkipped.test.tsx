@@ -113,7 +113,8 @@ describe('useProfileEditor launch skipped-entry warning (#639)', () => {
 
       expect(notifyMock).toHaveBeenCalledWith(
         'iRacing was skipped — its path no longer exists.',
-        'warn'
+        'warn',
+        5000
       )
     } finally {
       harness.unmount()
@@ -135,7 +136,8 @@ describe('useProfileEditor launch skipped-entry warning (#639)', () => {
 
       expect(notifyMock).toHaveBeenCalledWith(
         'My Dash was skipped — its path no longer exists.',
-        'warn'
+        'warn',
+        5000
       )
     } finally {
       harness.unmount()
@@ -155,7 +157,11 @@ describe('useProfileEditor launch skipped-entry warning (#639)', () => {
         await harness.getApi().handleLaunch()
       })
 
-      expect(notifyMock).toHaveBeenCalledWith('All profile applications launched.', 'success')
+      expect(notifyMock).toHaveBeenCalledWith(
+        'All profile applications launched.',
+        'success',
+        undefined
+      )
     } finally {
       harness.unmount()
     }
