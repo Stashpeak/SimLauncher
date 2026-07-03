@@ -2317,6 +2317,30 @@ test('a fresh launch for the same gameKey after a cancelled one proceeds normall
   dateNow.mockRestore()
 })
 
+// The abort can land while spawnDetachedApp is still in its async pre-spawn
+// probe (PE subsystem read). The kill's snapshot can't include a process that
+// hasn't spawned yet — spawning after the abort would leave an app running
+// that the user just closed (#670 Codex P1). The signal is re-checked right
+// before spawn(), with no await in between.
+test('spawnDetachedApp does not spawn when the abort landed during its pre-spawn probe (#670)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { spawnDetachedApp } = await loadProcessModules()
+
+  const controller = new AbortController()
+  controller.abort()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    undefined,
+    controller.signal
+  )
+
+  expect(result).toEqual({ status: 'cancelled', appPath: 'C:/Tools/SimHub.exe' })
+  expect(spawnCalls).toEqual([])
+})
+
 // A kill landing during the pre-loop prep (the tasklist scan await) must be
 // reported as cancelled by the early-return paths too — an "All profile
 // applications are already running." success toast right after the user's

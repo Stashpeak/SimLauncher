@@ -155,8 +155,21 @@ export async function launchProfileApps(
         break
       }
 
+      const launchResult = await spawnDetachedApp(
+        sender,
+        gameKey,
+        appsToLaunch[index],
+        gamePath,
+        launchController.signal
+      )
+      // The abort landed during spawnDetachedApp's pre-spawn probe — nothing
+      // was spawned, so don't count it (and don't arm the post-launch
+      // cooldown for an attempt that never happened).
+      if (launchResult.status === 'cancelled') {
+        break
+      }
       launchedAny = true
-      launchResults.push(await spawnDetachedApp(sender, gameKey, appsToLaunch[index], gamePath))
+      launchResults.push(launchResult)
 
       if (index < appsToLaunch.length - 1 && launchDelayMs > 0) {
         await wait(launchDelayMs, launchController.signal)
@@ -466,7 +479,8 @@ export async function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
   entry: ProfileLaunchEntry,
-  gamePath?: string
+  gamePath?: string,
+  signal?: AbortSignal
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
@@ -475,6 +489,15 @@ export async function spawnDetachedApp(
   // and children outlive the parent on Windows either way. GUI apps keep the
   // long-standing detached behavior.
   const consoleApp = await isConsoleExecutable(appPath)
+
+  // A kill (Close Apps) can land while the PE-subsystem probe above is in
+  // flight. The kill's snapshot cannot include a process that hasn't spawned
+  // yet, so spawning now would leave an app running that the user just asked
+  // to close (#670). There is no further await between this check and spawn()
+  // below, so the window is fully closed.
+  if (signal?.aborted) {
+    return { status: 'cancelled', appPath }
+  }
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined

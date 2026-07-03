@@ -68,6 +68,9 @@ export type AppLaunchResult =
   | { status: 'launched'; appPath: string }
   | { status: 'elevated'; appPath: string; warning: string }
   | { status: 'failed'; appPath: string; error: string }
+  // The launch was aborted (Close Apps) during the async pre-spawn work, so
+  // the process was deliberately never spawned (#670).
+  | { status: 'cancelled'; appPath: string }
 
 export interface ProfileLaunchEntry {
   /**
