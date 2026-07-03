@@ -1,5 +1,6 @@
 import { useCallback, useEffect, type MutableRefObject } from 'react'
 import {
+  BUILT_IN_UTILITIES,
   DEFAULT_ACCENT_COLOR,
   GAMES,
   isRecord,
@@ -46,6 +47,7 @@ interface UseSettingsLoadArgs {
   setIsCustomColor: (isCustomColor: boolean) => void
   setAppIcons: (appIcons: Record<string, string>) => void
   setGameIcons: (gameIcons: Record<string, string>) => void
+  setUtilityIcons: (utilityIcons: Record<string, string>) => void
 }
 
 export function useSettingsLoad({
@@ -73,7 +75,8 @@ export function useSettingsLoad({
   setZoomFactor,
   setIsCustomColor,
   setAppIcons,
-  setGameIcons
+  setGameIcons,
+  setUtilityIcons
 }: UseSettingsLoadArgs): { loadSettingsFromStore: () => Promise<SettingsStateSnapshot> } {
   const loadSettingsFromStore = useCallback(async (): Promise<SettingsStateSnapshot> => {
     const [settings, savedProfiles] = await Promise.all([getSettings(), getProfiles()])
@@ -162,6 +165,21 @@ export function useSettingsLoad({
     }
     setGameIcons(gIcons)
 
+    // Bundled fallback icons for built-in utilities that ship one (#652) —
+    // e.g. Track Titan's tray Datalogger, whose shell icon extraction above
+    // (appIcons) commonly fails, leaving nothing to show without this.
+    const utilityIconEntries = await Promise.all(
+      BUILT_IN_UTILITIES.filter((utility) => utility.icon).map(async (utility) => {
+        const filename = (utility.icon as string).split('/').pop() || ''
+        return [utility.key, await getAssetData(filename)] as const
+      })
+    )
+    const uIcons: Record<string, string> = {}
+    for (const [key, data] of utilityIconEntries) {
+      if (data) uIcons[key] = data
+    }
+    setUtilityIcons(uIcons)
+
     setLoading(false)
     return snapshot
   }, [
@@ -187,6 +205,7 @@ export function useSettingsLoad({
     setStartMinimized,
     setStartWithWindows,
     setThemeMode,
+    setUtilityIcons,
     setZoomFactor,
     themeRef
   ])
