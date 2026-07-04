@@ -145,13 +145,22 @@ export function GameList({
   // Lazy-load Windows shell icons for newly-seen running app paths. Uses the
   // undefined sentinel (vs '' for "loaded but no icon") so re-fetching on
   // every render is avoided while still retrying if the cache entry is missing.
+  // Paths already covered by a bundled curated icon are skipped entirely:
+  // bundled is preferred at display time (#727), so a shell-extracted result
+  // for those paths would be fetched but never shown — wasted IPC and
+  // exe-icon-extraction work on every newly-seen built-in path.
   useEffect(() => {
     let mounted = true
     const pathsToLoad = Array.from(
       new Set(
         runningApps
           .map((app) => app.path)
-          .filter((path) => path && appIconCache[normalizePath(path)] === undefined)
+          .filter(
+            (path) =>
+              path &&
+              appIconCache[normalizePath(path)] === undefined &&
+              !bundledIconByPath[getPathComparisonKey(path)]
+          )
       )
     )
 
@@ -183,7 +192,10 @@ export function GameList({
     return () => {
       mounted = false
     }
-  }, [appIconCache, runningApps])
+    // bundledIconByPath is a useMemo over [utilityAppPaths, utilityIcons]
+    // (both stable context state), so including it re-runs the effect only
+    // when Settings actually change those — no per-render churn.
+  }, [appIconCache, bundledIconByPath, runningApps])
 
   if (!settingsLoaded) {
     return null
