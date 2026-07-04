@@ -66,6 +66,11 @@ export interface UseProfileEditorResult {
   setRelaunchControlsEnabled: Dispatch<SetStateAction<boolean>>
   trackedProcessPaths: string[]
   appIconCache: Record<string, string>
+  // Bundled curated icons for built-ins that ship one, keyed by utility key.
+  // Resolved once by useSettingsLoad (get-asset-data) and read from
+  // AppsContext — NOT re-read from disk here. Preferred over the
+  // shell-extracted appIconCache entry (bundled-first, #727).
+  utilityIcons: Record<string, string>
   failedIcons: Record<string, boolean>
   setFailedIcons: Dispatch<SetStateAction<Record<string, boolean>>>
   fetchingIcons: boolean
@@ -118,7 +123,8 @@ export function useProfileEditor({
   const {
     appPaths: settingsAppPaths,
     appNames: settingsAppNames,
-    customSlots: settingsCustomSlots
+    customSlots: settingsCustomSlots,
+    utilityIcons
   } = useAppsSettings()
   const [loading, setLoading] = useState(true)
   const [appPaths, setAppPaths] = useState<Record<string, string>>({})
@@ -702,6 +708,7 @@ export function useProfileEditor({
     setRelaunchControlsEnabled,
     trackedProcessPaths,
     appIconCache,
+    utilityIcons,
     failedIcons,
     setFailedIcons,
     fetchingIcons,
