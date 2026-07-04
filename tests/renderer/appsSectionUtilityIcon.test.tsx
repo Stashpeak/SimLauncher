@@ -15,7 +15,7 @@
  */
 
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
-import { act } from 'react'
+import { act, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 import {
@@ -73,6 +73,41 @@ async function renderAppsSection(value: AppsContextValue): Promise<void> {
   })
 }
 
+// Stateful harness for the onError fallthrough tests: unlike the plain
+// provider above (fixed context value, mocked onIconLoadError), this owns
+// iconLoadErrors as real state so a dispatched image `error` event re-renders
+// AppsSection with the failure recorded — exercising the actual
+// onError → onIconLoadError → next-tier chain end-to-end.
+function StatefulHarness({ value }: { value: AppsContextValue }): ReactNode {
+  const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(value.iconLoadErrors)
+  return (
+    <AppsContext.Provider
+      value={{
+        ...value,
+        iconLoadErrors,
+        onIconLoadError: (key: string) => setIconLoadErrors((prev) => new Set([...prev, key]))
+      }}
+    >
+      <AppsSection />
+    </AppsContext.Provider>
+  )
+}
+
+async function renderStatefulAppsSection(value: AppsContextValue): Promise<void> {
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  await act(async () => {
+    root = createRoot(container)
+    root.render(<StatefulHarness value={value} />)
+  })
+}
+
+async function fireIconError(img: HTMLImageElement): Promise<void> {
+  await act(async () => {
+    img.dispatchEvent(new Event('error'))
+  })
+}
+
 afterEach(() => {
   act(() => root?.unmount())
   container.remove()
@@ -83,7 +118,7 @@ afterEach(() => {
 // row is required once more than one utility is rendered per test.
 function getRowIcon(rowIndex: number): HTMLImageElement | null {
   const row = container.children[rowIndex]
-  return row.querySelector('img[alt="Icon"]')
+  return row.querySelector<HTMLImageElement>('img[alt="Icon"]')
 }
 
 function getRowText(rowIndex: number): string {
@@ -142,6 +177,42 @@ describe('AppsSection utility icon precedence (#652, bundled-first flip #727)', 
 
   test('falls back to the initials placeholder when neither icon source is available', async () => {
     await renderAppsSection(buildContextValue({}))
+
+    expect(getRowIcon(0)).toBeNull()
+    expect(getRowText(0)).toContain('TT')
+  })
+})
+
+describe('AppsSection bundled icon decode-failure fallthrough (#727)', () => {
+  test('bundled icon error falls through to the shell icon', async () => {
+    await renderStatefulAppsSection(
+      buildContextValue({
+        appIcons: { tracktitan: 'data:image/png;base64,SHELL' },
+        utilityIcons: { tracktitan: 'data:image/png;base64,BUNDLED' }
+      })
+    )
+
+    const bundledImg = getRowIcon(0)
+    expect(bundledImg!.src).toBe('data:image/png;base64,BUNDLED')
+
+    await fireIconError(bundledImg!)
+
+    const img = getRowIcon(0)
+    expect(img).not.toBeNull()
+    expect(img!.src).toBe('data:image/png;base64,SHELL')
+  })
+
+  test('bundled AND shell icon errors fall through to the initials placeholder', async () => {
+    await renderStatefulAppsSection(
+      buildContextValue({
+        appIcons: { tracktitan: 'data:image/png;base64,SHELL' },
+        utilityIcons: { tracktitan: 'data:image/png;base64,BUNDLED' }
+      })
+    )
+
+    await fireIconError(getRowIcon(0)!)
+    // After the bundled failure the shell icon renders; fail that too.
+    await fireIconError(getRowIcon(0)!)
 
     expect(getRowIcon(0)).toBeNull()
     expect(getRowText(0)).toContain('TT')
