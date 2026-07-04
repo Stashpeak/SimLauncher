@@ -63,14 +63,19 @@ npm run dev
 ## Building the installer
 
 ```bash
-# Build app output
-npm run build
-
-# Build Windows installer (.exe)
-npm run dist:win
+# Build an unsigned Windows installer (.exe) — the right command for
+# building from source; no signing credentials needed
+npm run dist:win:unsigned
 ```
 
-Output will appear in `dist/`.
+Output will appear in `dist/`. The installer works normally; Windows just
+reports it as unsigned ("NotSigned"). It uses `electron-builder.unsigned.yml`,
+which extends the base config with signing disabled.
+
+`npm run dist:win` (the signed variant) uses `electron-builder.yml` directly,
+which carries the Azure Artifact Signing options — those credentials only
+exist in CI, so it fails locally with `Unable to find valid azure env field
+AZURE_TENANT_ID`. CI's release build is the only place that needs it.
 
 ## Pull requests
 

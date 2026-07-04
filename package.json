@@ -22,6 +22,7 @@
     "build": "electron-vite build",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
+    "dist:win:unsigned": "npm run build && electron-builder --win --publish never --config electron-builder.unsigned.yml",
     "lint": "eslint .",
     "preload:types": "node scripts/generate-preload-types.mjs",
     "preload:types:check": "node scripts/generate-preload-types.mjs --check",
