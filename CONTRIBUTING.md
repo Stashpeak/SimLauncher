@@ -72,6 +72,21 @@ npm run dist:win
 
 Output will appear in `dist/`.
 
+`npm run dist:win` uses `electron-builder.yml`, which carries the Azure
+Artifact Signing options — those credentials only exist in CI, so this
+command fails locally with `Unable to find valid azure env field
+AZURE_TENANT_ID`. If you don't have the Azure signing secrets, build an
+unsigned installer instead:
+
+```bash
+npm run dist:win:unsigned
+```
+
+This uses `electron-builder.unsigned.yml` (extends the base config with
+signing disabled) and installs fine — Windows/SmartScreen will just show it
+as unsigned/"NotSigned". CI's release build still goes through the signed
+path.
+
 ## Pull requests
 
 - Target the `main` branch unless the issue says otherwise.

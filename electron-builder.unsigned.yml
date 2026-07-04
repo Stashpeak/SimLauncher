@@ -1,0 +1,10 @@
+# Local unsigned build config — use when building from source without the
+# Azure Artifact Signing credentials (only CI has them):
+#   npx electron-builder --win --publish never --config electron-builder.unsigned.yml
+# Since #511 the base config carries win.azureSignOptions unconditionally, so a
+# plain `npm run dist:win` fails locally with "Unable to find valid azure env
+# field AZURE_TENANT_ID". This override inherits everything else and just
+# disables the signing step. CI/release builds do NOT use this file.
+extends: ./electron-builder.yml
+win:
+  azureSignOptions: null

@@ -163,8 +163,13 @@ git clone https://github.com/Stashpeak/SimLauncher
 cd SimLauncher
 npm install
 npx install-electron   # Electron >=42 no longer downloads its binary via postinstall
-npm run dist:win       # build a Windows installer into dist/
+npm run dist:win:unsigned   # build an unsigned Windows installer into dist/
 ```
+
+`npm run dist:win` builds the signed installer, but that requires the Azure
+Artifact Signing credentials, which only exist in CI — use
+`dist:win:unsigned` locally instead. See [CONTRIBUTING.md](CONTRIBUTING.md#building-the-installer)
+for details.
 
 For the full development workflow — running in dev mode, the test/lint/typecheck gates, and how to add a game or utility — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
