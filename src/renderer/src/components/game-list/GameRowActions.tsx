@@ -15,6 +15,10 @@ export interface GameRowActionsProps {
   onRelaunchMissing: () => void
   onToggleEditor: () => void
   gameName: string
+  // Name of the profile that will actually launch (#643). Always present:
+  // getActiveGameProfile → normalizeGameProfileSet guarantees at least one
+  // profile with a non-empty name ("Default" / "Profile N" fallbacks).
+  activeProfileName: string
   editorId: string
   profileMenuProps: GameRowProfileMenuProps
 }
@@ -30,12 +34,20 @@ export function GameRowActions({
   onRelaunchMissing,
   onToggleEditor,
   gameName,
+  activeProfileName,
   editorId,
   profileMenuProps
 }: GameRowActionsProps): ReactNode {
   const primaryAction = canKill ? onKill : onPrimary
   const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
-  const primaryTitle = isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : 'Launch'
+  // What will actually start: the game AND its active profile — the profile
+  // determines which companion apps launch even when it's the default one
+  // (#643 — the button previously just said "Launch", leaving that ambiguous).
+  // WHY a colon separator: no em dashes in public-facing copy, and profile
+  // names often contain hyphens, so a dash-style separator would get lost.
+  const launchTarget = `${gameName}: ${activeProfileName} profile`
+  const primaryTitle =
+    isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : `Launch ${launchTarget}`
 
   return (
     <div className="flex items-center gap-3 no-drag">
@@ -76,7 +88,7 @@ export function GameRowActions({
                 ? `Launching ${gameName}`
                 : canKill
                   ? `Close companion apps for ${gameName}`
-                  : `Launch ${gameName}`
+                  : `Launch ${launchTarget}`
             }
             aria-busy={isLaunching && !canKill ? true : undefined}
           >

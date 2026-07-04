@@ -1,34 +1,30 @@
 /**
- * Regression test for #670: "Close Apps" during an in-flight launch sequence
- * used to only kill what was already running — the main-process launch loop
- * kept going and spawned the remaining profile apps regardless, ending in a
- * plain "All profile applications launched." success toast for apps the user
- * had just asked to close.
+ * Regression test for #643 (ux: clarify the launch-button label).
  *
- * Pinned here: when `launchProfile`/`relaunchMissingProfile` resolves with
- * `cancelled: true`, the row's toast must read as a neutral cancellation
- * ("Launch cancelled — closed apps instead.") — never the success toast, and
- * never the plain error toast either.
+ * The launch button previously said just "Launch" (tooltip) / "Launch <game>"
+ * (aria-label) regardless of which profile would actually run — ambiguous the
+ * moment a game has more than one profile. Pinned behavior (founder-approved
+ * copy): the label ALWAYS names the active profile — "Launch <game>:
+ * <profile> profile" — because the profile determines which apps start even
+ * when it's the default one. Colon separator, not a dash: no em dashes in
+ * public-facing copy, and profile names often contain hyphens, so a
+ * dash-style separator would get lost.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
-const notifyMock = vi.fn()
-const launchProfileMock = vi.fn()
-const relaunchMissingProfileMock = vi.fn()
+const launchProfileMock = vi.fn().mockResolvedValue({ success: true, launchedCount: 1 })
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: (...args: unknown[]) => launchProfileMock(...args),
   killLaunchedApps: vi.fn(),
-  relaunchMissingProfile: (...args: unknown[]) => relaunchMissingProfileMock(...args),
+  relaunchMissingProfile: vi.fn(),
   getProfileSwitchDiff: vi.fn(),
   switchProfileApps: vi.fn()
 }))
 
-// Same jsdom-safety stubs as gameRowLaunchSkipped.test.tsx: GameRow pulls in
-// ProfileEditor's hook graph, which touches window.electronAPI at module eval.
 vi.mock('../../src/renderer/src/lib/store', () => ({
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
@@ -45,21 +41,23 @@ vi.mock('../../src/renderer/src/lib/store', () => ({
 }))
 
 vi.mock('../../src/renderer/src/components/Notify', () => ({
-  useNotify: () => ({ notify: notifyMock, announce: vi.fn() }),
+  useNotify: () => ({ notify: vi.fn(), announce: vi.fn() }),
   NotifyProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
-const PROFILE_SET = {
+// Mutable so each test can point the active profile at a different entry
+// without re-mocking the module.
+let activeProfileSet = {
   activeProfileId: 'default',
   profiles: [{ id: 'default', name: 'Default' }]
 }
 
 vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
   useGameProfile: () => ({
-    profileSet: PROFILE_SET,
+    profileSet: activeProfileSet,
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
-    loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
-    getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
+    loadProfileSet: vi.fn().mockResolvedValue(activeProfileSet),
+    getProfileRuntimeConfig: vi.fn().mockResolvedValue(activeProfileSet),
     saveProfileSet: vi.fn().mockResolvedValue(undefined)
   })
 }))
@@ -124,21 +122,8 @@ async function renderRow(): Promise<void> {
   })
 }
 
-async function clickPlayButton(): Promise<void> {
-  const playButton = container.querySelector(
-    'button[aria-label="Launch Assetto Corsa: Default profile"]'
-  ) as HTMLButtonElement | null
-  expect(playButton).not.toBeNull()
-
-  await act(async () => {
-    playButton!.click()
-  })
-}
-
 beforeEach(() => {
-  notifyMock.mockClear()
-  launchProfileMock.mockReset()
-  relaunchMissingProfileMock.mockReset()
+  launchProfileMock.mockClear()
 })
 
 afterEach(() => {
@@ -146,50 +131,30 @@ afterEach(() => {
   container.remove()
 })
 
-describe('GameRow launch cancellation toast (#670)', () => {
-  test('shows a neutral cancellation toast instead of the success toast', async () => {
-    launchProfileMock.mockResolvedValue({
-      success: false,
-      cancelled: true,
-      launchedCount: 1,
-      message: 'Launch cancelled — closed apps instead.'
-    })
-
+describe('GameRow launch button label (#643)', () => {
+  test('default profile: label still names the profile ("Launch <game>: Default profile")', async () => {
+    activeProfileSet = {
+      activeProfileId: 'default',
+      profiles: [{ id: 'default', name: 'Default' }]
+    }
     await renderRow()
-    await clickPlayButton()
 
-    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
-    // Arg-shape-independent: a cancellation must not produce ANY success
-    // toast, however many args the call carries.
-    expect(notifyMock.mock.calls.some((call) => call[1] === 'success')).toBe(false)
+    const playButton = container.querySelector(
+      'button[aria-label="Launch Assetto Corsa: Default profile"]'
+    )
+    expect(playButton).not.toBeNull()
   })
 
-  test('falls back to a default message when the result carries no message', async () => {
-    launchProfileMock.mockResolvedValue({
-      success: false,
-      cancelled: true,
-      launchedCount: 1
-    })
-
+  test('named profile: label names the profile that will launch', async () => {
+    activeProfileSet = {
+      activeProfileId: 'rain',
+      profiles: [{ id: 'rain', name: 'Rain Setup' }]
+    }
     await renderRow()
-    await clickPlayButton()
 
-    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
-  })
-
-  // cancelled must be checked before the plain failure branch — otherwise a
-  // cancellation (success: false) would read as a generic launch error.
-  test('does not fall through to the generic failure toast', async () => {
-    launchProfileMock.mockResolvedValue({
-      success: false,
-      cancelled: true,
-      launchedCount: 1,
-      message: 'Launch cancelled — closed apps instead.'
-    })
-
-    await renderRow()
-    await clickPlayButton()
-
-    expect(notifyMock).not.toHaveBeenCalledWith('Failed to launch profile', 'error')
+    const playButton = container.querySelector(
+      'button[aria-label="Launch Assetto Corsa: Rain Setup profile"]'
+    )
+    expect(playButton).not.toBeNull()
   })
 })

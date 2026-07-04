@@ -568,6 +568,7 @@ export function GameRow({
           onRelaunchMissing={handleRelaunchMissing}
           onToggleEditor={handleToggle}
           gameName={game.name}
+          activeProfileName={activeProfile.name}
           editorId={editorId}
           profileMenuProps={{
             profileSet,
