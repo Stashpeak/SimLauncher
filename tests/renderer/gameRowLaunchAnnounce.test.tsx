@@ -150,9 +150,9 @@ describe('GameRow launch a11y (#612)', () => {
     await renderRow()
 
     // The idle Play button (runningAppIcons empty AND not launching → canKill
-    // false) is named "Launch <game>".
+    // false) is named "Launch <game>: <profile> profile" (#643).
     const playButton = container.querySelector(
-      'button[aria-label="Launch Assetto Corsa"]'
+      'button[aria-label="Launch Assetto Corsa: Default profile"]'
     ) as HTMLButtonElement | null
     expect(playButton).not.toBeNull()
 

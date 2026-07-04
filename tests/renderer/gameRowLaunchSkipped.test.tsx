@@ -124,7 +124,7 @@ async function renderRow(): Promise<void> {
 
 async function clickPlayButton(): Promise<void> {
   const playButton = container.querySelector(
-    'button[aria-label="Launch Assetto Corsa"]'
+    'button[aria-label="Launch Assetto Corsa: Default profile"]'
   ) as HTMLButtonElement | null
   expect(playButton).not.toBeNull()
 

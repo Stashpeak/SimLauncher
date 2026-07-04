@@ -3,11 +3,12 @@
  *
  * The launch button previously said just "Launch" (tooltip) / "Launch <game>"
  * (aria-label) regardless of which profile would actually run — ambiguous the
- * moment a game has more than one profile. Pinned behavior:
- *   1. Default single-profile case: label stays the plain "Launch <game>"
- *      (no redundant "— Default profile" noise for the common case).
- *   2. Named non-default profile: label grows to "Launch <game> — <profile>
- *      profile" so it's unambiguous which profile/apps are about to start.
+ * moment a game has more than one profile. Pinned behavior (founder-approved
+ * copy): the label ALWAYS names the active profile — "Launch <game>:
+ * <profile> profile" — because the profile determines which apps start even
+ * when it's the default one. Colon separator, not a dash: no em dashes in
+ * public-facing copy, and profile names often contain hyphens, so a
+ * dash-style separator would get lost.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -131,18 +132,20 @@ afterEach(() => {
 })
 
 describe('GameRow launch button label (#643)', () => {
-  test('default single profile: label stays the plain "Launch <game>"', async () => {
+  test('default profile: label still names the profile ("Launch <game>: Default profile")', async () => {
     activeProfileSet = {
       activeProfileId: 'default',
       profiles: [{ id: 'default', name: 'Default' }]
     }
     await renderRow()
 
-    const playButton = container.querySelector('button[aria-label="Launch Assetto Corsa"]')
+    const playButton = container.querySelector(
+      'button[aria-label="Launch Assetto Corsa: Default profile"]'
+    )
     expect(playButton).not.toBeNull()
   })
 
-  test('named non-default profile: label names the profile that will launch', async () => {
+  test('named profile: label names the profile that will launch', async () => {
     activeProfileSet = {
       activeProfileId: 'rain',
       profiles: [{ id: 'rain', name: 'Rain Setup' }]
@@ -150,7 +153,7 @@ describe('GameRow launch button label (#643)', () => {
     await renderRow()
 
     const playButton = container.querySelector(
-      'button[aria-label="Launch Assetto Corsa — Rain Setup profile"]'
+      'button[aria-label="Launch Assetto Corsa: Rain Setup profile"]'
     )
     expect(playButton).not.toBeNull()
   })
