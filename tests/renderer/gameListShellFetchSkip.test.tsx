@@ -186,4 +186,23 @@ describe('GameList shell-icon fetch skip for bundled-covered paths (#727)', () =
 
     expect(getFileIconMock).not.toHaveBeenCalled()
   })
+
+  test('startup race: skip holds while utilityIcons is still EMPTY (not yet async-loaded)', async () => {
+    // utilityIcons is populated asynchronously by useSettingsLoad's
+    // get-asset-data round-trips, while appPaths lands synchronously with the
+    // settings snapshot. Adopted running apps at boot produce a runningApps
+    // snapshot in exactly that window — the skip must be gated on the STATIC
+    // bundled-icon declaration (BUILT_IN_UTILITIES) + appPaths, not on the
+    // async-loaded icon data, or the wasted fetch fires precisely in the
+    // most common case this skip exists for.
+    await renderGameList(
+      buildAppsContextValue({
+        appPaths: { crewchief: CREWCHIEF_PATH },
+        utilityIcons: {} // async load has not completed yet
+      }),
+      [{ path: CREWCHIEF_PATH, name: 'CrewChiefV4.exe', gameKey: 'iracing' }]
+    )
+
+    expect(getFileIconMock).not.toHaveBeenCalled()
+  })
 })

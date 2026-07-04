@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { GAMES, type Game } from '../lib/config'
+import { BUILT_IN_UTILITIES, GAMES, type Game } from '../lib/config'
 import { getSettings, onStoreConfigChanged } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
@@ -29,6 +29,14 @@ type StoreConfigChangePayload = Parameters<typeof onStoreConfigChanged>[0] exten
 // would be treated as different entries and the game's own executable would
 // appear as a companion app in the running strip.
 const normalizePath = (path: string) => path.toLowerCase()
+
+// Static at module scope: which built-in utility keys DECLARE a bundled icon.
+// This is config knowledge (BUILT_IN_UTILITIES), not runtime state — used to
+// gate the shell-fetch skip below without depending on the async-loaded
+// utilityIcons data (see bundledCoveredPathKeys).
+const BUNDLED_ICON_UTILITY_KEYS = BUILT_IN_UTILITIES.filter((utility) => utility.icon).map(
+  (utility) => utility.key
+)
 
 export function GameList({
   onNavigate
@@ -88,6 +96,29 @@ export function GameList({
     return map
   }, [utilityAppPaths, utilityIcons])
 
+  // Paths whose icon needs are covered by a DECLARED bundled icon — the gate
+  // for the shell-fetch skip in the lazy-load effect below. Deliberately
+  // derived from static config (BUNDLED_ICON_UTILITY_KEYS) + utilityAppPaths,
+  // NOT from bundledIconByPath/utilityIcons: utilityIcons is populated
+  // asynchronously by useSettingsLoad's get-asset-data round-trips, while
+  // utilityAppPaths lands synchronously with the same settings state that
+  // gates configuredGames/runningApps. Gating the skip on the async data
+  // would leave a startup window — an early runningApps snapshot (adopted
+  // apps at boot, the most common source of the wasted fetches) fires before
+  // utilityIcons arrives and the shell fetch goes out anyway, negating the
+  // skip exactly where it matters most.
+  const bundledCoveredPathKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const utilityKey of BUNDLED_ICON_UTILITY_KEYS) {
+      const path = utilityAppPaths[utilityKey]
+      if (path) {
+        const pathKey = getPathComparisonKey(path)
+        if (pathKey) keys.add(pathKey)
+      }
+    }
+    return keys
+  }, [utilityAppPaths])
+
   // Read the configured-games list (+ derived UI state) from the store. Kept in
   // a callback so it can run on mount AND on every store config change: the
   // Games view stays mounted (#479), so without a reactive re-read it would hold
@@ -145,10 +176,13 @@ export function GameList({
   // Lazy-load Windows shell icons for newly-seen running app paths. Uses the
   // undefined sentinel (vs '' for "loaded but no icon") so re-fetching on
   // every render is avoided while still retrying if the cache entry is missing.
-  // Paths already covered by a bundled curated icon are skipped entirely:
-  // bundled is preferred at display time (#727), so a shell-extracted result
-  // for those paths would be fetched but never shown — wasted IPC and
-  // exe-icon-extraction work on every newly-seen built-in path.
+  // Paths covered by a declared bundled icon are skipped entirely: bundled is
+  // preferred at display time (#727), so a shell-extracted result for those
+  // paths would be fetched but never shown — wasted IPC and
+  // exe-icon-extraction work on every newly-seen built-in path. The gate is
+  // bundledCoveredPathKeys (static declaration + sync-loaded paths), NOT
+  // bundledIconByPath, so the skip also holds during the startup window
+  // before the async utilityIcons data lands (see bundledCoveredPathKeys).
   useEffect(() => {
     let mounted = true
     const pathsToLoad = Array.from(
@@ -159,7 +193,7 @@ export function GameList({
             (path) =>
               path &&
               appIconCache[normalizePath(path)] === undefined &&
-              !bundledIconByPath[getPathComparisonKey(path)]
+              !bundledCoveredPathKeys.has(getPathComparisonKey(path))
           )
       )
     )
@@ -192,10 +226,10 @@ export function GameList({
     return () => {
       mounted = false
     }
-    // bundledIconByPath is a useMemo over [utilityAppPaths, utilityIcons]
-    // (both stable context state), so including it re-runs the effect only
-    // when Settings actually change those — no per-render churn.
-  }, [appIconCache, bundledIconByPath, runningApps])
+    // bundledCoveredPathKeys is a useMemo over [utilityAppPaths] (stable
+    // context state), so including it re-runs the effect only when Settings
+    // actually change the configured paths — no per-render churn.
+  }, [appIconCache, bundledCoveredPathKeys, runningApps])
 
   if (!settingsLoaded) {
     return null
