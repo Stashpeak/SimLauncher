@@ -119,21 +119,26 @@ export function AppsSection(): ReactNode {
           </div>
 
           <div className="flex items-center gap-4">
-            {appIcons[utility.key] && !iconLoadErrors.has(utility.key) ? (
+            {utilityIcons[utility.key] ? (
+              // Bundled-first (#727): a built-in slot's app identity is known,
+              // so its curated icon is always at least as correct as an
+              // arbitrary shell-extracted exe icon — and shell extraction can
+              // "succeed" with a broken image (e.g. Crew Chief's black-square
+              // alpha artifact), which shell-first would keep forever. Only
+              // built-ins that declare a bundled `icon` populate utilityIcons
+              // (see useSettingsLoad), so custom slots and secondmonitor (no
+              // asset yet) fall through to the shell-icon branch unchanged.
+              <img
+                src={utilityIcons[utility.key]}
+                alt="Icon"
+                className="h-8 w-8 object-contain drop-shadow-md shrink-0"
+              />
+            ) : appIcons[utility.key] && !iconLoadErrors.has(utility.key) ? (
               <img
                 src={appIcons[utility.key]}
                 alt="Icon"
                 className="h-8 w-8 object-contain drop-shadow-md shrink-0"
                 onError={() => onIconLoadError(utility.key)}
-              />
-            ) : utilityIcons[utility.key] ? (
-              // Bundled fallback (#652): the configured exe's Windows shell
-              // icon extraction above came back empty (common for tray-only
-              // apps), but this built-in ships its own icon asset.
-              <img
-                src={utilityIcons[utility.key]}
-                alt="Icon"
-                className="h-8 w-8 object-contain drop-shadow-md shrink-0"
               />
             ) : (
               <Tooltip label={`${appNames[utility.key] || utility.name} icon fallback`}>
