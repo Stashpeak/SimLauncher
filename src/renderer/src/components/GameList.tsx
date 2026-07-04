@@ -68,11 +68,11 @@ export function GameList({
   const { gameIcons } = useGamesSettings()
   const { appPaths: utilityAppPaths, utilityIcons } = useAppsSettings()
 
-  // Reverse-lookup: normalized configured exe path -> bundled fallback icon
-  // (#652). Built-in utilities that ship one (currently just Track Titan) use
-  // this when Windows shell icon extraction on that same path — the loop
-  // below — comes back empty, e.g. a tray-only app whose exe carries no
-  // usable icon resource. Keys use getPathComparisonKey (NOT the bare
+  // Reverse-lookup: normalized configured exe path -> bundled curated icon
+  // (#652, bundled-first precedence since #727). Built-in utilities that ship
+  // one are preferred here over Windows shell icon extraction on that same
+  // path — the loop below — since shell extraction is unreliable across app
+  // versions/icon formats. Keys use getPathComparisonKey (NOT the bare
   // lowercase normalizePath above): the configured settings value and the
   // main-process running-entry path can differ in slash style / stray
   // whitespace, not just case, and main canonicalises its own comparisons via
@@ -233,13 +233,16 @@ export function GameList({
             (a) => a.gameKey === game.key && normalizePath(a.path) !== gamePathLower
           )
           const runningAppIcons = appsForGame.map((a) => ({
-            // Prefer the shell-extracted icon; fall back to a built-in's
-            // bundled icon (#652) when the shell lookup came back empty —
-            // applied at read time (not baked into appIconCache) so it isn't
-            // gated on load-order between the two icon sources.
+            // Bundled-first (#727): a built-in's curated icon is preferred
+            // over its shell-extracted exe icon — for a built-in slot the app
+            // identity is known, so the curated icon is always at least as
+            // correct as shell extraction, which can "succeed" with a broken
+            // image (e.g. Crew Chief's black-square alpha artifact). Applied
+            // at read time (not baked into appIconCache) so it isn't gated on
+            // load-order between the two icon sources.
             icon:
-              appIconCache[normalizePath(a.path)] ||
               bundledIconByPath[getPathComparisonKey(a.path)] ||
+              appIconCache[normalizePath(a.path)] ||
               null,
             name: a.name,
             path: a.path,

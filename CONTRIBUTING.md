@@ -42,10 +42,17 @@ npm run dev
    - `KNOWN_UTILITY_KEYS` in `src/main/store.ts` — the config-import allowlist;
      forgetting a key here silently drops that utility's saved exe path.
 
-3. Optionally bundle a fallback icon: set `icon: 'assets/myutil.png'` on the
-   config entry and place the PNG in `assets/`. This is shown when Windows
-   shell icon extraction from the user's configured exe returns nothing
-   (common for tray-only apps) — see #652.
+3. Optionally bundle a curated icon: set `icon: 'assets/myutil.png'` on the
+   config entry and place the PNG in `assets/`. For a built-in slot the app
+   identity is known, so once an entry declares `icon`, that bundled asset is
+   shown **first** — ahead of the Windows shell-extracted icon from the
+   user's configured exe, with shell extraction only as a fallback and
+   initials last (#652, precedence flipped in #727). Shell icon extraction is
+   unreliable across app versions/icon formats and can "succeed" with a
+   broken image (it did for Crew Chief — a black-square alpha artifact),
+   which shell-first would keep forever once cached. Built-ins that don't
+   declare `icon` (e.g. Second Monitor, no asset yet) and custom app slots
+   keep the original shell → initials order.
 
 ## Code style
 

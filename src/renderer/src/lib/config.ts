@@ -7,9 +7,13 @@ export interface Utility {
   key: string
   name: string
   isCustom?: boolean
-  // Bundled fallback icon path (mirrors Game.icon), shown when Windows shell
-  // icon extraction from the user's configured exe returns nothing — e.g.
-  // tray-only apps whose exe carries no usable icon resource (#652).
+  // Bundled curated icon path (mirrors Game.icon). For a built-in slot the
+  // app identity is known, so when this is set the bundled asset is shown
+  // FIRST — ahead of the Windows shell-extracted exe icon — with shell
+  // extraction only as fallback (#727; originally introduced shell-first by
+  // #652). Shell extraction is unreliable across app versions/icon formats
+  // and can "succeed" with a broken image (e.g. Crew Chief's black-square
+  // alpha artifact), which shell-first would keep forever once cached.
   icon?: string
 }
 export interface ProfileUtility {
@@ -89,10 +93,11 @@ export const BUILT_IN_UTILITIES: Utility[] = [
   // start to capture the whole lap, so it defaults to the front of the launch
   // order (#652).
   { key: 'tracktitan', name: 'Track Titan', icon: 'assets/tracktitan.png' },
-  { key: 'simhub', name: 'SimHub' },
-  { key: 'crewchief', name: 'Crew Chief' },
-  { key: 'tradingpaints', name: 'Trading Paints' },
-  { key: 'garage61', name: 'Garage 61' },
+  { key: 'simhub', name: 'SimHub', icon: 'assets/simhub.png' },
+  { key: 'crewchief', name: 'Crew Chief', icon: 'assets/crewchief.png' },
+  { key: 'tradingpaints', name: 'Trading Paints', icon: 'assets/tradingpaints.png' },
+  { key: 'garage61', name: 'Garage 61', icon: 'assets/garage61.png' },
+  // No bundled asset yet — keeps the shell-icon → initials chain (#727).
   { key: 'secondmonitor', name: 'Second Monitor' }
 ]
 

@@ -1,7 +1,15 @@
 import { expect, test, vi, beforeEach } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 
 import { BUILT_IN_UTILITIES } from '../../src/renderer/src/lib/config'
 import { BUILT_IN_UTILITY_KEYS } from '../../src/main/profiles'
+
+// Case-insensitive like the GAMES icon check in gamesConfig.test.ts:
+// SimLauncher is Windows-only, where filename case is not significant.
+const assetFilesLowercase = new Set(
+  fs.readdirSync(path.resolve(process.cwd(), 'assets')).map((name) => name.toLowerCase())
+)
 
 /**
  * Regression coverage for #652 (Track Titan built-in companion).
@@ -17,6 +25,14 @@ import { BUILT_IN_UTILITY_KEYS } from '../../src/main/profiles'
 test('BUILT_IN_UTILITIES keys match profiles.ts BUILT_IN_UTILITY_KEYS exactly, in order', () => {
   const configKeys = BUILT_IN_UTILITIES.map((utility) => utility.key)
   expect(configKeys).toEqual(BUILT_IN_UTILITY_KEYS)
+})
+
+test('every BUILT_IN_UTILITIES entry that declares a bundled icon has it on disk (#727)', () => {
+  for (const utility of BUILT_IN_UTILITIES) {
+    if (!utility.icon) continue
+    const iconFile = path.basename(utility.icon).toLowerCase()
+    expect(assetFilesLowercase.has(iconFile), `${utility.icon} missing on disk`).toBe(true)
+  }
 })
 
 test('Track Titan is registered as a built-in utility, positioned first (#652)', () => {

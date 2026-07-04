@@ -40,9 +40,10 @@ export interface SettingsStateBundle {
     isCustomColor: boolean
     appIcons: Record<string, string>
     gameIcons: Record<string, string>
-    // Bundled fallback icons for built-in utilities that ship one (#652),
-    // keyed by utility key. Display-only cache, like gameIcons — not part of
-    // the dirty-tracked settings snapshot.
+    // Bundled curated icons for built-in utilities that ship one (#652),
+    // keyed by utility key, preferred over the shell-extracted icon (#727).
+    // Display-only cache, like gameIcons — not part of the dirty-tracked
+    // settings snapshot.
     utilityIcons: Record<string, string>
     iconLoadErrors: Set<string>
   }
