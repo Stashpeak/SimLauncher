@@ -20,6 +20,17 @@ export interface ProfileUtility {
   id: string
   enabled: boolean
 }
+
+// Namespaced icon-load-error key for a built-in's bundled icon (#727/#728).
+// Bundled and shell icons share one per-surface error store (same state
+// shape, same lifecycle); the prefix keeps their failure states independent,
+// so a failed bundled data URI falls through to the shell icon without
+// masking it. Never collides with utility keys or custom-slot renumbering
+// (customapp<N>). Shared by every surface that renders utility icons
+// (AppsSection, ProfileUtilitiesSection).
+export function getBundledIconErrorKey(key: string): string {
+  return `bundled:${key}`
+}
 export type GamePosition = 'first' | 'last'
 export interface GameProfile {
   // Index signature preserved so that legacy flat keys (e.g. 'simhub': true)

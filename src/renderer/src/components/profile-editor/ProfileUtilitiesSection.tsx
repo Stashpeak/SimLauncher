@@ -1,11 +1,15 @@
 import type { DragEvent, ReactNode } from 'react'
-import type { ProfileUtility, Utility } from '../../lib/config'
+import { getBundledIconErrorKey, type ProfileUtility, type Utility } from '../../lib/config'
 import { Toggle } from '../Toggle'
 
 interface ProfileUtilitiesSectionProps {
   appPaths: Record<string, string>
   appNames: Record<string, string>
   appIconCache: Record<string, string>
+  // Bundled curated icons for built-ins that ship one, keyed by utility key.
+  // Preferred over the shell-extracted appIconCache entry (bundled-first,
+  // #727) — same precedence as AppsSection and the GameList running strip.
+  utilityIcons: Record<string, string>
   failedIcons: Record<string, boolean>
   fetchingIcons: boolean
   dragUtilityId: string | null
@@ -73,7 +77,19 @@ function renderUtilityRow(
   // (renderUtilityRow is a plain function, so useId() isn't available here).
   const toggleId = `utility-toggle-${utility.key}`
   const iconPath = props.appPaths[utility.key]?.toLowerCase()
-  const icon = iconPath ? props.appIconCache[iconPath] : null
+  const shellIcon = iconPath ? props.appIconCache[iconPath] : null
+  // Bundled-first (#727): a built-in slot's app identity is known, so its
+  // curated icon is always at least as correct as an arbitrary
+  // shell-extracted exe icon — and shell extraction can "succeed" with a
+  // broken image (e.g. Crew Chief's black-square alpha artifact). Only
+  // built-ins that declare a bundled `icon` populate utilityIcons (see
+  // useSettingsLoad), so custom slots and secondmonitor (no asset yet) fall
+  // through to the shell-icon tier unchanged. A bundled data URI that fails
+  // to decode is recorded under a namespaced failedIcons key (onError below)
+  // so the render falls through instead of showing a broken image.
+  const bundledIcon = props.failedIcons[getBundledIconErrorKey(utility.key)]
+    ? null
+    : props.utilityIcons[utility.key]
   const dropPlacement = props.dropTarget?.id === utility.key ? props.dropTarget.placement : null
 
   return (
@@ -186,9 +202,16 @@ function renderUtilityRow(
           </svg>
         </div>
         <div className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-          {icon && !props.failedIcons[utility.key] ? (
+          {bundledIcon ? (
             <img
-              src={icon}
+              src={bundledIcon}
+              alt=""
+              className="h-full w-full object-contain animate-fade-slide"
+              onError={() => props.onIconFailed(getBundledIconErrorKey(utility.key))}
+            />
+          ) : shellIcon && !props.failedIcons[utility.key] ? (
+            <img
+              src={shellIcon}
               alt=""
               className="h-full w-full object-contain animate-fade-slide"
               onError={() => props.onIconFailed(utility.key)}

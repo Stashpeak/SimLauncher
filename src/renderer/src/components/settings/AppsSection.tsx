@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { MAX_CUSTOM_SLOTS } from '../../lib/config'
+import { getBundledIconErrorKey, MAX_CUSTOM_SLOTS } from '../../lib/config'
 import { useAppsSettings } from './AppsContext'
 import { ChevronDownIcon } from '../icons'
 import { Tooltip } from '../Tooltip'
@@ -20,15 +20,6 @@ function getInitials(label: string) {
 
 function getCustomSlotNumber(key: string) {
   return Number(key.replace('customapp', ''))
-}
-
-// Namespaced iconLoadErrors key for a built-in's bundled icon. Bundled and
-// shell icons share the one error set (same state shape, same lifecycle);
-// the prefix keeps their failure states independent, so a failed bundled
-// data URI falls through to the shell icon without masking it. Never
-// collides with utility keys or custom-slot renumbering (customapp<N>).
-function getBundledIconErrorKey(key: string): string {
-  return `bundled:${key}`
 }
 
 export function AppsSection(): ReactNode {

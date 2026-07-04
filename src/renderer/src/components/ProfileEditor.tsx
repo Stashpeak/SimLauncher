@@ -106,6 +106,7 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
           appPaths={editor.appPaths}
           appNames={editor.appNames}
           appIconCache={editor.appIconCache}
+          utilityIcons={editor.utilityIcons}
           failedIcons={editor.failedIcons}
           fetchingIcons={editor.fetchingIcons}
           dragUtilityId={editor.dragUtilityId}
