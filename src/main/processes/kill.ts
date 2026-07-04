@@ -27,7 +27,7 @@ import {
 } from './state'
 import { publishRunningApps } from './running'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
-import type { KillFailure, KillFailureReason, KillResult } from './types'
+import type { KillFailure, KillFailureReason, KillProfileAppsOptions, KillResult } from './types'
 
 // Generous for a healthy system (the query usually returns in tens of ms) but
 // bounded so a wedged WMI service cannot hang a kill request forever.
@@ -657,7 +657,8 @@ export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean
 
 export async function killProfileApps(
   gameKey: string,
-  appPathsToKill: string[]
+  appPathsToKill: string[],
+  options?: KillProfileAppsOptions
 ): Promise<KillResult> {
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
@@ -693,7 +694,13 @@ export async function killProfileApps(
   // but BEFORE the tasklist scan below: that await can be slow, and a launch
   // loop sitting in a short inter-app wait could otherwise spawn its next app
   // before the abort lands, leaving it running past this kill's snapshot.
-  abortActiveLaunches(gameKey)
+  //
+  // `options.except` is set by switch-profile-apps (#716): that handler
+  // registers its own controller before calling this to kill the outgoing
+  // profile's apps, and must not have that same call self-abort the switch
+  // it is in the middle of performing. A real Close Apps click never passes
+  // `except`, so it still cancels a switch's launch as before.
+  abortActiveLaunches(gameKey, options)
 
   const { processNames } = await readRunningProcessNames()
 

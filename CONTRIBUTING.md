@@ -35,6 +35,18 @@ npm run dev
    generated automatically as `customapp<N>` keys by `getUtilities(customSlots)`
    and must not be authored by hand.
 
+2. Mirror the new key (same key set, same order) in the two places that
+   duplicate `BUILT_IN_UTILITIES` for the main process:
+   - `BUILT_IN_UTILITY_KEYS` in `src/main/profiles.ts` — order here is the
+     default launch order for legacy flat-boolean profiles.
+   - `KNOWN_UTILITY_KEYS` in `src/main/store.ts` — the config-import allowlist;
+     forgetting a key here silently drops that utility's saved exe path.
+
+3. Optionally bundle a fallback icon: set `icon: 'assets/myutil.png'` on the
+   config entry and place the PNG in `assets/`. This is shown when Windows
+   shell icon extraction from the user's configured exe returns nothing
+   (common for tray-only apps) — see #652.
+
 ## Code style
 
 - Run `npm test`, `npm run build`, `npm run typecheck`, `npm run lint`, and `npm run format:check` before submitting a PR (CI gates all five).

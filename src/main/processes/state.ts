@@ -3,6 +3,7 @@ import path from 'path'
 import { getExeName, normalizePathForComparison } from '../utils'
 
 import type {
+  KillProfileAppsOptions,
   ProcessNameMismatchWarningEntry,
   RunningProcessEntry,
   UnclosedProcessEntry
@@ -37,18 +38,51 @@ export function unregisterActiveLaunch(gameKey: string, controller: AbortControl
 }
 
 /**
+ * Whether the registry holds any controller other than `except`. This is the
+ * second half of the launch gate (#716 review finding): spawn.ts's
+ * `activeLaunches` Set only fills once launchProfileApps starts, but the
+ * relaunch/switch IPC handlers register their controller BEFORE their
+ * pre-launch async work (tasklist scans, the switch's kill phase). During
+ * that window `activeLaunches` is still empty, so any gate reading only it
+ * would let a competing launch through — whose registration would then evict
+ * the first handler's controller from this registry, leaving its sequence
+ * unreachable by Close Apps. `except` lets launchProfileApps' own gate skip
+ * the caller's own threaded-through controller, so a handler's launch is not
+ * blocked by its own registration.
+ */
+export function hasOtherActiveLaunchControllers(except?: AbortController): boolean {
+  for (const controller of activeLaunchControllers.values()) {
+    if (controller !== except) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
  * Abort the in-flight launch sequence for `gameKey`, or every in-flight
  * sequence when `gameKey` is undefined (the tray/global "close everything"
  * kill has no single gameKey to target). Called from kill.ts before it does
  * any kill work, so a launch loop already mid-sequence cannot spawn the next
  * queued app during or after the kill (#670).
  *
+ * `options.except` skips one specific controller regardless of which gameKey
+ * it is registered under. This is for a caller that registered its OWN
+ * controller before doing kill work as part of a launch sequence it is
+ * itself orchestrating (`switch-profile-apps`, #716) — without it, that
+ * kill's own `abortActiveLaunches(gameKey)` call would self-abort the very
+ * sequence it belongs to. A real Close Apps click never passes `except`, so
+ * it still aborts everything as before.
+ *
  * `AbortController.abort()` is itself idempotent (a second call is a no-op),
  * so this is safe to call on every kill request even when nothing is
  * currently launching for the target gameKey.
  */
-export function abortActiveLaunches(gameKey?: string): void {
+export function abortActiveLaunches(gameKey?: string, options?: KillProfileAppsOptions): void {
   activeLaunchControllers.forEach((controller, key) => {
+    if (controller === options?.except) {
+      return
+    }
     if (gameKey === undefined || key === gameKey) {
       controller.abort()
     }

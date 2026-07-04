@@ -49,7 +49,15 @@ export const KNOWN_GAME_KEYS = new Set([
   'rf2',
   'xplane12'
 ])
-const KNOWN_UTILITY_KEYS = ['simhub', 'crewchief', 'tradingpaints', 'garage61', 'secondmonitor']
+// Must stay in sync with BUILT_IN_UTILITIES in renderer/src/lib/config.ts.
+const KNOWN_UTILITY_KEYS = [
+  'tracktitan',
+  'simhub',
+  'crewchief',
+  'tradingpaints',
+  'garage61',
+  'secondmonitor'
+]
 const PROFILE_BOOLEAN_KEYS = [
   'launchAutomatically',
   'trackingEnabled',
@@ -828,7 +836,12 @@ export function getSupportedConfigValues(config: Record<string, unknown>): Recor
 
     if (key === 'windowBounds') {
       if (isWindowBounds(value)) {
-        supportedConfig.windowBounds = value
+        supportedConfig.windowBounds = {
+          x: value.x,
+          y: value.y,
+          width: value.width,
+          height: value.height
+        }
       }
       return
     }

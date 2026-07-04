@@ -40,6 +40,10 @@ export interface SettingsStateBundle {
     isCustomColor: boolean
     appIcons: Record<string, string>
     gameIcons: Record<string, string>
+    // Bundled fallback icons for built-in utilities that ship one (#652),
+    // keyed by utility key. Display-only cache, like gameIcons — not part of
+    // the dirty-tracked settings snapshot.
+    utilityIcons: Record<string, string>
     iconLoadErrors: Set<string>
   }
   setters: {
@@ -65,6 +69,7 @@ export interface SettingsStateBundle {
     setIsCustomColor: Dispatch<SetStateAction<boolean>>
     setAppIcons: Dispatch<SetStateAction<Record<string, string>>>
     setGameIcons: Dispatch<SetStateAction<Record<string, string>>>
+    setUtilityIcons: Dispatch<SetStateAction<Record<string, string>>>
     setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
   }
   updateSettingsObject: (
@@ -126,6 +131,7 @@ export function useSettingsState(): SettingsStateBundle {
   const [isCustomColor, setIsCustomColor] = useState(false)
   const [appIcons, setAppIcons] = useState<Record<string, string>>({})
   const [gameIcons, setGameIcons] = useState<Record<string, string>>({})
+  const [utilityIcons, setUtilityIcons] = useState<Record<string, string>>({})
   const [iconLoadErrors, setIconLoadErrors] = useState<Set<string>>(new Set())
   const settingsObjectEditVersions = useRef(createSettingsObjectVersions())
   const latestSettingsObjects = useRef<SettingsObjectRecords>({
@@ -227,6 +233,7 @@ export function useSettingsState(): SettingsStateBundle {
       isCustomColor,
       appIcons,
       gameIcons,
+      utilityIcons,
       iconLoadErrors
     },
     setters: {
@@ -252,6 +259,7 @@ export function useSettingsState(): SettingsStateBundle {
       setIsCustomColor,
       setAppIcons,
       setGameIcons,
+      setUtilityIcons,
       setIconLoadErrors
     },
     updateSettingsObject,

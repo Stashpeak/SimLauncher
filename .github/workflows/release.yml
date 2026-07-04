@@ -14,15 +14,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
           cache: npm
 
       - name: Verify tag matches package.json version
+        id: version
         shell: bash
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
@@ -32,6 +33,7 @@ jobs:
             exit 1
           fi
           echo "Tag ${GITHUB_REF_NAME} matches package.json version ${pkg_version}."
+          echo "version=${pkg_version}" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: npm ci
@@ -42,21 +44,30 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Build installer and publish release
+      # `--publish never`: build + sign into dist/ only, no GitHub release is
+      # created or touched here. We verify the exact signed artifact below,
+      # then publish those same files ourselves via `gh release` (#663).
+      # electron-builder's own `--publish always` would upload the installer
+      # to the (draft) release before the verify gate ran, and re-running
+      # electron-builder afterwards to "publish for real" would re-sign and
+      # produce a different artifact (new signature/hash) than the one that
+      # was verified.
+      - name: Build installer
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           # Azure Artifact Signing credentials (service principal). electron-builder
           # reads these automatically for win.azureSignOptions.
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        run: npx electron-builder --win --publish always
+        run: npx electron-builder --win --publish never
 
       # Enforce signing on releases without putting forceCodeSigning in
       # electron-builder.yml (which would break unsigned `npm run dist:win`
       # builds from source). This also asserts the signature is TIMESTAMPED —
       # without a timestamp the signature would expire with the short-lived
-      # Trusted Signing cert (~3 days). A failure here fails the release.
+      # Trusted Signing cert (~3 days). This now runs BEFORE any asset is
+      # published (#663): the installer only exists in dist/ at this point,
+      # so a failure here fails the workflow with nothing uploaded anywhere.
       - name: Verify the installer is signed and timestamped
         shell: pwsh
         run: |
@@ -73,6 +84,56 @@ jobs:
             if (-not $sig.TimeStamperCertificate) { throw "$($exe.Name) is signed but NOT timestamped." }
             Write-Host "OK: $($exe.Name) signed by David Kohout and timestamped."
           }
+
+      # electron-builder built with `--publish never` above, so nothing has
+      # been uploaded to GitHub yet. Create the (draft) release ourselves and
+      # upload the exact files that were just verified — matching the
+      # draft/title/asset shape electron-builder's own GitHub publisher would
+      # have produced, but with the verify gate strictly in front of it.
+      # electron-builder used to reuse an existing draft for this tag on a
+      # rerun; `gh release create` errors if one already exists, so replace a
+      # leftover *draft* from a prior failed run first (never touches an
+      # already-published release for this tag).
+      - name: Create draft release and upload installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Validate the exact asset set before anything touches GitHub, so a
+          # non-matching glob can never reach gh as a literal pattern and a
+          # changed electron-builder output shape fails loudly here instead.
+          exes=(dist/*.exe)
+          blockmaps=(dist/*.exe.blockmap)
+          if [ "${#exes[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one installer (.exe) in dist/, found ${#exes[@]}: ${exes[*]:-<none>}"
+            exit 1
+          fi
+          if [ "${#blockmaps[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one .exe.blockmap in dist/, found ${#blockmaps[@]}: ${blockmaps[*]:-<none>}"
+            exit 1
+          fi
+          if [ ! -f dist/latest.yml ]; then
+            echo "::error::dist/latest.yml is missing — the auto-update feed would break."
+            exit 1
+          fi
+          assets=("${exes[0]}" dist/latest.yml "${blockmaps[0]}")
+          echo "Validated release assets: ${assets[*]}"
+
+          existing_is_draft="$(gh release view "${{ github.ref_name }}" \
+            --json isDraft -q '.isDraft' 2>/dev/null || true)"
+          if [ "$existing_is_draft" = "true" ]; then
+            echo "Removing leftover draft release for ${{ github.ref_name }} from a prior run."
+            gh release delete "${{ github.ref_name }}" --yes
+          fi
+          gh release create "${{ github.ref_name }}" \
+            --draft \
+            --title "${{ steps.version.outputs.version }}" \
+            --notes "" \
+            "${assets[@]}"
 
       - name: Generate SHA-256 checksums
         shell: bash

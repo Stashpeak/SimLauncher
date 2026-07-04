@@ -5,12 +5,16 @@ import {
   type KillResult,
   type ProfileLaunchEntry,
   getRunningApps,
+  hasOtherActiveLaunchControllers,
+  isAnyLaunchActive,
   isRunningExePath,
   killLaunchedApps,
   killProfileApps,
   launchProfileApps,
   readRunningProcessNames,
+  registerActiveLaunch,
   subscribeRunningApps,
+  unregisterActiveLaunch,
   unsubscribeRunningApps
 } from '../processes'
 import { KNOWN_GAME_KEYS, getStoredStringRecord } from '../store'
@@ -97,19 +101,57 @@ export function registerLaunchHandlers(): void {
       return { success: false, error: 'No executable paths configured for this profile.' }
     }
 
-    const { processNames } = await readRunningProcessNames()
-    const missingEntries = allEntries.filter((entry) => !isRunningExePath(processNames, entry.path))
-
-    if (missingEntries.length === 0) {
-      return {
-        success: true,
-        message: 'All profile apps are already running.',
-        launchedCount: 0,
-        skippedCount: 0
-      }
+    // Mirrors launchProfileApps' own entry gate, and must run BEFORE the
+    // registerActiveLaunch below: registerActiveLaunch overwrites per gameKey,
+    // so registering while a launch sequence is already mid-flight would EVICT
+    // that sequence's controller from the registry — this handler would then
+    // bounce off launchProfileApps' gate and its finally would delete its own
+    // controller, leaving the registry EMPTY while the first loop still runs,
+    // unreachable by Close Apps (the #670 bug class via a new path). There is
+    // no await between this check and the registration, so the event loop
+    // makes the check-then-register pair atomic.
+    //
+    // Both halves are required: isAnyLaunchActive() covers a sequence already
+    // inside launchProfileApps, while hasOtherActiveLaunchControllers() covers
+    // another handler still in its PRE-launch window — registered, but not yet
+    // in launchProfileApps, so activeLaunches is still empty (#716 review
+    // finding, inverse window).
+    if (isAnyLaunchActive() || hasOtherActiveLaunchControllers()) {
+      return { success: false, error: 'Another profile is already launching.' }
     }
 
-    return launchProfileApps(event.sender, gameKey, missingEntries)
+    // Registered BEFORE the tasklist scan below (not inside launchProfileApps,
+    // which only runs after it) so a Close Apps click landing during that scan
+    // has something to abort — otherwise the scan's await was a window where
+    // the click was a no-op and the sequence still launched with a fresh,
+    // un-aborted controller right after (#716, #670 residual).
+    const launchController = registerActiveLaunch(gameKey)
+    try {
+      const { processNames } = await readRunningProcessNames()
+      const missingEntries = allEntries.filter(
+        (entry) => !isRunningExePath(processNames, entry.path)
+      )
+
+      if (missingEntries.length === 0) {
+        return {
+          success: true,
+          message: 'All profile apps are already running.',
+          launchedCount: 0,
+          skippedCount: 0
+        }
+      }
+
+      // `await` (not a bare `return`) matters here: it keeps the controller
+      // registered until the sequence actually finishes, so the `finally`
+      // below doesn't unregister it out from under a still-running launch
+      // loop — which would make a Close Apps click during the loop itself a
+      // no-op again.
+      return await launchProfileApps(event.sender, gameKey, missingEntries, {
+        controller: launchController
+      })
+    } finally {
+      unregisterActiveLaunch(gameKey, launchController)
+    }
   })
 
   ipcMain.handle(
@@ -194,52 +236,107 @@ export function registerLaunchHandlers(): void {
       // move must still trigger a stop + relaunch even though the path is
       // unchanged.
       const toEntryIds = new Set(toEntries.map(getProfileLaunchEntryId))
-      const { processNames: processNamesBeforeSwitch } = await readRunningProcessNames()
 
-      const entriesToStop = fromEntries.filter(
-        (entry) =>
-          !toEntryIds.has(getProfileLaunchEntryId(entry)) &&
-          processNamesBeforeSwitch.has(getExeName(entry.path))
-      )
-      let killResult: KillResult | undefined
-
-      if (entriesToStop.length > 0) {
-        killResult = await killProfileApps(
-          gameKey,
-          entriesToStop.map((entry) => entry.path)
-        )
+      // Mirrors launchProfileApps' own entry gate, and must run BEFORE the
+      // registerActiveLaunch below — same eviction reasoning as the
+      // relaunch-missing-profile handler above (#716 review finding), and the
+      // same two-half gate: hasOtherActiveLaunchControllers() catches another
+      // handler still in its pre-launch window, which isAnyLaunchActive()
+      // cannot see (activeLaunches fills only once launchProfileApps starts).
+      // Bailing out here also means the switch never kills the outgoing
+      // profile's apps for a launch that could not proceed anyway. No await
+      // sits between this check and the registration, so the pair is atomic.
+      if (isAnyLaunchActive() || hasOtherActiveLaunchControllers()) {
+        return { success: false, error: 'Another profile is already launching.' }
       }
 
-      const { processNames: processNamesAfterStop } = await readRunningProcessNames()
-      // If we just stopped a slot pointing at the same exe (different key
-      // and args), the incoming slot still needs to start with its own
-      // args — treat that exe as "needs to launch" regardless of post-kill
-      // tasklist state. Without this, a same-exe key swap would skip the
-      // relaunch and leave the old args active.
-      const stoppedExeNames = new Set(entriesToStop.map((entry) => getExeName(entry.path)))
-      const entriesToStart = toEntries.filter(
-        (entry) =>
-          stoppedExeNames.has(getExeName(entry.path)) ||
-          !processNamesAfterStop.has(getExeName(entry.path))
-      )
+      // Registered BEFORE the pre-switch scan below — covers that scan, the
+      // whole kill phase (killProfileApps can take seconds with WMI lookups),
+      // and the post-stop scan, all of which run before the launch call. A
+      // Close Apps click landing anywhere in that window used to find nothing
+      // registered to abort (#716, #670 residual).
+      const launchController = registerActiveLaunch(gameKey)
+      try {
+        const { processNames: processNamesBeforeSwitch } = await readRunningProcessNames()
 
-      if (entriesToStart.length === 0) {
+        const entriesToStop = fromEntries.filter(
+          (entry) =>
+            !toEntryIds.has(getProfileLaunchEntryId(entry)) &&
+            processNamesBeforeSwitch.has(getExeName(entry.path))
+        )
+        let killResult: KillResult | undefined
+
+        if (entriesToStop.length > 0) {
+          // `except: launchController` is the self-abort-trap fix: without
+          // it, this kill's own abortActiveLaunches(gameKey) call would
+          // cancel the switch's OWN registration above — the switch would
+          // then always report itself as cancelled, even with no Close Apps
+          // click involved.
+          killResult = await killProfileApps(
+            gameKey,
+            entriesToStop.map((entry) => entry.path),
+            { except: launchController }
+          )
+        }
+
+        const { processNames: processNamesAfterStop } = await readRunningProcessNames()
+        // If we just stopped a slot pointing at the same exe (different key
+        // and args), the incoming slot still needs to start with its own
+        // args — treat that exe as "needs to launch" regardless of post-kill
+        // tasklist state. Without this, a same-exe key swap would skip the
+        // relaunch and leave the old args active.
+        const stoppedExeNames = new Set(entriesToStop.map((entry) => getExeName(entry.path)))
+        const entriesToStart = toEntries.filter(
+          (entry) =>
+            stoppedExeNames.has(getExeName(entry.path)) ||
+            !processNamesAfterStop.has(getExeName(entry.path))
+        )
+
+        if (entriesToStart.length === 0) {
+          // A Close Apps click during the pre-scan or the kill phase above
+          // aborts launchController. When profile B has apps to start, the
+          // launchProfileApps call below reports that abort as cancelled —
+          // this early return must do the same (mirroring launchProfileApps'
+          // exact cancelled shape), or a switch with nothing new to start
+          // would return plain success and the renderer would commit the
+          // profile switch the user just cancelled (#716 Codex P2).
+          if (launchController.signal.aborted) {
+            return {
+              success: false,
+              cancelled: true,
+              message: 'Launch cancelled — closed apps instead.',
+              launchedCount: 0,
+              skippedCount: 0,
+              failedCount: killResult?.failedCount,
+              killFailures: killResult?.failures
+            }
+          }
+
+          return {
+            success: true,
+            message: killResult?.message,
+            launchedCount: 0,
+            skippedCount: 0,
+            failedCount: killResult?.failedCount,
+            killFailures: killResult?.failures
+          }
+        }
+
+        // Sharing launchController here is what makes a Close Apps click
+        // landing during the pre-switch scan or the kill phase above actually
+        // stop profile B from launching — launchProfileApps checks the same
+        // signal before it spawns anything.
+        const launchResult = await launchProfileApps(event.sender, gameKey, entriesToStart, {
+          controller: launchController
+        })
+
         return {
-          success: true,
-          message: killResult?.message,
-          launchedCount: 0,
-          skippedCount: 0,
-          failedCount: killResult?.failedCount,
+          ...launchResult,
+          failedCount: (launchResult.failedCount || 0) + (killResult?.failedCount || 0),
           killFailures: killResult?.failures
         }
-      }
-
-      const launchResult = await launchProfileApps(event.sender, gameKey, entriesToStart)
-
-      return {
-        ...launchResult,
-        failedCount: (launchResult.failedCount || 0) + (killResult?.failedCount || 0),
-        killFailures: killResult?.failures
+      } finally {
+        unregisterActiveLaunch(gameKey, launchController)
       }
     }
   )

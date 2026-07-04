@@ -115,7 +115,7 @@ Assetto Corsa, Assetto Corsa Competizione, Assetto Corsa Evo, Assetto Corsa Rall
 
 ## Supported Utilities
 
-**Built-in:** SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor.
+**Built-in:** Track Titan, SimHub, Crew Chief, Trading Paints, Garage 61, Second Monitor.
 **Anything else** - overlays, telemetry tools, wheelbase software - goes in up to 20 user-added custom app slots, each launched the same way.
 
 ---

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { GAMES, type Game } from '../lib/config'
 import { getSettings, onStoreConfigChanged } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
 import { isGameExeRunning } from '../lib/runningGame'
+import { getPathComparisonKey } from '../../../shared/path'
 import { useNotify } from './Notify'
+import { useAppsSettings } from './settings/AppsContext'
 import { useGamesSettings } from './settings/GamesContext'
 import { EmptyState } from './EmptyState'
 import { GameRow } from './game-list/GameRow'
@@ -64,6 +66,27 @@ export function GameList({
     }
   })
   const { gameIcons } = useGamesSettings()
+  const { appPaths: utilityAppPaths, utilityIcons } = useAppsSettings()
+
+  // Reverse-lookup: normalized configured exe path -> bundled fallback icon
+  // (#652). Built-in utilities that ship one (currently just Track Titan) use
+  // this when Windows shell icon extraction on that same path — the loop
+  // below — comes back empty, e.g. a tray-only app whose exe carries no
+  // usable icon resource. Keys use getPathComparisonKey (NOT the bare
+  // lowercase normalizePath above): the configured settings value and the
+  // main-process running-entry path can differ in slash style / stray
+  // whitespace, not just case, and main canonicalises its own comparisons via
+  // normalizePathForComparison — a bare toLowerCase() key misses those.
+  const bundledIconByPath = useMemo(() => {
+    const map: Record<string, string> = {}
+    Object.entries(utilityIcons).forEach(([key, data]) => {
+      const path = utilityAppPaths[key]
+      if (path && data) {
+        map[getPathComparisonKey(path)] = data
+      }
+    })
+    return map
+  }, [utilityAppPaths, utilityIcons])
 
   // Read the configured-games list (+ derived UI state) from the store. Kept in
   // a callback so it can run on mount AND on every store config change: the
@@ -210,7 +233,14 @@ export function GameList({
             (a) => a.gameKey === game.key && normalizePath(a.path) !== gamePathLower
           )
           const runningAppIcons = appsForGame.map((a) => ({
-            icon: appIconCache[normalizePath(a.path)] ?? null,
+            // Prefer the shell-extracted icon; fall back to a built-in's
+            // bundled icon (#652) when the shell lookup came back empty —
+            // applied at read time (not baked into appIconCache) so it isn't
+            // gated on load-order between the two icon sources.
+            icon:
+              appIconCache[normalizePath(a.path)] ||
+              bundledIconByPath[getPathComparisonKey(a.path)] ||
+              null,
             name: a.name,
             path: a.path,
             gameKey: a.gameKey,
