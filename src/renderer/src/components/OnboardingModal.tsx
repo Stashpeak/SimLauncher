@@ -4,7 +4,9 @@ import { useFocusTrap } from '../hooks/useFocusTrap'
 import { useTheme } from '../contexts/ThemeContext'
 import { setZoom } from '../lib/electron'
 import { getSettings, saveSettings } from '../lib/store'
+import type { ThemeMode } from '../lib/theme'
 import { AccentSwatchRow } from './AccentSwatchRow'
+import { ThemeModeControl } from './ThemeModeControl'
 import { ZoomControl } from './ZoomControl'
 import { BrandWordmarkIcon } from './icons'
 
@@ -16,15 +18,33 @@ interface OnboardingModalProps {
   onSkip: () => void
 }
 
+/** One labelled personalization row (Theme / Accent / Scale) in the modal's
+ * "Make it yours" group: a left-aligned label and its control, wrapping on
+ * narrow widths. Keeps the three rows identical. #735 */
+function PersonalizationRow({
+  label,
+  children
+}: {
+  label: string
+  children: ReactNode
+}): ReactNode {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <span className="text-sm text-(--text-secondary)">{label}</span>
+      {children}
+    </div>
+  )
+}
+
 /**
  * First-run onboarding. A single-screen modal that explains the one-click launch
- * loop, offers an optional accent + zoom personalization, and hands off to
- * Settings to configure the first sim. Shown once (gated on onboardingSeen + a
- * zero-games config in App). Skippable end-to-end. #641
+ * loop, offers an optional theme + accent + zoom personalization, and hands off
+ * to Settings to configure the first sim. Shown once (gated on onboardingSeen +
+ * a zero-games config in App). Skippable end-to-end. #641
  *
- * The accent + zoom controls are the same shared components Settings uses, but
- * the modal persists changes immediately (there is no save bar here) so the
- * picks survive the next launch.
+ * The theme + accent + zoom controls are the same shared components Settings
+ * uses, but the modal persists changes immediately (there is no save bar here)
+ * so the picks survive the next launch. #735
  */
 export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProps): ReactNode {
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -60,6 +80,13 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
 
   const isCustomColor = theme.accentPreset === 'custom'
 
+  const handleThemeModeChange = (mode: ThemeMode): void => {
+    theme.setThemeMode(mode) // apply live
+    // persist now (no save bar here)
+    void saveSettings({ themeMode: mode }).catch((err: unknown) => {
+      console.error('Failed to persist onboarding theme mode', err)
+    })
+  }
   const handleAccentChange = (hex: string): void => {
     theme.setAccentPreset(hex) // apply live
     // persist now (no save bar here)
@@ -105,14 +132,10 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
             aligned at every zoom. "Launcher" follows the accent (text-(--accent))
             to tie into the accent picker below; the play-mark keeps its own
             --launcher-play. The h2 carries the accessible name via aria-label
-            since the logo itself is decorative SVG. #641 */}
+            since the logo itself is decorative SVG. The "Welcome to" lockup was
+            dropped to keep the modal height sensible; the wordmark alone still
+            carries identity. #641 #735 */}
         <h2 id={titleId} aria-label="Welcome to SimLauncher" className="mb-3">
-          <span
-            aria-hidden="true"
-            className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-(--text-muted)"
-          >
-            Welcome to
-          </span>
           <BrandWordmarkIcon aria-hidden="true" className="h-7 w-auto text-(--accent)" />
         </h2>
         <p id={descId} className="text-sm text-(--text-secondary) leading-relaxed mb-6">
@@ -124,8 +147,14 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
             Make it yours (optional)
           </span>
           <div className="mt-3 flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-(--text-secondary)">Accent</span>
+            <PersonalizationRow label="Theme">
+              <ThemeModeControl
+                themeMode={theme.themeMode}
+                onThemeModeChange={handleThemeModeChange}
+                className="flex flex-wrap items-center gap-2"
+              />
+            </PersonalizationRow>
+            <PersonalizationRow label="Accent">
               <AccentSwatchRow
                 accentPreset={theme.accentPreset}
                 accentCustom={theme.accentCustom}
@@ -134,15 +163,14 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
                 onCustomColorChange={handleCustomColorChange}
                 className="flex flex-wrap items-center gap-2"
               />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-(--text-secondary)">Scale</span>
+            </PersonalizationRow>
+            <PersonalizationRow label="Scale">
               <ZoomControl
                 zoomFactor={zoomFactor}
                 onZoomFactorChange={handleZoomFactorChange}
                 className="flex flex-wrap items-center gap-2"
               />
-            </div>
+            </PersonalizationRow>
           </div>
         </div>
 
