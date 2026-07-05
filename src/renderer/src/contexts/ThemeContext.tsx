@@ -10,7 +10,13 @@ import {
 import { DEFAULT_ACCENT_COLOR } from '../lib/config'
 import { setZoom } from '../lib/electron'
 import { getSettings } from '../lib/store'
-import { applyAccentTheme, applyThemeMode, normalizeThemeMode, type ThemeMode } from '../lib/theme'
+import {
+  applyAccentTheme,
+  applyThemeMode,
+  DEFAULT_THEME_MODE,
+  normalizeThemeMode,
+  type ThemeMode
+} from '../lib/theme'
 
 interface ThemeContextValue {
   accentPreset: string
@@ -41,7 +47,12 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactNode 
   const [accentPreset, setAccentPresetState] = useState(DEFAULT_ACCENT_COLOR)
   const [accentCustom, setAccentCustomState] = useState('')
   const [accentBgTint, setAccentBgTintState] = useState(false)
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('dark')
+  // The real value loads from the store in syncThemeFromStore; seed with the
+  // shared default (not a hardcoded 'dark') so the pre-load context value tracks
+  // the actual default. The visible first frame is painted by the preload from
+  // the persisted value (see resolveBootTheme in main), so this initial guess is
+  // never applied to the document ahead of the loaded value. #735
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(DEFAULT_THEME_MODE)
 
   const applyAccent = useCallback((preset: string, custom: string) => {
     const hex = preset === 'custom' ? custom : preset

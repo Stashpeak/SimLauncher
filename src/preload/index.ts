@@ -7,6 +7,11 @@ import type {
   StoreConfigChangePayload,
   UpdateErrorPayload
 } from './api'
+import { applyInitialTheme } from './initialTheme'
+
+// Paint the persisted theme main resolved for us before the renderer's first
+// frame, so a fresh 'system' install on a light-mode OS never flashes dark. #735
+applyInitialTheme(process.argv, document.documentElement)
 
 // The channel strings used in ipcRenderer.invoke / ipcRenderer.on must match
 // the ipcMain.handle / sendToRenderer calls in src/main/ipc exactly.

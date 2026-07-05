@@ -18,6 +18,24 @@ interface OnboardingModalProps {
   onSkip: () => void
 }
 
+/** One labelled personalization row (Theme / Accent / Scale) in the modal's
+ * "Make it yours" group: a left-aligned label and its control, wrapping on
+ * narrow widths. Keeps the three rows identical. #735 */
+function PersonalizationRow({
+  label,
+  children
+}: {
+  label: string
+  children: ReactNode
+}): ReactNode {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <span className="text-sm text-(--text-secondary)">{label}</span>
+      {children}
+    </div>
+  )
+}
+
 /**
  * First-run onboarding. A single-screen modal that explains the one-click launch
  * loop, offers an optional theme + accent + zoom personalization, and hands off
@@ -129,16 +147,14 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
             Make it yours (optional)
           </span>
           <div className="mt-3 flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-(--text-secondary)">Theme</span>
+            <PersonalizationRow label="Theme">
               <ThemeModeControl
                 themeMode={theme.themeMode}
                 onThemeModeChange={handleThemeModeChange}
                 className="flex flex-wrap items-center gap-2"
               />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-(--text-secondary)">Accent</span>
+            </PersonalizationRow>
+            <PersonalizationRow label="Accent">
               <AccentSwatchRow
                 accentPreset={theme.accentPreset}
                 accentCustom={theme.accentCustom}
@@ -147,15 +163,14 @@ export function OnboardingModal({ isOpen, onSetup, onSkip }: OnboardingModalProp
                 onCustomColorChange={handleCustomColorChange}
                 className="flex flex-wrap items-center gap-2"
               />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm text-(--text-secondary)">Scale</span>
+            </PersonalizationRow>
+            <PersonalizationRow label="Scale">
               <ZoomControl
                 zoomFactor={zoomFactor}
                 onZoomFactorChange={handleZoomFactorChange}
                 className="flex flex-wrap items-center gap-2"
               />
-            </div>
+            </PersonalizationRow>
           </div>
         </div>
 

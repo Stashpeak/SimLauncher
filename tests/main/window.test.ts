@@ -39,6 +39,7 @@ async function loadWindowModuleForCreate(
     showTrayIcon?: boolean
     minimizeToTray?: boolean
     autoCheckUpdates?: boolean
+    themeMode?: string
   } = {}
 ) {
   const { clearIpcHandlers } = await import('electron')
@@ -48,7 +49,8 @@ async function loadWindowModuleForCreate(
     startMinimized: opts.startMinimized ?? false,
     showTrayIcon: opts.showTrayIcon ?? true,
     minimizeToTray: opts.minimizeToTray ?? false,
-    autoCheckUpdates: opts.autoCheckUpdates ?? true
+    autoCheckUpdates: opts.autoCheckUpdates ?? true,
+    themeMode: opts.themeMode
   }
   const storeSet = vi.fn((key: string, value: unknown) => {
     storeValues[key] = value
@@ -96,6 +98,58 @@ async function getCreatedWindow() {
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+})
+
+// #735: the first visible frame must match the PERSISTED theme (the window is
+// shown on 'ready-to-show', before the renderer's async settings read lands).
+// resolveBootTheme maps the persisted mode + OS preference to the concrete
+// theme main hands the preload to paint pre-first-paint.
+test('resolveBootTheme: system follows the OS preference', async () => {
+  const { resolveBootTheme } = await loadWindowModuleForCreate()
+  // Fresh install (default 'system') on a light-mode OS must resolve to light,
+  // not the dark App.css default — this is the flash the fix removes.
+  expect(resolveBootTheme('system', false)).toBe('light')
+  expect(resolveBootTheme('system', true)).toBe('dark')
+})
+
+test('resolveBootTheme: an explicit persisted mode wins over the OS (no wrong-theme flash for existing users)', async () => {
+  const { resolveBootTheme } = await loadWindowModuleForCreate()
+  // An existing dark user on a light-mode OS still boots dark (and vice versa).
+  expect(resolveBootTheme('dark', false)).toBe('dark')
+  expect(resolveBootTheme('light', true)).toBe('light')
+})
+
+test('resolveBootTheme: an unknown/absent mode falls back to system', async () => {
+  const { resolveBootTheme } = await loadWindowModuleForCreate()
+  expect(resolveBootTheme(undefined, false)).toBe('light')
+  expect(resolveBootTheme('bogus', true)).toBe('dark')
+})
+
+test('createWindow injects the resolved boot theme for the preload (#735)', async () => {
+  const electron = await import('electron')
+  ;(
+    electron as unknown as { nativeTheme: { shouldUseDarkColors: boolean } }
+  ).nativeTheme.shouldUseDarkColors = false
+  const { createWindow } = await loadWindowModuleForCreate({ themeMode: 'system' })
+  createWindow()
+  const win = await getCreatedWindow()
+
+  const additionalArguments = win.options.webPreferences?.additionalArguments as string[]
+  // A fresh 'system' install on a light OS gets a light first frame.
+  expect(additionalArguments).toContain('--initial-theme=light')
+})
+
+test('createWindow injects a persisted dark theme even on a light-mode OS (#735)', async () => {
+  const electron = await import('electron')
+  ;(
+    electron as unknown as { nativeTheme: { shouldUseDarkColors: boolean } }
+  ).nativeTheme.shouldUseDarkColors = false
+  const { createWindow } = await loadWindowModuleForCreate({ themeMode: 'dark' })
+  createWindow()
+  const win = await getCreatedWindow()
+
+  const additionalArguments = win.options.webPreferences?.additionalArguments as string[]
+  expect(additionalArguments).toContain('--initial-theme=dark')
 })
 
 // Electron 42 regression context (#382): the renderer's boot-time set-zoom IPC
