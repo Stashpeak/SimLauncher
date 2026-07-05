@@ -113,7 +113,7 @@ test('createInMemoryFallbackStore seeds schema defaults and supports get/set/cle
   const fallback = createInMemoryFallbackStore()
 
   // Seeded with schema defaults so the app behaves like a fresh install.
-  expect(fallback.get('themeMode')).toBe('dark')
+  expect(fallback.get('themeMode')).toBe('system')
   expect(fallback.get('showTrayIcon')).toBe(true)
   expect(fallback.get('customSlots')).toBe(1)
   // Unknown keys honor the get(key, default) form.
@@ -136,7 +136,7 @@ test('createInMemoryFallbackStore seeds schema defaults and supports get/set/cle
 
   // clear() resets to schema defaults, matching electron-store semantics.
   fallback.clear()
-  expect(fallback.get('themeMode')).toBe('dark')
+  expect(fallback.get('themeMode')).toBe('system')
 
   // Object defaults are cloned, not shared by reference: a handler mutating a
   // returned object default (e.g. save-profile does `profiles[key] = ...`) must

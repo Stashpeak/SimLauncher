@@ -1,15 +1,9 @@
 import { useId, type ReactNode } from 'react'
-import type { ThemeMode } from '../../lib/theme'
 import { Toggle } from '../Toggle'
 import { AccentSwatchRow } from '../AccentSwatchRow'
+import { ThemeModeControl } from '../ThemeModeControl'
 import { ZoomControl } from '../ZoomControl'
 import { useAppearanceSettings } from './AppearanceContext'
-
-const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
-  { label: 'Dark', value: 'dark' },
-  { label: 'Light', value: 'light' },
-  { label: 'System', value: 'system' }
-]
 
 export function AppearanceSection(): ReactNode {
   const accentBgTintId = useId()
@@ -34,23 +28,7 @@ export function AppearanceSection(): ReactNode {
     <>
       <div className="settings-row settings-row-responsive">
         <span className="settings-label text-(--text-secondary)">Theme</span>
-        <div className="settings-control" role="group" aria-label="Theme">
-          {THEME_MODE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onThemeModeChange(option.value)}
-              aria-pressed={themeMode === option.value}
-              className={`settings-control-pill settings-control-pill-button settings-control-preset glass-surface action-hover-scale tracking-wide transition-colors ${
-                themeMode === option.value
-                  ? 'selected-surface text-(--text-primary)'
-                  : 'accent-subtle-hover text-(--text-secondary) hover:text-(--text-primary)'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        <ThemeModeControl themeMode={themeMode} onThemeModeChange={onThemeModeChange} />
       </div>
 
       <div className="settings-row settings-row-responsive">

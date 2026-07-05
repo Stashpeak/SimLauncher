@@ -81,7 +81,7 @@ const STORE_OPTIONS = {
     accentPreset: { type: 'string', default: '' },
     accentCustom: { type: 'string', default: '' },
     accentBgTint: { type: 'boolean', default: false },
-    themeMode: { type: 'string', default: 'dark', enum: ['light', 'dark', 'system'] },
+    themeMode: { type: 'string', default: 'system', enum: ['light', 'dark', 'system'] },
     focusActiveTitle: { type: 'boolean', default: true },
     launchDelayMs: { type: 'number', default: 1000, minimum: 0, maximum: 30000 },
     startWithWindows: { type: 'boolean', default: false },
