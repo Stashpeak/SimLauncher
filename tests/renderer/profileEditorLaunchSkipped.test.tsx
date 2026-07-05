@@ -112,7 +112,7 @@ describe('useProfileEditor launch skipped-entry warning (#639)', () => {
       })
 
       expect(notifyMock).toHaveBeenCalledWith(
-        'iRacing was skipped — its path no longer exists.',
+        'iRacing was skipped: its path no longer exists.',
         'warn',
         5000
       )
@@ -135,7 +135,7 @@ describe('useProfileEditor launch skipped-entry warning (#639)', () => {
       })
 
       expect(notifyMock).toHaveBeenCalledWith(
-        'My Dash was skipped — its path no longer exists.',
+        'My Dash was skipped: its path no longer exists.',
         'warn',
         5000
       )
