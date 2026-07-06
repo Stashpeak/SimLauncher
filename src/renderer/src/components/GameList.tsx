@@ -251,6 +251,8 @@ export function GameList({
     )
   }
 
+  const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
+
   return (
     <div role="list" aria-label="Games" className="flex flex-col gap-3 px-1 py-2">
       {configuredGames
@@ -266,7 +268,6 @@ export function GameList({
           return runningSort || firstEntry.index - secondEntry.index
         })
         .map(({ game }) => {
-          const hasActiveTitle = focusActiveTitle && Object.values(runningStatus).some(Boolean)
           const gamePathLower = gamePaths[game.key] ? normalizePath(gamePaths[game.key]) : undefined
           // The green dot means the game's own exe is running — NOT the
           // runningStatus[key] aggregate, which is also true when only a
