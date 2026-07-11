@@ -1,0 +1,77 @@
+name: Submit an app to the directory
+description: Suggest a sim-racing companion app for the simlauncher.com app directory
+labels: ['app-directory']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The directory lists sim-racing companion apps with fact-backed dev status, no pay-to-rank. Tell us about the app and we'll take a look.
+
+  - type: input
+    id: name
+    attributes:
+      label: App name
+      placeholder: 'e.g. SimHub'
+    validations:
+      required: true
+
+  - type: input
+    id: homepage
+    attributes:
+      label: Homepage URL
+      placeholder: 'https://...'
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: Source repository URL, if any
+      description: Link the project's live home, not a mirror.
+      placeholder: 'https://github.com/...'
+    validations:
+      required: false
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Telemetry & Data Analysis
+        - Overlays & Dashboards
+        - Race Engineers & Spotters
+        - Setups & Coaching
+        - League & Community Tools
+        - Streaming & Broadcasting
+        - Hardware & FFB Tools
+        - Launchers & Game Management
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: sims
+    attributes:
+      label: Supported sims
+      placeholder: 'e.g. iRacing, ACC, rFactor 2'
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What does it do?
+      placeholder: A short, plain description of what the app does.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Your relationship to the app
+      options:
+        - I made it
+        - I use it
+        - Other
+    validations:
+      required: true
