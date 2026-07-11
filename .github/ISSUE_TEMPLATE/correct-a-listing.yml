@@ -1,0 +1,33 @@
+name: Correct a directory listing
+description: Report incorrect or outdated information on an app directory listing
+labels: ['app-directory']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The directory lists sim-racing companion apps with fact-backed dev status, no pay-to-rank. If something is wrong or out of date, let us know and point us to proof.
+
+  - type: input
+    id: listing-url
+    attributes:
+      label: Listing URL on simlauncher.com/apps/
+      placeholder: 'https://simlauncher.com/apps/...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-is-wrong
+    attributes:
+      label: What is wrong?
+      placeholder: Describe what's incorrect or outdated.
+    validations:
+      required: true
+
+  - type: input
+    id: evidence
+    attributes:
+      label: Evidence link
+      description: A URL that proves the correction, e.g. a release page or changelog.
+      placeholder: 'https://...'
+    validations:
+      required: true
