@@ -37,14 +37,16 @@ body:
     attributes:
       label: Category
       options:
-        - Telemetry & Data Analysis
+        - Telemetry & Data
         - Overlays & Dashboards
-        - Race Engineers & Spotters
-        - Setups & Coaching
-        - League & Community Tools
-        - Streaming & Broadcasting
-        - Hardware & FFB Tools
-        - Launchers & Game Management
+        - Setups
+        - Race Engineer & Spotter
+        - League & Race Management
+        - Streaming & Broadcast
+        - Hardware & FFB
+        - Training & Coaching
+        - Launchers & Utilities
+        - Marketplace & Liveries
         - Other
     validations:
       required: true
