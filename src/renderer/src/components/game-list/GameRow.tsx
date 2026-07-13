@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, memo, type ReactNode } from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -29,7 +29,75 @@ import { useAppDirty } from '../../contexts/AppDirtyContext'
 // Cooldown is skipped (0 ms) when no apps were actually launched.
 const POST_LAUNCH_BLOCK_MS = 10000
 
-export function GameRow({
+// ⚡ Bolt: Memoize GameRow to prevent unnecessary re-renders of all rows when only one game's state (e.g. launching, running) changes.
+// GameList generates a new runningAppIcons array and inline callbacks on every render, so a custom comparator is needed.
+
+type GameRowProps = {
+  game: Game
+  isActive: boolean
+  isRunning: boolean
+  isGameRunning: boolean
+  runningAppIcons: RunningAppIcon[]
+  gameIconUrl?: string
+  isDimmed: boolean
+  isLaunching: boolean
+  isLaunchBlocked: boolean
+  onLaunchStart: (gameKey: string) => void
+  onLaunchEnd: (gameKey: string, cooldownMs?: number, options?: { primaryLaunch?: boolean }) => void
+  onRunningStateRefresh: () => Promise<void>
+  onToggleEditor: () => void
+  onCloseEditor: () => void
+  cacheInitialized: boolean
+}
+
+function arePropsEqual(prevProps: GameRowProps, nextProps: GameRowProps) {
+  if (
+    prevProps.game.key !== nextProps.game.key ||
+    prevProps.isActive !== nextProps.isActive ||
+    prevProps.isRunning !== nextProps.isRunning ||
+    prevProps.isGameRunning !== nextProps.isGameRunning ||
+    prevProps.gameIconUrl !== nextProps.gameIconUrl ||
+    prevProps.isDimmed !== nextProps.isDimmed ||
+    prevProps.isLaunching !== nextProps.isLaunching ||
+    prevProps.isLaunchBlocked !== nextProps.isLaunchBlocked ||
+    prevProps.cacheInitialized !== nextProps.cacheInitialized ||
+    prevProps.onLaunchStart !== nextProps.onLaunchStart ||
+    prevProps.onLaunchEnd !== nextProps.onLaunchEnd ||
+    prevProps.onRunningStateRefresh !== nextProps.onRunningStateRefresh
+  ) {
+    return false
+  }
+
+  // Note on inline callbacks: onToggleEditor and onCloseEditor are deliberately omitted
+  // from this comparison because GameList instantiates them as inline arrow functions
+  // on every render (`() => setActiveEditorKey(...)`). Since they only close over
+  // `game.key` (which is stable) and the `setActiveEditorKey` setter (which is stable
+  // from React's useState), skipping them in the equality check is safe and will not
+  // introduce stale closure bugs.
+
+  if (prevProps.runningAppIcons.length !== nextProps.runningAppIcons.length) {
+    return false
+  }
+
+  for (let i = 0; i < prevProps.runningAppIcons.length; i++) {
+    const p = prevProps.runningAppIcons[i]
+    const n = nextProps.runningAppIcons[i]
+    if (
+      p.path !== n.path ||
+      p.icon !== n.icon ||
+      p.warning !== n.warning ||
+      p.elevated !== n.elevated ||
+      p.tracked !== n.tracked ||
+      p.name !== n.name
+    ) {
+      return false
+    }
+  }
+
+  return true
+}
+
+export const GameRow = memo(function GameRow({
   game,
   isActive,
   isRunning,
@@ -45,34 +113,7 @@ export function GameRow({
   onToggleEditor,
   onCloseEditor,
   cacheInitialized
-}: {
-  game: Game
-  isActive: boolean
-  // Aggregate: any tracked app under this game's key is running (game exe OR a
-  // companion). Drives sorting, dimming, relaunch-missing and the switch
-  // confirm — all of which mean "this profile has something running".
-  isRunning: boolean
-  // Narrow: the game's OWN executable is running. Drives only the green status
-  // dot, whose tooltip/label assert the game itself is running (#587).
-  isGameRunning: boolean
-  runningAppIcons: RunningAppIcon[]
-  gameIconUrl?: string
-  isDimmed: boolean
-  isLaunching: boolean
-  isLaunchBlocked: boolean
-  onLaunchStart: (gameKey: string) => void
-  // `primaryLaunch` marks a fresh game launch (vs a profile switch / relaunch-
-  // missing) so the launch-block only speaks the "now running" cue after a real
-  // launch.
-  onLaunchEnd: (gameKey: string, cooldownMs?: number, options?: { primaryLaunch?: boolean }) => void
-  onRunningStateRefresh: () => Promise<void>
-  onToggleEditor: () => void
-  // Explicit close for this row's editor (key-guarded functional update) so the
-  // async discard path can close without a stale toggle reopening/closing the
-  // wrong row if the user opens another editor mid-await (#453 Codex P2).
-  onCloseEditor: () => void
-  cacheInitialized: boolean
-}): ReactNode {
+}: GameRowProps): ReactNode {
   const { notify, announce } = useNotify()
   const [profileSwitchConfirm, setProfileSwitchConfirm] = useState<{
     nextProfileId: string
@@ -644,4 +685,4 @@ export function GameRow({
       />
     </div>
   )
-}
+})
