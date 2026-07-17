@@ -1,0 +1,64 @@
+# Copy to .github/workflows/review-bot.yml in a Stashpeak org repo.
+# Secrets needed (org level): CLAUDE_CODE_OAUTH_TOKEN, OPENROUTER_API_KEY, REVIEWBOT_PAT.
+# REVIEWBOT_PAT is required because review-bot is a private repo and public org repos
+# cannot resolve private actions via `uses:` - we checkout with the PAT instead.
+name: Review Bot
+on:
+  pull_request:
+    types: [opened]
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    # job-level (not workflow-level) so runs whose job is skipped by the `if`
+    # (e.g. issue_comment from other bots) never cancel an in-progress review
+    concurrency:
+      group: review-bot-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+       contains(github.event.comment.body, '@claude review'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR head
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            PR_DATA=$(gh api "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.issue.number }}")
+            HEAD_REPO=$(echo "$PR_DATA" | jq -r .head.repo.full_name)
+            if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+              echo "::error::Review via comment is not allowed for fork PRs"
+              exit 1
+            fi
+            echo "sha=$(echo "$PR_DATA" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          persist-credentials: false
+      - name: Fetch review-bot
+        uses: actions/checkout@v4
+        with:
+          repository: Stashpeak/review-bot
+          token: ${{ secrets.REVIEWBOT_PAT }}
+          path: .review-bot
+          persist-credentials: false
+      - uses: ./.review-bot
+        with:
+          engine: claude-code
+          # log-only A/B lane: any OpenRouter model id works; each entry costs cents per PR
+          shadow: api:openai/gpt-5.6-terra,api:moonshotai/kimi-k3,api:x-ai/grok-4.5,api:deepseek/deepseek-v4-flash,api:tencent/hy3:free,api:xiaomi/mimo-v2.5
+          github-token: ${{ github.token }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
