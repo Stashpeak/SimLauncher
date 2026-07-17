@@ -1,5 +1,7 @@
 # Copy to .github/workflows/review-bot.yml in a Stashpeak org repo.
-# Secrets needed: CLAUDE_CODE_OAUTH_TOKEN, OPENROUTER_API_KEY (org or repo level).
+# Secrets needed (org level): CLAUDE_CODE_OAUTH_TOKEN, OPENROUTER_API_KEY, REVIEWBOT_PAT.
+# REVIEWBOT_PAT is required because review-bot is a private repo and public org repos
+# cannot resolve private actions via `uses:` - we checkout with the PAT instead.
 name: Review Bot
 on:
   pull_request:
@@ -45,7 +47,14 @@ jobs:
         with:
           ref: ${{ steps.pr.outputs.sha }}
           persist-credentials: false
-      - uses: Stashpeak/review-bot@main
+      - name: Fetch review-bot
+        uses: actions/checkout@v4
+        with:
+          repository: Stashpeak/review-bot
+          token: ${{ secrets.REVIEWBOT_PAT }}
+          path: .review-bot
+          persist-credentials: false
+      - uses: ./.review-bot
         with:
           engine: claude-code
           # log-only A/B lane: any OpenRouter model id works; each entry costs cents per PR
