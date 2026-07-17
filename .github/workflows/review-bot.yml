@@ -26,6 +26,7 @@ jobs:
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
        contains(github.event.comment.body, '@claude review'))
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Resolve PR head
         id: pr
@@ -62,3 +63,5 @@ jobs:
           github-token: ${{ github.token }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          supabase-url: ${{ secrets.REVIEWBOT_SUPABASE_URL }}
+          supabase-key: ${{ secrets.REVIEWBOT_SUPABASE_KEY }}
