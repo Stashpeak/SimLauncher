@@ -3,7 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import Store from 'electron-store'
 
+import { BUILT_IN_UTILITY_KEYS, KNOWN_GAME_KEYS } from '../shared/domain/registries'
 import { clamp, isRecord, normalizePathForComparison } from './utils'
+
+// Re-exported for existing importers (ipc/config.ts, ipc/launch.ts) that pull
+// the game-key allowlist from the store module; the list itself lives in the
+// shared domain layer now (#692).
+export { KNOWN_GAME_KEYS }
 
 export const DEFAULT_ZOOM_FACTOR = 1.0
 export const MIN_ZOOM_FACTOR = 0.5
@@ -20,44 +26,6 @@ const MAX_TRACKED_PROCESS_PATHS = 50
 const ACCENT_CUSTOM_PATTERN = /^#[0-9a-fA-F]{6}$/
 const THEME_MODES = new Set(['light', 'dark', 'system'])
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
-export const KNOWN_GAME_KEYS = new Set([
-  'ac',
-  'acc',
-  'acevo',
-  'acrally',
-  'aeroflyfs4',
-  'ams',
-  'ams2',
-  'beamng',
-  'dcsw',
-  'dirtrally',
-  'dirtrally2',
-  'eawrc',
-  'f124',
-  'f125',
-  'il2gb',
-  'iracing',
-  'lmu',
-  'msfs2020',
-  'msfs2024',
-  'p3d',
-  'pmr',
-  'raceroom',
-  'rbr',
-  'rennsport',
-  'rf1',
-  'rf2',
-  'xplane12'
-])
-// Must stay in sync with BUILT_IN_UTILITIES in renderer/src/lib/config.ts.
-const KNOWN_UTILITY_KEYS = [
-  'tracktitan',
-  'simhub',
-  'crewchief',
-  'tradingpaints',
-  'garage61',
-  'secondmonitor'
-]
 const PROFILE_BOOLEAN_KEYS = [
   'launchAutomatically',
   'trackingEnabled',
@@ -474,7 +442,7 @@ function getImportableExePath(value: unknown) {
 
 function getUtilityKeySet(customSlots: number) {
   return new Set([
-    ...KNOWN_UTILITY_KEYS,
+    ...BUILT_IN_UTILITY_KEYS,
     ...Array.from({ length: customSlots }, (_value, index) => `customapp${index + 1}`)
   ])
 }
