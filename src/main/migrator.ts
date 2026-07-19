@@ -1,3 +1,4 @@
+import { getHighestCustomSlot } from '../shared/domain/slots'
 import {
   StoredNamedProfile,
   StoredProfile,
@@ -9,58 +10,6 @@ import {
 } from './profiles'
 import { getStoredStringRecord, store } from './store'
 import { isRecord } from './utils'
-
-function getCustomSlotNumber(key: string) {
-  const match = key.match(/^customapp(\d+)$/)
-  return match ? Number(match[1]) : null
-}
-
-// Scan every record that could reference a custom app slot and return the
-// highest slot number found. Both pre-migration (flat boolean/path keys) and
-// post-migration (utilities array) shapes are checked because the store may
-// contain a mix when this runs (e.g. appPaths is always flat; profiles may
-// already be in the new shape from a partial earlier migration attempt).
-function getHighestCustomSlot(...records: Array<Record<string, unknown> | undefined>) {
-  let highestSlot = 0
-
-  const scanRecord = (record: Record<string, unknown> | undefined) => {
-    Object.entries(record || {}).forEach(([key, value]) => {
-      if (key === 'profiles' && Array.isArray(value)) {
-        value.forEach((profile) => {
-          if (isRecord(profile)) {
-            scanRecord(profile)
-          }
-        })
-        return
-      }
-
-      const slotNumber = getCustomSlotNumber(key)
-
-      if (
-        slotNumber !== null &&
-        (value === true || (typeof value === 'string' && value.trim().length > 0))
-      ) {
-        highestSlot = Math.max(highestSlot, slotNumber)
-      }
-
-      if (key === 'utilities' && Array.isArray(value)) {
-        value.filter(isStoredProfileUtility).forEach((utility) => {
-          const utilitySlotNumber = getCustomSlotNumber(utility.id)
-
-          if (utility.enabled && utilitySlotNumber !== null) {
-            highestSlot = Math.max(highestSlot, utilitySlotNumber)
-          }
-        })
-      }
-    })
-  }
-
-  records.forEach((record) => {
-    scanRecord(record)
-  })
-
-  return highestSlot
-}
 
 // Convert a pre-migration profile (flat boolean keys like { simhub: true })
 // into the structured utilities array ({ id, enabled }[]). If utilities already

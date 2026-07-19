@@ -15,8 +15,10 @@ import type {
   Profiles,
   ProfileUtility
 } from '../../../shared/domain/profile'
+import { getHighestCustomSlot } from '../../../shared/domain/slots'
 
 export { GAMES, BUILT_IN_UTILITIES, type Game, type Utility }
+export { getHighestCustomSlot }
 
 // Profile domain types are process-agnostic (#692); the canonical defs live in
 // the shared domain layer. Re-exported here under the renderer's historical
@@ -60,82 +62,6 @@ export function normalizeCustomSlots(value: unknown): number {
 
 export function getCustomUtilityKey(index: number): string {
   return `customapp${index}`
-}
-
-// A custom-app slot is considered "in use" when the stored value is either a
-// non-empty string (a configured path or name) or a boolean true (legacy enabled
-// flag). Other falsy values mean the slot is unconfigured.
-function hasCustomSlotValue(value: unknown) {
-  if (value === true) {
-    return true
-  }
-
-  if (typeof value === 'string') {
-    return value.trim().length > 0
-  }
-
-  return false
-}
-
-function getCustomSlotNumberFromKey(key: string) {
-  const match = key.match(/^customapp(\d+)$/)
-  return match ? Number(match[1]) : null
-}
-
-/**
- * Scans one or more records (settings, profiles, or nested profile objects) and
- * returns the highest custom-app slot number that is actively in use.
- *
- * The scan is recursive for the special keys 'profiles' (array of named
- * profiles) and 'utilities' (ProfileUtility[] inside a profile) so that enabled
- * slots buried inside a GameProfileSet are found without callers flattening
- * the structure first. Returns 0 when no custom slot is found.
- */
-export function getHighestCustomSlot(
-  ...records: Array<Record<string, unknown> | undefined>
-): number {
-  let highestSlot = 0
-
-  const scanRecord = (record: Record<string, unknown> | undefined) => {
-    Object.entries(record || {}).forEach(([key, value]) => {
-      if (key === 'profiles' && Array.isArray(value)) {
-        value.forEach((profile) => {
-          if (isRecord(profile)) {
-            scanRecord(profile)
-          }
-        })
-        return
-      }
-
-      if (key === 'utilities' && Array.isArray(value)) {
-        value.forEach((entry) => {
-          if (!isProfileUtility(entry) || !entry.enabled) {
-            return
-          }
-
-          const slotNumber = getCustomSlotNumberFromKey(entry.id)
-
-          if (slotNumber !== null) {
-            highestSlot = Math.max(highestSlot, slotNumber)
-          }
-        })
-
-        return
-      }
-
-      const slotNumber = getCustomSlotNumberFromKey(key)
-
-      if (slotNumber !== null && hasCustomSlotValue(value)) {
-        highestSlot = Math.max(highestSlot, slotNumber)
-      }
-    })
-  }
-
-  records.forEach((record) => {
-    scanRecord(record)
-  })
-
-  return highestSlot
 }
 
 /**
