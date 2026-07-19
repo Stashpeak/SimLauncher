@@ -1,3 +1,4 @@
+import { BUILT_IN_UTILITY_KEYS } from '../shared/domain/registries'
 import type { ProfileLaunchEntry } from './processes/types'
 import { getStoredStringRecord, store } from './store'
 import { isRecord, isValidExePath, normalizePathForComparison } from './utils'
@@ -38,17 +39,11 @@ export interface StoredProfileUtility {
   enabled: boolean
 }
 
-// Must stay in sync with BUILT_IN_UTILITIES in renderer/src/lib/config.ts (key
-// set AND order — order is the default launch-order for legacy flat-boolean
-// profiles, see getEnabledUtilityEntries below).
-export const BUILT_IN_UTILITY_KEYS = [
-  'tracktitan',
-  'simhub',
-  'crewchief',
-  'tradingpaints',
-  'garage61',
-  'secondmonitor'
-]
+// The built-in utility key list (and its load-bearing order — it is the default
+// launch order for legacy flat-boolean profiles, see getEnabledUtilityEntries
+// below) lives in the shared domain layer now (#692). Re-exported so existing
+// importers keep their `from './profiles'` path.
+export { BUILT_IN_UTILITY_KEYS }
 
 export function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
   if (!isRecord(value)) {
