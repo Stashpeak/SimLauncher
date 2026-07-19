@@ -34,6 +34,8 @@ export function GameRow({
   isActive,
   isRunning,
   isGameRunning,
+  gameStatusWarning,
+  gameStatusDismissPath,
   runningAppIcons,
   gameIconUrl,
   isDimmed,
@@ -55,6 +57,11 @@ export function GameRow({
   // Narrow: the game's OWN executable is running. Drives only the green status
   // dot, whose tooltip/label assert the game itself is running (#587).
   isGameRunning: boolean
+  // Set when the green dot is driven by a stale process-name-mismatch entry
+  // (a launcher stub that self-exited) rather than a live process — carries the
+  // warning text and the path to dismiss so the icon can offer Dismiss (#737).
+  gameStatusWarning?: string
+  gameStatusDismissPath?: string
   runningAppIcons: RunningAppIcon[]
   gameIconUrl?: string
   isDimmed: boolean
@@ -545,7 +552,13 @@ export function GameRow({
         className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? 'isolation-auto! z-20' : 'z-0'}`}
       >
         <div className="flex items-center gap-5">
-          <GameIcon game={game} isRunning={isGameRunning} iconUrl={gameIconUrl} />
+          <GameIcon
+            game={game}
+            isRunning={isGameRunning}
+            iconUrl={gameIconUrl}
+            warning={gameStatusWarning}
+            dismissPath={gameStatusDismissPath}
+          />
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h2 className="game-title font-normal text-(--text-primary)">{game.name}</h2>

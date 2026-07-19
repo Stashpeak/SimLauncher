@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { isGameExeRunning } from '../../src/renderer/src/lib/runningGame'
+import { findGameExeRunningApp, isGameExeRunning } from '../../src/renderer/src/lib/runningGame'
 
 const acGame = { path: 'C:\\Games\\AssettoCorsa\\acs.exe', gameKey: 'ac' }
 const simhub = { path: 'C:\\Program Files\\SimHub\\SimHubWPF.exe', gameKey: 'ac' }
@@ -37,5 +37,34 @@ describe('isGameExeRunning', () => {
     expect(
       isGameExeRunning([{ path: acGame.path.toUpperCase(), gameKey: 'ac' }], 'ac', acGame.path)
     ).toBe(true)
+  })
+})
+
+// findGameExeRunningApp underpins isGameExeRunning but returns the matching entry
+// itself, so the game icon can read that entry's warning + dismiss path for the
+// stuck-dot Dismiss menu (#737).
+describe('findGameExeRunningApp', () => {
+  test('returns the matching entry, preserving its extra fields', () => {
+    const warned = { path: acGame.path, gameKey: 'ac', warning: 'stub exited' }
+    expect(findGameExeRunningApp([simhub, warned], 'ac', acGame.path)).toBe(warned)
+  })
+
+  test('returns undefined when only a companion is running (#587)', () => {
+    expect(findGameExeRunningApp([simhub], 'ac', acGame.path)).toBeUndefined()
+  })
+
+  test('returns undefined when the game path is not configured', () => {
+    expect(findGameExeRunningApp([acGame], 'ac', undefined)).toBeUndefined()
+  })
+
+  test('requires the gameKey to match, not just the path', () => {
+    expect(
+      findGameExeRunningApp([{ path: acGame.path, gameKey: 'acc' }], 'ac', acGame.path)
+    ).toBeUndefined()
+  })
+
+  test('matches case-insensitively (Windows paths)', () => {
+    const entry = { path: acGame.path.toUpperCase(), gameKey: 'ac' }
+    expect(findGameExeRunningApp([entry], 'ac', acGame.path)).toBe(entry)
   })
 })

@@ -18,12 +18,20 @@ const normalize = (path: string): string => path.toLowerCase()
  * `gamePaths[key]` (iRacing via its UI, AC via Content Manager) are out of scope
  * here and handled by the running-state pass (#585/#586).
  */
+export function findGameExeRunningApp<T extends Pick<RunningApp, 'path' | 'gameKey'>>(
+  runningApps: T[],
+  gameKey: string,
+  gamePath: string | undefined
+): T | undefined {
+  if (!gamePath) return undefined
+  const target = normalize(gamePath)
+  return runningApps.find((app) => app.gameKey === gameKey && normalize(app.path) === target)
+}
+
 export function isGameExeRunning(
   runningApps: Pick<RunningApp, 'path' | 'gameKey'>[],
   gameKey: string,
   gamePath: string | undefined
 ): boolean {
-  if (!gamePath) return false
-  const target = normalize(gamePath)
-  return runningApps.some((app) => app.gameKey === gameKey && normalize(app.path) === target)
+  return !!findGameExeRunningApp(runningApps, gameKey, gamePath)
 }

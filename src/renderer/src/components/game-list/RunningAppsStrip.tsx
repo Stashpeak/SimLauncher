@@ -1,20 +1,6 @@
 import { useState, type ReactNode, type ReactElement } from 'react'
-import { dismissAppIcon } from '../../lib/electron'
 import { Tooltip } from '../Tooltip'
-import { buildDismissLabel } from '../../lib/contextMenuLabel'
-import {
-  autoUpdate,
-  flip,
-  FloatingFocusManager,
-  FloatingPortal,
-  offset,
-  shift,
-  useClick,
-  useDismiss,
-  useFloating,
-  useInteractions,
-  useRole
-} from '@floating-ui/react'
+import { useDismissMenu } from '../../hooks/useDismissMenu'
 
 export interface RunningAppIcon {
   icon: string | null
@@ -46,56 +32,14 @@ function RunningAppIconItem({
   cacheInitialized,
   onError
 }: RunningAppIconItemProps): ReactNode {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-
-  const { refs, floatingStyles, context } = useFloating({
-    open: isMenuOpen,
-    onOpenChange: setIsMenuOpen,
-    placement: 'bottom-start',
-    middleware: [offset(4), flip({ padding: 8 }), shift({ padding: 8 })],
-    whileElementsMounted: autoUpdate
-  })
-
-  // useClick makes the trigger keyboard-operable (Enter/Space) and opens on a
-  // plain left-click, alongside the existing right-click — only when there's a
-  // warning, so non-warning icons stay inert.
-  const click = useClick(context, { enabled: !!app.warning })
-  const dismiss = useDismiss(context)
-  const role = useRole(context, { role: 'menu' })
-  const { getReferenceProps, getFloatingProps } = useInteractions([click, dismiss, role])
-
-  // Only show the context menu when there is a warning (e.g. process-name
-  // mismatch). Apps without warnings get no right-click menu so the native
-  // Chromium context menu (inspect element) still works in dev builds.
-  const handleContextMenu = (e: React.MouseEvent) => {
-    if (app.warning) {
-      e.preventDefault()
-      setIsMenuOpen(true)
-    }
-  }
-
-  const handleDismissClick = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    // For untracked apps, the icon is unmounted when warning clears;
-    // for tracked apps, the icon remains, so close the menu explicitly.
-    setIsMenuOpen(false)
-    try {
-      await dismissAppIcon(app.path, app.gameKey)
-    } catch (err) {
-      console.error('Failed to dismiss app warning:', err)
-    }
-  }
-
-  // Accessibility trigger attributes composition
-  const triggerProps = getReferenceProps({
-    onContextMenu: handleContextMenu,
-    'aria-haspopup': app.warning ? ('menu' as const) : undefined,
-    'aria-expanded': app.warning ? isMenuOpen : undefined
-  })
-
-  const dismissLabel = buildDismissLabel(app.path, {
-    tracked: app.tracked,
-    name: app.name
+  // Shared right-click / keyboard Dismiss menu (#466, #543) — see useDismissMenu.
+  // Arms only when app.warning is set; a normal companion icon stays inert.
+  const { isMenuOpen, setTriggerRef, getTriggerProps, menu } = useDismissMenu({
+    path: app.path,
+    gameKey: app.gameKey,
+    name: app.name,
+    warning: app.warning,
+    tracked: app.tracked
   })
 
   // Icon still loading (cache not yet populated) and nothing actionable to
@@ -117,15 +61,15 @@ function RunningAppIconItem({
     // A warning icon is actionable (it opens a Dismiss menu), so the trigger is
     // a real focusable <button>: keyboard/Narrator users can reach it, hear that
     // it's actionable (aria-haspopup) and open the menu via Enter/Space or click
-    // (useClick) — not just right-click (WCAG 2.1.1). The inner icon/initial is
-    // decorative; the button's aria-label carries the name + warning.
+    // — not just right-click (WCAG 2.1.1). The inner icon/initial is decorative;
+    // the button's aria-label carries the name + warning.
     content = (
       <button
-        ref={refs.setReference}
+        ref={setTriggerRef}
         type="button"
         aria-label={`${app.name}: ${app.warning}`}
         className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-(--warning-border)"
-        {...triggerProps}
+        {...getTriggerProps()}
       >
         {isAvailable ? (
           <img
@@ -144,7 +88,7 @@ function RunningAppIconItem({
   } else if (isAvailable) {
     content = (
       <img
-        ref={refs.setReference}
+        ref={setTriggerRef}
         src={app.icon ?? undefined}
         alt=""
         className="h-4 w-4 object-contain opacity-80"
@@ -154,7 +98,7 @@ function RunningAppIconItem({
   } else {
     content = (
       <div
-        ref={refs.setReference}
+        ref={setTriggerRef}
         role="img"
         aria-label={app.name}
         className="fallback-initial-icon h-4 w-4 rounded text-[6px] font-black flex items-center justify-center shrink-0"
@@ -170,29 +114,7 @@ function RunningAppIconItem({
         {content}
       </Tooltip>
 
-      {isMenuOpen && (
-        <FloatingPortal>
-          <FloatingFocusManager context={context} modal={false}>
-            <div
-              ref={refs.setFloating}
-              style={floatingStyles}
-              {...getFloatingProps()}
-              className="z-9999"
-            >
-              <div className="dropdown-surface overlay-glass rounded-xl p-1 border border-(--glass-border) shadow-(--surface-floating-shadow) animate-fade-slide min-w-[180px]">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleDismissClick}
-                  className="dropdown-item flex w-full cursor-pointer items-center rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold"
-                >
-                  {dismissLabel}
-                </button>
-              </div>
-            </div>
-          </FloatingFocusManager>
-        </FloatingPortal>
-      )}
+      {menu}
     </>
   )
 }
