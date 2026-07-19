@@ -15,6 +15,15 @@ vi.mock('../../src/renderer/src/lib/electron', () => ({
   dismissAppIcon: (...args: unknown[]) => dismissAppIconMock(...args)
 }))
 
+// useDismissMenu reads useNotify to surface dismiss failures; capture notify so
+// the failure path can be asserted, and stub the provider so no toast portal
+// mounts.
+const notifyMock = vi.fn()
+vi.mock('../../src/renderer/src/components/Notify', () => ({
+  useNotify: () => ({ notify: notifyMock, announce: vi.fn() }),
+  NotifyProvider: ({ children }: { children: React.ReactNode }) => children
+}))
+
 beforeAll(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
@@ -43,6 +52,7 @@ afterEach(() => {
   act(() => root?.unmount())
   container.remove()
   dismissAppIconMock.mockClear()
+  notifyMock.mockClear()
 })
 
 describe('GameIcon dismiss menu (#737)', () => {
@@ -150,5 +160,32 @@ describe('GameIcon dismiss menu (#737)', () => {
       />
     )
     expect(container.querySelector('button')).toBeNull()
+  })
+
+  test('a failed dismiss notifies the user instead of failing silently', async () => {
+    // The menu closes optimistically, so a rejected dismiss would otherwise
+    // leave the dot in place with no feedback (#764 CodeRabbit).
+    dismissAppIconMock.mockRejectedValueOnce(new Error('ipc down'))
+    await render(
+      <GameIcon
+        game={GAME}
+        isRunning={true}
+        iconUrl={ICON}
+        warning={WARNING}
+        dismissPath={GAME_PATH}
+      />
+    )
+    const trigger = container.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement
+    await act(async () => {
+      trigger.click()
+    })
+    const menuItem = document.body.querySelector('[role="menuitem"]') as HTMLButtonElement
+    await act(async () => {
+      menuItem.click()
+      // Flush the rejected dismiss so its catch (which notifies) runs.
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(notifyMock).toHaveBeenCalledWith('Failed to dismiss warning', 'error')
   })
 })

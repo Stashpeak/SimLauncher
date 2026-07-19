@@ -17,6 +17,14 @@ vi.mock('../../src/renderer/src/lib/electron', () => ({
   dismissAppIcon: (...args: unknown[]) => dismissAppIconMock(...args)
 }))
 
+// useDismissMenu now reads useNotify (to surface dismiss failures), so any
+// dismiss-consumer render needs a Notify context — stub it rather than mount
+// the real toast portal.
+vi.mock('../../src/renderer/src/components/Notify', () => ({
+  useNotify: () => ({ notify: vi.fn(), announce: vi.fn() }),
+  NotifyProvider: ({ children }: { children: React.ReactNode }) => children
+}))
+
 beforeAll(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })

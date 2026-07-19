@@ -15,6 +15,7 @@ import {
 
 import { dismissAppIcon } from '../lib/electron'
 import { buildDismissLabel } from '../lib/contextMenuLabel'
+import { useNotify } from '../components/Notify'
 
 export interface DismissMenuTarget {
   /** The running-app path used to key the dismiss (matches the main-process entry). */
@@ -44,6 +45,7 @@ export function useDismissMenu(target: DismissMenuTarget): {
   menu: ReactNode
 } {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { notify } = useNotify()
 
   const { refs, floatingStyles, context } = useFloating({
     open: isMenuOpen,
@@ -78,7 +80,11 @@ export function useDismissMenu(target: DismissMenuTarget): {
     try {
       await dismissAppIcon(target.path, target.gameKey)
     } catch (err) {
+      // The menu already closed optimistically, so without this the dot just
+      // stays with no explanation. Match the failure feedback the GameRow
+      // handlers (kill / launch / relaunch) already give (#764 CodeRabbit).
       console.error('Failed to dismiss app warning:', err)
+      notify('Failed to dismiss warning', 'error')
     }
   }
 
