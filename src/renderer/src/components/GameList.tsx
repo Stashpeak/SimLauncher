@@ -313,6 +313,7 @@ export function GameList({
               isGameRunning={gameExeRunning}
               gameStatusWarning={gameRunningApp?.warning}
               gameStatusDismissPath={gameRunningApp?.path}
+              gameStatusTracked={gameRunningApp?.tracked}
               runningAppIcons={runningAppIcons}
               isDimmed={hasActiveTitle && !runningStatus[game.key]}
               isLaunching={launchingGameKey === game.key}

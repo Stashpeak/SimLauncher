@@ -36,6 +36,7 @@ export function GameRow({
   isGameRunning,
   gameStatusWarning,
   gameStatusDismissPath,
+  gameStatusTracked,
   runningAppIcons,
   gameIconUrl,
   isDimmed,
@@ -57,11 +58,15 @@ export function GameRow({
   // Narrow: the game's OWN executable is running. Drives only the green status
   // dot, whose tooltip/label assert the game itself is running (#587).
   isGameRunning: boolean
-  // Set when the green dot is driven by a stale process-name-mismatch entry
-  // (a launcher stub that self-exited) rather than a live process — carries the
-  // warning text and the path to dismiss so the icon can offer Dismiss (#737).
+  // Set when the green dot is driven by a warning entry rather than a live
+  // process — carries the warning text and the path to dismiss so the icon can
+  // offer Dismiss (#737). `tracked` mirrors the companion strip: it picks the
+  // Dismiss menu label (untracked mismatch stub → "Dismiss Icon"; still-running
+  // kill-failed exe → "Dismiss Warning"), so the game exe's own kill-failure
+  // isn't mislabelled as an orphaned-icon dismissal.
   gameStatusWarning?: string
   gameStatusDismissPath?: string
+  gameStatusTracked?: boolean
   runningAppIcons: RunningAppIcon[]
   gameIconUrl?: string
   isDimmed: boolean
@@ -558,6 +563,7 @@ export function GameRow({
             iconUrl={gameIconUrl}
             warning={gameStatusWarning}
             dismissPath={gameStatusDismissPath}
+            tracked={gameStatusTracked}
           />
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">

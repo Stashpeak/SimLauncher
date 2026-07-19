@@ -7,13 +7,17 @@ interface GameIconProps {
   game: Game
   isRunning: boolean
   iconUrl?: string
-  // When the green dot is driven by a stale process-name-mismatch entry (a
-  // launcher stub that self-exited, #737) rather than a confirmed live process,
-  // `warning` carries its text and `dismissPath` the path to dismiss. The dot
-  // then offers a right-click / keyboard Dismiss menu; otherwise the icon is
-  // inert (a normal running dot clears itself when the process exits).
+  // When the green dot is driven by a warning entry rather than a confirmed live
+  // process, `warning` carries its text and `dismissPath` the path to dismiss.
+  // The dot then offers a right-click / keyboard Dismiss menu; otherwise the
+  // icon is inert (a normal running dot clears itself when the process exits).
+  // `tracked` distinguishes the two warning kinds so the menu labels itself
+  // correctly (mirrors the companion strip): a stale process-name-mismatch stub
+  // that self-exited (#737) is untracked → "Dismiss Icon"; a still-running
+  // kill-failed game exe is tracked → "Dismiss Warning".
   warning?: string
   dismissPath?: string
+  tracked?: boolean
 }
 
 const STATUS_DOT_CLASS =
@@ -24,7 +28,8 @@ export function GameIcon({
   isRunning,
   iconUrl,
   warning,
-  dismissPath
+  dismissPath,
+  tracked
 }: GameIconProps): ReactNode {
   const [iconLoadFailed, setIconLoadFailed] = useState(false)
 
@@ -41,7 +46,8 @@ export function GameIcon({
     path: dismissPath ?? '',
     gameKey: game.key,
     name: game.name,
-    warning
+    warning,
+    tracked
   })
   const isDismissible = isRunning && !!warning && !!dismissPath
 

@@ -100,7 +100,9 @@ const WARNING =
 let container: HTMLDivElement
 let root: Root | null = null
 
-async function renderRow(props: { warning?: string; dismissPath?: string } = {}): Promise<void> {
+async function renderRow(
+  props: { warning?: string; dismissPath?: string; tracked?: boolean } = {}
+): Promise<void> {
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
@@ -114,6 +116,7 @@ async function renderRow(props: { warning?: string; dismissPath?: string } = {})
           isGameRunning={true}
           gameStatusWarning={props.warning}
           gameStatusDismissPath={props.dismissPath}
+          gameStatusTracked={props.tracked}
           runningAppIcons={[]}
           isDimmed={false}
           isLaunching={false}
@@ -180,5 +183,21 @@ describe('GameRow → GameIcon stuck-dot wiring (#737 Part 2)', () => {
     // The path that reaches the dismiss IPC is the one GameRow forwarded as
     // gameStatusDismissPath — proving the full prop chain, not just GameIcon.
     expect(dismissAppIconMock).toHaveBeenCalledWith(GAME_PATH, 'beamng')
+  })
+
+  test('gameStatusTracked forwards through so a kill-failed game reads "Dismiss Warning"', async () => {
+    // tracked is a third optional prop on the same seam — a dropped forward
+    // would silently mislabel a still-running kill-failed game exe as an
+    // orphaned-icon dismissal (Codex P2, #764). Render tracked and confirm the
+    // menu label reflects it end-to-end.
+    await renderRow({ warning: WARNING, dismissPath: GAME_PATH, tracked: true })
+
+    const trigger = findDismissTrigger()!
+    await act(async () => {
+      trigger.click()
+    })
+
+    const menuItem = document.body.querySelector('[role="menuitem"]') as HTMLButtonElement
+    expect(menuItem.textContent).toBe('Dismiss Warning for BeamNG.drive')
   })
 })

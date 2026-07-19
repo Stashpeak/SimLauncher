@@ -98,6 +98,47 @@ describe('GameIcon dismiss menu (#737)', () => {
     expect(dismissAppIconMock).toHaveBeenCalledWith(GAME_PATH, 'beamng')
   })
 
+  test('an untracked (mismatch stub) warning labels the action "Dismiss Icon"', async () => {
+    await render(
+      <GameIcon
+        game={GAME}
+        isRunning={true}
+        iconUrl={ICON}
+        warning={WARNING}
+        dismissPath={GAME_PATH}
+      />
+    )
+    const trigger = container.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement
+    await act(async () => {
+      trigger.click()
+    })
+    const menuItem = document.body.querySelector('[role="menuitem"]') as HTMLButtonElement
+    // Orphaned stub icon: dismissing removes the badge, so "Dismiss Icon".
+    expect(menuItem.textContent).toBe('Dismiss Icon for BeamNG.drive')
+  })
+
+  test('a tracked (still-running kill-failed) warning labels the action "Dismiss Warning"', async () => {
+    // The game exe failed to Close and is still running (tracked): dismissing
+    // clears the warning but the live process keeps the dot, so "Dismiss
+    // Warning" is the honest label — not "Dismiss Icon" (Codex P2, #764).
+    await render(
+      <GameIcon
+        game={GAME}
+        isRunning={true}
+        iconUrl={ICON}
+        warning={WARNING}
+        dismissPath={GAME_PATH}
+        tracked={true}
+      />
+    )
+    const trigger = container.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement
+    await act(async () => {
+      trigger.click()
+    })
+    const menuItem = document.body.querySelector('[role="menuitem"]') as HTMLButtonElement
+    expect(menuItem.textContent).toBe('Dismiss Warning for BeamNG.drive')
+  })
+
   test('a warning without isRunning shows no dismissable dot', async () => {
     await render(
       <GameIcon
