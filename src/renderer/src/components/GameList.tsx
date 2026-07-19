@@ -4,7 +4,7 @@ import { getSettings, onStoreConfigChanged } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
-import { isGameExeRunning } from '../lib/runningGame'
+import { findGameExeRunningApp, isGameExeRunning } from '../lib/runningGame'
 import { getPathComparisonKey } from '../../../shared/path'
 import { useNotify } from './Notify'
 import { useAppsSettings } from './settings/AppsContext'
@@ -271,8 +271,12 @@ export function GameList({
           const gamePathLower = gamePaths[game.key] ? normalizePath(gamePaths[game.key]) : undefined
           // The green dot means the game's own exe is running — NOT the
           // runningStatus[key] aggregate, which is also true when only a
-          // companion (e.g. SimHub) is up (#587). See isGameExeRunning.
-          const gameExeRunning = isGameExeRunning(runningApps, game.key, gamePaths[game.key])
+          // companion (e.g. SimHub) is up (#587). See findGameExeRunningApp.
+          // Resolve the actual matching entry (not just the boolean) so a stuck
+          // mismatch-warning dot can carry its warning + dismiss path to the
+          // icon's right-click Dismiss menu (#737).
+          const gameRunningApp = findGameExeRunningApp(runningApps, game.key, gamePaths[game.key])
+          const gameExeRunning = !!gameRunningApp
           // Exclude the game's own executable so it doesn't appear as a
           // companion app in the running strip — the dot above already
           // represents the game itself.
@@ -307,6 +311,9 @@ export function GameList({
               isActive={activeEditorKey === game.key}
               isRunning={!!runningStatus[game.key]}
               isGameRunning={gameExeRunning}
+              gameStatusWarning={gameRunningApp?.warning}
+              gameStatusDismissPath={gameRunningApp?.path}
+              gameStatusTracked={gameRunningApp?.tracked}
               runningAppIcons={runningAppIcons}
               isDimmed={hasActiveTitle && !runningStatus[game.key]}
               isLaunching={launchingGameKey === game.key}
