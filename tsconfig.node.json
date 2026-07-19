@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "composite": true,
     "target": "ES2020",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -8,13 +7,8 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
     "types": ["node", "electron-vite/node"]
   },
-  "include": [
-    "electron.vite.config.ts",
-    "vite.config.ts",
-    "vitest.config.ts",
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts"
-  ]
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts"]
 }

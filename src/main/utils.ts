@@ -9,7 +9,12 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-export function isValidExePath(p: unknown): p is string {
+// A validity check, NOT a type guard: a string that fails validation (wrong
+// extension, missing on disk) is still a string. Typing this `p is string`
+// made the false branch of `if (!isValidExePath(alreadyStringValue))` narrow to
+// `never`, which is wrong (see #752). Callers that need to narrow an
+// `unknown`/`string | undefined` down to `string` do so with a local predicate.
+export function isValidExePath(p: unknown): boolean {
   if (typeof p !== 'string') {
     return false
   }
