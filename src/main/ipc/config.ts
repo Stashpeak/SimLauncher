@@ -63,11 +63,7 @@ let pendingImport: {
 } | null = null
 
 type StoreConfigChangeReason =
-  | 'import-config'
-  | 'save-settings'
-  | 'save-profile'
-  | 'save-profiles'
-  | 'set-migration-flags'
+  'import-config' | 'save-settings' | 'save-profile' | 'save-profiles' | 'set-migration-flags'
 
 interface StoreConfigChangePayload {
   reason: StoreConfigChangeReason
