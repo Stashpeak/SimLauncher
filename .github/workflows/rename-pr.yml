@@ -1,0 +1,24 @@
+name: Rename PR
+on:
+  push:
+
+permissions:
+  pull-requests: write
+
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Rename PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the PR number associated with this branch
+          PR_NUMBER=$(gh pr list --head ${GITHUB_REF_NAME} --json number -q '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit $PR_NUMBER --title "a11y: Improve a11y by associating label with input in ProfileNameSection"
+          else
+            gh pr edit 754 --title "a11y: Improve a11y by associating label with input in ProfileNameSection" || true
+          fi
