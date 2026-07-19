@@ -56,11 +56,7 @@ export interface MigrationFlags {
 }
 
 export type StoreConfigChangeReason =
-  | 'import-config'
-  | 'save-settings'
-  | 'save-profile'
-  | 'save-profiles'
-  | 'set-migration-flags'
+  'import-config' | 'save-settings' | 'save-profile' | 'save-profiles' | 'set-migration-flags'
 
 export interface StoreConfigChangePayload {
   reason: StoreConfigChangeReason
