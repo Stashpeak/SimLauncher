@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react'
 
 import { openExternalUrl, openLogsFolder } from '../../lib/electron'
-import { DiscordIcon, GithubIcon } from '../icons'
+import { DiscordIcon, GithubIcon, RefreshIcon } from '../icons'
 import { useNotify } from '../Notify'
 import { Toggle } from '../Toggle'
 import { useSettingsMeta } from './SettingsMetaContext'
@@ -130,8 +130,16 @@ export function AboutSection({
             onClick={onInstallUpdate}
             disabled={installingUpdate}
             aria-live="off"
-            className="accent-surface-action action-hover-scale w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
+            className="accent-surface-action action-hover-scale flex w-full items-center justify-center gap-2 cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
           >
+            {installingUpdate && (
+              <RefreshIcon
+                width={14}
+                height={14}
+                className="animate-spin shrink-0"
+                aria-hidden="true"
+              />
+            )}
             {installingUpdate
               ? updateProgress !== null
                 ? `Downloading ${Math.round(updateProgress)}%`
@@ -143,8 +151,16 @@ export function AboutSection({
             onClick={onManualCheck}
             disabled={checkingUpdate}
             aria-live="off"
-            className="accent-surface-action action-hover-scale w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
+            className="accent-surface-action action-hover-scale flex w-full items-center justify-center gap-2 cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
           >
+            {checkingUpdate && (
+              <RefreshIcon
+                width={14}
+                height={14}
+                className="animate-spin shrink-0"
+                aria-hidden="true"
+              />
+            )}
             {checkingUpdate ? 'Checking for updates...' : 'Check for Updates'}
           </button>
         )}

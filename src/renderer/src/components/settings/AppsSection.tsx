@@ -121,7 +121,7 @@ export function AppsSection(): ReactNode {
             {appIcons[utility.key] && !iconLoadErrors.has(utility.key) ? (
               <img
                 src={appIcons[utility.key]}
-                alt="Icon"
+                alt={`${appNames[utility.key] || utility.name} icon`}
                 className="h-8 w-8 object-contain drop-shadow-md shrink-0"
                 onError={() => onIconLoadError(utility.key)}
               />
