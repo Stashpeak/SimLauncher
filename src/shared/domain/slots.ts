@@ -9,16 +9,18 @@
 // lib/config.ts, main migrator.ts, main ipc/config.ts).
 
 import type { ProfileSet } from './profile'
+import { isRecord } from './guards'
+
+// The maximum number of custom-app slots a user can configure. Shared so the
+// renderer clamp (lib/config.ts) and the store schema/sanitizer (main store.ts)
+// can never drift out of agreement.
+export const MAX_CUSTOM_SLOTS = 20
 
 // Parse the slot number N out of a `customapp<N>` key or utility id. Returns
 // null for anything that is not a custom-slot reference.
 export function getCustomSlotNumberFromKey(key: string): number | null {
   const match = key.match(/^customapp(\d+)$/)
   return match ? Number(match[1]) : null
-}
-
-function isRecordLike(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 // A custom-app slot is "in use" when the stored value is a non-empty string (a
@@ -73,7 +75,7 @@ function scanHighestSlot(
       // safe superset of a flat per-profile scan - it can only widen, never drop.
       if (key === 'profiles' && Array.isArray(value)) {
         value.forEach((profile) => {
-          if (isRecordLike(profile)) {
+          if (isRecord(profile)) {
             scanRecord(profile)
           }
         })
@@ -82,7 +84,7 @@ function scanHighestSlot(
 
       if (key === 'utilities' && Array.isArray(value)) {
         value.forEach((entry) => {
-          if (!isRecordLike(entry) || typeof entry.id !== 'string') {
+          if (!isRecord(entry) || typeof entry.id !== 'string') {
             return
           }
 

@@ -4,17 +4,20 @@ import path from 'path'
 import Store from 'electron-store'
 
 import { BUILT_IN_UTILITY_KEYS, KNOWN_GAME_KEYS } from '../shared/domain/registries'
+import { MAX_CUSTOM_SLOTS } from '../shared/domain/slots'
 import { clamp, isRecord, normalizePathForComparison } from './utils'
 
 // Re-exported for existing importers (ipc/config.ts, ipc/launch.ts) that pull
 // the game-key allowlist from the store module; the list itself lives in the
 // shared domain layer now (#692).
 export { KNOWN_GAME_KEYS }
+// MAX_CUSTOM_SLOTS lives in the shared domain layer now (#692); re-exported so
+// ipc/config.ts keeps importing it from the store module.
+export { MAX_CUSTOM_SLOTS }
 
 export const DEFAULT_ZOOM_FACTOR = 1.0
 export const MIN_ZOOM_FACTOR = 0.5
 export const MAX_ZOOM_FACTOR = 3.0
-export const MAX_CUSTOM_SLOTS = 20
 export const MAX_CONFIG_IMPORT_BYTES = 1_000_000
 
 const MAX_IMPORT_PATH_LENGTH = 300

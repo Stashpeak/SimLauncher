@@ -1,12 +1,12 @@
 import fs from 'fs'
 import path from 'path'
 
+// isRecord lives in the shared domain layer now (#692); re-exported so the many
+// main-process importers keep their `from './utils'` path.
+export { isRecord } from '../shared/domain/guards'
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 // A validity check, NOT a type guard: a string that fails validation (wrong

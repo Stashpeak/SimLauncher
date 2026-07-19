@@ -1,4 +1,8 @@
 import { BUILT_IN_UTILITY_KEYS } from '../shared/domain/registries'
+import {
+  isProfileUtility as isStoredProfileUtility,
+  isProfileSet as isStoredProfileSet
+} from '../shared/domain/guards'
 import type {
   Profile,
   NamedProfile,
@@ -36,21 +40,9 @@ export function getGamePosition(profile: StoredProfile): GamePosition {
 // importers keep their `from './profiles'` path.
 export { BUILT_IN_UTILITY_KEYS }
 
-export function isStoredProfileUtility(value: unknown): value is StoredProfileUtility {
-  if (!isRecord(value)) {
-    return false
-  }
-
-  return typeof value.id === 'string' && typeof value.enabled === 'boolean'
-}
-
-export function isStoredProfileSet(value: unknown): value is StoredProfileSet {
-  if (!isRecord(value)) {
-    return false
-  }
-
-  return typeof value.activeProfileId === 'string' && Array.isArray(value.profiles)
-}
+// The profile discriminators live in the shared domain layer now (#692);
+// re-exported under their historical Stored* names so importers are unchanged.
+export { isStoredProfileUtility, isStoredProfileSet }
 
 export function getStoredProfiles(): Record<string, StoredProfileEntry> {
   const value = store.get('profiles')

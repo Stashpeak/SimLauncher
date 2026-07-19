@@ -15,10 +15,16 @@ import type {
   Profiles,
   ProfileUtility
 } from '../../../shared/domain/profile'
-import { getHighestCustomSlot } from '../../../shared/domain/slots'
+import { getHighestCustomSlot, MAX_CUSTOM_SLOTS } from '../../../shared/domain/slots'
+import {
+  isRecord,
+  isProfileUtility,
+  isProfileSet as isGameProfileSet
+} from '../../../shared/domain/guards'
 
 export { GAMES, BUILT_IN_UTILITIES, type Game, type Utility }
-export { getHighestCustomSlot }
+export { getHighestCustomSlot, MAX_CUSTOM_SLOTS }
+export { isRecord, isProfileUtility, isGameProfileSet }
 
 // Profile domain types are process-agnostic (#692); the canonical defs live in
 // the shared domain layer. Re-exported here under the renderer's historical
@@ -46,11 +52,6 @@ export const DEFAULT_ACCENT_COLOR = '#008c99'
 export const DEFAULT_CUSTOM_SLOTS = 1
 export const DEFAULT_PROFILE_ID = 'default'
 export const DEFAULT_PROFILE_NAME = 'Default'
-export const MAX_CUSTOM_SLOTS = 20
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-}
 
 export function normalizeCustomSlots(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -96,14 +97,6 @@ export function getCustomUtilities(customSlots: unknown): Utility[] {
 
 export function getUtilities(customSlots: unknown): Utility[] {
   return [...BUILT_IN_UTILITIES, ...getCustomUtilities(customSlots)]
-}
-
-export function isProfileUtility(value: unknown): value is ProfileUtility {
-  if (!isRecord(value)) {
-    return false
-  }
-
-  return typeof value.id === 'string' && typeof value.enabled === 'boolean'
 }
 
 /**
@@ -184,14 +177,6 @@ export function migrateProfileToUtilityOrder(
   })
 
   return migratedProfile
-}
-
-export function isGameProfileSet(value: unknown): value is GameProfileSet {
-  if (!isRecord(value)) {
-    return false
-  }
-
-  return typeof value.activeProfileId === 'string' && Array.isArray(value.profiles)
 }
 
 export function normalizeProfiles(value: unknown): Profiles {
