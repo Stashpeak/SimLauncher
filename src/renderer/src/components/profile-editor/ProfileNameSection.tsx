@@ -16,7 +16,10 @@ export function ProfileNameSection({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={profileNameId} className="block text-xs font-medium uppercase tracking-wider text-(--text-muted)">
+      <label
+        htmlFor={profileNameId}
+        className="block text-xs font-medium uppercase tracking-wider text-(--text-muted)"
+      >
         Profile name
       </label>
       <div className="flex items-center gap-2">
