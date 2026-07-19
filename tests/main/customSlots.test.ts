@@ -92,4 +92,28 @@ describe('getHighestReferencedCustomSlot (referenced, widens whitelist)', () => 
     }
     expect(getHighestReferencedCustomSlot(profileSet)).toBe(99)
   })
+
+  it('recurses into a nested profiles array, widening (never dropping)', () => {
+    // A profile that itself contains a nested profiles array is non-canonical,
+    // but the unified walker recurses uniformly. For the referenced scan this can
+    // only widen the whitelist - a slot buried in the nested subtree is still
+    // counted, never dropped. The old ipc/config.ts loose scanner did not recurse;
+    // this pins the intentional new behavior (see the profiles branch in slots.ts).
+    const profileSet = {
+      activeProfileId: 'default',
+      profiles: [
+        {
+          id: 'default',
+          name: 'Default',
+          customapp2: true,
+          profiles: [
+            { id: 'nested', name: 'Nested', utilities: [{ id: 'customapp8', enabled: false }] }
+          ]
+        }
+      ]
+    }
+    // customapp8 lives only in the nested subtree and is disabled; it is still
+    // found (8 > the top-level customapp2), proving the recursion widens.
+    expect(getHighestReferencedCustomSlot(profileSet)).toBe(8)
+  })
 })
