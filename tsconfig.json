@@ -15,10 +15,5 @@
     "src/renderer/src/**/*.tsx",
     "src/preload/index.d.ts",
     "src/shared/**/*.ts"
-  ],
-  "references": [
-    {
-      "path": "./tsconfig.node.json"
-    }
   ]
 }

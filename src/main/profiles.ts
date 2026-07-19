@@ -262,7 +262,7 @@ export function getProfileTrackablePaths(
       .filter((profileKey) => isValidExePath(appPaths?.[profileKey]))
       .map((profileKey) => appPaths![profileKey]),
     ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
-  ].filter(isValidExePath)
+  ].filter((candidate): candidate is string => isValidExePath(candidate))
   const seen = new Set<string>()
 
   return trackablePaths.filter((trackablePath) => {
