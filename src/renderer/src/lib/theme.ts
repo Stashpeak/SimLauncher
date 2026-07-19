@@ -1,7 +1,7 @@
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
 export type ThemeMode = 'light' | 'dark' | 'system'
 
-export const DEFAULT_THEME_MODE: ThemeMode = 'dark'
+export const DEFAULT_THEME_MODE: ThemeMode = 'system'
 
 // Module-level cleanup handle for the system-theme media-query listener.
 // Only one listener exists at a time because applyThemeMode always cancels

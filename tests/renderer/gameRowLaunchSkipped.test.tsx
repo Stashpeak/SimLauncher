@@ -155,7 +155,7 @@ describe('GameRow launch skipped-entry warning (#639)', () => {
     await clickPlayButton()
 
     expect(notifyMock).toHaveBeenCalledWith(
-      'Assetto Corsa was skipped — its path no longer exists.',
+      'Assetto Corsa was skipped: its path no longer exists.',
       'warn',
       5000
     )
@@ -172,7 +172,7 @@ describe('GameRow launch skipped-entry warning (#639)', () => {
     await clickPlayButton()
 
     expect(notifyMock).toHaveBeenCalledWith(
-      'SimHub was skipped — its path no longer exists.',
+      'SimHub was skipped: its path no longer exists.',
       'warn',
       5000
     )
@@ -210,7 +210,7 @@ describe('GameRow launch skipped-entry warning (#639)', () => {
     await clickPlayButton()
 
     expect(notifyMock).toHaveBeenCalledWith(
-      'SimHub was skipped — its path no longer exists. Started 1 app; skipped 1 already running.',
+      'SimHub was skipped: its path no longer exists. Started 1 app; skipped 1 already running.',
       'warn',
       5000
     )
@@ -230,7 +230,7 @@ describe('GameRow launch skipped-entry warning (#639)', () => {
     await clickPlayButton()
 
     expect(notifyMock).toHaveBeenCalledWith(
-      'No valid executable paths configured. Assetto Corsa was skipped — its path no longer exists.',
+      'No valid executable paths configured. Assetto Corsa was skipped: its path no longer exists.',
       'error'
     )
   })

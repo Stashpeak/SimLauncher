@@ -56,6 +56,6 @@ export function formatSkippedLaunchEntries(
   const names = skipped.map((entry) => resolveSkippedEntryName(entry, lookup))
 
   return names.length === 1
-    ? `${names[0]} was skipped — its path no longer exists.`
-    : `${names.length} apps were skipped because their paths no longer exist (${names.join(', ')}).`
+    ? `${names[0]} was skipped: its path no longer exists.`
+    : `${names.length} items were skipped because their paths no longer exist (${names.join(', ')}).`
 }

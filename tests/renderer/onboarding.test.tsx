@@ -15,6 +15,9 @@ const h = vi.hoisted(() => ({
   onboardingSeen: false as boolean,
   gamePaths: {} as Record<string, string>,
   persistOnboardingSeen: vi.fn(async () => {}),
+  saveSettings: vi.fn(async () => {}),
+  setThemeMode: vi.fn(),
+  themeMode: 'dark' as 'light' | 'dark' | 'system',
   settingsTarget: { current: undefined as string | null | undefined }
 }))
 
@@ -22,7 +25,7 @@ vi.mock('../../src/renderer/src/lib/store', () => ({
   getOnboardingSeen: vi.fn(async () => h.onboardingSeen),
   setOnboardingSeen: h.persistOnboardingSeen,
   getSettings: vi.fn(async () => ({ gamePaths: h.gamePaths, zoomFactor: 1 })),
-  saveSettings: vi.fn(async () => {}),
+  saveSettings: h.saveSettings,
   onStoreConfigChanged: vi.fn(() => () => {})
 }))
 
@@ -56,12 +59,12 @@ vi.mock('../../src/renderer/src/contexts/ThemeContext', () => ({
     accentPreset: '#008c99',
     accentCustom: '',
     accentBgTint: false,
-    themeMode: 'dark',
+    themeMode: h.themeMode,
     resolvedAccent: '#008c99',
     setAccentPreset: vi.fn(),
     setAccentCustom: vi.fn(),
     setAccentBgTint: vi.fn(),
-    setThemeMode: vi.fn(),
+    setThemeMode: h.setThemeMode,
     syncThemeFromStore: vi.fn(async () => {})
   })
 }))
@@ -132,7 +135,10 @@ describe('First-run onboarding (#641)', () => {
   beforeEach(() => {
     h.onboardingSeen = false
     h.gamePaths = {}
+    h.themeMode = 'dark'
     h.persistOnboardingSeen.mockClear()
+    h.saveSettings.mockClear()
+    h.setThemeMode.mockClear()
     h.settingsTarget.current = undefined
   })
 
@@ -205,6 +211,50 @@ describe('First-run onboarding (#641)', () => {
       })
       expect(h.persistOnboardingSeen).toHaveBeenCalledWith(true)
       expect(modalHeading()).toBeNull()
+    } finally {
+      harness.unmount()
+    }
+  })
+})
+
+describe('Onboarding theme control (#735)', () => {
+  beforeEach(() => {
+    h.onboardingSeen = false
+    h.gamePaths = {}
+    h.themeMode = 'dark'
+    h.persistOnboardingSeen.mockClear()
+    h.saveSettings.mockClear()
+    h.setThemeMode.mockClear()
+    h.settingsTarget.current = undefined
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  test('renders a Theme row with Light/Dark/System options', async () => {
+    const harness = await renderApp()
+    try {
+      const group = document.body.querySelector('[role="group"][aria-label="Theme"]')
+      expect(group).not.toBeNull()
+      expect(button(/^light$/i)).not.toBeNull()
+      expect(button(/^dark$/i)).not.toBeNull()
+      expect(button(/^system$/i)).not.toBeNull()
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('selecting a theme mode applies it live and persists it immediately', async () => {
+    const harness = await renderApp()
+    try {
+      await act(async () => {
+        button(/^light$/i)?.click()
+      })
+      // Applies live via ThemeContext (no save bar in the onboarding modal).
+      expect(h.setThemeMode).toHaveBeenCalledWith('light')
+      // Persists immediately, same as the accent/zoom rows.
+      expect(h.saveSettings).toHaveBeenCalledWith({ themeMode: 'light' })
     } finally {
       harness.unmount()
     }

@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, screen, type OpenDialogOptions } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  screen,
+  type OpenDialogOptions
+} from 'electron'
 import path from 'path'
 
 import {
@@ -20,6 +28,36 @@ let mainWindow: BrowserWindow | null = null
 // Grace period between the renderer finishing its load and force-showing the
 // window when 'ready-to-show' did not arrive (see the #382 comment below).
 const READY_TO_SHOW_FALLBACK_MS = 500
+
+const THEME_MODES = new Set(['light', 'dark', 'system'])
+
+/**
+ * Resolve the concrete theme ('light' | 'dark') to paint on the FIRST frame from
+ * the persisted themeMode. The window is shown on 'ready-to-show' (first paint),
+ * but the renderer only reads settings in a post-paint effect, so without this
+ * the first visible frame is App.css's dark default until that async read lands.
+ * A fresh install now defaults to 'system' (#735), so on a light-mode OS that
+ * would flash dark. Resolving here from the value main already holds keeps the
+ * first frame correct for everyone: 'system' follows the OS, and an existing
+ * persisted 'dark'/'light' is honored as-is (no wrong-theme flash either way).
+ *
+ * Pure (mode + OS preference in, theme out) so the mapping is unit-testable.
+ */
+export function resolveBootTheme(themeMode: unknown, prefersDark: boolean): 'light' | 'dark' {
+  // Unknown/absent falls back to the schema default ('system'); see store.ts.
+  const mode = THEME_MODES.has(themeMode as string) ? (themeMode as string) : 'system'
+
+  if (mode === 'light') return 'light'
+  if (mode === 'dark') return 'dark'
+  return prefersDark ? 'dark' : 'light'
+}
+
+// The additionalArguments token the preload reads to paint the boot theme before
+// first paint. Prefix duplicated in src/preload/initialTheme.ts — keep in sync.
+function getInitialThemeArg(): string {
+  const resolved = resolveBootTheme(store.get('themeMode'), nativeTheme.shouldUseDarkColors)
+  return `--initial-theme=${resolved}`
+}
 
 export type CloseAction = 'quit' | 'hide' | 'confirm-close' | 'confirm-minimize'
 
@@ -166,6 +204,10 @@ export function createWindow(): void {
       // Field diagnostics go through the logs folder + main-error.log (#524).
       devTools: !app.isPackaged,
       zoomFactor,
+      // Hand the preload the resolved boot theme so it can paint before the
+      // renderer's first frame (avoids a dark flash on light-mode fresh
+      // installs now that the default is 'system'). #735
+      additionalArguments: [getInitialThemeArg()],
       preload: path.join(__dirname, '../preload/index.js')
     }
   })

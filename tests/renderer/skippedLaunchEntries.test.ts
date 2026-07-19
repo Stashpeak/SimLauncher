@@ -24,7 +24,7 @@ test('single skipped entry names it in the singular form', () => {
     LOOKUP
   )
 
-  expect(out).toBe('Assetto Corsa was skipped — its path no longer exists.')
+  expect(out).toBe('Assetto Corsa was skipped: its path no longer exists.')
 })
 
 test('multiple skipped entries use the plural form and list every name', () => {
@@ -37,7 +37,7 @@ test('multiple skipped entries use the plural form and list every name', () => {
   )
 
   expect(out).toBe(
-    '2 apps were skipped because their paths no longer exist (Assetto Corsa, SimHub).'
+    '2 items were skipped because their paths no longer exist (Assetto Corsa, SimHub).'
   )
 })
 
