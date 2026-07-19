@@ -7,13 +7,27 @@ import {
   type Game,
   type Utility
 } from '../../../shared/domain/registries'
+import type {
+  Profile,
+  NamedProfile,
+  ProfileSet,
+  ProfileEntry,
+  Profiles,
+  ProfileUtility
+} from '../../../shared/domain/profile'
 
 export { GAMES, BUILT_IN_UTILITIES, type Game, type Utility }
 
-export interface ProfileUtility {
-  id: string
-  enabled: boolean
-}
+// Profile domain types are process-agnostic (#692); the canonical defs live in
+// the shared domain layer. Re-exported here under the renderer's historical
+// Game*/Stored* names so existing importers keep their `from '../lib/config'`
+// import path. New code can import from '../../../shared/domain/profile'.
+export type GameProfile = Profile
+export type NamedGameProfile = NamedProfile
+export type GameProfileSet = ProfileSet
+export type StoredGameProfile = ProfileEntry
+export type { Profiles, ProfileUtility }
+export type { GamePosition } from '../../../shared/domain/profile'
 
 // Namespaced icon-load-error key for a built-in's bundled icon (#727/#728).
 // Bundled and shell icons share one per-surface error store (same state
@@ -25,33 +39,6 @@ export interface ProfileUtility {
 export function getBundledIconErrorKey(key: string): string {
   return `bundled:${key}`
 }
-export type GamePosition = 'first' | 'last'
-export interface GameProfile {
-  // Index signature preserved so that legacy flat keys (e.g. 'simhub': true)
-  // can coexist with the typed properties during migration. Any code reading a
-  // known key should use the typed property, not the index signature.
-  [key: string]: unknown
-  utilities?: ProfileUtility[]
-  launchAutomatically?: boolean
-  gamePosition?: GamePosition
-  trackingEnabled?: boolean
-  killControlsEnabled?: boolean
-  relaunchControlsEnabled?: boolean
-  trackedProcessPaths?: string[]
-}
-export interface NamedGameProfile extends GameProfile {
-  id: string
-  name: string
-}
-export interface GameProfileSet {
-  activeProfileId: string
-  profiles: NamedGameProfile[]
-}
-// The on-disk representation can be either the old flat-profile format
-// (GameProfile) or the newer profile-set format (GameProfileSet). Callers
-// should normalise through normalizeGameProfileSet before operating on profiles.
-export type StoredGameProfile = GameProfile | GameProfileSet
-export type Profiles = Record<string, StoredGameProfile>
 
 export const DEFAULT_ACCENT_COLOR = '#008c99'
 export const DEFAULT_CUSTOM_SLOTS = 1
