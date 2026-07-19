@@ -1,17 +1,25 @@
 import { BUILT_IN_UTILITY_KEYS } from '../shared/domain/registries'
+import type {
+  Profile,
+  NamedProfile,
+  ProfileSet,
+  ProfileEntry,
+  ProfileUtility,
+  GamePosition
+} from '../shared/domain/profile'
 import type { ProfileLaunchEntry } from './processes/types'
 import { getStoredStringRecord, store } from './store'
 import { isRecord, isValidExePath, normalizePathForComparison } from './utils'
 
-export interface StoredProfile extends Record<string, unknown> {
-  utilities?: StoredProfileUtility[]
-  launchAutomatically?: boolean
-  gamePosition?: GamePosition
-  trackingEnabled?: boolean
-  trackedProcessPaths?: string[]
-}
-
-export type GamePosition = 'first' | 'last'
+// Profile domain types are process-agnostic (#692); the canonical defs live in
+// the shared domain layer. Re-exported here under the main process's historical
+// Stored* names so existing importers keep their `from './profiles'` path.
+export type StoredProfile = Profile
+export type StoredNamedProfile = NamedProfile
+export type StoredProfileSet = ProfileSet
+export type StoredProfileEntry = ProfileEntry
+export type StoredProfileUtility = ProfileUtility
+export type { GamePosition }
 
 /**
  * Resolve where the game sits in the launch sequence. Anything other than an
@@ -20,23 +28,6 @@ export type GamePosition = 'first' | 'last'
  */
 export function getGamePosition(profile: StoredProfile): GamePosition {
   return profile.gamePosition === 'last' ? 'last' : 'first'
-}
-
-export interface StoredNamedProfile extends StoredProfile {
-  id: string
-  name: string
-}
-
-export interface StoredProfileSet {
-  activeProfileId: string
-  profiles: StoredNamedProfile[]
-}
-
-export type StoredProfileEntry = StoredProfile | StoredProfileSet
-
-export interface StoredProfileUtility {
-  id: string
-  enabled: boolean
 }
 
 // The built-in utility key list (and its load-bearing order — it is the default
