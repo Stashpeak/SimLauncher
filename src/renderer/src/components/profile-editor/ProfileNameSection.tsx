@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import { Tooltip } from '../Tooltip'
 
 interface ProfileNameSectionProps {
@@ -12,13 +12,19 @@ export function ProfileNameSection({
   onProfileNameChange,
   onCreateProfile
 }: ProfileNameSectionProps): ReactNode {
+  const inputId = useId()
+
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wider text-(--text-muted)">
+      <label
+        htmlFor={inputId}
+        className="block text-xs font-medium uppercase tracking-wider text-(--text-muted) cursor-pointer"
+      >
         Profile name
-      </p>
+      </label>
       <div className="flex items-center gap-2">
         <input
+          id={inputId}
           type="text"
           value={profileName}
           onChange={(event) => onProfileNameChange(event.target.value)}
