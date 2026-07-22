@@ -3537,9 +3537,10 @@ test('finalizeKillAttempts prunes only the attempt path, not a same-named compan
   // companion must keep its runningProcesses entry (and its ChildProcess
   // handle). The old name-based cleanup arm deleted B too (name match), which
   // is the collateral tracking loss this fixes.
-  // A's exe must exist so isFullExePath(attempt.appPath) is true — that is the
-  // predicate the fix gates the name fallback on (a real companion's exe is on
-  // disk), and the same one finalize already uses for its still-running check.
+  // A's exe exists here (the common case: a real companion's exe is on disk),
+  // which drives finalize's WMI still-running check. Cleanup scoping itself is
+  // gated on path SHAPE (isPathScopedExe), not existence — the missing-exe
+  // variant is covered by the next test.
   markExistingPath('C:/GameA/telemetry.exe')
   runningProcesses.set('c:\\gamea\\telemetry.exe', {
     process: { pid: 1111 } as never,
@@ -3574,6 +3575,54 @@ test('finalizeKillAttempts prunes only the attempt path, not a same-named compan
   expect(result.success).toBe(true)
   expect(result.closedCount).toBe(1)
   // A pruned by its normalized path; B (different path, different game) survives.
+  expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
+})
+
+test('finalizeKillAttempts keeps cleanup path-scoped even when the attempt exe is missing (#677)', async () => {
+  const { finalizeKillAttempts, runningProcesses } = await loadProcessModules()
+
+  // Same collision as above, but game A's exe is NOT on disk at finalize time
+  // (uninstalled mid-session, on a disconnected/removable drive, or transiently
+  // locked). isFullExePath is therefore false — yet the attempt is still a FULL
+  // PATH, so cleanup must stay scoped to A's own path and leave B's same-named
+  // companion tracked. Gating the name fallback on isFullExePath (which stats
+  // the file) instead of path shape would reintroduce the #677 collateral
+  // deletion. A's path is deliberately left unmarked (existsSync -> false).
+  runningProcesses.set('c:\\gamea\\telemetry.exe', {
+    process: { pid: 1111 } as never,
+    path: 'C:/GameA/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  runningProcesses.set('c:\\gameb\\telemetry.exe', {
+    process: { pid: 2222 } as never,
+    path: 'C:/GameB/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  // processNames empty -> tasklist reports the image gone, so the attempt
+  // finalizes as closed and the cleanup loop runs. The missing exe skips the
+  // WMI branch, but stillRunning stays false because the image is gone.
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'telemetry.exe',
+        appPath: 'C:/GameA/telemetry.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  // A pruned by its normalized path; B survives despite A's exe being absent.
   expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
   expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
 })

@@ -114,6 +114,19 @@ function isFullExePath(appPath: string | undefined): appPath is string {
   )
 }
 
+/**
+ * True when `appPath` is a directory-qualified exe path (has a parent dir),
+ * judged by SHAPE ALONE. Unlike {@link isFullExePath} it does NOT stat the
+ * filesystem. Use this to decide whether basename fallback cleanup is allowed:
+ * scoping must not depend on the exe still being present, or a full-path game
+ * whose exe was removed or is momentarily inaccessible mid-close would fall back
+ * to matching by image name and delete a DIFFERENT game's same-named companion
+ * tracked at another path (#677).
+ */
+function isPathScopedExe(appPath: string | undefined): appPath is string {
+  return typeof appPath === 'string' && path.basename(appPath) !== appPath
+}
+
 function parseProcessIds(output: string) {
   const trimmedOutput = output.trim()
 
@@ -417,11 +430,11 @@ export async function finalizeKillAttempts(
       const imageGoneFromTasklist =
         tasklistReadSucceeded && !processNamesAfterKill.has(attempt.processName)
 
-      // Evaluate once and carry it on the finalized attempt: the cleanup loop
-      // below reuses it, and computing it a second time there would re-stat the
-      // exe across the awaits in between (isFullExePath -> fs.existsSync), which
-      // could flip mid-close if the file were deleted. Aliasing appPath to a
-      // local const lets the type guard still narrow it to string below.
+      // Aliasing appPath to a local const lets the type guard narrow it to
+      // string for the WMI lookup below. This is existence-inclusive
+      // (isFullExePath -> fs.existsSync) on purpose: WMI ExecutablePath matching
+      // needs a real file. Cleanup scoping, by contrast, must NOT depend on
+      // existence (see isPathScopedExe at the cleanup loop below).
       const appPath = attempt.appPath
       const isFullPathAttempt = isFullExePath(appPath)
 
@@ -453,7 +466,6 @@ export async function finalizeKillAttempts(
         ...attempt,
         stillRunning,
         imageGoneFromTasklist,
-        isFullPathAttempt,
         accessDenied: attempt.accessDenied || isElevatedInconclusive
       }
     })
@@ -474,8 +486,10 @@ export async function finalizeKillAttempts(
     // The name fallback is eligible ONLY for bare-name attempts (no full path to
     // scope by). For a full-path attempt the normalized-path match below already
     // deletes exactly its own entry; matching by name as well would also delete
-    // a DIFFERENT game's same-named companion at another path (#677).
-    const nameFallbackEligible = !attempt.isFullPathAttempt
+    // a DIFFERENT game's same-named companion at another path (#677). Judge by
+    // path SHAPE, not isFullExePath: a full-path attempt whose exe is missing at
+    // finalize time must still stay path-scoped, or the #677 bug reappears.
+    const nameFallbackEligible = !isPathScopedExe(attempt.appPath)
     runningProcesses.forEach((appProcess, runningKey) => {
       if (
         (attemptKey && runningKey === attemptKey) ||
