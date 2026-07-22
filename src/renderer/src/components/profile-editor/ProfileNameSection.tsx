@@ -29,7 +29,6 @@ export function ProfileNameSection({
           value={profileName}
           onChange={(event) => onProfileNameChange(event.target.value)}
           className="glass-recessed min-w-0 flex-1 rounded-lg px-3 py-2 text-sm text-(--text-primary) outline-none transition-colors placeholder:text-(--text-subtle) focus:ring-2 focus:ring-(--accent)"
-          aria-label="Profile name"
         />
         {onCreateProfile !== undefined && (
           <Tooltip label="New profile">
