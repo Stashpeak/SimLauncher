@@ -46,6 +46,15 @@ const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
 let launchBlockedUntil = 0
 
+// How long the ordered launch loop will wait on a single elevated (UAC) handoff
+// before continuing without it. The elevated fallback is awaited inside the
+// sequential loop while the global single-flight guard (activeLaunches) is held,
+// so an unanswered consent prompt would otherwise park the game + remaining
+// companions — and reject every other window's Launch — for the whole ~120s
+// Windows consent timeout (#675). This is the grace window; see launchElevated.
+// Exported for unit tests only — not part of the processes barrel surface.
+export const ELEVATED_HANDOFF_MAX_WAIT_MS = 10000
+
 /**
  * Whether ANY launch sequence is currently in flight — the same condition as
  * launchProfileApps' own entry gate below. Exposed for the IPC handlers that
@@ -483,6 +492,8 @@ function launchElevated(
   signal?: AbortSignal
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
+    const elevatedWarning = `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+
     // A kill (Close Apps) can land while the UAC handoff is still pending —
     // the consent prompt sits on screen until the user answers it, so this
     // window is wide (#670 Codex P2). Killing the PowerShell host is a best
@@ -495,6 +506,19 @@ function launchElevated(
         child.kill()
       }
     }
+
+    // Never let an unanswered UAC prompt hold the launch loop (and the global
+    // single-flight guard) for the full ~120s consent timeout (#675). After a
+    // bounded grace window, report the handoff optimistically as `elevated` and
+    // let the sequence continue. The PowerShell host is deliberately left alive
+    // so a late approval still starts the app, and tasklist reconciliation
+    // reflects the true running state either way. resolve() is idempotent, so
+    // the eventual callback below is a harmless no-op once this has fired; abort
+    // still kills the host because handoffPending stays true until it settles.
+    const handoffTimer = setTimeout(() => {
+      resolve({ status: 'elevated', appPath, warning: elevatedWarning })
+    }, ELEVATED_HANDOFF_MAX_WAIT_MS)
+
     const child = execFile(
       'powershell.exe',
       [
@@ -506,6 +530,7 @@ function launchElevated(
       { windowsHide: true },
       (error) => {
         handoffPending = false
+        clearTimeout(handoffTimer)
         signal?.removeEventListener('abort', onAbort)
         if (error) {
           // An error after the abort is the expected shape of a cancelled
@@ -533,11 +558,7 @@ function launchElevated(
         // (the user accepted the prompt before the host kill took effect): the
         // elevated app IS running and the kill cannot close it — the sequence's
         // cancellation message names it rather than implying it was closed.
-        resolve({
-          status: 'elevated',
-          appPath,
-          warning: `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
-        })
+        resolve({ status: 'elevated', appPath, warning: elevatedWarning })
       }
     )
     signal?.addEventListener('abort', onAbort, { once: true })

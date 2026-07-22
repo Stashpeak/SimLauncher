@@ -62,6 +62,9 @@ const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
+// #675: when true, the elevated (-EncodedCommand) PowerShell call never invokes
+// its callback, modelling a UAC consent prompt the user never answers.
+let elevatedLaunchHangs = false
 const invalidateProcessNameCacheMock = vi.fn()
 // Paths the mocked PE-subsystem sniffer reports as console-subsystem exes —
 // those must spawn WITHOUT detached so they get a console (#486).
@@ -166,6 +169,12 @@ async function loadProcessModules() {
       }
       if (command === 'powershell.exe') {
         if (!args.includes('-Command')) {
+          // #675: model an unanswered UAC prompt — the elevated launch host
+          // stays pending (callback never fires), so launchElevated must fall
+          // back to its bounded grace timer to keep the chain moving.
+          if (elevatedLaunchHangs && args.includes('-EncodedCommand')) {
+            return
+          }
           callback(null, '', '')
           return
         }
@@ -501,6 +510,7 @@ beforeEach(async () => {
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
+  elevatedLaunchHangs = false
   consoleExePaths.clear()
   appErrorLogFsMock.statSync.mockClear()
   appErrorLogFsMock.renameSync.mockClear()
@@ -1244,6 +1254,46 @@ test('elevated launches pass the app folder as -WorkingDirectory (#483)', async 
     filePath: 'C:/Tools/Admin Tool.exe',
     workingDirectory: 'C:/Tools'
   })
+})
+
+test('launchProfileApps continues the chain when an elevated UAC prompt goes unanswered (#675)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    // The admin companion needs elevation and its UAC prompt is never answered.
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    // launchDelayMs defaults to 0 in beforeEach, so the elevated handoff grace
+    // window is the only timer in play.
+    const { launchProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // Admin tool is ordered before the game. Before #675 the awaited elevation
+    // parked the whole sequence (and the single-flight guard) until the ~120s
+    // UAC timeout, so the game (ordered last) never launched.
+    const resultPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+
+    // Fast-forward past the grace window: the stalled handoff resolves
+    // optimistically and the loop moves on to the game.
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+
+    const result = await resultPromise
+    expect(result.success).toBe(true)
+    expect(result.elevatedCount).toBe(1)
+    expect(result.launchedCount).toBe(2)
+    // The game (ordered after the stalled elevated companion) still spawned.
+    expect(spawnCalls.some((call) => call.appPath === 'C:/Games/Race.exe')).toBe(true)
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 test('launchProfileApps reports synchronous spawn failures without tracking the failed process', async () => {
