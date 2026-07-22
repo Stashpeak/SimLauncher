@@ -465,10 +465,15 @@ export async function finalizeKillAttempts(
 
     clearUnclosedProcess(attempt.gameKey, attempt.appPath, attempt.processName)
     const attemptKey = attempt.appPath ? normalizePathForComparison(attempt.appPath) : ''
+    // The name fallback is eligible ONLY for bare-name attempts (no full path to
+    // scope by). For a full-path attempt the normalized-path match below already
+    // deletes exactly its own entry; matching by name as well would also delete
+    // a DIFFERENT game's same-named companion at another path (#677).
+    const nameFallbackEligible = !isFullExePath(attempt.appPath)
     runningProcesses.forEach((appProcess, runningKey) => {
       if (
         (attemptKey && runningKey === attemptKey) ||
-        getExeName(appProcess.path) === attempt.processName
+        (nameFallbackEligible && getExeName(appProcess.path) === attempt.processName)
       ) {
         runningProcesses.delete(runningKey)
       }

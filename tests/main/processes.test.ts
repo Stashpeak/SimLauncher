@@ -3475,6 +3475,55 @@ test('finalizeKillAttempts treats a notFound attempt as closed and prunes the ru
   expect(unclosedProcesses.size).toBe(0)
 })
 
+test('finalizeKillAttempts prunes only the attempt path, not a same-named companion of another game (#677)', async () => {
+  const { finalizeKillAttempts, runningProcesses } = await loadProcessModules()
+
+  // Two games each launched a companion named telemetry.exe from DIFFERENT
+  // paths. Closing game A's apps must delete A's entry only; B's still-alive
+  // companion must keep its runningProcesses entry (and its ChildProcess
+  // handle). The old name-based cleanup arm deleted B too (name match), which
+  // is the collateral tracking loss this fixes.
+  // A's exe must exist so isFullExePath(attempt.appPath) is true — that is the
+  // predicate the fix gates the name fallback on (a real companion's exe is on
+  // disk), and the same one finalize already uses for its still-running check.
+  markExistingPath('C:/GameA/telemetry.exe')
+  runningProcesses.set('c:\\gamea\\telemetry.exe', {
+    process: { pid: 1111 } as never,
+    path: 'C:/GameA/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  runningProcesses.set('c:\\gameb\\telemetry.exe', {
+    process: { pid: 2222 } as never,
+    path: 'C:/GameB/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  // processNames empty -> the post-kill tasklist reports the image gone, so A's
+  // full-path attempt finalizes as closed and the cleanup loop runs.
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'telemetry.exe',
+        appPath: 'C:/GameA/telemetry.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  // A pruned by its normalized path; B (different path, different game) survives.
+  expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
+})
+
 test('finalizeKillAttempts treats image-gone-from-tasklist as closed even when taskkill reported access-denied (#390)', async () => {
   const { finalizeKillAttempts, unclosedProcesses } = await loadProcessModules()
 
