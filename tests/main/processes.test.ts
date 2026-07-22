@@ -2804,6 +2804,60 @@ test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {
   )
 })
 
+test('killLaunchedApps closing game A keeps game B same-named companion tracked (#677)', async () => {
+  // End-to-end sibling of the direct finalize #677 test, through the caller and
+  // its gameKey filter: two games each launched a companion named telemetry.exe
+  // from different paths. Closing game A's apps must kill only A's process and
+  // leave game B's still-alive companion tracked (ChildProcess handle intact) —
+  // the gameKey filter keeps B a non-target, and finalize must not prune it by
+  // shared basename.
+  markExistingPath('C:/GameA/telemetry.exe')
+  markExistingPath('C:/GameB/telemetry.exe')
+  processNames.add('telemetry.exe')
+  registerProcess('C:/GameA/telemetry.exe', 'telemetry.exe', '1111')
+  registerProcess('C:/GameB/telemetry.exe', 'telemetry.exe', '2222')
+
+  const { killLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: {}
+  })
+
+  runningProcesses.set('c:\\gamea\\telemetry.exe', {
+    process: { pid: 1111 } as never,
+    path: 'C:/GameA/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  runningProcesses.set('c:\\gameb\\telemetry.exe', {
+    process: { pid: 2222 } as never,
+    path: 'C:/GameB/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  // A pruned; B (different game, different path) stays tracked.
+  expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
+  // B's PID must never be taskkilled: the gameKey filter kept it a non-target,
+  // so B is spared as a target AND not clobbered by finalize's name arm.
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '2222', '/T', '/F'] })
+    ])
+  )
+})
+
 test('killLaunchedApps should kill tracked utility processes (#350)', async () => {
   const { killLaunchedApps } = await loadProcessModulesWithStore({
     profiles: {
@@ -3473,6 +3527,140 @@ test('finalizeKillAttempts treats a notFound attempt as closed and prunes the ru
   expect(result.failures).toEqual([])
   expect(runningProcesses.size).toBe(0)
   expect(unclosedProcesses.size).toBe(0)
+})
+
+test('finalizeKillAttempts prunes only the attempt path, not a same-named companion of another game (#677)', async () => {
+  const { finalizeKillAttempts, runningProcesses } = await loadProcessModules()
+
+  // Two games each launched a companion named telemetry.exe from DIFFERENT
+  // paths. Closing game A's apps must delete A's entry only; B's still-alive
+  // companion must keep its runningProcesses entry (and its ChildProcess
+  // handle). The old name-based cleanup arm deleted B too (name match), which
+  // is the collateral tracking loss this fixes.
+  // A's exe exists here (the common case: a real companion's exe is on disk),
+  // which drives finalize's WMI still-running check. Cleanup scoping itself is
+  // gated on path SHAPE (isPathScopedExe), not existence — the missing-exe
+  // variant is covered by the next test.
+  markExistingPath('C:/GameA/telemetry.exe')
+  runningProcesses.set('c:\\gamea\\telemetry.exe', {
+    process: { pid: 1111 } as never,
+    path: 'C:/GameA/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  runningProcesses.set('c:\\gameb\\telemetry.exe', {
+    process: { pid: 2222 } as never,
+    path: 'C:/GameB/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  // processNames empty -> the post-kill tasklist reports the image gone, so A's
+  // full-path attempt finalizes as closed and the cleanup loop runs.
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'telemetry.exe',
+        appPath: 'C:/GameA/telemetry.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  // A pruned by its normalized path; B (different path, different game) survives.
+  expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
+})
+
+test('finalizeKillAttempts keeps cleanup path-scoped even when the attempt exe is missing (#677)', async () => {
+  const { finalizeKillAttempts, runningProcesses } = await loadProcessModules()
+
+  // Same collision as above, but game A's exe is NOT on disk at finalize time
+  // (uninstalled mid-session, on a disconnected/removable drive, or transiently
+  // locked). isFullExePath is therefore false — yet the attempt is still a FULL
+  // PATH, so cleanup must stay scoped to A's own path and leave B's same-named
+  // companion tracked. Gating the name fallback on isFullExePath (which stats
+  // the file) instead of path shape would reintroduce the #677 collateral
+  // deletion. A's path is deliberately left unmarked (existsSync -> false).
+  runningProcesses.set('c:\\gamea\\telemetry.exe', {
+    process: { pid: 1111 } as never,
+    path: 'C:/GameA/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  runningProcesses.set('c:\\gameb\\telemetry.exe', {
+    process: { pid: 2222 } as never,
+    path: 'C:/GameB/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  // processNames empty -> tasklist reports the image gone, so the attempt
+  // finalizes as closed and the cleanup loop runs. The missing exe skips the
+  // WMI branch, but stillRunning stays false because the image is gone.
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'telemetry.exe',
+        appPath: 'C:/GameA/telemetry.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  // A pruned by its normalized path; B survives despite A's exe being absent.
+  expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
+})
+
+test('finalizeKillAttempts still prunes a same-named entry for a bare-name attempt (#677 fallback preserved)', async () => {
+  const { finalizeKillAttempts, runningProcesses } = await loadProcessModules()
+
+  // Bare-name attempts (a UTILITY_COMPANION_PROCESS_NAMES kill issued via
+  // taskkill /IM, no path to scope by) must keep pruning by exe name — that is
+  // the fallback #677 deliberately preserved. The kill was name-scoped, so a
+  // name-scoped prune stays consistent.
+  runningProcesses.set('c:\\tools\\garage61.exe', {
+    process: { pid: 3333 } as never,
+    path: 'C:/Tools/garage61.exe',
+    name: 'garage61.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  // appPath is a BARE NAME -> isFullExePath is false -> the name fallback is the
+  // only thing that can prune the entry (the path arm resolves the bare name to
+  // a cwd-relative absolute path that never matches the entry key).
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'garage61.exe',
+        appPath: 'garage61.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  expect(runningProcesses.has('c:\\tools\\garage61.exe')).toBe(false)
 })
 
 test('finalizeKillAttempts treats image-gone-from-tasklist as closed even when taskkill reported access-denied (#390)', async () => {

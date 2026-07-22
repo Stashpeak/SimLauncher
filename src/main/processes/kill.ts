@@ -114,6 +114,19 @@ function isFullExePath(appPath: string | undefined): appPath is string {
   )
 }
 
+/**
+ * True when `appPath` is a directory-qualified exe path (has a parent dir),
+ * judged by SHAPE ALONE. Unlike {@link isFullExePath} it does NOT stat the
+ * filesystem. Use this to decide whether basename fallback cleanup is allowed:
+ * scoping must not depend on the exe still being present, or a full-path game
+ * whose exe was removed or is momentarily inaccessible mid-close would fall back
+ * to matching by image name and delete a DIFFERENT game's same-named companion
+ * tracked at another path (#677).
+ */
+function isPathScopedExe(appPath: string | undefined): appPath is string {
+  return typeof appPath === 'string' && path.basename(appPath) !== appPath
+}
+
 function parseProcessIds(output: string) {
   const trimmedOutput = output.trim()
 
@@ -417,13 +430,18 @@ export async function finalizeKillAttempts(
       const imageGoneFromTasklist =
         tasklistReadSucceeded && !processNamesAfterKill.has(attempt.processName)
 
+      // Aliasing appPath to a local const lets the type guard narrow it to
+      // string for the WMI lookup below. This is existence-inclusive
+      // (isFullExePath -> fs.existsSync) on purpose: WMI ExecutablePath matching
+      // needs a real file. Cleanup scoping, by contrast, must NOT depend on
+      // existence (see isPathScopedExe at the cleanup loop below).
+      const appPath = attempt.appPath
+      const isFullPathAttempt = isFullExePath(appPath)
+
       let stillRunning: boolean
       let isElevatedInconclusive = false
-      if (isFullExePath(attempt.appPath)) {
-        const { processIds } = await findProcessIdsByExecutablePath(
-          attempt.processName,
-          attempt.appPath
-        )
+      if (isFullPathAttempt) {
+        const { processIds } = await findProcessIdsByExecutablePath(attempt.processName, appPath)
         // When the post-kill tasklist read failed, treat any unverified
         // "process gone" signal as inconclusive rather than success: a
         // notFound result from WMI/taskkill could mean either truly exited
@@ -465,10 +483,17 @@ export async function finalizeKillAttempts(
 
     clearUnclosedProcess(attempt.gameKey, attempt.appPath, attempt.processName)
     const attemptKey = attempt.appPath ? normalizePathForComparison(attempt.appPath) : ''
+    // The name fallback is eligible ONLY for bare-name attempts (no full path to
+    // scope by). For a full-path attempt the normalized-path match below already
+    // deletes exactly its own entry; matching by name as well would also delete
+    // a DIFFERENT game's same-named companion at another path (#677). Judge by
+    // path SHAPE, not isFullExePath: a full-path attempt whose exe is missing at
+    // finalize time must still stay path-scoped, or the #677 bug reappears.
+    const nameFallbackEligible = !isPathScopedExe(attempt.appPath)
     runningProcesses.forEach((appProcess, runningKey) => {
       if (
         (attemptKey && runningKey === attemptKey) ||
-        getExeName(appProcess.path) === attempt.processName
+        (nameFallbackEligible && getExeName(appProcess.path) === attempt.processName)
       ) {
         runningProcesses.delete(runningKey)
       }
