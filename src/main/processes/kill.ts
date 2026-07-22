@@ -417,13 +417,18 @@ export async function finalizeKillAttempts(
       const imageGoneFromTasklist =
         tasklistReadSucceeded && !processNamesAfterKill.has(attempt.processName)
 
+      // Evaluate once and carry it on the finalized attempt: the cleanup loop
+      // below reuses it, and computing it a second time there would re-stat the
+      // exe across the awaits in between (isFullExePath -> fs.existsSync), which
+      // could flip mid-close if the file were deleted. Aliasing appPath to a
+      // local const lets the type guard still narrow it to string below.
+      const appPath = attempt.appPath
+      const isFullPathAttempt = isFullExePath(appPath)
+
       let stillRunning: boolean
       let isElevatedInconclusive = false
-      if (isFullExePath(attempt.appPath)) {
-        const { processIds } = await findProcessIdsByExecutablePath(
-          attempt.processName,
-          attempt.appPath
-        )
+      if (isFullPathAttempt) {
+        const { processIds } = await findProcessIdsByExecutablePath(attempt.processName, appPath)
         // When the post-kill tasklist read failed, treat any unverified
         // "process gone" signal as inconclusive rather than success: a
         // notFound result from WMI/taskkill could mean either truly exited
@@ -448,6 +453,7 @@ export async function finalizeKillAttempts(
         ...attempt,
         stillRunning,
         imageGoneFromTasklist,
+        isFullPathAttempt,
         accessDenied: attempt.accessDenied || isElevatedInconclusive
       }
     })
@@ -469,7 +475,7 @@ export async function finalizeKillAttempts(
     // scope by). For a full-path attempt the normalized-path match below already
     // deletes exactly its own entry; matching by name as well would also delete
     // a DIFFERENT game's same-named companion at another path (#677).
-    const nameFallbackEligible = !isFullExePath(attempt.appPath)
+    const nameFallbackEligible = !attempt.isFullPathAttempt
     runningProcesses.forEach((appProcess, runningKey) => {
       if (
         (attemptKey && runningKey === attemptKey) ||

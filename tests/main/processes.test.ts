@@ -3524,6 +3524,42 @@ test('finalizeKillAttempts prunes only the attempt path, not a same-named compan
   expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
 })
 
+test('finalizeKillAttempts still prunes a same-named entry for a bare-name attempt (#677 fallback preserved)', async () => {
+  const { finalizeKillAttempts, runningProcesses } = await loadProcessModules()
+
+  // Bare-name attempts (a UTILITY_COMPANION_PROCESS_NAMES kill issued via
+  // taskkill /IM, no path to scope by) must keep pruning by exe name — that is
+  // the fallback #677 deliberately preserved. The kill was name-scoped, so a
+  // name-scoped prune stays consistent.
+  runningProcesses.set('c:\\tools\\garage61.exe', {
+    process: { pid: 3333 } as never,
+    path: 'C:/Tools/garage61.exe',
+    name: 'garage61.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  // appPath is a BARE NAME -> isFullExePath is false -> the name fallback is the
+  // only thing that can prune the entry (the path arm resolves the bare name to
+  // a cwd-relative absolute path that never matches the entry key).
+  const result = await finalizeKillAttempts(
+    [
+      {
+        processName: 'garage61.exe',
+        appPath: 'garage61.exe',
+        gameKey: 'ac',
+        success: true,
+        notFound: true
+      }
+    ],
+    'ac'
+  )
+
+  expect(result.success).toBe(true)
+  expect(result.closedCount).toBe(1)
+  expect(runningProcesses.has('c:\\tools\\garage61.exe')).toBe(false)
+})
+
 test('finalizeKillAttempts treats image-gone-from-tasklist as closed even when taskkill reported access-denied (#390)', async () => {
   const { finalizeKillAttempts, unclosedProcesses } = await loadProcessModules()
 
