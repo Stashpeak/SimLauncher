@@ -2804,6 +2804,60 @@ test('killLaunchedApps skips entries flagged as isGame (#343)', async () => {
   )
 })
 
+test('killLaunchedApps closing game A keeps game B same-named companion tracked (#677)', async () => {
+  // End-to-end sibling of the direct finalize #677 test, through the caller and
+  // its gameKey filter: two games each launched a companion named telemetry.exe
+  // from different paths. Closing game A's apps must kill only A's process and
+  // leave game B's still-alive companion tracked (ChildProcess handle intact) —
+  // the gameKey filter keeps B a non-target, and finalize must not prune it by
+  // shared basename.
+  markExistingPath('C:/GameA/telemetry.exe')
+  markExistingPath('C:/GameB/telemetry.exe')
+  processNames.add('telemetry.exe')
+  registerProcess('C:/GameA/telemetry.exe', 'telemetry.exe', '1111')
+  registerProcess('C:/GameB/telemetry.exe', 'telemetry.exe', '2222')
+
+  const { killLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: {}
+  })
+
+  runningProcesses.set('c:\\gamea\\telemetry.exe', {
+    process: { pid: 1111 } as never,
+    path: 'C:/GameA/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  runningProcesses.set('c:\\gameb\\telemetry.exe', {
+    process: { pid: 2222 } as never,
+    path: 'C:/GameB/telemetry.exe',
+    name: 'telemetry.exe',
+    gameKey: 'iracing',
+    isGame: false
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  // A pruned; B (different game, different path) stays tracked.
+  expect(runningProcesses.has('c:\\gamea\\telemetry.exe')).toBe(false)
+  expect(runningProcesses.has('c:\\gameb\\telemetry.exe')).toBe(true)
+  // B's PID must never be taskkilled: the gameKey filter kept it a non-target,
+  // so B is spared as a target AND not clobbered by finalize's name arm.
+  expect(execFileCalls).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '2222', '/T', '/F'] })
+    ])
+  )
+})
+
 test('killLaunchedApps should kill tracked utility processes (#350)', async () => {
   const { killLaunchedApps } = await loadProcessModulesWithStore({
     profiles: {
