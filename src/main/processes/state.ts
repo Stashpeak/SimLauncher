@@ -26,6 +26,55 @@ export function registerActiveLaunch(gameKey: string): AbortController {
 }
 
 /**
+ * Elevated (UAC) handoffs whose grace window expired while the consent prompt
+ * was still on screen (#675). The launch sequence has moved on and its
+ * AbortController is unregistered, but the PowerShell host is deliberately
+ * still alive so a late approval works — which means nothing else can reach it.
+ *
+ * Without this registry a Close Apps click after the sequence ended finds no
+ * controller and no running target, so approving the still-visible prompt would
+ * start the app AFTER the user asked to close everything (Codex P1 on #779).
+ * Lives here, next to activeLaunchControllers, for the same reason: kill.ts must
+ * reach it without importing spawn.ts.
+ */
+const pendingElevatedHandoffs = new Map<number, { gameKey?: string; cancel: () => void }>()
+
+export function registerPendingElevatedHandoff(
+  handoffId: number,
+  entry: { gameKey?: string; cancel: () => void }
+): void {
+  pendingElevatedHandoffs.set(handoffId, entry)
+}
+
+export function unregisterPendingElevatedHandoff(handoffId: number): void {
+  pendingElevatedHandoffs.delete(handoffId)
+}
+
+/**
+ * Cancel every still-pending elevated handoff for `gameKey`, or all of them when
+ * `gameKey` is undefined (the global "close everything" kill). Each entry
+ * removes itself as its callback settles, so this is safe to call on every kill.
+ */
+export function cancelPendingElevatedHandoffs(gameKey?: string): void {
+  pendingElevatedHandoffs.forEach((entry, handoffId) => {
+    if (gameKey !== undefined && entry.gameKey !== gameKey) {
+      return
+    }
+    pendingElevatedHandoffs.delete(handoffId)
+    entry.cancel()
+  })
+}
+
+export function hasPendingElevatedHandoffs(gameKey?: string): boolean {
+  for (const entry of pendingElevatedHandoffs.values()) {
+    if (gameKey === undefined || entry.gameKey === gameKey) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
  * Clear the registry entry once launchProfileApps' sequence ends. Only clears
  * it if `controller` is still the registered one — a new launch for the same
  * gameKey may have already installed its own fresh controller (started right

@@ -72,6 +72,9 @@ let heldElevatedCallback: ((error: NodeJS.ErrnoException | null) => void) | null
 // is only the latest, which is not enough when one sequence has TWO live handoffs
 // for the same exe (two slots can share a path, #357).
 const heldElevatedCallbacks: ((error: NodeJS.ErrnoException | null) => void)[] = []
+// #779: every elevated PowerShell host SimLauncher killed, in order. Proves a
+// Close Apps actually reached a handoff whose grace window had already expired.
+const elevatedHostKills: string[] = []
 const invalidateProcessNameCacheMock = vi.fn()
 // Paths the mocked PE-subsystem sniffer reports as console-subsystem exes —
 // those must spawn WITHOUT detached so they get a console (#486).
@@ -195,7 +198,12 @@ async function loadProcessModules() {
             // the real shape: killing the PowerShell host makes execFile's
             // callback fire with an error.
             return {
-              kill: () => held(makeAccessDeniedError())
+              kill: () => {
+                elevatedHostKills.push(
+                  args[args.indexOf('-EncodedCommand') + 1] ? 'elevated-host' : 'unknown'
+                )
+                held(makeAccessDeniedError())
+              }
             }
           }
           callback(null, '', '')
@@ -536,6 +544,7 @@ beforeEach(async () => {
   elevatedLaunchHangs = false
   heldElevatedCallback = null
   heldElevatedCallbacks.length = 0
+  elevatedHostKills.length = 0
   consoleExePaths.clear()
   appErrorLogFsMock.statSync.mockClear()
   appErrorLogFsMock.renameSync.mockClear()
@@ -1547,6 +1556,88 @@ test('two handoffs for the same exe in one run do not share a late outcome (#675
     // appPath both would resolve to gone and these would be 0 and 1.
     expect(result.elevatedCount).toBe(1)
     expect(result.launchedCount).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Codex P1 on PR #779. Once the grace window expires the sequence moves on and
+// its AbortController is unregistered when it ends, but the PowerShell host is
+// deliberately left alive. Without a registry the kill path can no longer reach
+// it, so approving the still-visible prompt would start the app AFTER the user
+// asked to close everything.
+test('Close Apps after the sequence ended still kills a pending elevated handoff (#675)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Sequence over, controller gone, prompt still on screen and nothing has
+    // been killed yet.
+    expect(elevatedHostKills).toHaveLength(0)
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    await killPromise
+
+    // The kill reached the orphaned host, so a late approval cannot start it.
+    expect(elevatedHostKills).toHaveLength(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Codex P2 on PR #779. A denial arriving while the loop is still running was
+// only subtracted from the counts, so the sequence still returned success:true
+// with "All profile applications launched." and no failedCount.
+test('a UAC denial after the grace window is reported as a failure (#675)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App3.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    // Keeps the loop alive after the grace timer, so the denial lands before the
+    // summary is computed.
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp3: 'C:/Tools/App3.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'admin', path: 'C:/Tools/Admin Tool.exe' },
+      { key: 'customapp3', path: 'C:/Tools/App3.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+
+    // The user finally answers "No", while the loop is in its inter-app delay.
+    heldElevatedCallbacks[0](makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(5000)
+
+    const result = await launchPromise
+
+    expect(result.success).toBe(false)
+    expect(result.failedCount).toBe(1)
+    expect(result.error).toContain('Admin Tool.exe')
+    // It is not standing as an elevated app either.
+    expect(result.elevatedCount).toBe(0)
   } finally {
     vi.useRealTimers()
   }

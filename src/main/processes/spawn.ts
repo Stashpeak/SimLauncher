@@ -20,8 +20,10 @@ import {
   hasOtherActiveLaunchControllers,
   processNameMismatchWarnings,
   registerActiveLaunch,
+  registerPendingElevatedHandoff,
   runningProcesses,
-  unregisterActiveLaunch
+  unregisterActiveLaunch,
+  unregisterPendingElevatedHandoff
 } from './state'
 import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
@@ -260,7 +262,7 @@ export async function launchProfileApps(
       (result): result is Extract<AppLaunchResult, { status: 'elevated' }> =>
         result.status === 'elevated'
     )
-    const failedResults = launchResults.filter(
+    const spawnFailedResults = launchResults.filter(
       (result): result is Extract<AppLaunchResult, { status: 'failed' }> =>
         result.status === 'failed'
     )
@@ -269,9 +271,10 @@ export async function launchProfileApps(
     // the grace window expired first (#675) the promise said `elevated` on spec,
     // and the truth may have arrived afterwards through lateElevatedOutcomes
     // (#779). Resolve each one before it reaches the user:
-    //   survived — the app is running elevated and we cannot close it
-    //   gone     — the handoff was cancelled or failed after the timeout
-    //   unknown  — the prompt is still unanswered; say "may have"
+    //   survived  — the app is running elevated and we cannot close it
+    //   failed    — Windows refused it, or the user denied the prompt
+    //   cancelled — we killed the host ourselves, so nothing started
+    //   unknown   — the prompt is still unanswered; say "may have"
     const elevatedFate = (result: Extract<AppLaunchResult, { status: 'elevated' }>) => {
       if (result.confirmed) {
         return 'survived' as const
@@ -280,13 +283,28 @@ export async function launchProfileApps(
       if (!late) {
         return 'unknown' as const
       }
-      return late.outcome === 'elevated' ? ('survived' as const) : ('gone' as const)
+      if (late.outcome === 'elevated') {
+        return 'survived' as const
+      }
+      return late.outcome
     }
-    const goneElevatedCount = elevatedResults.filter(
-      (result) => elevatedFate(result) === 'gone'
+
+    // A denial that arrives while the loop is still running is a real failure
+    // and must be reported as one, not merely subtracted from the counts
+    // (Codex P2 on #779). `spawnFailedResults` only holds the synchronous spawn
+    // failures, so late ones are folded in here.
+    const lateFailedResults = elevatedResults.flatMap((result) => {
+      const late = lateElevatedOutcomes.get(result.handoffId)
+      return !result.confirmed && late?.outcome === 'failed'
+        ? [{ status: 'failed' as const, appPath: result.appPath, error: late.error }]
+        : []
+    })
+    const failedResults = [...spawnFailedResults, ...lateFailedResults]
+    const cancelledElevatedCount = elevatedResults.filter(
+      (result) => elevatedFate(result) === 'cancelled'
     ).length
-    // A handoff we know started nothing is not a launched app.
-    const launchedCount = launchResults.length - failedResults.length - goneElevatedCount
+    // Neither a failed nor a cancelled handoff started anything.
+    const launchedCount = launchResults.length - failedResults.length - cancelledElevatedCount
 
     // A kill (Close Apps) mid-sequence aborts launchController before doing its
     // own work (#670) — report this as neither success nor failure, and stop
@@ -334,7 +352,10 @@ export async function launchProfileApps(
 
     // Same rule as the cancelled branch: a handoff we know started nothing is
     // not something to warn the user about (#779).
-    const standingElevated = elevatedResults.filter((result) => elevatedFate(result) !== 'gone')
+    const standingElevated = elevatedResults.filter((result) => {
+      const fate = elevatedFate(result)
+      return fate === 'survived' || fate === 'unknown'
+    })
 
     if (failedResults.length > 0) {
       const firstFailure = failedResults[0]
@@ -611,8 +632,24 @@ function launchElevated(
     const handoffRunId = launchRunId
     const handoffId = nextElevatedHandoffId()
     let timedOut = false
+    // Set by cancelPendingElevatedHandoffs, i.e. a Close Apps that arrives after
+    // the sequence already ended. The abort signal cannot cover that window: its
+    // controller is unregistered once launchProfileApps returns.
+    let cancelledByKill = false
     const handoffTimer = setTimeout(() => {
       timedOut = true
+      // The sequence is about to move on without this handoff, and its
+      // controller will be unregistered when the sequence ends. Register the
+      // still-live host so a later Close Apps can still reach it (#779 Codex
+      // P1), otherwise approving the prompt afterwards would start the app the
+      // user just asked to close.
+      registerPendingElevatedHandoff(handoffId, {
+        gameKey,
+        cancel: () => {
+          cancelledByKill = true
+          child.kill()
+        }
+      })
       resolve({
         status: 'elevated',
         appPath,
@@ -634,12 +671,15 @@ function launchElevated(
       (error) => {
         handoffPending = false
         clearTimeout(handoffTimer)
+        unregisterPendingElevatedHandoff(handoffId)
         signal?.removeEventListener('abort', onAbort)
         if (error) {
           // An error after the abort is the expected shape of a cancelled
           // handoff (our own host kill, or the user denying a prompt they no
           // longer want) — report cancelled, and don't log it as a failure.
-          if (signal?.aborted) {
+          // `cancelledByKill` covers the same thing for a Close Apps that landed
+          // after the sequence ended, when the abort signal is no longer wired.
+          if (signal?.aborted || cancelledByKill) {
             if (timedOut) {
               recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
             }
