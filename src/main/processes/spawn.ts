@@ -27,6 +27,7 @@ import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type {
   AppLaunchResult,
+  LateElevatedOutcome,
   LaunchProfileAppsOptions,
   LaunchResult,
   ProfileLaunchEntry,
@@ -54,6 +55,18 @@ let launchBlockedUntil = 0
 // Windows consent timeout (#675). This is the grace window; see launchElevated.
 // Exported for unit tests only — not part of the processes barrel surface.
 export const ELEVATED_HANDOFF_MAX_WAIT_MS = 10000
+
+// True outcomes of elevated handoffs that settled AFTER their grace timer had
+// already resolved the promise as `elevated` (#675). The awaited value cannot be
+// corrected once it is out, so without this the sequence summary would keep
+// telling the user an app "started with administrator permission and cannot be
+// closed" even when the abort killed the host and nothing survived, or when the
+// user denied the prompt (Codex P2 on #779).
+//
+// Module scope is safe because launchProfileApps is globally single-flight (the
+// activeLaunches entry gate below), and it is cleared at the start of every run
+// so a previous sequence can never colour the next one.
+const lateElevatedOutcomes = new Map<string, LateElevatedOutcome>()
 
 /**
  * Whether ANY launch sequence is currently in flight — the same condition as
@@ -106,6 +119,8 @@ export async function launchProfileApps(
   // back to self-registration here, unchanged from #670.
   const launchController = options?.controller ?? registerActiveLaunch(gameKey)
   let launchedAny = false
+  // Never let a previous sequence's late handoff colour this one (#779).
+  lateElevatedOutcomes.clear()
 
   // Everything from here runs under the finally — a throw anywhere below
   // (store read, tasklist scan, path checks) must still release the launch
@@ -222,7 +237,29 @@ export async function launchProfileApps(
       (result): result is Extract<AppLaunchResult, { status: 'failed' }> =>
         result.status === 'failed'
     )
-    const launchedCount = launchResults.length - failedResults.length
+
+    // An elevated result is only trustworthy if the handoff was OBSERVED. When
+    // the grace window expired first (#675) the promise said `elevated` on spec,
+    // and the truth may have arrived afterwards through lateElevatedOutcomes
+    // (#779). Resolve each one before it reaches the user:
+    //   survived — the app is running elevated and we cannot close it
+    //   gone     — the handoff was cancelled or failed after the timeout
+    //   unknown  — the prompt is still unanswered; say "may have"
+    const elevatedFate = (result: Extract<AppLaunchResult, { status: 'elevated' }>) => {
+      if (result.confirmed) {
+        return 'survived' as const
+      }
+      const late = lateElevatedOutcomes.get(result.appPath)
+      if (!late) {
+        return 'unknown' as const
+      }
+      return late.outcome === 'elevated' ? ('survived' as const) : ('gone' as const)
+    }
+    const goneElevatedCount = elevatedResults.filter(
+      (result) => elevatedFate(result) === 'gone'
+    ).length
+    // A handoff we know started nothing is not a launched app.
+    const launchedCount = launchResults.length - failedResults.length - goneElevatedCount
 
     // A kill (Close Apps) mid-sequence aborts launchController before doing its
     // own work (#670) — report this as neither success nor failure, and stop
@@ -232,23 +269,45 @@ export async function launchProfileApps(
       // Elevated apps that completed their UAC handoff before (or despite)
       // the abort survive the kill — SimLauncher cannot close them (#670
       // Codex P2). Name them instead of implying everything was closed.
-      const elevatedNote =
-        elevatedResults.length === 1
+      //
+      // But only the ones that actually survived. A handoff that timed out
+      // (#675) and was then cancelled by this very abort started nothing, so
+      // claiming it survived tells the user we failed to close something we did
+      // close (Codex P2 on #779). Ones still waiting on the prompt get a hedged
+      // sentence rather than a confident wrong one.
+      const survivedCount = elevatedResults.filter(
+        (result) => elevatedFate(result) === 'survived'
+      ).length
+      const unknownCount = elevatedResults.filter(
+        (result) => elevatedFate(result) === 'unknown'
+      ).length
+      const survivedNote =
+        survivedCount === 1
           ? ' One app started with administrator permission and cannot be closed from here.'
-          : elevatedResults.length > 1
-            ? ` ${elevatedResults.length} apps started with administrator permission and cannot be closed from here.`
+          : survivedCount > 1
+            ? ` ${survivedCount} apps started with administrator permission and cannot be closed from here.`
+            : ''
+      const unknownNote =
+        unknownCount === 1
+          ? ' One app may have started with administrator permission and could not be closed from here.'
+          : unknownCount > 1
+            ? ` ${unknownCount} apps may have started with administrator permission and could not be closed from here.`
             : ''
       return {
         success: false,
         cancelled: true,
-        message: `Launch cancelled — closed apps instead.${elevatedNote}`,
+        message: `Launch cancelled — closed apps instead.${survivedNote}${unknownNote}`,
         launchedCount,
         skippedCount,
-        elevatedCount: elevatedResults.length,
+        elevatedCount: survivedCount + unknownCount,
         failedCount: failedResults.length,
         skipped
       }
     }
+
+    // Same rule as the cancelled branch: a handoff we know started nothing is
+    // not something to warn the user about (#779).
+    const standingElevated = elevatedResults.filter((result) => elevatedFate(result) !== 'gone')
 
     if (failedResults.length > 0) {
       const firstFailure = failedResults[0]
@@ -262,17 +321,17 @@ export async function launchProfileApps(
             : `Failed to launch ${failedResults.length} apps. First error: ${failedAppName}: ${firstFailure.error}`,
         launchedCount,
         skippedCount,
-        elevatedCount: elevatedResults.length,
+        elevatedCount: standingElevated.length,
         failedCount: failedResults.length,
         skipped
       }
     }
 
     const elevatedWarning =
-      elevatedResults.length === 1
-        ? elevatedResults[0].warning
-        : elevatedResults.length > 1
-          ? `${elevatedResults.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
+      standingElevated.length === 1
+        ? standingElevated[0].warning
+        : standingElevated.length > 1
+          ? `${standingElevated.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
           : undefined
 
     return {
@@ -284,7 +343,7 @@ export async function launchProfileApps(
       warning: elevatedWarning,
       launchedCount,
       skippedCount,
-      elevatedCount: elevatedResults.length,
+      elevatedCount: standingElevated.length,
       skipped
     }
   } finally {
@@ -513,10 +572,16 @@ function launchElevated(
     // let the sequence continue. The PowerShell host is deliberately left alive
     // so a late approval still starts the app, and tasklist reconciliation
     // reflects the true running state either way. resolve() is idempotent, so
-    // the eventual callback below is a harmless no-op once this has fired; abort
-    // still kills the host because handoffPending stays true until it settles.
+    // the eventual callback below cannot un-settle the promise; abort still
+    // kills the host because handoffPending stays true until it settles.
+    //
+    // The callback's real outcome is NOT discarded, though: once this timer has
+    // fired, it is recorded in lateElevatedOutcomes so the sequence summary can
+    // correct what it tells the user (#779). `timedOut` is the switch.
+    let timedOut = false
     const handoffTimer = setTimeout(() => {
-      resolve({ status: 'elevated', appPath, warning: elevatedWarning })
+      timedOut = true
+      resolve({ status: 'elevated', appPath, warning: elevatedWarning, confirmed: false })
     }, ELEVATED_HANDOFF_MAX_WAIT_MS)
 
     const child = execFile(
@@ -537,6 +602,9 @@ function launchElevated(
           // handoff (our own host kill, or the user denying a prompt they no
           // longer want) — report cancelled, and don't log it as a failure.
           if (signal?.aborted) {
+            if (timedOut) {
+              lateElevatedOutcomes.set(appPath, { appPath, outcome: 'cancelled' })
+            }
             resolve({ status: 'cancelled', appPath })
             return
           }
@@ -550,6 +618,9 @@ function launchElevated(
             'launch',
             `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
+          if (timedOut) {
+            lateElevatedOutcomes.set(appPath, { appPath, outcome: 'failed', error: message })
+          }
           resolve({ status: 'failed', appPath, error: message })
           return
         }
@@ -558,7 +629,10 @@ function launchElevated(
         // (the user accepted the prompt before the host kill took effect): the
         // elevated app IS running and the kill cannot close it — the sequence's
         // cancellation message names it rather than implying it was closed.
-        resolve({ status: 'elevated', appPath, warning: elevatedWarning })
+        if (timedOut) {
+          lateElevatedOutcomes.set(appPath, { appPath, outcome: 'elevated' })
+        }
+        resolve({ status: 'elevated', appPath, warning: elevatedWarning, confirmed: true })
       }
     )
     signal?.addEventListener('abort', onAbort, { once: true })

@@ -88,9 +88,24 @@ export interface KillProfileAppsOptions {
   except?: AbortController
 }
 
+/**
+ * The true outcome of an elevated (UAC) handoff that settled AFTER the bounded
+ * grace window already resolved its promise as `elevated` (#675). The caller has
+ * been told `elevated` and cannot be told again, so this is the only channel by
+ * which the real result reaches it (#779).
+ */
+export type LateElevatedOutcome = {
+  appPath: string
+} & ({ outcome: 'elevated' } | { outcome: 'cancelled' } | { outcome: 'failed'; error: string })
+
 export type AppLaunchResult =
   | { status: 'launched'; appPath: string }
-  | { status: 'elevated'; appPath: string; warning: string }
+  /**
+   * `confirmed: false` means the grace window expired with the UAC prompt still
+   * unanswered, so this is an optimistic report, not an observed launch. Never
+   * tell the user an unconfirmed app "started" (#779).
+   */
+  | { status: 'elevated'; appPath: string; warning: string; confirmed: boolean }
   | { status: 'failed'; appPath: string; error: string }
   // The launch was aborted (Close Apps) during the async pre-spawn work, so
   // the process was deliberately never spawned (#670).

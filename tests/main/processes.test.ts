@@ -176,8 +176,21 @@ async function loadProcessModules() {
           // stays pending (callback never fires), so launchElevated must fall
           // back to its bounded grace timer to keep the chain moving.
           if (elevatedLaunchHangs && args.includes('-EncodedCommand')) {
-            heldElevatedCallback = (error) => callback(error, '', '')
-            return
+            let settled = false
+            heldElevatedCallback = (error) => {
+              if (settled) {
+                return
+              }
+              settled = true
+              callback(error, '', '')
+            }
+            // Unlike the other branches this call has NOT invoked its callback,
+            // so launchElevated's abort handler can still reach the child. Model
+            // the real shape: killing the PowerShell host makes execFile's
+            // callback fire with an error.
+            return {
+              kill: () => heldElevatedCallback?.(makeAccessDeniedError())
+            }
           }
           callback(null, '', '')
           return
@@ -1330,16 +1343,17 @@ test('a late UAC denial after the grace timer settles inertly, it does not throw
     expect(() => heldElevatedCallback?.(makeAccessDeniedError())).not.toThrow()
     await vi.advanceTimersByTimeAsync(0)
 
-    // KNOWN GAP, tracked in #778: because the promise already settled as
-    // `elevated`, a denial arriving after the window is not surfaced anywhere —
-    // the summary still counts the app as launched. This assertion pins that
-    // behaviour deliberately so the fix for #778 has to update it on purpose
-    // rather than silently changing what users are told.
+    // KNOWN GAP, tracked in #778: the denial lands here AFTER launchProfileApps
+    // has already returned, so `lateElevatedOutcomes` cannot correct a summary
+    // that is already out. (When the denial arrives while the loop is still
+    // running it IS corrected — see the abort test below.) Pinned deliberately
+    // so the fix for #778 has to update it on purpose rather than silently
+    // changing what users are told.
     expect(result.success).toBe(true)
     expect(result.launchedCount).toBe(2)
     expect(result.elevatedCount).toBe(1)
-    // The success branch carries no failedCount at all, so a late denial has
-    // nowhere to surface even in principle.
+    // The success branch carries no failedCount at all, so a late denial that
+    // misses the window has nowhere to surface even in principle.
     expect(result.failedCount).toBeUndefined()
 
     // It is discarded from the USER-FACING report only. The callback still runs
@@ -1354,6 +1368,57 @@ test('a late UAC denial after the grace timer settles inertly, it does not throw
         (line) => line.includes('Admin Tool.exe') && line.includes('as administrator')
       )
     ).toBe(true)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Codex P2 on PR #779. The #675 grace timer reports `elevated` optimistically,
+// so a Close Apps landing AFTER it fires used to be told "one app started with
+// administrator permission and cannot be closed from here" — about a handoff
+// SimLauncher had just successfully killed. It named a survivor that did not
+// exist and implied the close had failed.
+test('a handoff cancelled after the grace timer is not reported as a surviving elevated app (#675)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    // A real inter-app delay keeps the loop alive after the grace timer, which
+    // is the window Codex identified.
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+
+    // Grace window expires with the prompt unanswered: the loop moves on and is
+    // now sitting in the inter-app delay.
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+
+    // Close Apps lands. Its abort kills the still-pending PowerShell host (the
+    // mocked child models that by firing the callback with an error), which
+    // reports the cancellation — too late for the promise, but in time for the
+    // summary.
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    await killPromise
+
+    const result = await launchPromise
+
+    expect(result.cancelled).toBe(true)
+    // Nothing elevated survived, so nothing may be named as unclosable.
+    expect(result.elevatedCount).toBe(0)
+    expect(result.message).not.toContain('administrator permission')
+    // And a handoff that started nothing is not a launched app.
+    expect(result.launchedCount).toBe(0)
   } finally {
     vi.useRealTimers()
   }
