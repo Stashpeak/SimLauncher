@@ -610,6 +610,7 @@ function launchElevated(
     let handoffPending = true
     const onAbort = () => {
       if (handoffPending) {
+        noteHandoffCancelled()
         child.kill()
       }
     }
@@ -636,6 +637,24 @@ function launchElevated(
     // the sequence already ended. The abort signal cannot cover that window: its
     // controller is unregistered once launchProfileApps returns.
     let cancelledByKill = false
+    /**
+     * Record the cancellation at KILL-REQUEST time, not from the execFile
+     * callback. `child.kill()` only signals the PowerShell host; its callback
+     * fires on process exit, which in production is asynchronous. The launch
+     * loop resumes on that same abort and can build its summary before the
+     * callback ever runs — and a summary built without this record sees
+     * `unknown`, so it hedges that an app SimLauncher itself just killed "may
+     * have started with administrator permission" (#779 Codex P2). The test
+     * mock fired its callback synchronously from kill(), which hid the race.
+     *
+     * A no-op before the grace timer fires: until then the promise is unsettled,
+     * so the callback still reports `cancelled` through the normal channel.
+     */
+    const noteHandoffCancelled = (): void => {
+      if (timedOut) {
+        recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+      }
+    }
     const handoffTimer = setTimeout(() => {
       timedOut = true
       // The sequence is about to move on without this handoff, and its
@@ -647,6 +666,7 @@ function launchElevated(
         gameKey,
         cancel: () => {
           cancelledByKill = true
+          noteHandoffCancelled()
           child.kill()
         }
       })

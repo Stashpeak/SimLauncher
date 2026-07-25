@@ -197,12 +197,18 @@ async function loadProcessModules() {
             // so launchElevated's abort handler can still reach the child. Model
             // the real shape: killing the PowerShell host makes execFile's
             // callback fire with an error.
+            //
+            // Fire it ASYNCHRONOUSLY. kill() only signals the host; the callback
+            // lands on process exit, which is never synchronous in production.
+            // This mock used to call held() inline, which made the launch loop
+            // observe the cancellation the instant it resumed and hid a real
+            // ordering bug (#779 Codex P2) behind a passing test.
             return {
               kill: () => {
                 elevatedHostKills.push(
                   args[args.indexOf('-EncodedCommand') + 1] ? 'elevated-host' : 'unknown'
                 )
-                held(makeAccessDeniedError())
+                setTimeout(() => held(makeAccessDeniedError()), 0)
               }
             }
           }

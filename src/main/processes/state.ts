@@ -65,15 +65,6 @@ export function cancelPendingElevatedHandoffs(gameKey?: string): void {
   })
 }
 
-export function hasPendingElevatedHandoffs(gameKey?: string): boolean {
-  for (const entry of pendingElevatedHandoffs.values()) {
-    if (gameKey === undefined || entry.gameKey === gameKey) {
-      return true
-    }
-  }
-  return false
-}
-
 /**
  * Clear the registry entry once launchProfileApps' sequence ends. Only clears
  * it if `controller` is still the registered one — a new launch for the same
