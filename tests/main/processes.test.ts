@@ -1341,6 +1341,19 @@ test('a late UAC denial after the grace timer settles inertly, it does not throw
     // The success branch carries no failedCount at all, so a late denial has
     // nowhere to surface even in principle.
     expect(result.failedCount).toBeUndefined()
+
+    // It is discarded from the USER-FACING report only. The callback still runs
+    // its whole error branch before the no-op resolve, so the denial is on disk
+    // in main-error.log and diagnosable (#638). Pinned so a fix for #778 cannot
+    // regress the diagnostics while improving the reporting.
+    const launchLogLines = appErrorLogFsMock.appendFileSync.mock.calls.map((call) =>
+      String(call[1])
+    )
+    expect(
+      launchLogLines.some(
+        (line) => line.includes('Admin Tool.exe') && line.includes('as administrator')
+      )
+    ).toBe(true)
   } finally {
     vi.useRealTimers()
   }
