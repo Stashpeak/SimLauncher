@@ -1424,6 +1424,72 @@ test('a handoff cancelled after the grace timer is not reported as a surviving e
   }
 })
 
+// CodeRabbit Major on PR #779. Clearing lateElevatedOutcomes per run is not
+// enough on its own: a host left alive by an EARLIER timed-out handoff keeps
+// waiting on its prompt and can fire its callback during a LATER sequence, i.e.
+// after that clear. Keyed by appPath alone, a denial of the old prompt would
+// classify the new handoff for the same exe as gone.
+test("a superseded run's late handoff cannot colour the next sequence (#675)", async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    // Keep run 2's loop alive after its own grace timer, so the stale callback
+    // has a summary left to corrupt. With a 0 delay the loop would already have
+    // finished and the test would pass for the wrong reason.
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // Run 1: prompt goes unanswered, the grace timer fires, the sequence ends
+    // with the PowerShell host still alive.
+    const firstPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    // Grace window, then run 1's own inter-app delay, so the sequence finishes.
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS + 5000)
+    await firstPromise
+    const firstRunCallback = heldElevatedCallback
+    expect(firstRunCallback).not.toBeNull()
+
+    // Clear the post-launch cooldown so run 2 is admitted, and forget what run
+    // 1 spawned so run 2 does not skip everything as already running.
+    await vi.advanceTimersByTimeAsync(11000)
+    processNames.clear()
+    runningProcesses.clear()
+
+    // Run 2: the SAME exe, again unanswered, again resolved optimistically.
+    const secondPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+
+    // Run 1's abandoned prompt is finally DENIED, mid-run-2. It must not be
+    // attributed to run 2's still-pending handoff for the same exe.
+    firstRunCallback?.(makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(0)
+
+    // Now let run 2's inter-app delay elapse so its summary is computed AFTER
+    // the stale write would have landed.
+    await vi.advanceTimersByTimeAsync(5000)
+    const result = await secondPromise
+
+    // Run 2's handoff is still unknown, not gone: it stays counted.
+    expect(result.success).toBe(true)
+    expect(result.elevatedCount).toBe(1)
+    expect(result.launchedCount).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 test('launchProfileApps reports synchronous spawn failures without tracking the failed process', async () => {
   const { launchProfileApps, runningProcesses } = await loadProcessModules()
 

@@ -63,10 +63,22 @@ export const ELEVATED_HANDOFF_MAX_WAIT_MS = 10000
 // closed" even when the abort killed the host and nothing survived, or when the
 // user denied the prompt (Codex P2 on #779).
 //
-// Module scope is safe because launchProfileApps is globally single-flight (the
-// activeLaunches entry gate below), and it is cleared at the start of every run
-// so a previous sequence can never colour the next one.
+// Clearing the map per run is NOT enough on its own. A host left alive by an
+// earlier timed-out handoff can keep waiting on its prompt for the full consent
+// timeout and fire its callback DURING a later sequence, i.e. after that clear.
+// Keyed by appPath alone, a denial of the OLD prompt would then classify the NEW
+// handoff for the same exe as gone (CodeRabbit Major on #779). So every handoff
+// captures the run it belongs to and a late write from a superseded run is
+// dropped.
+let launchRunId = 0
 const lateElevatedOutcomes = new Map<string, LateElevatedOutcome>()
+
+function recordLateElevatedOutcome(runId: number, outcome: LateElevatedOutcome): void {
+  if (runId !== launchRunId) {
+    return
+  }
+  lateElevatedOutcomes.set(outcome.appPath, outcome)
+}
 
 /**
  * Whether ANY launch sequence is currently in flight — the same condition as
@@ -119,8 +131,10 @@ export async function launchProfileApps(
   // back to self-registration here, unchanged from #670.
   const launchController = options?.controller ?? registerActiveLaunch(gameKey)
   let launchedAny = false
-  // Never let a previous sequence's late handoff colour this one (#779).
+  // Never let a previous sequence's late handoff colour this one (#779). The
+  // clear drops what already landed; the run id drops what lands from here on.
   lateElevatedOutcomes.clear()
+  launchRunId += 1
 
   // Everything from here runs under the finally — a throw anywhere below
   // (store read, tasklist scan, path checks) must still release the launch
@@ -578,6 +592,10 @@ function launchElevated(
     // The callback's real outcome is NOT discarded, though: once this timer has
     // fired, it is recorded in lateElevatedOutcomes so the sequence summary can
     // correct what it tells the user (#779). `timedOut` is the switch.
+    // Captured at handoff creation, not read at callback time: by the time a
+    // stalled host finally answers, launchRunId may already belong to a later
+    // sequence, and that is precisely the write we must drop.
+    const handoffRunId = launchRunId
     let timedOut = false
     const handoffTimer = setTimeout(() => {
       timedOut = true
@@ -603,7 +621,7 @@ function launchElevated(
           // longer want) — report cancelled, and don't log it as a failure.
           if (signal?.aborted) {
             if (timedOut) {
-              lateElevatedOutcomes.set(appPath, { appPath, outcome: 'cancelled' })
+              recordLateElevatedOutcome(handoffRunId, { appPath, outcome: 'cancelled' })
             }
             resolve({ status: 'cancelled', appPath })
             return
@@ -619,7 +637,7 @@ function launchElevated(
             `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
           if (timedOut) {
-            lateElevatedOutcomes.set(appPath, { appPath, outcome: 'failed', error: message })
+            recordLateElevatedOutcome(handoffRunId, { appPath, outcome: 'failed', error: message })
           }
           resolve({ status: 'failed', appPath, error: message })
           return
@@ -630,7 +648,7 @@ function launchElevated(
         // elevated app IS running and the kill cannot close it — the sequence's
         // cancellation message names it rather than implying it was closed.
         if (timedOut) {
-          lateElevatedOutcomes.set(appPath, { appPath, outcome: 'elevated' })
+          recordLateElevatedOutcome(handoffRunId, { appPath, outcome: 'elevated' })
         }
         resolve({ status: 'elevated', appPath, warning: elevatedWarning, confirmed: true })
       }
