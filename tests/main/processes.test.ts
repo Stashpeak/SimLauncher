@@ -65,6 +65,9 @@ const spawnErrors = new Map<string, NodeJS.ErrnoException>()
 // #675: when true, the elevated (-EncodedCommand) PowerShell call never invokes
 // its callback, modelling a UAC consent prompt the user never answers.
 let elevatedLaunchHangs = false
+// #675: the held callback of a hung elevated launch, so a test can fire it LATE
+// (after the grace timer already resolved) and assert the late settle is inert.
+let heldElevatedCallback: ((error: NodeJS.ErrnoException | null) => void) | null = null
 const invalidateProcessNameCacheMock = vi.fn()
 // Paths the mocked PE-subsystem sniffer reports as console-subsystem exes —
 // those must spawn WITHOUT detached so they get a console (#486).
@@ -173,6 +176,7 @@ async function loadProcessModules() {
           // stays pending (callback never fires), so launchElevated must fall
           // back to its bounded grace timer to keep the chain moving.
           if (elevatedLaunchHangs && args.includes('-EncodedCommand')) {
+            heldElevatedCallback = (error) => callback(error, '', '')
             return
           }
           callback(null, '', '')
@@ -511,6 +515,7 @@ beforeEach(async () => {
   spawnCalls.length = 0
   spawnErrors.clear()
   elevatedLaunchHangs = false
+  heldElevatedCallback = null
   consoleExePaths.clear()
   appErrorLogFsMock.statSync.mockClear()
   appErrorLogFsMock.renameSync.mockClear()
@@ -1291,6 +1296,51 @@ test('launchProfileApps continues the chain when an elevated UAC prompt goes una
     expect(result.launchedCount).toBe(2)
     // The game (ordered after the stalled elevated companion) still spawned.
     expect(spawnCalls.some((call) => call.appPath === 'C:/Games/Race.exe')).toBe(true)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a late UAC denial after the grace timer settles inertly, it does not throw or re-report (#675)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const resultPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    const result = await resultPromise
+
+    // The PowerShell host is deliberately left alive past the grace window, so
+    // its callback can still fire afterwards — here with the shape of a user
+    // who finally DENIED the prompt. resolve() is idempotent, so this must be a
+    // no-op: no throw, no second settle, no mutation of the returned summary.
+    expect(heldElevatedCallback).not.toBeNull()
+    expect(() => heldElevatedCallback?.(makeAccessDeniedError())).not.toThrow()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // KNOWN GAP, tracked in #778: because the promise already settled as
+    // `elevated`, a denial arriving after the window is not surfaced anywhere —
+    // the summary still counts the app as launched. This assertion pins that
+    // behaviour deliberately so the fix for #778 has to update it on purpose
+    // rather than silently changing what users are told.
+    expect(result.success).toBe(true)
+    expect(result.launchedCount).toBe(2)
+    expect(result.elevatedCount).toBe(1)
+    // The success branch carries no failedCount at all, so a late denial has
+    // nowhere to surface even in principle.
+    expect(result.failedCount).toBeUndefined()
   } finally {
     vi.useRealTimers()
   }
