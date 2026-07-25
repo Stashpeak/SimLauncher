@@ -63,21 +63,34 @@ export const ELEVATED_HANDOFF_MAX_WAIT_MS = 10000
 // closed" even when the abort killed the host and nothing survived, or when the
 // user denied the prompt (Codex P2 on #779).
 //
-// Clearing the map per run is NOT enough on its own. A host left alive by an
-// earlier timed-out handoff can keep waiting on its prompt for the full consent
-// timeout and fire its callback DURING a later sequence, i.e. after that clear.
-// Keyed by appPath alone, a denial of the OLD prompt would then classify the NEW
-// handoff for the same exe as gone (CodeRabbit Major on #779). So every handoff
-// captures the run it belongs to and a late write from a superseded run is
-// dropped.
+// Keyed by a per-handoff id, NOT by appPath, for two independent reasons
+// (both CodeRabbit Majors on #779):
+//   1. ACROSS runs — a host left alive by an earlier timed-out handoff keeps
+//      waiting on its prompt for the full consent timeout, so its callback can
+//      fire DURING a later sequence, i.e. after this map was cleared.
+//   2. WITHIN a run — two profile slots may point at the SAME exe (supported:
+//      per-slot args, #357), so one sequence can have two live handoffs for one
+//      path. With one slot per path the later callback would overwrite the
+//      other, and its outcome would then be applied to BOTH results.
+// A unique id per handoff plus the owning run id closes both.
 let launchRunId = 0
-const lateElevatedOutcomes = new Map<string, LateElevatedOutcome>()
+let elevatedHandoffSeq = 0
+const lateElevatedOutcomes = new Map<number, LateElevatedOutcome>()
 
-function recordLateElevatedOutcome(runId: number, outcome: LateElevatedOutcome): void {
+function nextElevatedHandoffId(): number {
+  elevatedHandoffSeq += 1
+  return elevatedHandoffSeq
+}
+
+function recordLateElevatedOutcome(
+  runId: number,
+  handoffId: number,
+  outcome: LateElevatedOutcome
+): void {
   if (runId !== launchRunId) {
     return
   }
-  lateElevatedOutcomes.set(outcome.appPath, outcome)
+  lateElevatedOutcomes.set(handoffId, outcome)
 }
 
 /**
@@ -263,7 +276,7 @@ export async function launchProfileApps(
       if (result.confirmed) {
         return 'survived' as const
       }
-      const late = lateElevatedOutcomes.get(result.appPath)
+      const late = lateElevatedOutcomes.get(result.handoffId)
       if (!late) {
         return 'unknown' as const
       }
@@ -596,10 +609,17 @@ function launchElevated(
     // stalled host finally answers, launchRunId may already belong to a later
     // sequence, and that is precisely the write we must drop.
     const handoffRunId = launchRunId
+    const handoffId = nextElevatedHandoffId()
     let timedOut = false
     const handoffTimer = setTimeout(() => {
       timedOut = true
-      resolve({ status: 'elevated', appPath, warning: elevatedWarning, confirmed: false })
+      resolve({
+        status: 'elevated',
+        appPath,
+        warning: elevatedWarning,
+        confirmed: false,
+        handoffId
+      })
     }, ELEVATED_HANDOFF_MAX_WAIT_MS)
 
     const child = execFile(
@@ -621,7 +641,7 @@ function launchElevated(
           // longer want) — report cancelled, and don't log it as a failure.
           if (signal?.aborted) {
             if (timedOut) {
-              recordLateElevatedOutcome(handoffRunId, { appPath, outcome: 'cancelled' })
+              recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
             }
             resolve({ status: 'cancelled', appPath })
             return
@@ -637,7 +657,11 @@ function launchElevated(
             `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
           if (timedOut) {
-            recordLateElevatedOutcome(handoffRunId, { appPath, outcome: 'failed', error: message })
+            recordLateElevatedOutcome(handoffRunId, handoffId, {
+              appPath,
+              outcome: 'failed',
+              error: message
+            })
           }
           resolve({ status: 'failed', appPath, error: message })
           return
@@ -648,9 +672,15 @@ function launchElevated(
         // elevated app IS running and the kill cannot close it — the sequence's
         // cancellation message names it rather than implying it was closed.
         if (timedOut) {
-          recordLateElevatedOutcome(handoffRunId, { appPath, outcome: 'elevated' })
+          recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'elevated' })
         }
-        resolve({ status: 'elevated', appPath, warning: elevatedWarning, confirmed: true })
+        resolve({
+          status: 'elevated',
+          appPath,
+          warning: elevatedWarning,
+          confirmed: true,
+          handoffId
+        })
       }
     )
     signal?.addEventListener('abort', onAbort, { once: true })

@@ -68,6 +68,10 @@ let elevatedLaunchHangs = false
 // #675: the held callback of a hung elevated launch, so a test can fire it LATE
 // (after the grace timer already resolved) and assert the late settle is inert.
 let heldElevatedCallback: ((error: NodeJS.ErrnoException | null) => void) | null = null
+// Every held callback of the current test, in creation order. `heldElevatedCallback`
+// is only the latest, which is not enough when one sequence has TWO live handoffs
+// for the same exe (two slots can share a path, #357).
+const heldElevatedCallbacks: ((error: NodeJS.ErrnoException | null) => void)[] = []
 const invalidateProcessNameCacheMock = vi.fn()
 // Paths the mocked PE-subsystem sniffer reports as console-subsystem exes —
 // those must spawn WITHOUT detached so they get a console (#486).
@@ -177,19 +181,21 @@ async function loadProcessModules() {
           // back to its bounded grace timer to keep the chain moving.
           if (elevatedLaunchHangs && args.includes('-EncodedCommand')) {
             let settled = false
-            heldElevatedCallback = (error) => {
+            const held = (error) => {
               if (settled) {
                 return
               }
               settled = true
               callback(error, '', '')
             }
+            heldElevatedCallback = held
+            heldElevatedCallbacks.push(held)
             // Unlike the other branches this call has NOT invoked its callback,
             // so launchElevated's abort handler can still reach the child. Model
             // the real shape: killing the PowerShell host makes execFile's
             // callback fire with an error.
             return {
-              kill: () => heldElevatedCallback?.(makeAccessDeniedError())
+              kill: () => held(makeAccessDeniedError())
             }
           }
           callback(null, '', '')
@@ -529,6 +535,7 @@ beforeEach(async () => {
   spawnErrors.clear()
   elevatedLaunchHangs = false
   heldElevatedCallback = null
+  heldElevatedCallbacks.length = 0
   consoleExePaths.clear()
   appErrorLogFsMock.statSync.mockClear()
   appErrorLogFsMock.renameSync.mockClear()
@@ -1483,6 +1490,61 @@ test("a superseded run's late handoff cannot colour the next sequence (#675)", a
 
     // Run 2's handoff is still unknown, not gone: it stays counted.
     expect(result.success).toBe(true)
+    expect(result.elevatedCount).toBe(1)
+    expect(result.launchedCount).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// CodeRabbit Major on PR #779, the within-run half. Two profile slots may point
+// at the SAME exe (per-slot args, #357), so one sequence can hold two live
+// elevated handoffs for one path. Keyed by appPath, the second callback would
+// overwrite the first and its outcome would be applied to BOTH results.
+test('two handoffs for the same exe in one run do not share a late outcome (#675)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App3.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps } = await loadProcessModulesWithStore({
+      appPaths: {
+        customapp1: 'C:/Tools/Admin Tool.exe',
+        customapp2: 'C:/Tools/Admin Tool.exe',
+        customapp3: 'C:/Tools/App3.exe'
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // A third, ordinary app last, purely so the loop is still running when the
+    // late denial lands. Without it the summary is already computed and the test
+    // would pass no matter how the map is keyed.
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' },
+      { key: 'customapp2', path: 'C:/Tools/Admin Tool.exe' },
+      { key: 'customapp3', path: 'C:/Tools/App3.exe' }
+    ])
+
+    // Slot 1's prompt goes unanswered, its grace timer fires, the loop waits out
+    // the inter-app delay and slot 2 starts its own handoff.
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS + 5000)
+    // Slot 2's grace timer. The loop is now in the delay before slot 3.
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    expect(heldElevatedCallbacks).toHaveLength(2)
+
+    // ONLY slot 1 is denied. Slot 2's prompt is still on screen.
+    heldElevatedCallbacks[0](makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(0)
+
+    // Let slot 3 spawn so the sequence ends and the summary is computed.
+    await vi.advanceTimersByTimeAsync(5000)
+    const result = await launchPromise
+
+    // Slot 1 is gone, slot 2 is still unknown and must stay counted. Keyed by
+    // appPath both would resolve to gone and these would be 0 and 1.
     expect(result.elevatedCount).toBe(1)
     expect(result.launchedCount).toBe(2)
   } finally {
