@@ -20,13 +20,16 @@ import {
   hasOtherActiveLaunchControllers,
   processNameMismatchWarnings,
   registerActiveLaunch,
+  registerPendingElevatedHandoff,
   runningProcesses,
-  unregisterActiveLaunch
+  unregisterActiveLaunch,
+  unregisterPendingElevatedHandoff
 } from './state'
 import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type {
   AppLaunchResult,
+  LateElevatedOutcome,
   LaunchProfileAppsOptions,
   LaunchResult,
   ProfileLaunchEntry,
@@ -45,6 +48,52 @@ const activeLaunches = new Set<string>()
 const POST_LAUNCH_BLOCK_MS = 10000
 const PROCESS_NAME_MISMATCH_WARNING_CHANNEL = 'process-name-mismatch-warning'
 let launchBlockedUntil = 0
+
+// How long the ordered launch loop will wait on a single elevated (UAC) handoff
+// before continuing without it. The elevated fallback is awaited inside the
+// sequential loop while the global single-flight guard (activeLaunches) is held,
+// so an unanswered consent prompt would otherwise park the game + remaining
+// companions — and reject every other window's Launch — for the whole ~120s
+// Windows consent timeout (#675). This is the grace window; see launchElevated.
+// Exported for unit tests only — not part of the processes barrel surface.
+export const ELEVATED_HANDOFF_MAX_WAIT_MS = 10000
+
+// True outcomes of elevated handoffs that settled AFTER their grace timer had
+// already resolved the promise as `elevated` (#675). The awaited value cannot be
+// corrected once it is out, so without this the sequence summary would keep
+// telling the user an app "started with administrator permission and cannot be
+// closed" even when the abort killed the host and nothing survived, or when the
+// user denied the prompt (Codex P2 on #779).
+//
+// Keyed by a per-handoff id, NOT by appPath, for two independent reasons
+// (both CodeRabbit Majors on #779):
+//   1. ACROSS runs — a host left alive by an earlier timed-out handoff keeps
+//      waiting on its prompt for the full consent timeout, so its callback can
+//      fire DURING a later sequence, i.e. after this map was cleared.
+//   2. WITHIN a run — two profile slots may point at the SAME exe (supported:
+//      per-slot args, #357), so one sequence can have two live handoffs for one
+//      path. With one slot per path the later callback would overwrite the
+//      other, and its outcome would then be applied to BOTH results.
+// A unique id per handoff plus the owning run id closes both.
+let launchRunId = 0
+let elevatedHandoffSeq = 0
+const lateElevatedOutcomes = new Map<number, LateElevatedOutcome>()
+
+function nextElevatedHandoffId(): number {
+  elevatedHandoffSeq += 1
+  return elevatedHandoffSeq
+}
+
+function recordLateElevatedOutcome(
+  runId: number,
+  handoffId: number,
+  outcome: LateElevatedOutcome
+): void {
+  if (runId !== launchRunId) {
+    return
+  }
+  lateElevatedOutcomes.set(handoffId, outcome)
+}
 
 /**
  * Whether ANY launch sequence is currently in flight — the same condition as
@@ -97,6 +146,10 @@ export async function launchProfileApps(
   // back to self-registration here, unchanged from #670.
   const launchController = options?.controller ?? registerActiveLaunch(gameKey)
   let launchedAny = false
+  // Never let a previous sequence's late handoff colour this one (#779). The
+  // clear drops what already landed; the run id drops what lands from here on.
+  lateElevatedOutcomes.clear()
+  launchRunId += 1
 
   // Everything from here runs under the finally — a throw anywhere below
   // (store read, tasklist scan, path checks) must still release the launch
@@ -209,11 +262,49 @@ export async function launchProfileApps(
       (result): result is Extract<AppLaunchResult, { status: 'elevated' }> =>
         result.status === 'elevated'
     )
-    const failedResults = launchResults.filter(
+    const spawnFailedResults = launchResults.filter(
       (result): result is Extract<AppLaunchResult, { status: 'failed' }> =>
         result.status === 'failed'
     )
-    const launchedCount = launchResults.length - failedResults.length
+
+    // An elevated result is only trustworthy if the handoff was OBSERVED. When
+    // the grace window expired first (#675) the promise said `elevated` on spec,
+    // and the truth may have arrived afterwards through lateElevatedOutcomes
+    // (#779). Resolve each one before it reaches the user:
+    //   survived  — the app is running elevated and we cannot close it
+    //   failed    — Windows refused it, or the user denied the prompt
+    //   cancelled — we killed the host ourselves, so nothing started
+    //   unknown   — the prompt is still unanswered; say "may have"
+    const elevatedFate = (result: Extract<AppLaunchResult, { status: 'elevated' }>) => {
+      if (result.confirmed) {
+        return 'survived' as const
+      }
+      const late = lateElevatedOutcomes.get(result.handoffId)
+      if (!late) {
+        return 'unknown' as const
+      }
+      if (late.outcome === 'elevated') {
+        return 'survived' as const
+      }
+      return late.outcome
+    }
+
+    // A denial that arrives while the loop is still running is a real failure
+    // and must be reported as one, not merely subtracted from the counts
+    // (Codex P2 on #779). `spawnFailedResults` only holds the synchronous spawn
+    // failures, so late ones are folded in here.
+    const lateFailedResults = elevatedResults.flatMap((result) => {
+      const late = lateElevatedOutcomes.get(result.handoffId)
+      return !result.confirmed && late?.outcome === 'failed'
+        ? [{ status: 'failed' as const, appPath: result.appPath, error: late.error }]
+        : []
+    })
+    const failedResults = [...spawnFailedResults, ...lateFailedResults]
+    const cancelledElevatedCount = elevatedResults.filter(
+      (result) => elevatedFate(result) === 'cancelled'
+    ).length
+    // Neither a failed nor a cancelled handoff started anything.
+    const launchedCount = launchResults.length - failedResults.length - cancelledElevatedCount
 
     // A kill (Close Apps) mid-sequence aborts launchController before doing its
     // own work (#670) — report this as neither success nor failure, and stop
@@ -223,23 +314,48 @@ export async function launchProfileApps(
       // Elevated apps that completed their UAC handoff before (or despite)
       // the abort survive the kill — SimLauncher cannot close them (#670
       // Codex P2). Name them instead of implying everything was closed.
-      const elevatedNote =
-        elevatedResults.length === 1
+      //
+      // But only the ones that actually survived. A handoff that timed out
+      // (#675) and was then cancelled by this very abort started nothing, so
+      // claiming it survived tells the user we failed to close something we did
+      // close (Codex P2 on #779). Ones still waiting on the prompt get a hedged
+      // sentence rather than a confident wrong one.
+      const survivedCount = elevatedResults.filter(
+        (result) => elevatedFate(result) === 'survived'
+      ).length
+      const unknownCount = elevatedResults.filter(
+        (result) => elevatedFate(result) === 'unknown'
+      ).length
+      const survivedNote =
+        survivedCount === 1
           ? ' One app started with administrator permission and cannot be closed from here.'
-          : elevatedResults.length > 1
-            ? ` ${elevatedResults.length} apps started with administrator permission and cannot be closed from here.`
+          : survivedCount > 1
+            ? ` ${survivedCount} apps started with administrator permission and cannot be closed from here.`
+            : ''
+      const unknownNote =
+        unknownCount === 1
+          ? ' One app may have started with administrator permission and could not be closed from here.'
+          : unknownCount > 1
+            ? ` ${unknownCount} apps may have started with administrator permission and could not be closed from here.`
             : ''
       return {
         success: false,
         cancelled: true,
-        message: `Launch cancelled — closed apps instead.${elevatedNote}`,
+        message: `Launch cancelled — closed apps instead.${survivedNote}${unknownNote}`,
         launchedCount,
         skippedCount,
-        elevatedCount: elevatedResults.length,
+        elevatedCount: survivedCount + unknownCount,
         failedCount: failedResults.length,
         skipped
       }
     }
+
+    // Same rule as the cancelled branch: a handoff we know started nothing is
+    // not something to warn the user about (#779).
+    const standingElevated = elevatedResults.filter((result) => {
+      const fate = elevatedFate(result)
+      return fate === 'survived' || fate === 'unknown'
+    })
 
     if (failedResults.length > 0) {
       const firstFailure = failedResults[0]
@@ -253,17 +369,17 @@ export async function launchProfileApps(
             : `Failed to launch ${failedResults.length} apps. First error: ${failedAppName}: ${firstFailure.error}`,
         launchedCount,
         skippedCount,
-        elevatedCount: elevatedResults.length,
+        elevatedCount: standingElevated.length,
         failedCount: failedResults.length,
         skipped
       }
     }
 
     const elevatedWarning =
-      elevatedResults.length === 1
-        ? elevatedResults[0].warning
-        : elevatedResults.length > 1
-          ? `${elevatedResults.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
+      standingElevated.length === 1
+        ? standingElevated[0].warning
+        : standingElevated.length > 1
+          ? `${standingElevated.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
           : undefined
 
     return {
@@ -275,7 +391,7 @@ export async function launchProfileApps(
       warning: elevatedWarning,
       launchedCount,
       skippedCount,
-      elevatedCount: elevatedResults.length,
+      elevatedCount: standingElevated.length,
       skipped
     }
   } finally {
@@ -483,6 +599,8 @@ function launchElevated(
   signal?: AbortSignal
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
+    const elevatedWarning = `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+
     // A kill (Close Apps) can land while the UAC handoff is still pending —
     // the consent prompt sits on screen until the user answers it, so this
     // window is wide (#670 Codex P2). Killing the PowerShell host is a best
@@ -492,9 +610,75 @@ function launchElevated(
     let handoffPending = true
     const onAbort = () => {
       if (handoffPending) {
+        noteHandoffCancelled()
         child.kill()
       }
     }
+
+    // Never let an unanswered UAC prompt hold the launch loop (and the global
+    // single-flight guard) for the full ~120s consent timeout (#675). After a
+    // bounded grace window, report the handoff optimistically as `elevated` and
+    // let the sequence continue. The PowerShell host is deliberately left alive
+    // so a late approval still starts the app, and tasklist reconciliation
+    // reflects the true running state either way. resolve() is idempotent, so
+    // the eventual callback below cannot un-settle the promise; abort still
+    // kills the host because handoffPending stays true until it settles.
+    //
+    // The callback's real outcome is NOT discarded, though: once this timer has
+    // fired, it is recorded in lateElevatedOutcomes so the sequence summary can
+    // correct what it tells the user (#779). `timedOut` is the switch.
+    // Captured at handoff creation, not read at callback time: by the time a
+    // stalled host finally answers, launchRunId may already belong to a later
+    // sequence, and that is precisely the write we must drop.
+    const handoffRunId = launchRunId
+    const handoffId = nextElevatedHandoffId()
+    let timedOut = false
+    // Set by cancelPendingElevatedHandoffs, i.e. a Close Apps that arrives after
+    // the sequence already ended. The abort signal cannot cover that window: its
+    // controller is unregistered once launchProfileApps returns.
+    let cancelledByKill = false
+    /**
+     * Record the cancellation at KILL-REQUEST time, not from the execFile
+     * callback. `child.kill()` only signals the PowerShell host; its callback
+     * fires on process exit, which in production is asynchronous. The launch
+     * loop resumes on that same abort and can build its summary before the
+     * callback ever runs — and a summary built without this record sees
+     * `unknown`, so it hedges that an app SimLauncher itself just killed "may
+     * have started with administrator permission" (#779 Codex P2). The test
+     * mock fired its callback synchronously from kill(), which hid the race.
+     *
+     * A no-op before the grace timer fires: until then the promise is unsettled,
+     * so the callback still reports `cancelled` through the normal channel.
+     */
+    const noteHandoffCancelled = (): void => {
+      if (timedOut) {
+        recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+      }
+    }
+    const handoffTimer = setTimeout(() => {
+      timedOut = true
+      // The sequence is about to move on without this handoff, and its
+      // controller will be unregistered when the sequence ends. Register the
+      // still-live host so a later Close Apps can still reach it (#779 Codex
+      // P1), otherwise approving the prompt afterwards would start the app the
+      // user just asked to close.
+      registerPendingElevatedHandoff(handoffId, {
+        gameKey,
+        cancel: () => {
+          cancelledByKill = true
+          noteHandoffCancelled()
+          child.kill()
+        }
+      })
+      resolve({
+        status: 'elevated',
+        appPath,
+        warning: elevatedWarning,
+        confirmed: false,
+        handoffId
+      })
+    }, ELEVATED_HANDOFF_MAX_WAIT_MS)
+
     const child = execFile(
       'powershell.exe',
       [
@@ -506,12 +690,19 @@ function launchElevated(
       { windowsHide: true },
       (error) => {
         handoffPending = false
+        clearTimeout(handoffTimer)
+        unregisterPendingElevatedHandoff(handoffId)
         signal?.removeEventListener('abort', onAbort)
         if (error) {
           // An error after the abort is the expected shape of a cancelled
           // handoff (our own host kill, or the user denying a prompt they no
           // longer want) — report cancelled, and don't log it as a failure.
-          if (signal?.aborted) {
+          // `cancelledByKill` covers the same thing for a Close Apps that landed
+          // after the sequence ended, when the abort signal is no longer wired.
+          if (signal?.aborted || cancelledByKill) {
+            if (timedOut) {
+              recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+            }
             resolve({ status: 'cancelled', appPath })
             return
           }
@@ -525,6 +716,13 @@ function launchElevated(
             'launch',
             `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
+          if (timedOut) {
+            recordLateElevatedOutcome(handoffRunId, handoffId, {
+              appPath,
+              outcome: 'failed',
+              error: message
+            })
+          }
           resolve({ status: 'failed', appPath, error: message })
           return
         }
@@ -533,10 +731,15 @@ function launchElevated(
         // (the user accepted the prompt before the host kill took effect): the
         // elevated app IS running and the kill cannot close it — the sequence's
         // cancellation message names it rather than implying it was closed.
+        if (timedOut) {
+          recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'elevated' })
+        }
         resolve({
           status: 'elevated',
           appPath,
-          warning: `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+          warning: elevatedWarning,
+          confirmed: true,
+          handoffId
         })
       }
     )

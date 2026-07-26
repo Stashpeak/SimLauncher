@@ -19,6 +19,7 @@ import {
 
 import {
   abortActiveLaunches,
+  cancelPendingElevatedHandoffs,
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
@@ -602,6 +603,11 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // process list — otherwise the launch loop can spawn its next queued app
   // during or after this kill (#670).
   abortActiveLaunches(gameKey)
+  // A UAC handoff whose grace window expired outlives its sequence's controller
+  // (#675), so aborting is not enough: kill the still-live PowerShell host too,
+  // or approving the prompt afterwards starts an app the user just closed
+  // (Codex P1 on #779).
+  cancelPendingElevatedHandoffs(gameKey)
 
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
@@ -726,6 +732,9 @@ export async function killProfileApps(
   // it is in the middle of performing. A real Close Apps click never passes
   // `except`, so it still cancels a switch's launch as before.
   abortActiveLaunches(gameKey, options)
+  // Same reason as killLaunchedApps: a timed-out handoff is not reachable
+  // through the abort signal once its sequence ended (#779 Codex P1).
+  cancelPendingElevatedHandoffs(gameKey)
 
   const { processNames } = await readRunningProcessNames()
 
