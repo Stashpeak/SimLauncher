@@ -147,13 +147,6 @@ export function normalizeProfileUtilities(
   return orderedUtilities
 }
 
-export function getEnabledProfileUtilities(
-  profile: GameProfile | undefined,
-  utilities: Utility[]
-): ProfileUtility[] {
-  return normalizeProfileUtilities(profile, utilities).filter((utility) => utility.enabled)
-}
-
 /**
  * One-time migration that converts a flat-boolean profile (legacy format where
  * each utility is stored as `{ simhub: true, crewchief: false, ... }`) to the
