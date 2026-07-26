@@ -139,6 +139,5 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# AI agent context (local only)
-AGENTS.md
-CLAUDE.md
+# AI agent context is tracked (#784): it carries architecture facts agents act
+# on, so drift has to be catchable in review like any other documentation.
