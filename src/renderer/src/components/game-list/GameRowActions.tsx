@@ -47,19 +47,29 @@ export function GameRowActions({
   // names often contain hyphens, so a dash-style separator would get lost.
   const launchTarget = `${gameName}: ${activeProfileName} profile`
   const primaryTitle =
-    isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : `Launch ${launchTarget}`
+    isLaunching && !canKill
+      ? 'Launching'
+      : canKill
+        ? 'Close Apps'
+        : isLaunchBlocked
+          ? 'Another launch in progress'
+          : `Launch ${launchTarget}`
 
   return (
     <div className="flex items-center gap-3 no-drag">
       <div className="flex h-9 w-9 items-center justify-center">
         {canRelaunch && (
-          <Tooltip label="Relaunch missing apps">
+          <Tooltip label={isLaunchBlocked ? 'Another launch in progress' : 'Relaunch missing apps'}>
             <button
               type="button"
               onClick={onRelaunchMissing}
               disabled={isLaunchBlocked}
               className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
-              aria-label={`Relaunch missing apps for ${gameName}`}
+              aria-label={
+                isLaunchBlocked
+                  ? 'Another launch in progress'
+                  : `Relaunch missing apps for ${gameName}`
+              }
             >
               <RefreshIcon
                 width={18}
@@ -88,7 +98,9 @@ export function GameRowActions({
                 ? `Launching ${gameName}`
                 : canKill
                   ? `Close companion apps for ${gameName}`
-                  : `Launch ${launchTarget}`
+                  : isLaunchBlocked
+                    ? 'Another launch in progress'
+                    : `Launch ${launchTarget}`
             }
             aria-busy={isLaunching && !canKill ? true : undefined}
           >
