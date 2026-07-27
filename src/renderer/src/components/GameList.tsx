@@ -125,6 +125,14 @@ export function GameList({
   // its mount-time snapshot. The normal save paths (sticky bar, in-Settings
   // footer) persist without bumping App's refreshKey, so a newly-configured game
   // stayed hidden and a removed one lingered until the next app restart (#601).
+  const handleToggleEditor = useCallback((key: string) => {
+    setActiveEditorKey((current) => (current === key ? null : key))
+  }, [])
+
+  const handleCloseEditor = useCallback((key: string) => {
+    setActiveEditorKey((current) => (current === key ? null : current))
+  }, [])
+
   const loadSettings = useCallback(async (alive: { current: boolean }) => {
     try {
       const settings = await getSettings()
@@ -321,12 +329,8 @@ export function GameList({
               onLaunchStart={handleLaunchStart}
               onLaunchEnd={handleLaunchEnd}
               onRunningStateRefresh={refreshRunningState}
-              onToggleEditor={() =>
-                setActiveEditorKey((current) => (current === game.key ? null : game.key))
-              }
-              onCloseEditor={() =>
-                setActiveEditorKey((current) => (current === game.key ? null : current))
-              }
+              onToggleEditor={handleToggleEditor}
+              onCloseEditor={handleCloseEditor}
               cacheInitialized={true}
             />
           )
