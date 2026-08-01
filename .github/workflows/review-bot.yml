@@ -45,12 +45,12 @@ jobs:
             fi
             echo "sha=$(echo "$PR_DATA" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.pr.outputs.sha }}
           persist-credentials: false
       - name: Fetch review-bot
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Stashpeak/review-bot
           token: ${{ secrets.REVIEWBOT_PAT }}
