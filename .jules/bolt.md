@@ -1,3 +1,4 @@
 ## 2024-03-24 - React.memo deep function exclusions
+
 **Learning:** When using `React.memo` to prevent list row re-renders (like `GameRow`), it is extremely unsafe to blanket-exclude all function props from the equality check if they are inline closures passed from the parent. If those functions aren't updated, the memoized component will execute stale closures, which can lead to severe logical errors when the parent state updates.
 **Action:** Instead of skipping functions in a custom `areEqual` function, ensure stable callbacks are passed down from the parent using `useCallback`. If a custom `areEqual` is absolutely necessary, explicitly compare the complex objects safely, but do not omit functions or root objects (like the `game` object).

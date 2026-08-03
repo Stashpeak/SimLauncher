@@ -691,7 +691,15 @@ export const GameRow = memo(GameRowComponent, (prev, next) => {
   for (let i = 0; i < prev.runningAppIcons.length; i++) {
     const p = prev.runningAppIcons[i]
     const n = next.runningAppIcons[i]
-    if (p.icon !== n.icon || p.name !== n.name || p.path !== n.path || p.gameKey !== n.gameKey || p.warning !== n.warning || p.elevated !== n.elevated || p.tracked !== n.tracked) {
+    if (
+      p.icon !== n.icon ||
+      p.name !== n.name ||
+      p.path !== n.path ||
+      p.gameKey !== n.gameKey ||
+      p.warning !== n.warning ||
+      p.elevated !== n.elevated ||
+      p.tracked !== n.tracked
+    ) {
       return false
     }
   }
