@@ -106,7 +106,7 @@ export function ColorPickerPopover({
       >
         <HexColorPicker color={color} onChange={onChange} />
 
-        <div className="flex w-full items-center gap-2 px-1">
+        <label className="flex w-full items-center gap-2 px-1 cursor-pointer">
           <span className="text-[10px] font-bold uppercase tracking-wider text-(--text-muted)">
             HEX
           </span>
@@ -134,7 +134,7 @@ export function ColorPickerPopover({
             className="w-full rounded-lg bg-black/20 px-2 py-1.5 text-xs font-medium text-(--text-primary) outline-none transition-colors focus:bg-black/30"
             spellCheck={false}
           />
-        </div>
+        </label>
 
         <button
           type="button"
