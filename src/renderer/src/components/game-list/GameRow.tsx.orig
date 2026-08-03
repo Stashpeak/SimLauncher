@@ -678,12 +678,8 @@ export const GameRow = memo(GameRowComponent, (prev, next) => {
     prev.isLaunching !== next.isLaunching ||
     prev.isLaunchBlocked !== next.isLaunchBlocked ||
     prev.cacheInitialized !== next.cacheInitialized ||
-    prev.game !== next.game ||
-    prev.onLaunchStart !== next.onLaunchStart ||
-    prev.onLaunchEnd !== next.onLaunchEnd ||
-    prev.onRunningStateRefresh !== next.onRunningStateRefresh ||
-    prev.onToggleEditor !== next.onToggleEditor ||
-    prev.onCloseEditor !== next.onCloseEditor
+    prev.game.key !== next.game.key ||
+    prev.game.name !== next.game.name
   ) {
     return false
   }
