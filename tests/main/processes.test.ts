@@ -1134,6 +1134,35 @@ test('an already-running app is still counted when another app was skipped as mi
   expect(spawnCalls[0]).toMatchObject({ appPath: 'C:/Tools/CrewChief.exe' })
 })
 
+// Both review bots on PR #795 found the same hole in the ternary this replaced:
+// with launchedCount at 0 it either emitted "Started 0 apps" or fell through to
+// "All profile applications launched." while entries had been skipped as
+// missing, which is the #739 contradiction the PR set out to remove.
+const loadSummaryBuilder = async () =>
+  (await import('../../src/main/processes/spawn')).buildLaunchSummaryMessage
+
+test('summary: nothing started and something missing does not claim everything launched', async () => {
+  expect((await loadSummaryBuilder())(0, 0, 1)).toBe('No apps were started.')
+})
+
+test('summary: nothing started never emits a zero count', async () => {
+  const build = await loadSummaryBuilder()
+  expect(build(0, 2, 0)).toBe('No apps were started; 2 were already running.')
+  expect(build(0, 1, 1)).toBe('No apps were started; 1 was already running.')
+})
+
+test('summary: an already-running count survives a missing entry in the same launch', async () => {
+  expect((await loadSummaryBuilder())(1, 1, 1)).toBe('Started 1 app; skipped 1 already running.')
+})
+
+test('summary: a missing entry alone drops the ALL claim but keeps the count', async () => {
+  expect((await loadSummaryBuilder())(2, 0, 1)).toBe('Started 2 apps.')
+})
+
+test('summary: a clean launch is unchanged', async () => {
+  expect((await loadSummaryBuilder())(3, 0, 0)).toBe('All profile applications launched.')
+})
+
 test('launchProfileApps parses custom app arguments with quoted paths and escaped quotes', async () => {
   markExistingPath('C:/Tools/Custom Tool.exe')
   const { launchProfileApps } = await loadProcessModulesWithStore({
