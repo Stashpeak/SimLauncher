@@ -109,6 +109,52 @@ export function isAnyLaunchActive(): boolean {
   return activeLaunches.size > 0
 }
 
+/**
+ * Wording for a sequence that finished with no failures and no kill.
+ *
+ * `skippedCount` and `missingCount` are two different senses of "skipped" (see
+ * LaunchResult): the first is "already running", the second is entries filtered
+ * out before spawn for an invalid or missing path. The renderer concatenates the
+ * skip warning naming those missing entries onto this string, so claiming "All"
+ * while `missingCount > 0` produces a toast that contradicts itself in
+ * consecutive sentences (#739).
+ *
+ * Extracted from the return site, and written as ordered early returns rather
+ * than nested ternaries, because the ordering IS the logic and both review bots
+ * found a wrong branch in the ternary version. Exported for unit tests only, not
+ * part of the processes barrel surface.
+ */
+export function buildLaunchSummaryMessage(
+  launchedCount: number,
+  skippedCount: number,
+  missingCount: number
+): string {
+  // Nothing actually started. Reachable without failing or being cancelled:
+  // launchedCount subtracts elevated handoffs cancelled by a kill that did not
+  // abort this sequence's controller (the `except: launchController` path used
+  // by switch-profile-apps). Both "Started 0 apps" and "All ... launched" are
+  // false here, and the latter is the very contradiction this function fixes.
+  if (launchedCount === 0) {
+    return skippedCount > 0
+      ? `No apps were started; ${skippedCount} ${skippedCount === 1 ? 'was' : 'were'} already running.`
+      : 'No apps were started.'
+  }
+
+  const started = `Started ${launchedCount} app${launchedCount === 1 ? '' : 's'}`
+
+  // Must be tested before `missingCount`, or a launch that both skipped a
+  // running app and filtered out a missing one loses the already-running count.
+  if (skippedCount > 0) {
+    return `${started}; skipped ${skippedCount} already running.`
+  }
+
+  if (missingCount > 0) {
+    return `${started}.`
+  }
+
+  return 'All profile applications launched.'
+}
+
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
@@ -218,7 +264,16 @@ export async function launchProfileApps(
     if (appsToLaunch.length === 0) {
       return {
         success: true,
-        message: 'All profile applications are already running.',
+        // Two different meanings of "skipped" meet here (see LaunchResult):
+        // `skippedCount` is "already running", `skipped` is "missing or invalid
+        // path". Saying "All" while `skipped` is non-empty contradicts the skip
+        // warning the renderer concatenates onto this very string (#739) — one
+        // sentence names an app that could not be found, the next claims they
+        // are all running.
+        message:
+          skipped.length > 0
+            ? 'The remaining profile applications are already running.'
+            : 'All profile applications are already running.',
         launchedCount: 0,
         skippedCount,
         skipped
@@ -384,10 +439,7 @@ export async function launchProfileApps(
 
     return {
       success: true,
-      message:
-        skippedCount > 0
-          ? `Started ${launchedCount} app${launchedCount === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
-          : 'All profile applications launched.',
+      message: buildLaunchSummaryMessage(launchedCount, skippedCount, skipped.length),
       warning: elevatedWarning,
       launchedCount,
       skippedCount,
