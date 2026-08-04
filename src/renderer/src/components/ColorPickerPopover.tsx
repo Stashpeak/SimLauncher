@@ -1,4 +1,5 @@
 import {
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -30,6 +31,7 @@ export function ColorPickerPopover({
 }: ColorPickerPopoverProps): ReactNode {
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
+  const hexInputId = useId()
 
   // This component is only mounted while the picker is open, so active is always true.
   // Focus is trapped here rather than via aria-modal because the popover is
@@ -107,10 +109,17 @@ export function ColorPickerPopover({
         <HexColorPicker color={color} onChange={onChange} />
 
         <div className="flex w-full items-center gap-2 px-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-(--text-muted)">
+          {/* "HEX" alone is a poor accessible name, so the input keeps its own
+              aria-label and this only exists to make the text a click target
+              that focuses the field (matches the htmlFor/useId pattern from #765). */}
+          <label
+            htmlFor={hexInputId}
+            className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-(--text-muted)"
+          >
             HEX
-          </span>
+          </label>
           <input
+            id={hexInputId}
             type="text"
             aria-label="Hex color value"
             value={color.toUpperCase()}
