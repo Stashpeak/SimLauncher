@@ -141,3 +141,11 @@ vite.config.ts.timestamp-*
 
 # AI agent context is tracked (#784): it carries architecture facts agents act
 # on, so drift has to be catchable in review like any other documentation.
+
+# Agent scratch files. Google Jules writes a "learning" note next to every PR
+# (.jules/, .Jules/, the casing varies), and has more than once produced a
+# pnpm lockfile in this npm repo. Neither belongs here; the tracked agent
+# context above is the only agent-facing documentation we keep.
+.jules/
+.Jules/
+pnpm-lock.yaml
