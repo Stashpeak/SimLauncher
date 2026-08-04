@@ -1054,6 +1054,86 @@ test('launchProfileApps skips profile apps that are already running', async () =
   })
 })
 
+// #739: the renderer concatenates the skip warning onto `message`, so a summary
+// claiming "All" while `skipped` is non-empty produces a toast that contradicts
+// itself in consecutive sentences. Note the two senses of "skipped" in the
+// payload: `skippedCount` is "already running", `skipped` is "missing/invalid".
+test('nothing left to spawn does not claim ALL apps are running when one was skipped as missing', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  // SimHub exists and is already up; the game exe does not resolve at all.
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/SimHub.exe',
+    'C:/Games/AC/acs.exe'
+  ])
+
+  expect(result).toMatchObject({
+    success: true,
+    message: 'The remaining profile applications are already running.',
+    launchedCount: 0,
+    skippedCount: 1
+  })
+  // Assert the harness really reached this branch rather than bailing out at
+  // the empty-validApps guard above it, which would also produce a plausible
+  // message with no spawn.
+  expect(result.skipped).toHaveLength(1)
+  expect(result.skipped?.[0]).toMatchObject({ path: 'C:/Games/AC/acs.exe', reason: 'missing' })
+  expect(spawnCalls).toHaveLength(0)
+})
+
+test('a launch that skipped a missing app does not report ALL applications launched', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  // SimHub exists and is NOT running, so it launches; the game exe is missing.
+  markExistingPath('C:/Tools/SimHub.exe')
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/SimHub.exe',
+    'C:/Games/AC/acs.exe'
+  ])
+
+  expect(result).toMatchObject({
+    success: true,
+    message: 'Started 1 app.',
+    launchedCount: 1,
+    skippedCount: 0
+  })
+  expect(result.skipped).toHaveLength(1)
+  // Without this the test passes even if nothing spawned at all.
+  expect(spawnCalls).toHaveLength(1)
+  expect(spawnCalls[0]).toMatchObject({ appPath: 'C:/Tools/SimHub.exe' })
+})
+
+test('an already-running app is still counted when another app was skipped as missing', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  // One running, one launchable, one missing: `skippedCount` and `skipped` are
+  // BOTH non-empty. Pins the arm order — testing `skipped.length` before
+  // `skippedCount` drops the already-running count from the summary.
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/CrewChief.exe')
+  processNames.add('simhub.exe')
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/SimHub.exe',
+    'C:/Tools/CrewChief.exe',
+    'C:/Games/AC/acs.exe'
+  ])
+
+  expect(result).toMatchObject({
+    success: true,
+    message: 'Started 1 app; skipped 1 already running.',
+    launchedCount: 1,
+    skippedCount: 1
+  })
+  expect(result.skipped).toHaveLength(1)
+  expect(spawnCalls).toHaveLength(1)
+  expect(spawnCalls[0]).toMatchObject({ appPath: 'C:/Tools/CrewChief.exe' })
+})
+
 test('launchProfileApps parses custom app arguments with quoted paths and escaped quotes', async () => {
   markExistingPath('C:/Tools/Custom Tool.exe')
   const { launchProfileApps } = await loadProcessModulesWithStore({

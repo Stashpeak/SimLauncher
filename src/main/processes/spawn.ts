@@ -218,7 +218,16 @@ export async function launchProfileApps(
     if (appsToLaunch.length === 0) {
       return {
         success: true,
-        message: 'All profile applications are already running.',
+        // Two different meanings of "skipped" meet here (see LaunchResult):
+        // `skippedCount` is "already running", `skipped` is "missing or invalid
+        // path". Saying "All" while `skipped` is non-empty contradicts the skip
+        // warning the renderer concatenates onto this very string (#739) — one
+        // sentence names an app that could not be found, the next claims they
+        // are all running.
+        message:
+          skipped.length > 0
+            ? 'The remaining profile applications are already running.'
+            : 'All profile applications are already running.',
         launchedCount: 0,
         skippedCount,
         skipped
@@ -384,10 +393,17 @@ export async function launchProfileApps(
 
     return {
       success: true,
+      // Arm order is load-bearing: the `skippedCount` test must come first, or a
+      // launch that both skipped a running app AND filtered out a missing one
+      // silently loses the already-running count. `launchedCount > 0` guards the
+      // degenerate "Started 0 apps." wording — launchedCount subtracts cancelled
+      // elevated handoffs above, which a kill can zero out without aborting (#739).
       message:
         skippedCount > 0
           ? `Started ${launchedCount} app${launchedCount === 1 ? '' : 's'}; skipped ${skippedCount} already running.`
-          : 'All profile applications launched.',
+          : skipped.length > 0 && launchedCount > 0
+            ? `Started ${launchedCount} app${launchedCount === 1 ? '' : 's'}.`
+            : 'All profile applications launched.',
       warning: elevatedWarning,
       launchedCount,
       skippedCount,
