@@ -65,6 +65,15 @@ let consoleProbeCallCount = 0
 //
 // Keying off the taskkill that the test is actually about makes the injection
 // hit the post-kill recheck by construction, whatever the call ordering is.
+//
+// Deliberately STICKY rather than one-shot, and this matters: a one-shot flag
+// is consumed by whichever read arrives first, so a stray read landing between
+// the taskkill and finalizeKillAttempts' verification read would let the
+// verification succeed. The test would then pass whether or not production
+// still gates on `tasklistReadSucceeded`, i.e. it would silently stop covering
+// #399 — the same "unawaited work reorders the reads" class this change exists
+// to be immune to. Staying armed models the honest scenario anyway: tasklist is
+// broken from the kill onward, however many reads that turns out to be.
 const failTasklistAfterAccessDeniedPids = new Set<string>()
 let tasklistReadFailArmed = false
 const wmiLookupCounts = new Map<string, number>()
@@ -364,11 +373,9 @@ async function loadProcessModules() {
   const tasklistMock = {
     invalidateProcessNameCache: invalidateProcessNameCacheMock,
     readRunningProcessNames: vi.fn(() => {
-      // One-shot: consumed by the first read after the armed taskkill, which
-      // is the post-kill recheck.
-      const armedFailure = tasklistReadFailArmed
-      tasklistReadFailArmed = false
-      const shouldFailNow = tasklistReadShouldFail || armedFailure
+      // Sticky once armed (see the declaration): not consumed here, so a stray
+      // read cannot steal the failure from the verification read.
+      const shouldFailNow = tasklistReadShouldFail || tasklistReadFailArmed
       // Production's readRunningProcessNames swallows tasklist execution
       // errors and resolves with an empty Set + succeeded: false. Modelling
       // the empty-Set here is what lets the regression test distinguish
