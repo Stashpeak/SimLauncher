@@ -52,12 +52,30 @@ let tasklistReadBlocker: Promise<void> | null = null
 // specific app in the sequence (#670). Consumed once, then cleared.
 let consoleProbeBlocker: { atCall: number; promise: Promise<void> } | null = null
 let consoleProbeCallCount = 0
-// When >0, the mocked readRunningProcessNames returns a successful response
-// for the first N calls, then starts failing. Lets a single test simulate a
-// transient tasklist failure on the post-kill recheck only — without breaking
-// the pre-kill scan that decides which processes to attempt to kill.
-let tasklistReadFailAfterCalls = 0
-let tasklistReadCallCount = 0
+// Arms a transient tasklist failure on the POST-kill recheck only, without
+// breaking the pre-kill scan that decides which processes to attempt to kill.
+//
+// This used to be positional ("succeed for the first N reads, then fail"),
+// which silently mis-targeted itself: the kill path and its neighbours have
+// five readRunningProcessNames call sites, production dedupes via cache and
+// in-flight sharing while this mock counts every raw call, so one extra read
+// landing before the pre-kill scan shifted the numbering by one and made the
+// PRE-kill scan fail instead. killLaunchedApps then took its "nothing to
+// close" early return and the test failed on an unrelated assertion (#751).
+//
+// Keying off the taskkill that the test is actually about makes the injection
+// hit the post-kill recheck by construction, whatever the call ordering is.
+//
+// Deliberately STICKY rather than one-shot, and this matters: a one-shot flag
+// is consumed by whichever read arrives first, so a stray read landing between
+// the taskkill and finalizeKillAttempts' verification read would let the
+// verification succeed. The test would then pass whether or not production
+// still gates on `tasklistReadSucceeded`, i.e. it would silently stop covering
+// #399 — the same "unawaited work reorders the reads" class this change exists
+// to be immune to. Staying armed models the honest scenario anyway: tasklist is
+// broken from the kill onward, however many reads that turns out to be.
+const failTasklistAfterAccessDeniedPids = new Set<string>()
+let tasklistReadFailArmed = false
 const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
@@ -277,6 +295,11 @@ async function loadProcessModules() {
           return
         }
         if (accessDeniedPids.has(pid)) {
+          // Arm the tasklist failure from the kill itself, so it lands on the
+          // post-kill recheck no matter how many reads preceded this (#751).
+          if (failTasklistAfterAccessDeniedPids.has(pid)) {
+            tasklistReadFailArmed = true
+          }
           if (pidsAccessDeniedButImageGone.has(pid)) {
             const entry = findRegistryEntryByPid(pid)
             if (entry) {
@@ -350,10 +373,9 @@ async function loadProcessModules() {
   const tasklistMock = {
     invalidateProcessNameCache: invalidateProcessNameCacheMock,
     readRunningProcessNames: vi.fn(() => {
-      tasklistReadCallCount += 1
-      const shouldFailNow =
-        tasklistReadShouldFail ||
-        (tasklistReadFailAfterCalls > 0 && tasklistReadCallCount > tasklistReadFailAfterCalls)
+      // Sticky once armed (see the declaration): not consumed here, so a stray
+      // read cannot steal the failure from the verification read.
+      const shouldFailNow = tasklistReadShouldFail || tasklistReadFailArmed
       // Production's readRunningProcessNames swallows tasklist execution
       // errors and resolves with an empty Set + succeeded: false. Modelling
       // the empty-Set here is what lets the regression test distinguish
@@ -540,8 +562,8 @@ beforeEach(async () => {
   tasklistReadBlocker = null
   consoleProbeBlocker = null
   consoleProbeCallCount = 0
-  tasklistReadFailAfterCalls = 0
-  tasklistReadCallCount = 0
+  failTasklistAfterAccessDeniedPids.clear()
+  tasklistReadFailArmed = false
   wmiLookupCounts.clear()
   processRegistry.clear()
   execFileCalls.length = 0
@@ -3760,9 +3782,24 @@ test('kill is NOT reported successful when taskkill failed and the post-kill tas
   // then make the POST-kill recheck fail. With the buggy code, the empty Set
   // from the failed recheck satisfied `!processNamesAfterKill.has(...)` and
   // turned the access-denied failure into success: true / closedCount: 1.
-  tasklistReadFailAfterCalls = 1
+  //
+  // Armed off the taskkill for this PID rather than off a call index, so the
+  // failure cannot drift onto the pre-kill scan when an unrelated read slips
+  // in first (#751).
+  failTasklistAfterAccessDeniedPids.add('5555')
 
   const result = await killLaunchedApps('ac')
+
+  // Loud guard, and the reason this test is worth trusting: everything below
+  // asserts how a kill FAILURE is reported, so it is only meaningful if a kill
+  // was dispatched at all. Without this, a killLaunchedApps that bailed early
+  // and never issued a taskkill fails on `result.success` with a message that
+  // says nothing about the real cause (#751).
+  expect(execFileCalls).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '5555', '/T', '/F'] })
+    ])
+  )
 
   expect(result.success).toBe(false)
   expect(result.failedCount).toBe(1)
