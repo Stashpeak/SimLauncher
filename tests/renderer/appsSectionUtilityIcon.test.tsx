@@ -118,7 +118,7 @@ afterEach(() => {
 // row is required once more than one utility is rendered per test.
 function getRowIcon(rowIndex: number): HTMLImageElement | null {
   const row = container.children[rowIndex]
-  return row.querySelector<HTMLImageElement>('img[alt="Icon"]')
+  return row.querySelector<HTMLImageElement>('img[alt=""]')
 }
 
 function getRowText(rowIndex: number): string {
