@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type ReactElement } from 'react'
+import { memo, useState, useCallback, type ReactNode, type ReactElement } from 'react'
 import { Tooltip } from '../Tooltip'
 import { useDismissMenu } from '../../hooks/useDismissMenu'
 
@@ -22,10 +22,10 @@ interface RunningAppIconItemProps {
   isAvailable: boolean
   isFailed: boolean
   cacheInitialized: boolean
-  onError: () => void
+  onError: (iconUrl: string) => void
 }
 
-function RunningAppIconItem({
+const RunningAppIconItem = memo(function RunningAppIconItem({
   app,
   isAvailable,
   isFailed,
@@ -76,7 +76,7 @@ function RunningAppIconItem({
             src={app.icon ?? undefined}
             alt=""
             className="h-4 w-4 object-contain opacity-80"
-            onError={onError}
+            onError={() => app.icon && onError(app.icon)}
           />
         ) : (
           <span aria-hidden="true" className="text-[6px] font-black">
@@ -92,7 +92,7 @@ function RunningAppIconItem({
         src={app.icon ?? undefined}
         alt=""
         className="h-4 w-4 object-contain opacity-80"
-        onError={onError}
+        onError={() => app.icon && onError(app.icon)}
       />
     )
   } else {
@@ -117,7 +117,7 @@ function RunningAppIconItem({
       {menu}
     </>
   )
-}
+})
 
 export function RunningAppsStrip({
   runningAppIcons,
@@ -126,6 +126,10 @@ export function RunningAppsStrip({
   // Track image URLs that returned a load error so we can show the text
   // initial fallback without attempting to re-fetch on every render.
   const [failedRunningIcons, setFailedRunningIcons] = useState<Record<string, true>>({})
+
+  const handleIconError = useCallback((iconUrl: string) => {
+    setFailedRunningIcons((current) => ({ ...current, [iconUrl]: true }))
+  }, [])
 
   if (runningAppIcons.length === 0) return null
 
@@ -144,7 +148,7 @@ export function RunningAppsStrip({
             isAvailable={isAvailable}
             isFailed={isFailed}
             cacheInitialized={cacheInitialized}
-            onError={() => setFailedRunningIcons((current) => ({ ...current, [app.icon!]: true }))}
+            onError={handleIconError}
           />
         )
       })}
