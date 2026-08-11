@@ -1747,8 +1747,9 @@ test('Close Apps after the sequence ended still kills a pending elevated handoff
 // only readings left to the user are "elevation is broken" or "SimLauncher
 // failed to start it", neither of which is true.
 
-const STRANDED_PROMPT_NOTE =
-  'A Windows permission prompt may still be on screen. Answering it will not start the app.'
+// The main process reports a COUNT. The sentence itself is composed in the
+// renderer and asserted in tests/renderer/gameRowStrandedConsentPrompt.test.tsx,
+// which is where it can be proven to actually reach the user.
 
 test('a Close Apps that cancels a pending handoff mid-sequence explains the stranded prompt (#809)', async () => {
   vi.useFakeTimers()
@@ -1780,8 +1781,9 @@ test('a Close Apps that cancels a pending handoff mid-sequence explains the stra
     // Said exactly ONCE. Mid-sequence the user gets both messages, and an
     // earlier version of this fix counted the same handoff at both callers, so
     // the sentence appeared twice for a single prompt.
-    expect(killResult.message).toContain(STRANDED_PROMPT_NOTE)
-    expect(result.message).not.toContain('still be on screen')
+    expect(killResult.strandedConsentPrompts).toBe(1)
+    // Reported once: the launch summary must not carry it as well.
+    expect(result.strandedConsentPrompts).toBeUndefined()
     // The #779 guarantee must survive: we killed it, so it must not be
     // described as something that started or that we failed to close.
     expect(result.message).not.toContain('administrator permission')
@@ -1824,7 +1826,7 @@ test('a Close Apps BEFORE the grace window expires still explains the stranded p
 
     // The host really was killed, which is what strands the prompt.
     expect(elevatedHostKills).toHaveLength(1)
-    expect(killResult.message).toContain(STRANDED_PROMPT_NOTE)
+    expect(killResult.strandedConsentPrompts).toBe(1)
   } finally {
     vi.useRealTimers()
   }
@@ -1858,7 +1860,7 @@ test('a Close Apps that cancels a pending handoff after the sequence ended expla
     const result = await killPromise
 
     expect(elevatedHostKills).toHaveLength(1)
-    expect(result.message).toContain(STRANDED_PROMPT_NOTE)
+    expect(result.strandedConsentPrompts).toBe(1)
   } finally {
     vi.useRealTimers()
   }
@@ -1893,9 +1895,7 @@ test('two cancelled handoffs are described in the plural (#809)', async () => {
     const result = await killPromise
 
     expect(elevatedHostKills).toHaveLength(2)
-    expect(result.message).toContain(
-      'Windows permission prompts may still be on screen. Answering them will not start those apps.'
-    )
+    expect(result.strandedConsentPrompts).toBe(2)
   } finally {
     vi.useRealTimers()
   }
@@ -1924,14 +1924,14 @@ test('a later Close Apps does not repeat the prompt warning for an old cancellat
 
     const firstKill = await killLaunchedApps('ac')
     await vi.advanceTimersByTimeAsync(0)
-    expect(firstKill.message).toContain(STRANDED_PROMPT_NOTE)
+    expect(firstKill.strandedConsentPrompts).toBe(1)
 
     // Same session, nothing pending any more. The count is consumed by the
     // message that reported it, so a later kill must not resurrect it and warn
     // about a dialog that is not there.
     const secondKill = await killLaunchedApps('ac')
     await vi.advanceTimersByTimeAsync(0)
-    expect(secondKill.message).not.toContain('still be on screen')
+    expect(secondKill.strandedConsentPrompts).toBeUndefined()
   } finally {
     vi.useRealTimers()
   }
@@ -1949,8 +1949,7 @@ test('an ordinary Close Apps with no pending handoff says nothing about a prompt
   const result = await killLaunchedApps('ac')
 
   // The unchanged case must read exactly as it did before this issue.
-  expect(result.message).not.toContain('permission prompt')
-  expect(result.message).not.toContain('still be on screen')
+  expect(result.strandedConsentPrompts).toBeUndefined()
 })
 
 // Codex P2 on PR #779. A denial arriving while the loop is still running was

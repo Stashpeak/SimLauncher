@@ -20,7 +20,6 @@ import {
 import {
   abortActiveLaunches,
   cancelPendingElevatedHandoffs,
-  describeStrandedConsentPrompts,
   drainStrandedConsentPrompts,
   processNameMismatchWarnings,
   runningProcesses,
@@ -600,23 +599,23 @@ function getProfileCompanionTargets(gameKey?: string) {
 }
 
 /**
- * Append the stranded-consent-prompt sentence to a kill result, if this kill
- * left any consent prompt on screen (#809).
+ * Attach the stranded-consent-prompt count to a kill result (#809).
  *
- * Drains a counter written by spawn.ts rather than counting here, because the
- * two ways a pending host dies do not line up with either caller: the abort
- * signal reaches it at any point in the sequence, the registry only after its
- * grace window expired. Counting at this level missed the first case entirely
- * and reported the second twice.
+ * A COUNT, not a sentence. Pre-baking the copy into `message` looked simpler
+ * and was wrong: the profile-switch flow discards `message` entirely and the
+ * renderer ignores it on a failed kill, so the explanation was produced
+ * correctly and never shown. The renderer composes the wording, next to
+ * `formatKillFailures` and `formatSkippedLaunchEntries`.
  *
- * Both `abortActiveLaunches` and `cancelPendingElevatedHandoffs` run
- * synchronously at the top of each entry point, so the counter is settled by
- * the time the result is built. Applied at the entry points rather than inside
- * finalizeKillAttempts, which is also reached from paths that cancelled nothing.
+ * Drained in each entry point's PROLOGUE, not here: `abortActiveLaunches` and
+ * `cancelPendingElevatedHandoffs` both run synchronously before any await, so
+ * taking the count there attributes it to the kill that caused it even when a
+ * second kill overlaps this one's async work.
  */
-function withStrandedConsentNote(result: KillResult): KillResult {
-  const note = describeStrandedConsentPrompts(drainStrandedConsentPrompts())
-  return note ? { ...result, message: `${result.message}${note}` } : result
+function withStrandedConsentPrompts(result: KillResult, strandedPromptCount: number): KillResult {
+  return strandedPromptCount > 0
+    ? { ...result, strandedConsentPrompts: strandedPromptCount }
+    : result
 }
 
 export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
@@ -630,6 +629,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // or approving the prompt afterwards starts an app the user just closed
   // (Codex P1 on #779).
   cancelPendingElevatedHandoffs(gameKey)
+  const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
@@ -667,7 +667,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
-  return withStrandedConsentNote(result)
+  return withStrandedConsentPrompts(result, strandedPromptCount)
 }
 
 /**
@@ -758,6 +758,7 @@ export async function killProfileApps(
   // through the abort signal once its sequence ended (#779 Codex P1). And the
   // same consequence: each one killed leaves its consent prompt behind (#809).
   cancelPendingElevatedHandoffs(gameKey)
+  const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
 
@@ -802,5 +803,5 @@ export async function killProfileApps(
 
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
-  return withStrandedConsentNote(result)
+  return withStrandedConsentPrompts(result, strandedPromptCount)
 }

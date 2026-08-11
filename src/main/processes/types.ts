@@ -45,6 +45,12 @@ export interface LaunchResult {
   elevatedCount?: number
   failedCount?: number
   killFailures?: KillFailure[]
+  /**
+   * Consent prompts left on screen because this operation killed a pending
+   * elevated handoff (#809). A count, not a sentence: the renderer composes the
+   * copy, like it does for killFailures and skipped.
+   */
+  strandedConsentPrompts?: number
   /** Entries excluded before spawn for an invalid/missing exe path (#639). NOT counted by `skippedCount`. */
   skipped?: SkippedLaunchEntry[]
   /**
@@ -62,6 +68,12 @@ export interface KillResult {
   closedCount: number
   failedCount: number
   failures: KillFailure[]
+  /**
+   * Consent prompts left on screen because this operation killed a pending
+   * elevated handoff (#809). A count, not a sentence: the renderer composes the
+   * copy, like it does for killFailures and skipped.
+   */
+  strandedConsentPrompts?: number
 }
 
 /**

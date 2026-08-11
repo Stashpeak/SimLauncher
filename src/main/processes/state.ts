@@ -85,48 +85,19 @@ export function noteStrandedConsentPrompt(): void {
 }
 
 /**
- * Take the pending count and reset it, so exactly one message reports it.
+ * Take the pending count and reset it, so exactly one result reports it.
  *
  * Drained by the kill entry points because every stranded prompt originates
  * from one: the abort signal is only ever raised by `abortActiveLaunches`, and
  * the registry is only ever drained by `cancelPendingElevatedHandoffs`, both of
- * which are called from kill.ts and both synchronously, before the kill result
- * is built. The launch summary deliberately stays out of it: mid-sequence, both
- * it and the kill result are delivered, and the user should hear this once.
+ * which are called from kill.ts and both synchronously, in the prologue before
+ * any await. The count travels to the renderer as a number; the sentence is
+ * composed there, next to formatKillFailures.
  */
 export function drainStrandedConsentPrompts(): number {
   const count = strandedConsentPrompts
   strandedConsentPrompts = 0
   return count
-}
-
-/**
- * The sentence appended when a cancellation killed a pending elevated handoff.
- *
- * Killing the PowerShell host stops the app from starting, but it does NOT
- * remove the Windows consent prompt: that UI belongs to the AppInfo service on
- * the secure desktop and is not ours to close. Verified on a real machine
- * (#809): after the kill the prompt stayed up, and answering Yes started
- * nothing. Without this line the user's only readings are "elevation is broken"
- * or "SimLauncher failed to start it", and neither is true.
- *
- * Two things it deliberately does not say: that the app started (it did not),
- * and that SimLauncher closed the prompt (it cannot). It also stays silent at
- * zero, so the ordinary cancellation reads exactly as it does today.
- *
- * Lives here rather than in spawn.ts because both cancellation paths need the
- * same words and kill.ts does not import spawn.ts: the mid-sequence abort
- * (spawn.ts's own summary) and the post-sequence kill (kill.ts, via the
- * registry above) must not describe the same event differently.
- */
-export function describeStrandedConsentPrompts(cancelledCount: number): string {
-  if (cancelledCount === 1) {
-    return ' A Windows permission prompt may still be on screen. Answering it will not start the app.'
-  }
-  if (cancelledCount > 1) {
-    return ' Windows permission prompts may still be on screen. Answering them will not start those apps.'
-  }
-  return ''
 }
 
 /**

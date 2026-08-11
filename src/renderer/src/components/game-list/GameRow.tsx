@@ -15,6 +15,7 @@ import {
   relaunchMissingProfile
 } from '../../lib/electron'
 import { formatKillFailures } from '../../lib/killFailures'
+import { formatStrandedConsentPrompts } from '../../lib/strandedConsentPrompts'
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
@@ -306,6 +307,14 @@ export function GameRow({
           if (result.warning) {
             switchWarnings.push(result.warning)
           }
+          // A switch's kill phase can cancel a pending elevated handoff, which
+          // leaves its consent prompt on screen. This flow never displays
+          // `result.message`, so without an entry here the user gets a plain
+          // "Switched to X" and an unexplained dialog (#809).
+          const strandedNote = formatStrandedConsentPrompts(result.strandedConsentPrompts)
+          if (strandedNote) {
+            switchWarnings.push(strandedNote)
+          }
           switchWarning = switchWarnings.length > 0 ? switchWarnings.join(' ') : undefined
         }
 
@@ -443,13 +452,25 @@ export function GameRow({
       const result = await killLaunchedApps(game.key)
       await onRunningStateRefresh()
 
+      // A cancelled elevated handoff strands its consent prompt whether the
+      // rest of the kill succeeded or not, so this is appended on BOTH paths
+      // (#809). The failure path is the likelier of the two: access-denied is
+      // the canonical kill failure for exactly the elevated-tool profiles that
+      // can produce a pending handoff in the first place.
+      const strandedNote = formatStrandedConsentPrompts(result.strandedConsentPrompts)
+
       if (!result.success) {
         const message = result.error || formatKillFailures(result.failures)
-        notify(message, 'warn', 6000)
+        notify([message, strandedNote].filter(Boolean).join(' '), 'warn', 6000)
         return
       }
 
-      notify(result.message || `Closing companion apps for ${game.name}`, 'warn')
+      notify(
+        [result.message || `Closing companion apps for ${game.name}`, strandedNote]
+          .filter(Boolean)
+          .join(' '),
+        'warn'
+      )
     } catch (err) {
       notify('Failed to close companion apps', 'error')
       console.error(err)
