@@ -1901,6 +1901,42 @@ test('two cancelled handoffs are described in the plural (#809)', async () => {
   }
 })
 
+test('a later Close Apps does not repeat the prompt warning for an old cancellation (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const firstKill = await killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(firstKill.message).toContain(STRANDED_PROMPT_NOTE)
+
+    // Same session, nothing pending any more. The count is consumed by the
+    // message that reported it, so a later kill must not resurrect it and warn
+    // about a dialog that is not there.
+    const secondKill = await killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(secondKill.message).not.toContain('still be on screen')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 test('an ordinary Close Apps with no pending handoff says nothing about a prompt (#809)', async () => {
   markExistingPath('C:/Tools/App2.exe')
   processNames.add('app2.exe')
