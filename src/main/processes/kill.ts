@@ -21,6 +21,7 @@ import {
   abortActiveLaunches,
   cancelPendingElevatedHandoffs,
   describeStrandedConsentPrompts,
+  drainStrandedConsentPrompts,
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
@@ -600,15 +601,21 @@ function getProfileCompanionTargets(gameKey?: string) {
 
 /**
  * Append the stranded-consent-prompt sentence to a kill result, if this kill
- * cancelled any pending elevated handoff (#809).
+ * left any consent prompt on screen (#809).
  *
- * Applied at the entry points rather than inside finalizeKillAttempts, because
- * the count belongs to the cancellation that happens BEFORE the kill work
- * starts, and finalizeKillAttempts is also reached from paths that never
- * cancelled anything.
+ * Drains a counter written by spawn.ts rather than counting here, because the
+ * two ways a pending host dies do not line up with either caller: the abort
+ * signal reaches it at any point in the sequence, the registry only after its
+ * grace window expired. Counting at this level missed the first case entirely
+ * and reported the second twice.
+ *
+ * Both `abortActiveLaunches` and `cancelPendingElevatedHandoffs` run
+ * synchronously at the top of each entry point, so the counter is settled by
+ * the time the result is built. Applied at the entry points rather than inside
+ * finalizeKillAttempts, which is also reached from paths that cancelled nothing.
  */
-function withStrandedConsentNote(result: KillResult, cancelledCount: number): KillResult {
-  const note = describeStrandedConsentPrompts(cancelledCount)
+function withStrandedConsentNote(result: KillResult): KillResult {
+  const note = describeStrandedConsentPrompts(drainStrandedConsentPrompts())
   return note ? { ...result, message: `${result.message}${note}` } : result
 }
 
@@ -622,9 +629,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // (#675), so aborting is not enough: kill the still-live PowerShell host too,
   // or approving the prompt afterwards starts an app the user just closed
   // (Codex P1 on #779).
-  // Each one killed strands its consent prompt on screen, which the result
-  // message has to explain (#809).
-  const strandedPromptCount = cancelPendingElevatedHandoffs(gameKey)
+  cancelPendingElevatedHandoffs(gameKey)
 
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
@@ -662,7 +667,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
-  return withStrandedConsentNote(result, strandedPromptCount)
+  return withStrandedConsentNote(result)
 }
 
 /**
@@ -752,7 +757,7 @@ export async function killProfileApps(
   // Same reason as killLaunchedApps: a timed-out handoff is not reachable
   // through the abort signal once its sequence ended (#779 Codex P1). And the
   // same consequence: each one killed leaves its consent prompt behind (#809).
-  const strandedPromptCount = cancelPendingElevatedHandoffs(gameKey)
+  cancelPendingElevatedHandoffs(gameKey)
 
   const { processNames } = await readRunningProcessNames()
 
@@ -797,5 +802,5 @@ export async function killProfileApps(
 
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
-  return withStrandedConsentNote(result, strandedPromptCount)
+  return withStrandedConsentNote(result)
 }

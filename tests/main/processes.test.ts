@@ -1772,15 +1772,59 @@ test('a Close Apps that cancels a pending handoff mid-sequence explains the stra
 
     const killPromise = killLaunchedApps('ac')
     await vi.advanceTimersByTimeAsync(0)
-    await killPromise
+    const killResult = await killPromise
 
     const result = await launchPromise
 
     expect(result.cancelled).toBe(true)
-    expect(result.message).toContain(STRANDED_PROMPT_NOTE)
+    // Said exactly ONCE. Mid-sequence the user gets both messages, and an
+    // earlier version of this fix counted the same handoff at both callers, so
+    // the sentence appeared twice for a single prompt.
+    expect(killResult.message).toContain(STRANDED_PROMPT_NOTE)
+    expect(result.message).not.toContain('still be on screen')
     // The #779 guarantee must survive: we killed it, so it must not be
     // described as something that started or that we failed to close.
     expect(result.message).not.toContain('administrator permission')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The window this fix originally missed. Before the grace timer fires the
+// handoff is not in the pending registry yet (it is only registered when the
+// timer expires), so counting cancellations at the kill entry points saw
+// nothing here — even though the abort had killed the host and the prompt was
+// left on screen exactly as in the documented case. A user who clicks Close
+// Apps promptly, within 10s, lands here rather than in the case the issue
+// describes.
+test('a Close Apps BEFORE the grace window expires still explains the stranded prompt (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    // Well inside the grace window: the prompt is up, the sequence is parked on
+    // it, and nothing has been registered as pending yet.
+    await vi.advanceTimersByTimeAsync(10)
+
+    const killResult = await killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    await launchPromise
+
+    // The host really was killed, which is what strands the prompt.
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(killResult.message).toContain(STRANDED_PROMPT_NOTE)
   } finally {
     vi.useRealTimers()
   }

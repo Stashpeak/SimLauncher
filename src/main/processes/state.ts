@@ -55,17 +55,49 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.
  */
-export function cancelPendingElevatedHandoffs(gameKey?: string): number {
-  let cancelledCount = 0
+export function cancelPendingElevatedHandoffs(gameKey?: string): void {
   pendingElevatedHandoffs.forEach((entry, handoffId) => {
     if (gameKey !== undefined && entry.gameKey !== gameKey) {
       return
     }
     pendingElevatedHandoffs.delete(handoffId)
-    cancelledCount += 1
     entry.cancel()
   })
-  return cancelledCount
+}
+
+/**
+ * Consent prompts left on screen by a host SimLauncher killed (#809).
+ *
+ * Counted here, at the one fact that matters, rather than at either caller.
+ * There are two ways a pending host gets killed and they do not overlap
+ * cleanly: the abort signal reaches it at any point in the sequence, while the
+ * registry above only holds it AFTER its grace window expired. Counting at the
+ * callers therefore both missed cancellations (before the grace window, the
+ * registry is empty and the abort path was silent) and double-counted them
+ * (after it, both mechanisms fire for the same handoff, so the user was told
+ * twice, once by the kill result and once by the launch summary).
+ */
+let strandedConsentPrompts = 0
+
+/** Called wherever a host is killed while its consent prompt is still pending. */
+export function noteStrandedConsentPrompt(): void {
+  strandedConsentPrompts += 1
+}
+
+/**
+ * Take the pending count and reset it, so exactly one message reports it.
+ *
+ * Drained by the kill entry points because every stranded prompt originates
+ * from one: the abort signal is only ever raised by `abortActiveLaunches`, and
+ * the registry is only ever drained by `cancelPendingElevatedHandoffs`, both of
+ * which are called from kill.ts and both synchronously, before the kill result
+ * is built. The launch summary deliberately stays out of it: mid-sequence, both
+ * it and the kill result are delivered, and the user should hear this once.
+ */
+export function drainStrandedConsentPrompts(): number {
+  const count = strandedConsentPrompts
+  strandedConsentPrompts = 0
+  return count
 }
 
 /**
