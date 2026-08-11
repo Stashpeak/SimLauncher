@@ -55,14 +55,46 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.
  */
-export function cancelPendingElevatedHandoffs(gameKey?: string): void {
+export function cancelPendingElevatedHandoffs(gameKey?: string): number {
+  let cancelledCount = 0
   pendingElevatedHandoffs.forEach((entry, handoffId) => {
     if (gameKey !== undefined && entry.gameKey !== gameKey) {
       return
     }
     pendingElevatedHandoffs.delete(handoffId)
+    cancelledCount += 1
     entry.cancel()
   })
+  return cancelledCount
+}
+
+/**
+ * The sentence appended when a cancellation killed a pending elevated handoff.
+ *
+ * Killing the PowerShell host stops the app from starting, but it does NOT
+ * remove the Windows consent prompt: that UI belongs to the AppInfo service on
+ * the secure desktop and is not ours to close. Verified on a real machine
+ * (#809): after the kill the prompt stayed up, and answering Yes started
+ * nothing. Without this line the user's only readings are "elevation is broken"
+ * or "SimLauncher failed to start it", and neither is true.
+ *
+ * Two things it deliberately does not say: that the app started (it did not),
+ * and that SimLauncher closed the prompt (it cannot). It also stays silent at
+ * zero, so the ordinary cancellation reads exactly as it does today.
+ *
+ * Lives here rather than in spawn.ts because both cancellation paths need the
+ * same words and kill.ts does not import spawn.ts: the mid-sequence abort
+ * (spawn.ts's own summary) and the post-sequence kill (kill.ts, via the
+ * registry above) must not describe the same event differently.
+ */
+export function describeStrandedConsentPrompts(cancelledCount: number): string {
+  if (cancelledCount === 1) {
+    return ' A Windows permission prompt may still be on screen. Answering it will not start the app.'
+  }
+  if (cancelledCount > 1) {
+    return ' Windows permission prompts may still be on screen. Answering them will not start those apps.'
+  }
+  return ''
 }
 
 /**

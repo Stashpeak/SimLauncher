@@ -17,6 +17,7 @@ import {
 
 import {
   consumeProcessNameMismatchWarningSuppression,
+  describeStrandedConsentPrompts,
   hasOtherActiveLaunchControllers,
   processNameMismatchWarnings,
   registerActiveLaunch,
@@ -393,10 +394,16 @@ export async function launchProfileApps(
           : unknownCount > 1
             ? ` ${unknownCount} apps may have started with administrator permission and could not be closed from here.`
             : ''
+      // A handoff this very abort killed leaves its consent prompt on screen
+      // (#809). survivedNote and unknownNote cover apps that did or might have
+      // started; this covers the one case where we know nothing started and the
+      // dialog is now inert, which is exactly the case the user cannot tell
+      // apart from a failure.
+      const strandedNote = describeStrandedConsentPrompts(cancelledElevatedCount)
       return {
         success: false,
         cancelled: true,
-        message: `Launch cancelled — closed apps instead.${survivedNote}${unknownNote}`,
+        message: `Launch cancelled — closed apps instead.${survivedNote}${unknownNote}${strandedNote}`,
         launchedCount,
         skippedCount,
         elevatedCount: survivedCount + unknownCount,
