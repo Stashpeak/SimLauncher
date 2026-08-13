@@ -119,6 +119,27 @@ function parseProcessIds(output: string) {
   }
 }
 
+/**
+ * Resolve the PIDs of running processes named `processName` whose WMI
+ * `ExecutablePath` resolves to the same file as `appPath`. This is what makes a
+ * kill path-scoped instead of name-scoped.
+ *
+ * ⚠️ **An empty `processIds` does NOT mean "nothing is running there."** On any
+ * failure this resolves `{ processIds: [], detail }`, so zero PIDs means either
+ * "nothing was there" or "we could not look". Branch on `detail` BEFORE reading
+ * `processIds.length`; reading the absence of a signal as a signal is what
+ * produced two separate defects on #818.
+ *
+ * Two further reasons a genuinely running process yields zero PIDs:
+ * - an elevated process can expose a null `ExecutablePath`, so the
+ *   `Where-Object` clause filters it out while it is very much alive
+ *   (#390/#399)
+ * - the query is bounded by `WMI_LOOKUP_TIMEOUT_MS` and a timeout arrives as a
+ *   failure with `detail` set, deliberately NOT as an `/IM` fallback, which
+ *   would kill same-named processes the user started outside SimLauncher (#503)
+ *
+ * `accessDenied` is set when the failure text says Windows refused the query.
+ */
 export function findProcessIdsByExecutablePath(processName: string, appPath: string) {
   return new Promise<{
     processIds: number[]
@@ -183,6 +204,20 @@ export function findProcessIdsByExecutablePath(processName: string, appPath: str
   })
 }
 
+/**
+ * Kill a process SimLauncher spawned and still holds a `ChildProcess` handle
+ * for, by PID. `/T` takes its children with it, which is what catches launchers
+ * that re-exec into a second process.
+ *
+ * Preferred over {@link killProcessByImageName} whenever a handle exists: a PID
+ * cannot be ambiguous, so this needs neither a WMI lookup nor path scoping.
+ * Off win32 there is no `taskkill`, so it falls back to `child.kill()`.
+ *
+ * `targetConfirmed` holds unless taskkill reported the process had already
+ * exited: a PID we were tracking is positive evidence that this target was
+ * real, which callers use to tell "closed nothing" apart from "closed
+ * something" (#818).
+ */
 export async function killProcessTree(
   child: ChildProcess,
   appPath: string,
@@ -228,6 +263,24 @@ export async function killProcessTree(
   }
 }
 
+/**
+ * Kill a process we have no handle for, which is the normal case for a
+ * companion that re-execed or that was already running when SimLauncher
+ * started.
+ *
+ * Two very different behaviours hide behind one name, decided by `appPath`:
+ *
+ * - **path-scoped** when `appPath` is a full exe path: PIDs are resolved with
+ *   {@link findProcessIdsByExecutablePath} first and killed individually, so a
+ *   same-named process at a different path is never touched
+ * - **image-scoped** when `appPath` is a bare name or absent: falls back to
+ *   `taskkill /IM`, which kills EVERY process with that image name, including
+ *   instances the user started outside SimLauncher. This is the imprecise path
+ *   and the reason {@link isFullExePath} gates it
+ *
+ * Off win32 it reports success without doing anything, so callers on other
+ * platforms are not failed for a Windows-only capability.
+ */
 export async function killProcessByImageName(
   processName: string,
   appPath?: string,
