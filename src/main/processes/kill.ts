@@ -436,41 +436,51 @@ export async function finalizeKillAttempts(
   const { processNames: processNamesAfterKill, succeeded: tasklistReadSucceeded } =
     await readRunningProcessNames()
 
-  // Image names this batch found something real to kill under. Scheduling is
-  // gated on the tasklist, which knows names and not paths, so once two profiles
-  // can configure two same-named executables at different paths (#772) both get
-  // scheduled even when only one of them is running.
+  // Paths this batch positively located a process at, grouped by image name.
   //
-  // That matters because "0 PIDs at this path while the image is in the
-  // tasklist" is otherwise read as an invisible elevated process (#390). Here
-  // the image's presence is already accounted for by the sibling attempt that
-  // did find PIDs, so inferring a hidden instance at a DIFFERENT path is
-  // unjustified: it invented a leftover under a profile that had nothing
-  // running, and counted an empty attempt as a closed app (Codex P1 on #818).
+  // Scheduling is gated on the tasklist, which knows names and not paths, so
+  // once two profiles can configure two same-named executables at different
+  // paths (#772) both get scheduled even when only one is running. The absent
+  // one then looks exactly like an invisible elevated process (#390): 0 PIDs at
+  // its path while the image IS in the tasklist. Inferring a hidden instance
+  // there invented a leftover for a profile with nothing running, which is
+  // #772's own symptom (Codex P1 on #818).
   //
-  // Deliberately narrow. With no sibling to explain the image, the ambiguity is
-  // real and stays unresolved; discriminating name from path in the general case
-  // is #674.
+  // Only a PATH-SCOPED sibling at a DIFFERENT path counts as evidence:
   //
-  // KNOWN RESIDUAL, recorded on #674: a sibling that found its target and closed
-  // it successfully still counts as confirmation here, even though the image
-  // surviving in the tasklist afterwards can only be something else -- possibly a
-  // genuinely elevated-invisible process at this very path. Distinguishing the
-  // two needs the post-kill state of each sibling, which is what #674 builds.
-  // The trade is deliberate: the false positive this suppresses (a leftover
-  // invented for a profile with nothing running) is #772's own symptom and far
-  // likelier than the false negative it leaves.
-  // Counted, not a Set, because the test is "did ANOTHER attempt confirm this
-  // image". `targetConfirmed` and `notFound` can both hold on one attempt (PIDs
-  // were discovered, then taskkill found them already gone), so membership alone
-  // would let such an attempt vouch for itself.
-  const confirmedTargetsByImage = new Map<string, number>()
+  //   - a bare-name `/IM` confirmation says only that *some* process with this
+  //     name exists, which may be the very process this path is tracking, so it
+  //     cannot establish that this path was empty (Codex P2 on #818)
+  //   - a lookup that errored confirms nothing at all, which is why this reads
+  //     `targetConfirmed` rather than the absence of `notFound` (CodeRabbit)
+  //   - and the differing path is what stops an attempt vouching for itself,
+  //     since `targetConfirmed` and `notFound` can both hold on one attempt when
+  //     PIDs are found and taskkill then reports them already gone
+  //
+  // Deliberately narrow. With no such sibling the ambiguity is real and stays
+  // unresolved; discriminating name from path in general is #674.
+  //
+  // KNOWN RESIDUAL, recorded on #674: a sibling that located its target and
+  // closed it successfully still counts, even though an image surviving in the
+  // tasklist afterwards can only be something else, possibly a genuinely
+  // elevated-invisible process at this very path. Telling those apart needs each
+  // sibling's POST-kill state, which is what #674 builds. The trade is
+  // deliberate: the false positive suppressed here is far likelier than the
+  // false negative left behind.
+  const confirmedPathsByImage = new Map<string, Set<string>>()
   attempts.forEach((attempt) => {
-    if (attempt.targetConfirmed) {
-      confirmedTargetsByImage.set(
-        attempt.processName,
-        (confirmedTargetsByImage.get(attempt.processName) ?? 0) + 1
-      )
+    if (!attempt.targetConfirmed || !isPathScopedExe(attempt.appPath)) {
+      return
+    }
+    const confirmedPath = normalizePathForComparison(attempt.appPath)
+    if (!confirmedPath) {
+      return
+    }
+    const existing = confirmedPathsByImage.get(attempt.processName)
+    if (existing) {
+      existing.add(confirmedPath)
+    } else {
+      confirmedPathsByImage.set(attempt.processName, new Set([confirmedPath]))
     }
   })
 
@@ -498,18 +508,29 @@ export async function finalizeKillAttempts(
       const appPath = attempt.appPath
       const isFullPathAttempt = isFullExePath(appPath)
 
-      // This attempt found nothing at its own path, and another attempt in the
-      // same batch did find the image elsewhere. So this path was never running:
-      // not a failure to close, and not a close either.
-      const siblingsWithConfirmedTarget =
-        (confirmedTargetsByImage.get(attempt.processName) ?? 0) - (attempt.targetConfirmed ? 1 : 0)
-      const isEmptySameNameTarget =
-        isFullPathAttempt && attempt.notFound === true && siblingsWithConfirmedTarget > 0
-
       let stillRunning: boolean
       let isElevatedInconclusive = false
+      // This attempt found nothing at its own path, before the kill and after
+      // it, while another attempt located the image somewhere else. So this path
+      // was never running: not a failure to close, and not a close either.
+      //
+      // The post-kill half matters for the counting below. Without it, a target
+      // absent at lookup time but running by the recheck would be both "failed"
+      // and "empty", and closedCount subtracts each once (Codex P2 on #818).
+      // Requiring 0 PIDs on the recheck makes the two mutually exclusive by
+      // construction rather than by a second filter.
+      let isEmptySameNameTarget = false
       if (isFullPathAttempt) {
         const { processIds } = await findProcessIdsByExecutablePath(attempt.processName, appPath)
+
+        const ownPath = normalizePathForComparison(appPath)
+        const confirmedPaths = confirmedPathsByImage.get(attempt.processName)
+        isEmptySameNameTarget =
+          attempt.notFound === true &&
+          processIds.length === 0 &&
+          !!confirmedPaths &&
+          Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)
+
         // When the post-kill tasklist read failed, treat any unverified
         // "process gone" signal as inconclusive rather than success: a
         // notFound result from WMI/taskkill could mean either truly exited

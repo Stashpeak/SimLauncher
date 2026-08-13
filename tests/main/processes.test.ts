@@ -33,6 +33,12 @@ const processNamesGoneAfterKill = new Set<string>()
 // Executable paths whose WMI/PowerShell lookup fails outright. Distinct from
 // "found nothing": the lookup errored, so it learned nothing either way.
 const wmiLookupErrorPaths = new Set<string>()
+// Executable paths that report no PIDs on the FIRST (pre-kill) lookup but do on
+// the post-kill recheck: the process started or respawned in between.
+const pathsAppearingAfterKill = new Set<string>()
+// Per-PATH lookup counter. wmiLookupCounts is keyed by process name, which two
+// same-named paths share, so it cannot express "first lookup for this path".
+const wmiPathLookupCounts = new Map<string, number>()
 // "taskkill /PID reports access-denied, but the image is gone from tasklist
 // afterwards" — used to model #390 where the launched exe's actual running
 // process has a different name, so the wrapper's PID kill fails but the app
@@ -275,13 +281,19 @@ async function loadProcessModules() {
         // the post-kill tasklist recheck still reports the image as present.
         const suppressPidsForPostKill =
           !!processName && lookupCount > 1 && processNamesGoneAfterKill.has(processName)
+        const targetPathKey = normalizeRegistryKey(targetPathEnv)
+        const pathLookupCount = (wmiPathLookupCounts.get(targetPathKey) ?? 0) + 1
+        wmiPathLookupCounts.set(targetPathKey, pathLookupCount)
+        const suppressPidsForPreKill =
+          pathLookupCount <= 1 && pathsAppearingAfterKill.has(targetPathKey)
         const pids: string[] = []
         if (
           entry &&
           (!processName || entry.processName === processName) &&
           processNames.has(entry.processName) &&
           !inaccessibleExecutablePathProcesses.has(entry.processName) &&
-          !suppressPidsForPostKill
+          !suppressPidsForPostKill &&
+          !suppressPidsForPreKill
         ) {
           pids.push(entry.pid)
         }
@@ -569,6 +581,8 @@ beforeEach(async () => {
   processNamesGoneAfterWmiLookup.clear()
   processNamesGoneAfterKill.clear()
   wmiLookupErrorPaths.clear()
+  pathsAppearingAfterKill.clear()
+  wmiPathLookupCounts.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
@@ -2970,6 +2984,83 @@ test('a sibling whose lookup ERRORED does not vouch for a same-named path (#772)
     reason: 'access_denied',
     elevated: true
   })
+})
+
+// Codex P2 on PR #818. A bare-name /IM confirmation says only that SOME process
+// with that name exists, which may be the very process the other profile tracks
+// by path, so it cannot establish that the path was empty. Only a path-scoped
+// sibling at a different path can.
+test('a curated /IM confirmation does not vouch for a tracked path (#772)', async () => {
+  const iracingOverlay = 'C:/UserApps/Garage61 telemetry agent.exe'
+  markExistingPath(iracingOverlay)
+  processNames.add('garage61 telemetry agent.exe')
+  // ac's curated /IM is denied: something by that name exists and is protected.
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+  // iracing's tracked copy looks elevated-invisible, which is the same process.
+  inaccessibleExecutablePathProcesses.add('garage61 telemetry agent.exe')
+  registerProcess(iracingOverlay, 'garage61 telemetry agent.exe', '4444')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  // iracing must keep its leftover. Suppressing it would attribute the failure
+  // to ac alone, which is the misattribution this whole PR exists to remove.
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\garage61 telemetry agent.exe')).toMatchObject(
+    {
+      gameKey: 'iracing',
+      reason: 'access_denied'
+    }
+  )
+})
+
+// Codex P2 on PR #818. An attempt absent at lookup time but running by the
+// post-kill recheck used to be both "failed" and "empty", and closedCount
+// subtracts each once, so one attempt was deducted twice and the count could go
+// negative once every attempt failed.
+test('a same-named path that respawns before the recheck is only counted once (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  registerProcess(iracingOverlay, 'overlay.exe', '2222')
+  // ac is a real, confirmed sibling that fails to close.
+  accessDeniedPids.add('1111')
+  // iracing reports nothing pre-kill and is back by the recheck.
+  pathsAppearingAfterKill.add(normalizeRegistryKey(iracingOverlay))
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  const result = await killLaunchedApps()
+
+  // Two attempts, both still running afterwards. Nothing closed, and nothing
+  // deducted twice.
+  expect(result.closedCount).toBe(0)
+  expect(result.failedCount).toBe(2)
 })
 
 test('a same-named path that is not running is not counted as closed (#772)', async () => {
