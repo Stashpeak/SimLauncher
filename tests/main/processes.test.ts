@@ -2736,6 +2736,147 @@ test('killLaunchedApps registers elevated utility companion when image-name fall
   })
 })
 
+// #772. The all-profiles close (no gameKey) walks every profile, and the
+// companion target map used to be keyed by exe BASENAME, so a utility shared
+// across profiles was overwritten and the last profile enumerated won. A failed
+// close was then filed under a game the user had not been playing, which made
+// that game surface as having leftover apps. It is the documented reason the
+// tray Close Apps item was pulled before 1.0.0, and the blocker on #519.
+test('an all-profiles close does not attribute a shared utility to an arbitrary game (#772)', async () => {
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  // No gameKey: the tray/global close.
+  const result = await killLaunchedApps()
+
+  // The user is still told, because `failures` is built from the attempts and
+  // never consults gameKey. Only the attribution is withheld.
+  expect(result).toMatchObject({
+    success: false,
+    failedCount: 1,
+    failures: [
+      expect.objectContaining({ appPath: 'Garage61 telemetry agent.exe', reason: 'access_denied' })
+    ]
+  })
+
+  // Neither game may claim it. Before the fix exactly one of these held, chosen
+  // by store insertion order.
+  expect(unclosedProcesses.has('ac:garage61 telemetry agent.exe')).toBe(false)
+  expect(unclosedProcesses.has('iracing:garage61 telemetry agent.exe')).toBe(false)
+  expect(unclosedProcesses.get('unknown:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: '',
+    reason: 'access_denied'
+  })
+
+  // One kill, not one per owning profile: the image-name kill already covers
+  // every profile that enabled it.
+  expect(
+    execFileCalls.filter(
+      (call) => call.command === 'taskkill' && call.args.includes('garage61 telemetry agent.exe')
+    )
+  ).toHaveLength(1)
+})
+
+test('an all-profiles close still attributes a utility only one profile enables (#772)', async () => {
+  // The complement of the test above, and the reason the fix cannot simply drop
+  // attribution: with a single owner there is nothing ambiguous to withhold.
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default' }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  await killLaunchedApps()
+
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac',
+    reason: 'access_denied'
+  })
+  expect(unclosedProcesses.has('unknown:garage61 telemetry agent.exe')).toBe(false)
+})
+
+test('a per-game close of a shared utility is unchanged (#772)', async () => {
+  // Per-row Close Apps passes a gameKey, which filters the profile loop to one
+  // entry, so the map could never collide and this path stayed shipped. Pinned
+  // so the fix cannot regress it into the unattributed case.
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  await killLaunchedApps('ac')
+
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac',
+    reason: 'access_denied'
+  })
+})
+
+test('two profiles pointing at same-named exes in different folders close both (#772)', async () => {
+  // The second half of the basename-keying defect, and a silently MISSED kill
+  // rather than a misattributed one: `C:/Tools/Overlay.exe` and
+  // `C:/UserApps/Overlay.exe` are two different processes, but one Map key held
+  // them both, so the all-profiles close only ever closed the survivor.
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  registerProcess(iracingOverlay, 'overlay.exe', '2222')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  const killedPids = execFileCalls
+    .filter((call) => call.command === 'taskkill' && call.args[0] === '/PID')
+    .map((call) => call.args[1])
+  expect(killedPids).toEqual(expect.arrayContaining(['1111', '2222']))
+})
+
 test('pruneUnclosedProcesses removes stale entries and keeps running entries', async () => {
   const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
   unclosedProcesses.set('ac:c:\\tools\\stale.exe', {

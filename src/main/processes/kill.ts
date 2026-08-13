@@ -546,16 +546,78 @@ function getConfiguredGameExePaths(): Set<string> {
   return gameExePaths
 }
 
+interface CompanionTarget {
+  processName: string
+  appPath: string
+  /**
+   * Every profile that configures this target, in enumeration order. Usually
+   * one. More than one is the case #772 is about: a utility shared across
+   * profiles (Oculus Tray Tool, SimHub, CrewChief) has no single owner, and the
+   * map used to silently keep whichever profile was enumerated last.
+   */
+  gameKeys: string[]
+}
+
+/**
+ * Map key for a companion killed by IMAGE NAME (the curated utility list). The
+ * name is the whole identity: one `taskkill /IM` covers every profile that
+ * enabled it, so the same name from two profiles is one target, not two.
+ */
+function companionTargetNameKey(processName: string): string {
+  return `name:${processName.toLowerCase()}`
+}
+
+/**
+ * Map key for a companion killed by PATH (a tracked companion path). The path
+ * is the identity, not the basename: two profiles pointing at two different
+ * `Overlay.exe` files are two separate processes and both need closing. Keying
+ * by basename collapsed them and closed only one (#772).
+ */
+function companionTargetPathKey(processPath: string): string {
+  return `path:${normalizePathForComparison(processPath)}`
+}
+
+/**
+ * The game a failed close should be filed under, or `undefined` when the target
+ * is configured in more than one profile.
+ *
+ * Undefined is the honest answer, not a fallback. For a companion SimLauncher
+ * launched itself the owner is known and comes from `runningProcesses`, which
+ * never reaches this function. What reaches it is a configured companion that is
+ * merely *running*, and when several profiles configure it there is nothing that
+ * makes one of them its owner. Naming one anyway is exactly the defect: it made
+ * a game the user never started surface as having leftover apps, which is why
+ * the tray Close Apps item was pulled before 1.0.0 (#772, blocks #519).
+ *
+ * The failure is still reported either way. `finalizeKillAttempts` builds
+ * `failures` from the attempts alone, so the toast names the app regardless of
+ * whether anything can be attributed.
+ */
+function resolveCompanionTargetGameKey(target: CompanionTarget): string | undefined {
+  return target.gameKeys.length === 1 ? target.gameKeys[0] : undefined
+}
+
 function getProfileCompanionTargets(gameKey?: string) {
   const profiles = getStoredProfiles()
   const gamePaths = getStoredStringRecord('gamePaths')
   const appPaths = getStoredStringRecord('appPaths')
-  const companionTargets = new Map<
-    string,
-    { processName: string; appPath: string; gameKey: string }
-  >()
+  const companionTargets = new Map<string, CompanionTarget>()
 
   const gameExePaths = getConfiguredGameExePaths()
+
+  // Record `profileGameKey` as an owner of `key`, creating the target on first
+  // sight. Never overwrites: a repeated key means another profile configures the
+  // same target, which is information, not a collision to resolve by last write.
+  const addOwner = (key: string, target: Omit<CompanionTarget, 'gameKeys'>, owner: string) => {
+    const existing = companionTargets.get(key)
+    if (!existing) {
+      companionTargets.set(key, { ...target, gameKeys: [owner] })
+      return
+    }
+    if (!existing.gameKeys.includes(owner)) {
+      existing.gameKeys.push(owner)
+    }
+  }
 
   Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
@@ -571,11 +633,11 @@ function getProfileCompanionTargets(gameKey?: string) {
       if (isUtilityEnabled(profile, utilityKey)) {
         processNames.forEach((processName) => {
           const normalizedProcessName = processName.toLowerCase()
-          companionTargets.set(normalizedProcessName, {
-            processName: normalizedProcessName,
-            appPath: processName,
-            gameKey: profileGameKey
-          })
+          addOwner(
+            companionTargetNameKey(normalizedProcessName),
+            { processName: normalizedProcessName, appPath: processName },
+            profileGameKey
+          )
         })
       }
     })
@@ -585,12 +647,11 @@ function getProfileCompanionTargets(gameKey?: string) {
         if (gameExePaths.has(normalizePathForComparison(processPath))) {
           return
         }
-        const processName = getExeName(processPath)
-        companionTargets.set(processName, {
-          processName,
-          appPath: processPath,
-          gameKey: profileGameKey
-        })
+        addOwner(
+          companionTargetPathKey(processPath),
+          { processName: getExeName(processPath), appPath: processPath },
+          profileGameKey
+        )
       }
     )
   })
@@ -649,7 +710,13 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     }
 
     const processName = getExeName(appPath)
-    companionTargets.delete(processName)
+    // This process is about to be tree-killed, so drop the companion targets that
+    // would hit it again: its own path, and the curated image-name entry, whose
+    // `taskkill /IM` would cover it by name. A same-named companion at a
+    // DIFFERENT path is deliberately left alone now that paths are keyed by path
+    // rather than by basename — it is a separate process and still needs closing.
+    companionTargets.delete(companionTargetPathKey(appPath))
+    companionTargets.delete(companionTargetNameKey(processName))
 
     if (processNames.has(processName)) {
       suppressProcessNameMismatchWarning(appPath)
@@ -661,7 +728,13 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
   companionTargets.forEach((target) => {
     if (processNames.has(target.processName)) {
-      killTasks.push(killProcessByImageName(target.processName, target.appPath, target.gameKey))
+      killTasks.push(
+        killProcessByImageName(
+          target.processName,
+          target.appPath,
+          resolveCompanionTargetGameKey(target)
+        )
+      )
     }
   })
 
