@@ -45,6 +45,16 @@ export interface KillAttemptResult {
   notFound?: boolean
   staleTask?: boolean
   stillRunning?: boolean
+  /**
+   * Set only when this attempt positively observed a process under
+   * `processName`: PIDs discovered at its path, a tracked child that was really
+   * there, or an `/IM` taskkill that found something to act on.
+   *
+   * Deliberately NOT the inverse of `notFound`. A WMI lookup that errors out
+   * returns neither, and treating that absence as evidence would let a failed
+   * lookup vouch for a sibling it never looked at (CodeRabbit on #818).
+   */
+  targetConfirmed?: boolean
 }
 
 // Hardcoded list of companion process names for utilities that spawn background
@@ -235,13 +245,16 @@ async function killProcessTree(
       error: result.detail,
       accessDenied: result.accessDenied,
       notFound: result.notFound,
-      staleTask: result.staleTask
+      staleTask: result.staleTask,
+      // A tracked child we hold a PID for was a real target unless taskkill
+      // reports it had already exited.
+      targetConfirmed: !result.notFound
     }
   }
 
   try {
     child.kill()
-    return { processName, appPath, gameKey, success: true }
+    return { processName, appPath, gameKey, success: true, targetConfirmed: true }
   } catch (err) {
     const error = getErrorMessage(err)
     console.error(`Error killing ${appPath}:`, err)
@@ -308,7 +321,10 @@ async function killProcessByImageName(
       error: failedResult?.detail,
       accessDenied: failedResult?.accessDenied,
       notFound: results.every((result) => result.notFound),
-      staleTask: results.every((result) => result.staleTask)
+      staleTask: results.every((result) => result.staleTask),
+      // PIDs were discovered at this exact path, so a process under this image
+      // name demonstrably existed.
+      targetConfirmed: true
     }
   }
 
@@ -324,7 +340,10 @@ async function killProcessByImageName(
     error: result.detail,
     accessDenied: result.accessDenied,
     notFound: result.notFound,
-    staleTask: result.staleTask
+    staleTask: result.staleTask,
+    // taskkill either killed something or was denied by something. Any other
+    // failure is ambiguous, so it does not count as evidence.
+    targetConfirmed: result.success || result.accessDenied === true
   }
 }
 
@@ -432,9 +451,28 @@ export async function finalizeKillAttempts(
   // Deliberately narrow. With no sibling to explain the image, the ambiguity is
   // real and stays unresolved; discriminating name from path in the general case
   // is #674.
-  const imagesWithConfirmedTarget = new Set(
-    attempts.filter((attempt) => attempt.notFound !== true).map((attempt) => attempt.processName)
-  )
+  //
+  // KNOWN RESIDUAL, recorded on #674: a sibling that found its target and closed
+  // it successfully still counts as confirmation here, even though the image
+  // surviving in the tasklist afterwards can only be something else -- possibly a
+  // genuinely elevated-invisible process at this very path. Distinguishing the
+  // two needs the post-kill state of each sibling, which is what #674 builds.
+  // The trade is deliberate: the false positive this suppresses (a leftover
+  // invented for a profile with nothing running) is #772's own symptom and far
+  // likelier than the false negative it leaves.
+  // Counted, not a Set, because the test is "did ANOTHER attempt confirm this
+  // image". `targetConfirmed` and `notFound` can both hold on one attempt (PIDs
+  // were discovered, then taskkill found them already gone), so membership alone
+  // would let such an attempt vouch for itself.
+  const confirmedTargetsByImage = new Map<string, number>()
+  attempts.forEach((attempt) => {
+    if (attempt.targetConfirmed) {
+      confirmedTargetsByImage.set(
+        attempt.processName,
+        (confirmedTargetsByImage.get(attempt.processName) ?? 0) + 1
+      )
+    }
+  })
 
   const finalizedAttempts = await Promise.all(
     attempts.map(async (attempt) => {
@@ -463,10 +501,10 @@ export async function finalizeKillAttempts(
       // This attempt found nothing at its own path, and another attempt in the
       // same batch did find the image elsewhere. So this path was never running:
       // not a failure to close, and not a close either.
+      const siblingsWithConfirmedTarget =
+        (confirmedTargetsByImage.get(attempt.processName) ?? 0) - (attempt.targetConfirmed ? 1 : 0)
       const isEmptySameNameTarget =
-        isFullPathAttempt &&
-        attempt.notFound === true &&
-        imagesWithConfirmedTarget.has(attempt.processName)
+        isFullPathAttempt && attempt.notFound === true && siblingsWithConfirmedTarget > 0
 
       let stillRunning: boolean
       let isElevatedInconclusive = false

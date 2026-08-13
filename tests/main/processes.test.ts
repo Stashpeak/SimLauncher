@@ -30,6 +30,9 @@ const processNamesGoneAfterWmiLookup = new Set<string>()
 // predicate `processNamesAfterKill.has(processName)` must stay true so the
 // staleTask branch is the only thing keeping isElevatedInconclusive false.
 const processNamesGoneAfterKill = new Set<string>()
+// Executable paths whose WMI/PowerShell lookup fails outright. Distinct from
+// "found nothing": the lookup errored, so it learned nothing either way.
+const wmiLookupErrorPaths = new Set<string>()
 // "taskkill /PID reports access-denied, but the image is gone from tasklist
 // afterwards" — used to model #390 where the launched exe's actual running
 // process has a different name, so the wrapper's PID kill fails but the app
@@ -253,6 +256,15 @@ async function loadProcessModules() {
         // whose executable path matches SIMLAUNCHER_TARGET_PROCESS_PATH AND
         // whose process name matches the queried $name. This is what makes
         // findProcessIdsByExecutablePath path-scoped in production.
+        if (wmiLookupErrorPaths.has(normalizeRegistryKey(targetPathEnv))) {
+          callback(
+            new Error('The RPC server is unavailable.'),
+            '',
+            'The RPC server is unavailable.'
+          )
+          return
+        }
+
         const entry = processRegistry.get(normalizeRegistryKey(targetPathEnv))
         const lookupCount = processName ? (wmiLookupCounts.get(processName) ?? 0) + 1 : 0
         if (processName) {
@@ -556,6 +568,7 @@ beforeEach(async () => {
   staleTaskkillPids.clear()
   processNamesGoneAfterWmiLookup.clear()
   processNamesGoneAfterKill.clear()
+  wmiLookupErrorPaths.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
@@ -2915,6 +2928,48 @@ test('a same-named path that is not running is not reported as a leftover (#772)
   expect(result.failedCount).toBe(1)
   expect(unclosedProcesses.get('ac:c:\\tools\\overlay.exe')).toMatchObject({ gameKey: 'ac' })
   expect(unclosedProcesses.has('iracing:c:\\userapps\\overlay.exe')).toBe(false)
+})
+
+// CodeRabbit on PR #818, against the fix for the Codex P1 above. The sibling
+// rule originally read "confirmed" as `notFound !== true`, but the lookup-error
+// branch of killProcessByImageName returns neither flag, so a lookup that
+// learned nothing was vouching for a sibling it never looked at. That suppressed
+// a real elevated inference and dropped a genuine leftover.
+test('a sibling whose lookup ERRORED does not vouch for a same-named path (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  // ac's lookup blows up, so it confirms nothing about anything.
+  wmiLookupErrorPaths.add(normalizeRegistryKey(acOverlay))
+  // iracing's finds no PIDs while the image is in the tasklist, which is exactly
+  // what an elevated process with a null ExecutablePath looks like (#390).
+  inaccessibleExecutablePathProcesses.add('overlay.exe')
+  registerProcess(iracingOverlay, 'overlay.exe', '3333')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  // The elevated inference must survive: nothing established that the image in
+  // the tasklist belongs to anything other than iracing's own invisible process.
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\overlay.exe')).toMatchObject({
+    gameKey: 'iracing',
+    reason: 'access_denied',
+    elevated: true
+  })
 })
 
 test('a same-named path that is not running is not counted as closed (#772)', async () => {
