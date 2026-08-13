@@ -159,6 +159,13 @@ export interface LaunchResult {
    * renderer should show a neutral "cancelled" toast, not an error toast.
    */
   cancelled?: boolean
+  /**
+   * Consent prompts left on screen because this operation killed a pending
+   * elevated handoff (#809). A count, not a sentence: the renderer composes the
+   * wording via `formatStrandedConsentPrompts`, as it does for `killFailures`
+   * and `skipped`.
+   */
+  strandedConsentPrompts?: number
 }
 
 export interface KillResult {
@@ -168,6 +175,8 @@ export interface KillResult {
   closedCount: number
   failedCount: number
   failures: KillFailure[]
+  /** See `LaunchResult.strandedConsentPrompts` (#809). */
+  strandedConsentPrompts?: number
 }
 
 export interface ConfigFileResult {

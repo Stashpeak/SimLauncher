@@ -1739,6 +1739,268 @@ test('Close Apps after the sequence ended still kills a pending elevated handoff
   }
 })
 
+// --- #809: a cancelled handoff strands its consent prompt on screen ---
+//
+// Killing the PowerShell host stops the app from starting but does NOT remove
+// the Windows consent prompt (verified on a real machine: it stayed up, and
+// answering Yes started nothing). Both cancellation paths have to say so, or the
+// only readings left to the user are "elevation is broken" or "SimLauncher
+// failed to start it", neither of which is true.
+
+// The main process reports a COUNT. The sentence itself is composed in the
+// renderer and asserted in tests/renderer/gameRowStrandedConsentPrompt.test.tsx,
+// which is where it can be proven to actually reach the user.
+
+test('a Close Apps that cancels a pending handoff mid-sequence explains the stranded prompt (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    const killResult = await killPromise
+
+    const result = await launchPromise
+
+    expect(result.cancelled).toBe(true)
+    // Said exactly ONCE. Mid-sequence the user gets both messages, and an
+    // earlier version of this fix counted the same handoff at both callers, so
+    // the sentence appeared twice for a single prompt.
+    expect(killResult.strandedConsentPrompts).toBe(1)
+    // Reported once: the launch summary must not carry it as well.
+    expect(result.strandedConsentPrompts).toBeUndefined()
+    // The #779 guarantee must survive: we killed it, so it must not be
+    // described as something that started or that we failed to close.
+    expect(result.message).not.toContain('administrator permission')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The window this fix originally missed. Before the grace timer fires the
+// handoff is not in the pending registry yet (it is only registered when the
+// timer expires), so counting cancellations at the kill entry points saw
+// nothing here — even though the abort had killed the host and the prompt was
+// left on screen exactly as in the documented case. A user who clicks Close
+// Apps promptly, within 10s, lands here rather than in the case the issue
+// describes.
+test('a Close Apps BEFORE the grace window expires still explains the stranded prompt (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    // Well inside the grace window: the prompt is up, the sequence is parked on
+    // it, and nothing has been registered as pending yet.
+    await vi.advanceTimersByTimeAsync(10)
+
+    const killResult = await killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    await launchPromise
+
+    // The host really was killed, which is what strands the prompt.
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(killResult.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a Close Apps that cancels a pending handoff after the sequence ended explains it too (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // The sequence is over, so its summary is already delivered. The kill result
+    // is the only message left that can explain the prompt.
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('two cancelled handoffs are described in the plural (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/Admin Two.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    spawnErrors.set('C:/Tools/Admin Two.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/Admin Two.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/Admin Two.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS * 2)
+    await launchPromise
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(2)
+    expect(result.strandedConsentPrompts).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a later Close Apps does not repeat the prompt warning for an old cancellation (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const firstKill = await killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(firstKill.strandedConsentPrompts).toBe(1)
+
+    // Same session, nothing pending any more. The count is consumed by the
+    // message that reported it, so a later kill must not resurrect it and warn
+    // about a dialog that is not there.
+    const secondKill = await killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(secondKill.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('an ordinary Close Apps with no pending handoff says nothing about a prompt (#809)', async () => {
+  markExistingPath('C:/Tools/App2.exe')
+  processNames.add('app2.exe')
+  registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const result = await killLaunchedApps('ac')
+
+  // The unchanged case must read exactly as it did before this issue.
+  expect(result.strandedConsentPrompts).toBeUndefined()
+})
+
+// The other kill entry point, and the one a profile switch actually goes
+// through. It carries the same drain + attach prologue as killLaunchedApps, so
+// without this every #809 test would prove the feature on the path the user
+// reaches by clicking Close Apps and none of it on the path they reach by
+// switching profile.
+test('a profile switch that cancels a pending handoff explains the stranded prompt (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // The switch stops the outgoing profile's apps, not the elevated one whose
+    // prompt is still up. The handoff is cancelled by gameKey either way, so
+    // the count must survive a kill that targets something else entirely.
+    const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('an ordinary profile switch with no pending handoff says nothing about a prompt (#809)', async () => {
+  markExistingPath('C:/Tools/App2.exe')
+  processNames.add('app2.exe')
+  registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+
+  expect(result.strandedConsentPrompts).toBeUndefined()
+})
+
 // Codex P2 on PR #779. A denial arriving while the loop is still running was
 // only subtracted from the counts, so the sequence still returned success:true
 // with "All profile applications launched." and no failedCount.

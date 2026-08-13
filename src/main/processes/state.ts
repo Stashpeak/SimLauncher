@@ -66,6 +66,41 @@ export function cancelPendingElevatedHandoffs(gameKey?: string): void {
 }
 
 /**
+ * Consent prompts left on screen by a host SimLauncher killed (#809).
+ *
+ * Counted here, at the one fact that matters, rather than at either caller.
+ * There are two ways a pending host gets killed and they do not overlap
+ * cleanly: the abort signal reaches it at any point in the sequence, while the
+ * registry above only holds it AFTER its grace window expired. Counting at the
+ * callers therefore both missed cancellations (before the grace window, the
+ * registry is empty and the abort path was silent) and double-counted them
+ * (after it, both mechanisms fire for the same handoff, so the user was told
+ * twice, once by the kill result and once by the launch summary).
+ */
+let strandedConsentPrompts = 0
+
+/** Called wherever a host is killed while its consent prompt is still pending. */
+export function noteStrandedConsentPrompt(): void {
+  strandedConsentPrompts += 1
+}
+
+/**
+ * Take the pending count and reset it, so exactly one result reports it.
+ *
+ * Drained by the kill entry points because every stranded prompt originates
+ * from one: the abort signal is only ever raised by `abortActiveLaunches`, and
+ * the registry is only ever drained by `cancelPendingElevatedHandoffs`, both of
+ * which are called from kill.ts and both synchronously, in the prologue before
+ * any await. The count travels to the renderer as a number; the sentence is
+ * composed there, next to formatKillFailures.
+ */
+export function drainStrandedConsentPrompts(): number {
+  const count = strandedConsentPrompts
+  strandedConsentPrompts = 0
+  return count
+}
+
+/**
  * Clear the registry entry once launchProfileApps' sequence ends. Only clears
  * it if `controller` is still the registered one — a new launch for the same
  * gameKey may have already installed its own fresh controller (started right

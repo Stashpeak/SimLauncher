@@ -20,6 +20,7 @@ import {
 import {
   abortActiveLaunches,
   cancelPendingElevatedHandoffs,
+  drainStrandedConsentPrompts,
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
@@ -597,6 +598,26 @@ function getProfileCompanionTargets(gameKey?: string) {
   return companionTargets
 }
 
+/**
+ * Attach the stranded-consent-prompt count to a kill result (#809).
+ *
+ * A COUNT, not a sentence. Pre-baking the copy into `message` looked simpler
+ * and was wrong: the profile-switch flow discards `message` entirely and the
+ * renderer ignores it on a failed kill, so the explanation was produced
+ * correctly and never shown. The renderer composes the wording, next to
+ * `formatKillFailures` and `formatSkippedLaunchEntries`.
+ *
+ * Drained in each entry point's PROLOGUE, not here: `abortActiveLaunches` and
+ * `cancelPendingElevatedHandoffs` both run synchronously before any await, so
+ * taking the count there attributes it to the kill that caused it even when a
+ * second kill overlaps this one's async work.
+ */
+function withStrandedConsentPrompts(result: KillResult, strandedPromptCount: number): KillResult {
+  return strandedPromptCount > 0
+    ? { ...result, strandedConsentPrompts: strandedPromptCount }
+    : result
+}
+
 export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // Cancel any in-flight launchProfileApps sequence for this gameKey (or all
   // of them, for the gameKey-less tray/global kill) before touching the
@@ -608,6 +629,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // or approving the prompt afterwards starts an app the user just closed
   // (Codex P1 on #779).
   cancelPendingElevatedHandoffs(gameKey)
+  const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
@@ -645,7 +667,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
-  return result
+  return withStrandedConsentPrompts(result, strandedPromptCount)
 }
 
 /**
@@ -733,8 +755,10 @@ export async function killProfileApps(
   // `except`, so it still cancels a switch's launch as before.
   abortActiveLaunches(gameKey, options)
   // Same reason as killLaunchedApps: a timed-out handoff is not reachable
-  // through the abort signal once its sequence ended (#779 Codex P1).
+  // through the abort signal once its sequence ended (#779 Codex P1). And the
+  // same consequence: each one killed leaves its consent prompt behind (#809).
   cancelPendingElevatedHandoffs(gameKey)
+  const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
 
@@ -779,5 +803,5 @@ export async function killProfileApps(
 
   const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
   await publishRunningApps('kill')
-  return result
+  return withStrandedConsentPrompts(result, strandedPromptCount)
 }
