@@ -259,6 +259,23 @@ export async function killProcessTree(
 ): Promise<KillAttemptResult> {
   const processName = getExeName(appPath)
 
+  // The child already exited, so there is nothing to signal. Bailing out here is
+  // not an optimisation, it is a safety check: once a process exits, Node
+  // releases its handle and Windows is free to hand that PID to something else,
+  // and `/T` would then take an unrelated process tree with it.
+  //
+  // Cheap before #659, load-bearing after it: the graceful phase deliberately
+  // opens a window in which a well-behaved app is expected to exit, so the gap
+  // between "decide to kill" and "kill" went from microseconds to seconds
+  // (CodeRabbit on #823).
+  //
+  // Reports exactly what `taskkill` would have reported had it been called and
+  // found nothing (`success: notFound`), so no downstream accounting has to
+  // learn a new shape.
+  if (typeof child.exitCode === 'number' || typeof child.signalCode === 'string') {
+    return { processName, appPath, gameKey, success: true, notFound: true }
+  }
+
   if (process.platform === 'win32' && child.pid) {
     const result = await runTaskkill(
       ['/PID', String(child.pid), '/T', '/F'],

@@ -93,7 +93,8 @@ export function BehaviorSection(): ReactNode {
             Close apps gracefully
           </label>
           <span className="settings-sublabel">
-            Ask apps to close and save first, then force-close anything still running
+            When you use Close Apps, ask them to save and close first, then force-close anything
+            still running
           </span>
         </div>
         <Toggle

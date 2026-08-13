@@ -397,6 +397,11 @@ async function loadProcessModules() {
       const handlers = new Map<string, (...args: unknown[]) => void>()
       const child = {
         pid: 1234,
+        // A live ChildProcess reports null on both until it exits. Present so a
+        // test can model "the app exited during the grace window" (#659), and
+        // so the exit check reads real values rather than undefined.
+        exitCode: null as number | null,
+        signalCode: null as string | null,
         once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
           handlers.set(event, handler)
           if (event === 'error' && spawnErrors.has(appPath)) {
@@ -2223,26 +2228,67 @@ test('the grace window is one shared wait, not one per app (#659)', async () => 
 })
 
 test('nothing running means no grace window at all (#659)', async () => {
-  // Real timers on purpose. If this waited, the test would hang rather than
-  // fail an assertion, which is a stronger statement than advancing a fake
-  // clock and finding the result already there.
-  markExistingPath('C:/Tools/App2.exe')
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
 
-  const { killLaunchedApps } = await loadProcessModulesWithStore({
-    gracefulCloseEnabled: true,
-    profiles: {
-      ac: {
-        activeProfileId: 'default',
-        profiles: [{ id: 'default', name: 'Default', customapp2: true }]
-      }
-    },
-    appPaths: { customapp2: 'C:/Tools/App2.exe' }
-  })
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
 
-  const result = await killLaunchedApps('ac')
+    let settled = false
+    const killPromise = killLaunchedApps('ac').then((value) => {
+      settled = true
+      return value
+    })
 
-  expect(gracefulRequests()).toHaveLength(0)
-  expect(result.closedCount).toBe(0)
+    // The assertion that matters is the clock NOT moving. Advancing by zero
+    // only drains microtasks, so settling here proves the close returned
+    // without entering the window at all. An earlier version used real timers
+    // and would have passed just as happily while waiting the full three
+    // seconds, pinning nothing (CodeRabbit on #823).
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(true)
+
+    const result = await killPromise
+    expect(gracefulRequests()).toHaveLength(0)
+    expect(result.closedCount).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The grace window is a window in which a well-behaved app is expected to exit,
+// which is exactly when a PID stops being a safe thing to signal: Node releases
+// the handle on exit and Windows may hand that number to something else, and
+// `/T` would take that stranger's whole tree. Tested directly against
+// win32KillUtils, which is the seam #773 extracted for precisely this.
+test('a child that already exited is never signalled again (#659)', async () => {
+  await loadProcessModules()
+  const { killProcessTree } = await import('../../src/main/processes/win32KillUtils')
+
+  const exitedChild = {
+    pid: 4321,
+    exitCode: 0,
+    signalCode: null,
+    kill: vi.fn()
+  } as unknown as Parameters<typeof killProcessTree>[0]
+
+  const result = await killProcessTree(exitedChild, 'C:/Tools/App2.exe', 'ac')
+
+  // No taskkill at all, not even a failed one: the PID is never put on the wire.
+  expect(execFileCalls.filter((call) => call.command === 'taskkill')).toHaveLength(0)
+  // Reported exactly as taskkill would have reported finding nothing, so the
+  // accounting downstream needs no special case.
+  expect(result).toMatchObject({ success: true, notFound: true, processName: 'app2.exe' })
+  expect(result.targetConfirmed).toBeUndefined()
 })
 
 test('a bare-name target is never asked politely, to keep the phase path-scoped (#659)', async () => {
