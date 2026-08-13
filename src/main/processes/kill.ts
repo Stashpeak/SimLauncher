@@ -549,6 +549,8 @@ function getConfiguredGameExePaths(): Set<string> {
 interface CompanionTarget {
   processName: string
   appPath: string
+  /** Whether this target closes by image name (`/IM`) or scoped to its path. */
+  scope: 'name' | 'path'
   /**
    * Every profile that configures this target, in enumeration order. Usually
    * one. More than one is the case #772 is about: a utility shared across
@@ -635,7 +637,7 @@ function getProfileCompanionTargets(gameKey?: string) {
           const normalizedProcessName = processName.toLowerCase()
           addOwner(
             companionTargetNameKey(normalizedProcessName),
-            { processName: normalizedProcessName, appPath: processName },
+            { processName: normalizedProcessName, appPath: processName, scope: 'name' },
             profileGameKey
           )
         })
@@ -649,11 +651,32 @@ function getProfileCompanionTargets(gameKey?: string) {
         }
         addOwner(
           companionTargetPathKey(processPath),
-          { processName: getExeName(processPath), appPath: processPath },
+          { processName: getExeName(processPath), appPath: processPath, scope: 'path' },
           profileGameKey
         )
       }
     )
+  })
+
+  // A curated utility whose executable path is ALSO configured yields both a
+  // name-keyed and a path-keyed target for the same process. Issuing both would
+  // close one app twice and count it twice, so the image-name entry is dropped
+  // in favour of the path-scoped one, which is strictly more precise and hits
+  // the same process.
+  //
+  // The old basename keying collapsed these too, but by accident: both landed
+  // on the same Map key and the path branch happened to be enumerated second.
+  // Keying by identity separated them, so the collapse now has to be deliberate.
+  const pathScopedNames = new Set<string>()
+  companionTargets.forEach((target) => {
+    if (target.scope === 'path') {
+      pathScopedNames.add(target.processName)
+    }
+  })
+  companionTargets.forEach((target, key) => {
+    if (target.scope === 'name' && pathScopedNames.has(target.processName)) {
+      companionTargets.delete(key)
+    }
   })
 
   return companionTargets

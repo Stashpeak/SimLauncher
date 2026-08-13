@@ -2877,6 +2877,40 @@ test('two profiles pointing at same-named exes in different folders close both (
   expect(killedPids).toEqual(expect.arrayContaining(['1111', '2222']))
 })
 
+test('a curated utility with a configured path is closed once, by path (#772)', async () => {
+  // Regression guard on the fix itself rather than on the original bug. The old
+  // basename keying collapsed the curated-name target and the configured-path
+  // target onto one Map key, so only the path-scoped kill ever ran. Keying by
+  // identity separates them, and without a deliberate collapse this would issue
+  // BOTH an /IM and a path-scoped kill for one app, closing it twice and
+  // counting it twice.
+  const garage61Path = 'C:/Tools/Garage61 telemetry agent.exe'
+  markExistingPath(garage61Path)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(garage61Path, 'garage61 telemetry agent.exe', '9090')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    appPaths: { garage61: garage61Path },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls).toHaveLength(1)
+  // Path-scoped, so it cannot take down a same-named process from elsewhere.
+  expect(killCalls[0].args).toEqual(['/PID', '9090', '/T', '/F'])
+})
+
 test('pruneUnclosedProcesses removes stale entries and keeps running entries', async () => {
   const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
   unclosedProcesses.set('ac:c:\\tools\\stale.exe', {
