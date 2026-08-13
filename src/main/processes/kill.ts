@@ -416,6 +416,26 @@ export async function finalizeKillAttempts(
   invalidateProcessNameCache()
   const { processNames: processNamesAfterKill, succeeded: tasklistReadSucceeded } =
     await readRunningProcessNames()
+
+  // Image names this batch found something real to kill under. Scheduling is
+  // gated on the tasklist, which knows names and not paths, so once two profiles
+  // can configure two same-named executables at different paths (#772) both get
+  // scheduled even when only one of them is running.
+  //
+  // That matters because "0 PIDs at this path while the image is in the
+  // tasklist" is otherwise read as an invisible elevated process (#390). Here
+  // the image's presence is already accounted for by the sibling attempt that
+  // did find PIDs, so inferring a hidden instance at a DIFFERENT path is
+  // unjustified: it invented a leftover under a profile that had nothing
+  // running, and counted an empty attempt as a closed app (Codex P1 on #818).
+  //
+  // Deliberately narrow. With no sibling to explain the image, the ambiguity is
+  // real and stays unresolved; discriminating name from path in the general case
+  // is #674.
+  const imagesWithConfirmedTarget = new Set(
+    attempts.filter((attempt) => attempt.notFound !== true).map((attempt) => attempt.processName)
+  )
+
   const finalizedAttempts = await Promise.all(
     attempts.map(async (attempt) => {
       // Treat the launched exe's absence from the post-kill tasklist as the
@@ -440,6 +460,14 @@ export async function finalizeKillAttempts(
       const appPath = attempt.appPath
       const isFullPathAttempt = isFullExePath(appPath)
 
+      // This attempt found nothing at its own path, and another attempt in the
+      // same batch did find the image elsewhere. So this path was never running:
+      // not a failure to close, and not a close either.
+      const isEmptySameNameTarget =
+        isFullPathAttempt &&
+        attempt.notFound === true &&
+        imagesWithConfirmedTarget.has(attempt.processName)
+
       let stillRunning: boolean
       let isElevatedInconclusive = false
       if (isFullPathAttempt) {
@@ -450,6 +478,7 @@ export async function finalizeKillAttempts(
         // or elevated-invisible, and the empty processNamesAfterKill Set
         // can't distinguish them. Same for the access-denied recheck.
         isElevatedInconclusive =
+          !isEmptySameNameTarget &&
           !imageGoneFromTasklist &&
           attempt.notFound === true &&
           attempt.staleTask !== true &&
@@ -468,6 +497,7 @@ export async function finalizeKillAttempts(
         ...attempt,
         stillRunning,
         imageGoneFromTasklist,
+        isEmptySameNameTarget,
         accessDenied: attempt.accessDenied || isElevatedInconclusive
       }
     })
@@ -507,7 +537,13 @@ export async function finalizeKillAttempts(
       attempt.stillRunning ||
       (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
   )
-  const closedCount = finalizedAttempts.length - failedAttempts.length
+  // An attempt that found nothing at its own path while a sibling accounted for
+  // the image closed nothing, so it is neither a success nor a failure. Counting
+  // it as closed reported one app as two.
+  const emptySameNameTargets = finalizedAttempts.filter(
+    (attempt) => attempt.isEmptySameNameTarget
+  ).length
+  const closedCount = finalizedAttempts.length - failedAttempts.length - emptySameNameTargets
   const failures: KillFailure[] = failedAttempts.map((attempt) => {
     const appPath = attempt.appPath || attempt.processName
     return {

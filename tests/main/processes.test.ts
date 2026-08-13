@@ -2877,6 +2877,77 @@ test('two profiles pointing at same-named exes in different folders close both (
   expect(killedPids).toEqual(expect.arrayContaining(['1111', '2222']))
 })
 
+// Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the
+// tasklist, which knows image NAMES only, so once two profiles can hold two
+// same-named paths both get scheduled even when only one of them is running.
+// The absent one's WMI lookup returns 0 PIDs, and the image is in the tasklist
+// because of the OTHER profile's instance.
+test('a same-named path that is not running is not reported as a leftover (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  // Only ac's instance exists. iracing's path is configured but nothing runs there.
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  // ac's kill fails, so the image stays in the tasklist afterwards. That is what
+  // used to make iracing's empty lookup look like an invisible elevated process.
+  accessDeniedPids.add('1111')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  const result = await killLaunchedApps()
+
+  // ac's real instance is the only failure. iracing never had anything here, so
+  // it must not be told it has an app it cannot close: that is #772's symptom,
+  // a phantom leftover on a game the user was not playing.
+  expect(result.failedCount).toBe(1)
+  expect(unclosedProcesses.get('ac:c:\\tools\\overlay.exe')).toMatchObject({ gameKey: 'ac' })
+  expect(unclosedProcesses.has('iracing:c:\\userapps\\overlay.exe')).toBe(false)
+})
+
+test('a same-named path that is not running is not counted as closed (#772)', async () => {
+  // The other half of the same finding. With ac's instance actually closing,
+  // the image leaves the tasklist, which finalize reads as success for EVERY
+  // attempt including iracing's empty one, so one app reported as two.
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  processNamesGoneAfterKill.add('overlay.exe')
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 1
+  })
+})
+
 test('a curated utility with a configured path is closed once, by path (#772)', async () => {
   // Regression guard on the fix itself rather than on the original bug. The old
   // basename keying collapsed the curated-name target and the configured-path
