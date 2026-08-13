@@ -4,6 +4,7 @@ import type { MockMenuItem, Tray as MockTray } from './electronMock'
 
 const showMainWindow = vi.fn()
 const quitApp = vi.fn()
+const closeApps = vi.fn()
 
 async function loadTrayModule({ configure = true } = {}) {
   const trayModule = await import('../../src/main/tray')
@@ -12,7 +13,8 @@ async function loadTrayModule({ configure = true } = {}) {
     trayModule.configureTray({
       getIconPath: () => 'C:/app/SimLauncher.ico',
       showMainWindow,
-      quitApp
+      quitApp,
+      closeApps
     })
   }
 
@@ -68,11 +70,42 @@ test('createTray is a no-op when unconfigured or when a tray already exists', as
   trayModule.configureTray({
     getIconPath: () => 'C:/app/SimLauncher.ico',
     showMainWindow,
-    quitApp
+    quitApp,
+    closeApps
   })
   trayModule.createTray()
   trayModule.createTray()
   expect(TrayMock.instances).toHaveLength(1)
+})
+
+// #519: the item is always enabled, deciding at click time whether anything is
+// running, and routes to the configured hook. Removed in `40c5d18` before 1.0.0
+// because the all-profiles kill it triggers misattributed shared companions
+// (#772); re-landed now that it does not.
+test('clicking Close Apps invokes the configured closeApps hook (#519)', async () => {
+  const { trayModule, MenuMock } = await loadTrayModule()
+
+  trayModule.createTray()
+
+  const template = MenuMock.buildFromTemplate.mock.calls[0][0] as MockMenuItem[]
+  const closeItem = template.find((item) => item.label === 'Close Apps')
+  expect(closeItem).toBeDefined()
+  expect(closeItem!.enabled).not.toBe(false)
+  closeItem!.click!()
+  expect(closeApps).toHaveBeenCalledTimes(1)
+})
+
+// Ordering guards a misclick: Close Apps force-terminates companions and there
+// is no confirmation step any more, so it must not sit adjacent to the item
+// people reach for most.
+test('Close Apps is separated from Show SimLauncher and Quit (#519)', async () => {
+  const { trayModule, MenuMock } = await loadTrayModule()
+
+  trayModule.createTray()
+
+  const template = MenuMock.buildFromTemplate.mock.calls[0][0] as MockMenuItem[]
+  const labels = template.map((item) => item.label ?? item.type)
+  expect(labels).toEqual(['Show SimLauncher', 'separator', 'Close Apps', 'separator', 'Quit'])
 })
 
 // The #391 toggle cycle: turning the tray off must null the handle so a later
