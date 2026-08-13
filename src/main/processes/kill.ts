@@ -664,17 +664,47 @@ function getProfileCompanionTargets(gameKey?: string) {
   // in favour of the path-scoped one, which is strictly more precise and hits
   // the same process.
   //
-  // The old basename keying collapsed these too, but by accident: both landed
-  // on the same Map key and the path branch happened to be enumerated second.
-  // Keying by identity separated them, so the collapse now has to be deliberate.
-  const pathScopedNames = new Set<string>()
+  // The old basename keying collapsed these too, but by accident: both landed on
+  // the same Map key and the path branch happened to be enumerated second.
+  // Keying by identity separated them, so the collapse has to be deliberate --
+  // and, unlike the accident, it has to be narrow.
+  //
+  // Matching on the process name alone is NOT enough. `getProfileTrackablePaths`
+  // pulls `appPaths[key]` exactly when that utility is enabled, so a genuine
+  // duplicate always carries the SAME owners on both scopes. A basename shared
+  // by coincidence does not: another profile's freeform `trackedProcessPaths`
+  // entry can happen to be called the same thing. Collapsing that would delete a
+  // target this profile really configured, leaving the survivor looking uniquely
+  // owned by a profile that never enabled the utility -- #772 reintroduced --
+  // and dropping the `/IM` coverage along with it.
+  //
+  // So a name target is only a duplicate if every profile that owns it also
+  // owns a path target for the same process. Merging the owners instead would
+  // fix the attribution but still lose that coverage.
+  const pathTargetsByName = new Map<string, CompanionTarget[]>()
   companionTargets.forEach((target) => {
-    if (target.scope === 'path') {
-      pathScopedNames.add(target.processName)
+    if (target.scope !== 'path') {
+      return
+    }
+    const existing = pathTargetsByName.get(target.processName)
+    if (existing) {
+      existing.push(target)
+    } else {
+      pathTargetsByName.set(target.processName, [target])
     }
   })
   companionTargets.forEach((target, key) => {
-    if (target.scope === 'name' && pathScopedNames.has(target.processName)) {
+    if (target.scope !== 'name') {
+      return
+    }
+    const pathTargets = pathTargetsByName.get(target.processName)
+    if (!pathTargets) {
+      return
+    }
+    const everyOwnerReachableByPath = target.gameKeys.every((owner) =>
+      pathTargets.some((pathTarget) => pathTarget.gameKeys.includes(owner))
+    )
+    if (everyOwnerReachableByPath) {
       companionTargets.delete(key)
     }
   })

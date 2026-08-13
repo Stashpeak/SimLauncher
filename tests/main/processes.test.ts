@@ -2911,6 +2911,60 @@ test('a curated utility with a configured path is closed once, by path (#772)', 
   expect(killCalls[0].args).toEqual(['/PID', '9090', '/T', '/F'])
 })
 
+test('a coincidental basename does not collapse another profile away (#772)', async () => {
+  // Raised by both review bots on PR #818 against the collapse above. Profile
+  // `ac` enables the curated utility and configures no path for it; profile
+  // `iracing` happens to track a freeform path whose basename is the same.
+  // Those are two configurations, not one duplicate. Collapsing on the name
+  // alone deleted `ac`'s target, which left the surviving path target looking
+  // uniquely owned by `iracing` -- #772 reintroduced through its own fix -- and
+  // silently dropped the /IM coverage `ac` had asked for.
+  const iracingPath = 'C:/Other/Garage61 telemetry agent.exe'
+  markExistingPath(iracingPath)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(iracingPath, 'garage61 telemetry agent.exe', '7777')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingPath] }]
+      }
+    }
+  })
+  // Both must fail, or whichever succeeds first takes the image out of the
+  // tasklist and the other is finalized as a success with nothing to attribute.
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+  accessDeniedPids.add('7777')
+
+  await killLaunchedApps()
+
+  // Both survive: ac's curated /IM and iracing's path-scoped kill.
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toEqual(
+    expect.arrayContaining([
+      ['/IM', 'garage61 telemetry agent.exe', '/T', '/F'],
+      ['/PID', '7777', '/T', '/F']
+    ])
+  )
+
+  // And each is attributed to the profile that actually configured it, since
+  // each has exactly one owner. Neither may be filed under the other's game,
+  // and neither may end up unattributed.
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac'
+  })
+  expect(unclosedProcesses.get('iracing:c:\\other\\garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'iracing'
+  })
+  expect(unclosedProcesses.has('iracing:garage61 telemetry agent.exe')).toBe(false)
+  expect(unclosedProcesses.has('unknown:garage61 telemetry agent.exe')).toBe(false)
+})
+
 test('pruneUnclosedProcesses removes stale entries and keeps running entries', async () => {
   const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
   unclosedProcesses.set('ac:c:\\tools\\stale.exe', {
