@@ -343,7 +343,13 @@ describe('profile switch stranded consent prompt toast (#809)', () => {
     expect(allToastText()).toContain('Failed to start Race apps')
   })
 
-  test('a successful switch explains it alongside the switch confirmation', async () => {
+  // Pins the pre-existing contract rather than proposing a new one: a warned
+  // switch reports the warning INSTEAD of "Switched to X", and has since the
+  // row was decomposed (f3d4088). That applies equally to kill failures,
+  // skipped apps and `result.warning`, so the stranded note behaves like its
+  // three siblings. Whether a warned switch should still confirm the change is
+  // a real question, but it is one for all four and is tracked in #817.
+  test('a successful switch reports the prompt in place of the plain confirmation', async () => {
     switchProfileAppsMock.mockResolvedValue({
       success: true,
       launchedCount: 1,
@@ -356,6 +362,9 @@ describe('profile switch stranded consent prompt toast (#809)', () => {
     await switchToProfile('Race')
 
     expect(allToastText()).toContain(PLURAL)
+    expect(allToastText()).not.toContain('Switched to Race')
+    // Warned switches are shown as a warning, not as a success.
+    expect(notifyMock.mock.calls.some((call) => call[1] === 'warn')).toBe(true)
   })
 
   test('an ordinary switch says nothing about a prompt', async () => {
