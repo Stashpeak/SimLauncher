@@ -45,6 +45,16 @@ export interface KillAttemptResult {
   notFound?: boolean
   staleTask?: boolean
   stillRunning?: boolean
+  /**
+   * Set only when this attempt positively observed a process under
+   * `processName`: PIDs discovered at its path, a tracked child that was really
+   * there, or an `/IM` taskkill that found something to act on.
+   *
+   * Deliberately NOT the inverse of `notFound`. A WMI lookup that errors out
+   * returns neither, and treating that absence as evidence would let a failed
+   * lookup vouch for a sibling it never looked at (CodeRabbit on #818).
+   */
+  targetConfirmed?: boolean
 }
 
 // Hardcoded list of companion process names for utilities that spawn background
@@ -235,13 +245,16 @@ async function killProcessTree(
       error: result.detail,
       accessDenied: result.accessDenied,
       notFound: result.notFound,
-      staleTask: result.staleTask
+      staleTask: result.staleTask,
+      // A tracked child we hold a PID for was a real target unless taskkill
+      // reports it had already exited.
+      targetConfirmed: !result.notFound
     }
   }
 
   try {
     child.kill()
-    return { processName, appPath, gameKey, success: true }
+    return { processName, appPath, gameKey, success: true, targetConfirmed: true }
   } catch (err) {
     const error = getErrorMessage(err)
     console.error(`Error killing ${appPath}:`, err)
@@ -308,7 +321,10 @@ async function killProcessByImageName(
       error: failedResult?.detail,
       accessDenied: failedResult?.accessDenied,
       notFound: results.every((result) => result.notFound),
-      staleTask: results.every((result) => result.staleTask)
+      staleTask: results.every((result) => result.staleTask),
+      // PIDs were discovered at this exact path, so a process under this image
+      // name demonstrably existed.
+      targetConfirmed: true
     }
   }
 
@@ -324,7 +340,10 @@ async function killProcessByImageName(
     error: result.detail,
     accessDenied: result.accessDenied,
     notFound: result.notFound,
-    staleTask: result.staleTask
+    staleTask: result.staleTask,
+    // taskkill either killed something or was denied by something. Any other
+    // failure is ambiguous, so it does not count as evidence.
+    targetConfirmed: result.success || result.accessDenied === true
   }
 }
 
@@ -416,6 +435,69 @@ export async function finalizeKillAttempts(
   invalidateProcessNameCache()
   const { processNames: processNamesAfterKill, succeeded: tasklistReadSucceeded } =
     await readRunningProcessNames()
+
+  // Paths this batch positively located a process at, grouped by image name.
+  //
+  // Scheduling is gated on the tasklist, which knows names and not paths, so
+  // once two profiles can configure two same-named executables at different
+  // paths (#772) both get scheduled even when only one is running. The absent
+  // one then looks exactly like an invisible elevated process (#390): 0 PIDs at
+  // its path while the image IS in the tasklist. Inferring a hidden instance
+  // there invented a leftover for a profile with nothing running, which is
+  // #772's own symptom (Codex P1 on #818).
+  //
+  // Only a PATH-SCOPED sibling at a DIFFERENT path counts as evidence:
+  //
+  //   - a bare-name `/IM` confirmation says only that *some* process with this
+  //     name exists, which may be the very process this path is tracking, so it
+  //     cannot establish that this path was empty (Codex P2 on #818)
+  //   - a lookup that errored confirms nothing at all, which is why this reads
+  //     `targetConfirmed` rather than the absence of `notFound` (CodeRabbit)
+  //   - and the differing path is what stops an attempt vouching for itself,
+  //     since `targetConfirmed` and `notFound` can both hold on one attempt when
+  //     PIDs are found and taskkill then reports them already gone
+  //
+  // Deliberately narrow. With no such sibling the ambiguity is real and stays
+  // unresolved; discriminating name from path in general is #674.
+  //
+  // KNOWN RESIDUAL, recorded on #674: a sibling that located its target and
+  // closed it successfully still counts, even though an image surviving in the
+  // tasklist afterwards can only be something else, possibly a genuinely
+  // elevated-invisible process at this very path. Telling those apart needs each
+  // sibling's POST-kill state, which is what #674 builds. The trade is
+  // deliberate: the false positive suppressed here is far likelier than the
+  // false negative left behind.
+  // Image names a bare-name `/IM` attempt actually closed. That kill is not
+  // path-scoped, so it takes down whatever was running under the name, including
+  // whatever a same-named path target was aiming at. Such a path attempt then
+  // finds nothing and would otherwise be counted as a second closed app, one
+  // process reported as two (Codex P2 on #818).
+  //
+  // Used ONLY for counting. It cannot decide that the path was empty, since the
+  // process it closed may be exactly the one that path tracks.
+  const imagesClosedByNameKill = new Set(
+    attempts
+      .filter((attempt) => !isPathScopedExe(attempt.appPath) && attempt.success)
+      .map((attempt) => attempt.processName)
+  )
+
+  const confirmedPathsByImage = new Map<string, Set<string>>()
+  attempts.forEach((attempt) => {
+    if (!attempt.targetConfirmed || !isPathScopedExe(attempt.appPath)) {
+      return
+    }
+    const confirmedPath = normalizePathForComparison(attempt.appPath)
+    if (!confirmedPath) {
+      return
+    }
+    const existing = confirmedPathsByImage.get(attempt.processName)
+    if (existing) {
+      existing.add(confirmedPath)
+    } else {
+      confirmedPathsByImage.set(attempt.processName, new Set([confirmedPath]))
+    }
+  })
+
   const finalizedAttempts = await Promise.all(
     attempts.map(async (attempt) => {
       // Treat the launched exe's absence from the post-kill tasklist as the
@@ -442,14 +524,62 @@ export async function finalizeKillAttempts(
 
       let stillRunning: boolean
       let isElevatedInconclusive = false
+      // This attempt found nothing at its own path, before the kill and after
+      // it, while another attempt located the image somewhere else. So this path
+      // was never running: not a failure to close, and not a close either.
+      //
+      // The post-kill half matters for the counting below. Without it, a target
+      // absent at lookup time but running by the recheck would be both "failed"
+      // and "empty", and closedCount subtracts each once (Codex P2 on #818).
+      // Requiring 0 PIDs on the recheck makes the two mutually exclusive by
+      // construction rather than by a second filter.
+      let isEmptySameNameTarget = false
+      let closedNothing = false
       if (isFullPathAttempt) {
-        const { processIds } = await findProcessIdsByExecutablePath(attempt.processName, appPath)
+        const { processIds, detail: lookupError } = await findProcessIdsByExecutablePath(
+          attempt.processName,
+          appPath
+        )
+
+        // Verifiably nothing at this path: none before the kill, none after, and
+        // both lookups actually ran. A lookup that FAILED also returns zero PIDs,
+        // so the count alone cannot tell "nothing is there" from "could not
+        // look" -- the same mistake as reading confirmation off an absent
+        // `notFound`, one lookup later (CodeRabbit on #818).
+        const verifiablyEmpty =
+          attempt.notFound === true && lookupError === undefined && processIds.length === 0
+
+        // Whether this path was EMPTY is a stronger claim than whether it closed
+        // anything, and it needs stronger evidence: a confirmed sibling at a
+        // DIFFERENT path. A bare-name `/IM` confirmation cannot serve, because
+        // the process it found may be the very one this path tracks (Codex P2).
+        //
+        // The two are separated because they answer different questions. This
+        // one suppresses the elevated-process inference, so being wrong invents
+        // or hides a leftover. `closedNothing` only decides whether to count the
+        // attempt, and an attempt that found nothing closed nothing no matter
+        // what else was running.
+        const ownPath = normalizePathForComparison(appPath)
+        const confirmedPaths = confirmedPathsByImage.get(attempt.processName)
+        isEmptySameNameTarget =
+          verifiablyEmpty &&
+          !!confirmedPaths &&
+          Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)
+
+        // Either kind of sibling is enough to say this attempt closed nothing.
+        // Without one, a lone empty attempt keeps its long-standing treatment
+        // rather than having its counting quietly changed here.
+        closedNothing =
+          isEmptySameNameTarget ||
+          (verifiablyEmpty && imagesClosedByNameKill.has(attempt.processName))
+
         // When the post-kill tasklist read failed, treat any unverified
         // "process gone" signal as inconclusive rather than success: a
         // notFound result from WMI/taskkill could mean either truly exited
         // or elevated-invisible, and the empty processNamesAfterKill Set
         // can't distinguish them. Same for the access-denied recheck.
         isElevatedInconclusive =
+          !isEmptySameNameTarget &&
           !imageGoneFromTasklist &&
           attempt.notFound === true &&
           attempt.staleTask !== true &&
@@ -468,17 +598,19 @@ export async function finalizeKillAttempts(
         ...attempt,
         stillRunning,
         imageGoneFromTasklist,
+        isEmptySameNameTarget,
+        closedNothing,
         accessDenied: attempt.accessDenied || isElevatedInconclusive
       }
     })
   )
 
-  finalizedAttempts.forEach((attempt) => {
-    const failedToClose =
-      attempt.stillRunning ||
-      (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
+  const hasFailedToClose = (attempt: (typeof finalizedAttempts)[number]) =>
+    attempt.stillRunning ||
+    (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
 
-    if (failedToClose) {
+  finalizedAttempts.forEach((attempt) => {
+    if (hasFailedToClose(attempt)) {
       registerUnclosedProcess(attempt)
       return
     }
@@ -502,12 +634,15 @@ export async function finalizeKillAttempts(
     })
   })
 
-  const failedAttempts = finalizedAttempts.filter(
-    (attempt) =>
-      attempt.stillRunning ||
-      (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
-  )
-  const closedCount = finalizedAttempts.length - failedAttempts.length
+  const failedAttempts = finalizedAttempts.filter(hasFailedToClose)
+  // Counted by filtering rather than by subtracting two overlapping tallies. An
+  // attempt that verifiably found nothing at its path closed nothing, so it is
+  // neither a success nor a failure: counting it reported one process as two
+  // whenever a sibling had already covered it, and subtracting it separately
+  // could deduct the same attempt twice (Codex P2 on #818).
+  const closedCount = finalizedAttempts.filter(
+    (attempt) => !hasFailedToClose(attempt) && !attempt.closedNothing
+  ).length
   const failures: KillFailure[] = failedAttempts.map((attempt) => {
     const appPath = attempt.appPath || attempt.processName
     return {
@@ -546,16 +681,80 @@ function getConfiguredGameExePaths(): Set<string> {
   return gameExePaths
 }
 
+interface CompanionTarget {
+  processName: string
+  appPath: string
+  /** Whether this target closes by image name (`/IM`) or scoped to its path. */
+  scope: 'name' | 'path'
+  /**
+   * Every profile that configures this target, in enumeration order. Usually
+   * one. More than one is the case #772 is about: a utility shared across
+   * profiles (Oculus Tray Tool, SimHub, CrewChief) has no single owner, and the
+   * map used to silently keep whichever profile was enumerated last.
+   */
+  gameKeys: string[]
+}
+
+/**
+ * Map key for a companion killed by IMAGE NAME (the curated utility list). The
+ * name is the whole identity: one `taskkill /IM` covers every profile that
+ * enabled it, so the same name from two profiles is one target, not two.
+ */
+function companionTargetNameKey(processName: string): string {
+  return `name:${processName.toLowerCase()}`
+}
+
+/**
+ * Map key for a companion killed by PATH (a tracked companion path). The path
+ * is the identity, not the basename: two profiles pointing at two different
+ * `Overlay.exe` files are two separate processes and both need closing. Keying
+ * by basename collapsed them and closed only one (#772).
+ */
+function companionTargetPathKey(processPath: string): string {
+  return `path:${normalizePathForComparison(processPath)}`
+}
+
+/**
+ * The game a failed close should be filed under, or `undefined` when the target
+ * is configured in more than one profile.
+ *
+ * Undefined is the honest answer, not a fallback. For a companion SimLauncher
+ * launched itself the owner is known and comes from `runningProcesses`, which
+ * never reaches this function. What reaches it is a configured companion that is
+ * merely *running*, and when several profiles configure it there is nothing that
+ * makes one of them its owner. Naming one anyway is exactly the defect: it made
+ * a game the user never started surface as having leftover apps, which is why
+ * the tray Close Apps item was pulled before 1.0.0 (#772, blocks #519).
+ *
+ * The failure is still reported either way. `finalizeKillAttempts` builds
+ * `failures` from the attempts alone, so the toast names the app regardless of
+ * whether anything can be attributed.
+ */
+function resolveCompanionTargetGameKey(target: CompanionTarget): string | undefined {
+  return target.gameKeys.length === 1 ? target.gameKeys[0] : undefined
+}
+
 function getProfileCompanionTargets(gameKey?: string) {
   const profiles = getStoredProfiles()
   const gamePaths = getStoredStringRecord('gamePaths')
   const appPaths = getStoredStringRecord('appPaths')
-  const companionTargets = new Map<
-    string,
-    { processName: string; appPath: string; gameKey: string }
-  >()
+  const companionTargets = new Map<string, CompanionTarget>()
 
   const gameExePaths = getConfiguredGameExePaths()
+
+  // Record `profileGameKey` as an owner of `key`, creating the target on first
+  // sight. Never overwrites: a repeated key means another profile configures the
+  // same target, which is information, not a collision to resolve by last write.
+  const addOwner = (key: string, target: Omit<CompanionTarget, 'gameKeys'>, owner: string) => {
+    const existing = companionTargets.get(key)
+    if (!existing) {
+      companionTargets.set(key, { ...target, gameKeys: [owner] })
+      return
+    }
+    if (!existing.gameKeys.includes(owner)) {
+      existing.gameKeys.push(owner)
+    }
+  }
 
   Object.entries(profiles || {}).forEach(([profileGameKey, profileEntry]) => {
     if (gameKey && profileGameKey !== gameKey) {
@@ -571,11 +770,11 @@ function getProfileCompanionTargets(gameKey?: string) {
       if (isUtilityEnabled(profile, utilityKey)) {
         processNames.forEach((processName) => {
           const normalizedProcessName = processName.toLowerCase()
-          companionTargets.set(normalizedProcessName, {
-            processName: normalizedProcessName,
-            appPath: processName,
-            gameKey: profileGameKey
-          })
+          addOwner(
+            companionTargetNameKey(normalizedProcessName),
+            { processName: normalizedProcessName, appPath: processName, scope: 'name' },
+            profileGameKey
+          )
         })
       }
     })
@@ -585,14 +784,64 @@ function getProfileCompanionTargets(gameKey?: string) {
         if (gameExePaths.has(normalizePathForComparison(processPath))) {
           return
         }
-        const processName = getExeName(processPath)
-        companionTargets.set(processName, {
-          processName,
-          appPath: processPath,
-          gameKey: profileGameKey
-        })
+        addOwner(
+          companionTargetPathKey(processPath),
+          { processName: getExeName(processPath), appPath: processPath, scope: 'path' },
+          profileGameKey
+        )
       }
     )
+  })
+
+  // A curated utility whose executable path is ALSO configured yields both a
+  // name-keyed and a path-keyed target for the same process. Issuing both would
+  // close one app twice and count it twice, so the image-name entry is dropped
+  // in favour of the path-scoped one, which is strictly more precise and hits
+  // the same process.
+  //
+  // The old basename keying collapsed these too, but by accident: both landed on
+  // the same Map key and the path branch happened to be enumerated second.
+  // Keying by identity separated them, so the collapse has to be deliberate --
+  // and, unlike the accident, it has to be narrow.
+  //
+  // Matching on the process name alone is NOT enough. `getProfileTrackablePaths`
+  // pulls `appPaths[key]` exactly when that utility is enabled, so a genuine
+  // duplicate always carries the SAME owners on both scopes. A basename shared
+  // by coincidence does not: another profile's freeform `trackedProcessPaths`
+  // entry can happen to be called the same thing. Collapsing that would delete a
+  // target this profile really configured, leaving the survivor looking uniquely
+  // owned by a profile that never enabled the utility -- #772 reintroduced --
+  // and dropping the `/IM` coverage along with it.
+  //
+  // So a name target is only a duplicate if every profile that owns it also
+  // owns a path target for the same process. Merging the owners instead would
+  // fix the attribution but still lose that coverage.
+  const pathTargetsByName = new Map<string, CompanionTarget[]>()
+  companionTargets.forEach((target) => {
+    if (target.scope !== 'path') {
+      return
+    }
+    const existing = pathTargetsByName.get(target.processName)
+    if (existing) {
+      existing.push(target)
+    } else {
+      pathTargetsByName.set(target.processName, [target])
+    }
+  })
+  companionTargets.forEach((target, key) => {
+    if (target.scope !== 'name') {
+      return
+    }
+    const pathTargets = pathTargetsByName.get(target.processName)
+    if (!pathTargets) {
+      return
+    }
+    const everyOwnerReachableByPath = target.gameKeys.every((owner) =>
+      pathTargets.some((pathTarget) => pathTarget.gameKeys.includes(owner))
+    )
+    if (everyOwnerReachableByPath) {
+      companionTargets.delete(key)
+    }
   })
 
   return companionTargets
@@ -649,7 +898,13 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     }
 
     const processName = getExeName(appPath)
-    companionTargets.delete(processName)
+    // This process is about to be tree-killed, so drop the companion targets that
+    // would hit it again: its own path, and the curated image-name entry, whose
+    // `taskkill /IM` would cover it by name. A same-named companion at a
+    // DIFFERENT path is deliberately left alone now that paths are keyed by path
+    // rather than by basename — it is a separate process and still needs closing.
+    companionTargets.delete(companionTargetPathKey(appPath))
+    companionTargets.delete(companionTargetNameKey(processName))
 
     if (processNames.has(processName)) {
       suppressProcessNameMismatchWarning(appPath)
@@ -661,7 +916,13 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
   companionTargets.forEach((target) => {
     if (processNames.has(target.processName)) {
-      killTasks.push(killProcessByImageName(target.processName, target.appPath, target.gameKey))
+      killTasks.push(
+        killProcessByImageName(
+          target.processName,
+          target.appPath,
+          resolveCompanionTargetGameKey(target)
+        )
+      )
     }
   })
 

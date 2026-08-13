@@ -30,6 +30,20 @@ const processNamesGoneAfterWmiLookup = new Set<string>()
 // predicate `processNamesAfterKill.has(processName)` must stay true so the
 // staleTask branch is the only thing keeping isElevatedInconclusive false.
 const processNamesGoneAfterKill = new Set<string>()
+// Executable paths whose WMI/PowerShell lookup fails outright. Distinct from
+// "found nothing": the lookup errored, so it learned nothing either way.
+const wmiLookupErrorPaths = new Set<string>()
+// Executable paths that report no PIDs on the FIRST (pre-kill) lookup but do on
+// the post-kill recheck: the process started or respawned in between.
+const pathsAppearingAfterKill = new Set<string>()
+// Per-PATH lookup counter. wmiLookupCounts is keyed by process name, which two
+// same-named paths share, so it cannot express "first lookup for this path".
+const wmiPathLookupCounts = new Map<string, number>()
+// Paths whose lookup succeeds pre-kill and then FAILS on the post-kill recheck.
+const wmiPostKillLookupErrorPaths = new Set<string>()
+// Image names that stay in the tasklist even after a SUCCESSFUL /IM kill: the
+// kill took down the instances it could, and a protected one survived.
+const imageNamesSurvivingImageKill = new Set<string>()
 // "taskkill /PID reports access-denied, but the image is gone from tasklist
 // afterwards" — used to model #390 where the launched exe's actual running
 // process has a different name, so the wrapper's PID kill fails but the app
@@ -253,6 +267,31 @@ async function loadProcessModules() {
         // whose executable path matches SIMLAUNCHER_TARGET_PROCESS_PATH AND
         // whose process name matches the queried $name. This is what makes
         // findProcessIdsByExecutablePath path-scoped in production.
+        if (
+          wmiPostKillLookupErrorPaths.has(normalizeRegistryKey(targetPathEnv)) &&
+          (wmiPathLookupCounts.get(normalizeRegistryKey(targetPathEnv)) ?? 0) >= 1
+        ) {
+          wmiPathLookupCounts.set(
+            normalizeRegistryKey(targetPathEnv),
+            (wmiPathLookupCounts.get(normalizeRegistryKey(targetPathEnv)) ?? 0) + 1
+          )
+          callback(
+            new Error('The RPC server is unavailable.'),
+            '',
+            'The RPC server is unavailable.'
+          )
+          return
+        }
+
+        if (wmiLookupErrorPaths.has(normalizeRegistryKey(targetPathEnv))) {
+          callback(
+            new Error('The RPC server is unavailable.'),
+            '',
+            'The RPC server is unavailable.'
+          )
+          return
+        }
+
         const entry = processRegistry.get(normalizeRegistryKey(targetPathEnv))
         const lookupCount = processName ? (wmiLookupCounts.get(processName) ?? 0) + 1 : 0
         if (processName) {
@@ -263,13 +302,19 @@ async function loadProcessModules() {
         // the post-kill tasklist recheck still reports the image as present.
         const suppressPidsForPostKill =
           !!processName && lookupCount > 1 && processNamesGoneAfterKill.has(processName)
+        const targetPathKey = normalizeRegistryKey(targetPathEnv)
+        const pathLookupCount = (wmiPathLookupCounts.get(targetPathKey) ?? 0) + 1
+        wmiPathLookupCounts.set(targetPathKey, pathLookupCount)
+        const suppressPidsForPreKill =
+          pathLookupCount <= 1 && pathsAppearingAfterKill.has(targetPathKey)
         const pids: string[] = []
         if (
           entry &&
           (!processName || entry.processName === processName) &&
           processNames.has(entry.processName) &&
           !inaccessibleExecutablePathProcesses.has(entry.processName) &&
-          !suppressPidsForPostKill
+          !suppressPidsForPostKill &&
+          !suppressPidsForPreKill
         ) {
           pids.push(entry.pid)
         }
@@ -321,7 +366,9 @@ async function loadProcessModules() {
           callback(new Error('Access is denied.'), '', 'Access is denied.')
           return
         }
-        processNames.delete(imageName)
+        if (!imageNamesSurvivingImageKill.has(imageName)) {
+          processNames.delete(imageName)
+        }
       }
       callback(null, '', '')
     }),
@@ -556,6 +603,11 @@ beforeEach(async () => {
   staleTaskkillPids.clear()
   processNamesGoneAfterWmiLookup.clear()
   processNamesGoneAfterKill.clear()
+  wmiLookupErrorPaths.clear()
+  pathsAppearingAfterKill.clear()
+  wmiPathLookupCounts.clear()
+  wmiPostKillLookupErrorPaths.clear()
+  imageNamesSurvivingImageKill.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
@@ -2733,6 +2785,588 @@ test('killLaunchedApps registers elevated utility companion when image-name fall
     path: 'Garage61 telemetry agent.exe',
     reason: 'access_denied',
     elevated: true
+  })
+})
+
+// #772. The all-profiles close (no gameKey) walks every profile, and the
+// companion target map used to be keyed by exe BASENAME, so a utility shared
+// across profiles was overwritten and the last profile enumerated won. A failed
+// close was then filed under a game the user had not been playing, which made
+// that game surface as having leftover apps. It is the documented reason the
+// tray Close Apps item was pulled before 1.0.0, and the blocker on #519.
+test('an all-profiles close does not attribute a shared utility to an arbitrary game (#772)', async () => {
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  // No gameKey: the tray/global close.
+  const result = await killLaunchedApps()
+
+  // The user is still told, because `failures` is built from the attempts and
+  // never consults gameKey. Only the attribution is withheld.
+  expect(result).toMatchObject({
+    success: false,
+    failedCount: 1,
+    failures: [
+      expect.objectContaining({ appPath: 'Garage61 telemetry agent.exe', reason: 'access_denied' })
+    ]
+  })
+
+  // Neither game may claim it. Before the fix exactly one of these held, chosen
+  // by store insertion order.
+  expect(unclosedProcesses.has('ac:garage61 telemetry agent.exe')).toBe(false)
+  expect(unclosedProcesses.has('iracing:garage61 telemetry agent.exe')).toBe(false)
+  expect(unclosedProcesses.get('unknown:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: '',
+    reason: 'access_denied'
+  })
+
+  // One kill, not one per owning profile: the image-name kill already covers
+  // every profile that enabled it.
+  expect(
+    execFileCalls.filter(
+      (call) => call.command === 'taskkill' && call.args.includes('garage61 telemetry agent.exe')
+    )
+  ).toHaveLength(1)
+})
+
+test('an all-profiles close still attributes a utility only one profile enables (#772)', async () => {
+  // The complement of the test above, and the reason the fix cannot simply drop
+  // attribution: with a single owner there is nothing ambiguous to withhold.
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default' }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  await killLaunchedApps()
+
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac',
+    reason: 'access_denied'
+  })
+  expect(unclosedProcesses.has('unknown:garage61 telemetry agent.exe')).toBe(false)
+})
+
+test('a per-game close of a shared utility is unchanged (#772)', async () => {
+  // Per-row Close Apps passes a gameKey, which filters the profile loop to one
+  // entry, so the map could never collide and this path stayed shipped. Pinned
+  // so the fix cannot regress it into the unattributed case.
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  processNames.add('garage61 telemetry agent.exe')
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+
+  await killLaunchedApps('ac')
+
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac',
+    reason: 'access_denied'
+  })
+})
+
+test('two profiles pointing at same-named exes in different folders close both (#772)', async () => {
+  // The second half of the basename-keying defect, and a silently MISSED kill
+  // rather than a misattributed one: `C:/Tools/Overlay.exe` and
+  // `C:/UserApps/Overlay.exe` are two different processes, but one Map key held
+  // them both, so the all-profiles close only ever closed the survivor.
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  registerProcess(iracingOverlay, 'overlay.exe', '2222')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  const killedPids = execFileCalls
+    .filter((call) => call.command === 'taskkill' && call.args[0] === '/PID')
+    .map((call) => call.args[1])
+  expect(killedPids).toEqual(expect.arrayContaining(['1111', '2222']))
+})
+
+// Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the
+// tasklist, which knows image NAMES only, so once two profiles can hold two
+// same-named paths both get scheduled even when only one of them is running.
+// The absent one's WMI lookup returns 0 PIDs, and the image is in the tasklist
+// because of the OTHER profile's instance.
+test('a same-named path that is not running is not reported as a leftover (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  // Only ac's instance exists. iracing's path is configured but nothing runs there.
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  // ac's kill fails, so the image stays in the tasklist afterwards. That is what
+  // used to make iracing's empty lookup look like an invisible elevated process.
+  accessDeniedPids.add('1111')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  const result = await killLaunchedApps()
+
+  // ac's real instance is the only failure. iracing never had anything here, so
+  // it must not be told it has an app it cannot close: that is #772's symptom,
+  // a phantom leftover on a game the user was not playing.
+  expect(result.failedCount).toBe(1)
+  expect(unclosedProcesses.get('ac:c:\\tools\\overlay.exe')).toMatchObject({ gameKey: 'ac' })
+  expect(unclosedProcesses.has('iracing:c:\\userapps\\overlay.exe')).toBe(false)
+})
+
+// CodeRabbit on PR #818, against the fix for the Codex P1 above. The sibling
+// rule originally read "confirmed" as `notFound !== true`, but the lookup-error
+// branch of killProcessByImageName returns neither flag, so a lookup that
+// learned nothing was vouching for a sibling it never looked at. That suppressed
+// a real elevated inference and dropped a genuine leftover.
+test('a sibling whose lookup ERRORED does not vouch for a same-named path (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  // ac's lookup blows up, so it confirms nothing about anything.
+  wmiLookupErrorPaths.add(normalizeRegistryKey(acOverlay))
+  // iracing's finds no PIDs while the image is in the tasklist, which is exactly
+  // what an elevated process with a null ExecutablePath looks like (#390).
+  inaccessibleExecutablePathProcesses.add('overlay.exe')
+  registerProcess(iracingOverlay, 'overlay.exe', '3333')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  // The elevated inference must survive: nothing established that the image in
+  // the tasklist belongs to anything other than iracing's own invisible process.
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\overlay.exe')).toMatchObject({
+    gameKey: 'iracing',
+    reason: 'access_denied',
+    elevated: true
+  })
+})
+
+// Codex P2 on PR #818. A bare-name /IM confirmation says only that SOME process
+// with that name exists, which may be the very process the other profile tracks
+// by path, so it cannot establish that the path was empty. Only a path-scoped
+// sibling at a different path can.
+test('a curated /IM confirmation does not vouch for a tracked path (#772)', async () => {
+  const iracingOverlay = 'C:/UserApps/Garage61 telemetry agent.exe'
+  markExistingPath(iracingOverlay)
+  processNames.add('garage61 telemetry agent.exe')
+  // ac's curated /IM is denied: something by that name exists and is protected.
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+  // iracing's tracked copy looks elevated-invisible, which is the same process.
+  inaccessibleExecutablePathProcesses.add('garage61 telemetry agent.exe')
+  registerProcess(iracingOverlay, 'garage61 telemetry agent.exe', '4444')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  // iracing must keep its leftover. Suppressing it would attribute the failure
+  // to ac alone, which is the misattribution this whole PR exists to remove.
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\garage61 telemetry agent.exe')).toMatchObject(
+    {
+      gameKey: 'iracing',
+      reason: 'access_denied'
+    }
+  )
+})
+
+// Codex P2 on PR #818. An attempt absent at lookup time but running by the
+// post-kill recheck used to be both "failed" and "empty", and closedCount
+// subtracts each once, so one attempt was deducted twice and the count could go
+// negative once every attempt failed.
+test('a same-named path that respawns before the recheck is only counted once (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  registerProcess(iracingOverlay, 'overlay.exe', '2222')
+  // ac is a real, confirmed sibling that fails to close.
+  accessDeniedPids.add('1111')
+  // iracing reports nothing pre-kill and is back by the recheck.
+  pathsAppearingAfterKill.add(normalizeRegistryKey(iracingOverlay))
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  const result = await killLaunchedApps()
+
+  // Two attempts, both still running afterwards. Nothing closed, and nothing
+  // deducted twice.
+  expect(result.closedCount).toBe(0)
+  expect(result.failedCount).toBe(2)
+})
+
+// CodeRabbit on PR #818, and the same mistake as its earlier finding one lookup
+// later: findProcessIdsByExecutablePath returns zero PIDs both when nothing is
+// there and when the lookup itself failed, so the count alone cannot tell those
+// apart. Reading a failed POST-kill lookup as "empty" would suppress a real
+// elevated leftover and subtract it from closedCount.
+test('a FAILED post-kill lookup does not make a path count as empty (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  // ac is a genuinely confirmed sibling at a different path, and fails to close
+  // so the image stays in the tasklist.
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  accessDeniedPids.add('1111')
+  // iracing finds nothing pre-kill, then its recheck blows up.
+  wmiPostKillLookupErrorPaths.add(normalizeRegistryKey(iracingOverlay))
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  // Nothing established that iracing's path was empty, so the elevated
+  // inference stands and its leftover is reported.
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\overlay.exe')).toMatchObject({
+    gameKey: 'iracing',
+    reason: 'access_denied'
+  })
+})
+
+// Codex P2 on PR #818. When one profile curated-enables a utility and another
+// tracks a same-named path, both targets are deliberately kept so neither loses
+// coverage. If only the tracked instance is running, the /IM kill takes it down
+// and the path attempt then finds nothing, so one process was reported as two.
+test('an /IM kill that covered the only instance is not counted twice (#772)', async () => {
+  const iracingPath = 'C:/UserApps/Garage61 telemetry agent.exe'
+  markExistingPath(iracingPath)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(iracingPath, 'garage61 telemetry agent.exe', '8888')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingPath] }]
+      }
+    }
+  })
+
+  const result = await killLaunchedApps()
+
+  // Both targets are still attempted, which is the point of keeping them.
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toEqual(
+    expect.arrayContaining([['/IM', 'garage61 telemetry agent.exe', '/T', '/F']])
+  )
+  // But there was only ever one process.
+  expect(result.closedCount).toBe(1)
+  expect(result.failedCount).toBe(0)
+})
+
+// Companion to the /IM subsumption above, and the guard that keeps it from
+// swallowing the earlier P2. A successful /IM is enough to say a same-named path
+// attempt CLOSED NOTHING, but not that the path was EMPTY: here the /IM took
+// down what it could while an elevated instance at iracing's path survived, so
+// the leftover is real and must still be reported.
+test('a successful /IM does not prove a same-named path was empty (#772)', async () => {
+  const iracingPath = 'C:/UserApps/Garage61 telemetry agent.exe'
+  markExistingPath(iracingPath)
+  processNames.add('garage61 telemetry agent.exe')
+  // /IM succeeds, but the image survives because one instance is protected.
+  imageNamesSurvivingImageKill.add('garage61 telemetry agent.exe')
+  // That survivor is iracing's, invisible to WMI the way elevated ones are.
+  inaccessibleExecutablePathProcesses.add('garage61 telemetry agent.exe')
+  registerProcess(iracingPath, 'garage61 telemetry agent.exe', '6666')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingPath] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\garage61 telemetry agent.exe')).toMatchObject(
+    { gameKey: 'iracing', reason: 'access_denied' }
+  )
+})
+
+test('a same-named path that is not running is not counted as closed (#772)', async () => {
+  // The other half of the same finding. With ac's instance actually closing,
+  // the image leaves the tasklist, which finalize reads as success for EVERY
+  // attempt including iracing's empty one, so one app reported as two.
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  processNamesGoneAfterKill.add('overlay.exe')
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 1
+  })
+})
+
+test('a curated utility with a configured path is closed once, by path (#772)', async () => {
+  // Regression guard on the fix itself rather than on the original bug. The old
+  // basename keying collapsed the curated-name target and the configured-path
+  // target onto one Map key, so only the path-scoped kill ever ran. Keying by
+  // identity separates them, and without a deliberate collapse this would issue
+  // BOTH an /IM and a path-scoped kill for one app, closing it twice and
+  // counting it twice.
+  const garage61Path = 'C:/Tools/Garage61 telemetry agent.exe'
+  markExistingPath(garage61Path)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(garage61Path, 'garage61 telemetry agent.exe', '9090')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    appPaths: { garage61: garage61Path },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+
+  await expect(killLaunchedApps()).resolves.toMatchObject({
+    success: true,
+    closedCount: 1,
+    failedCount: 0
+  })
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls).toHaveLength(1)
+  // Path-scoped, so it cannot take down a same-named process from elsewhere.
+  expect(killCalls[0].args).toEqual(['/PID', '9090', '/T', '/F'])
+})
+
+test('a coincidental basename does not collapse another profile away (#772)', async () => {
+  // Raised by both review bots on PR #818 against the collapse above. Profile
+  // `ac` enables the curated utility and configures no path for it; profile
+  // `iracing` happens to track a freeform path whose basename is the same.
+  // Those are two configurations, not one duplicate. Collapsing on the name
+  // alone deleted `ac`'s target, which left the surviving path target looking
+  // uniquely owned by `iracing` -- #772 reintroduced through its own fix -- and
+  // silently dropped the /IM coverage `ac` had asked for.
+  const iracingPath = 'C:/Other/Garage61 telemetry agent.exe'
+  markExistingPath(iracingPath)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(iracingPath, 'garage61 telemetry agent.exe', '7777')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingPath] }]
+      }
+    }
+  })
+  // Both must fail, or whichever succeeds first takes the image out of the
+  // tasklist and the other is finalized as a success with nothing to attribute.
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+  accessDeniedPids.add('7777')
+
+  await killLaunchedApps()
+
+  // Both survive: ac's curated /IM and iracing's path-scoped kill.
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toEqual(
+    expect.arrayContaining([
+      ['/IM', 'garage61 telemetry agent.exe', '/T', '/F'],
+      ['/PID', '7777', '/T', '/F']
+    ])
+  )
+
+  // And each is attributed to the profile that actually configured it, since
+  // each has exactly one owner. Neither may be filed under the other's game,
+  // and neither may end up unattributed.
+  expect(unclosedProcesses.get('ac:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac'
+  })
+  expect(unclosedProcesses.get('iracing:c:\\other\\garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'iracing'
+  })
+  expect(unclosedProcesses.has('iracing:garage61 telemetry agent.exe')).toBe(false)
+  expect(unclosedProcesses.has('unknown:garage61 telemetry agent.exe')).toBe(false)
+})
+
+test('a path target covering only one of two owners does not collapse the name target (#772)', async () => {
+  // Found by mutation, not by review: with the collapse condition weakened from
+  // `every` to `some` the whole suite stayed green, which meant nothing pinned
+  // the difference. This is the case that does.
+  //
+  // `ac` enables the curated utility AND tracks its executable; `iracing`
+  // enables the same utility with no path of its own. The path target therefore
+  // covers `ac` but not `iracing`, so it is not a duplicate of the name target
+  // and cannot replace it: collapsing would leave `iracing` with no coverage at
+  // all, since a path-scoped kill only ever touches that one file.
+  const acPath = 'C:/Tools/Garage61 telemetry agent.exe'
+  markExistingPath(acPath)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(acPath, 'garage61 telemetry agent.exe', '5555')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          { id: 'default', name: 'Default', garage61: true, trackedProcessPaths: [acPath] }
+        ]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+  accessDeniedPids.add('5555')
+
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toEqual(
+    expect.arrayContaining([
+      ['/IM', 'garage61 telemetry agent.exe', '/T', '/F'],
+      ['/PID', '5555', '/T', '/F']
+    ])
+  )
+
+  // The name target is owned by both profiles, so it stays unattributed. The
+  // path target is owned by `ac` alone, so it is attributed.
+  expect(unclosedProcesses.get('unknown:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: ''
+  })
+  expect(unclosedProcesses.get('ac:c:\\tools\\garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac'
   })
 })
 
