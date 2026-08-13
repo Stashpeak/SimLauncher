@@ -2308,7 +2308,7 @@ test('a child that exits while the lookup is in flight is dropped from the reque
 
     // A tracked child, alive at the moment the close starts.
     const trackedChild = { pid: 1234, exitCode: null as number | null, signalCode: null }
-    runningProcesses.set('c:\tools\perplexity.exe', {
+    runningProcesses.set(String.raw`c:\tools\perplexity.exe`, {
       process: trackedChild as never,
       path: 'C:/Tools/Perplexity.exe',
       name: 'Perplexity.exe',
