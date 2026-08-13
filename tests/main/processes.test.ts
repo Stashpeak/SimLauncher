@@ -41,6 +41,9 @@ const pathsAppearingAfterKill = new Set<string>()
 const wmiPathLookupCounts = new Map<string, number>()
 // Paths whose lookup succeeds pre-kill and then FAILS on the post-kill recheck.
 const wmiPostKillLookupErrorPaths = new Set<string>()
+// Image names that stay in the tasklist even after a SUCCESSFUL /IM kill: the
+// kill took down the instances it could, and a protected one survived.
+const imageNamesSurvivingImageKill = new Set<string>()
 // "taskkill /PID reports access-denied, but the image is gone from tasklist
 // afterwards" — used to model #390 where the launched exe's actual running
 // process has a different name, so the wrapper's PID kill fails but the app
@@ -363,7 +366,9 @@ async function loadProcessModules() {
           callback(new Error('Access is denied.'), '', 'Access is denied.')
           return
         }
-        processNames.delete(imageName)
+        if (!imageNamesSurvivingImageKill.has(imageName)) {
+          processNames.delete(imageName)
+        }
       }
       callback(null, '', '')
     }),
@@ -602,6 +607,7 @@ beforeEach(async () => {
   pathsAppearingAfterKill.clear()
   wmiPathLookupCounts.clear()
   wmiPostKillLookupErrorPaths.clear()
+  imageNamesSurvivingImageKill.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
@@ -3156,6 +3162,41 @@ test('an /IM kill that covered the only instance is not counted twice (#772)', a
   // But there was only ever one process.
   expect(result.closedCount).toBe(1)
   expect(result.failedCount).toBe(0)
+})
+
+// Companion to the /IM subsumption above, and the guard that keeps it from
+// swallowing the earlier P2. A successful /IM is enough to say a same-named path
+// attempt CLOSED NOTHING, but not that the path was EMPTY: here the /IM took
+// down what it could while an elevated instance at iracing's path survived, so
+// the leftover is real and must still be reported.
+test('a successful /IM does not prove a same-named path was empty (#772)', async () => {
+  const iracingPath = 'C:/UserApps/Garage61 telemetry agent.exe'
+  markExistingPath(iracingPath)
+  processNames.add('garage61 telemetry agent.exe')
+  // /IM succeeds, but the image survives because one instance is protected.
+  imageNamesSurvivingImageKill.add('garage61 telemetry agent.exe')
+  // That survivor is iracing's, invisible to WMI the way elevated ones are.
+  inaccessibleExecutablePathProcesses.add('garage61 telemetry agent.exe')
+  registerProcess(iracingPath, 'garage61 telemetry agent.exe', '6666')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingPath] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\garage61 telemetry agent.exe')).toMatchObject(
+    { gameKey: 'iracing', reason: 'access_denied' }
+  )
 })
 
 test('a same-named path that is not running is not counted as closed (#772)', async () => {
