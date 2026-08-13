@@ -521,12 +521,20 @@ export async function finalizeKillAttempts(
       // construction rather than by a second filter.
       let isEmptySameNameTarget = false
       if (isFullPathAttempt) {
-        const { processIds } = await findProcessIdsByExecutablePath(attempt.processName, appPath)
+        const { processIds, detail: lookupError } = await findProcessIdsByExecutablePath(
+          attempt.processName,
+          appPath
+        )
 
         const ownPath = normalizePathForComparison(appPath)
         const confirmedPaths = confirmedPathsByImage.get(attempt.processName)
         isEmptySameNameTarget =
           attempt.notFound === true &&
+          // A lookup that FAILED also returns zero PIDs, so the count alone
+          // cannot tell "nothing is there" from "could not look". Same mistake
+          // as reading confirmation off an absent `notFound`, one lookup later
+          // (CodeRabbit on #818).
+          lookupError === undefined &&
           processIds.length === 0 &&
           !!confirmedPaths &&
           Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)

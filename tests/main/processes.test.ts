@@ -39,6 +39,8 @@ const pathsAppearingAfterKill = new Set<string>()
 // Per-PATH lookup counter. wmiLookupCounts is keyed by process name, which two
 // same-named paths share, so it cannot express "first lookup for this path".
 const wmiPathLookupCounts = new Map<string, number>()
+// Paths whose lookup succeeds pre-kill and then FAILS on the post-kill recheck.
+const wmiPostKillLookupErrorPaths = new Set<string>()
 // "taskkill /PID reports access-denied, but the image is gone from tasklist
 // afterwards" — used to model #390 where the launched exe's actual running
 // process has a different name, so the wrapper's PID kill fails but the app
@@ -262,6 +264,22 @@ async function loadProcessModules() {
         // whose executable path matches SIMLAUNCHER_TARGET_PROCESS_PATH AND
         // whose process name matches the queried $name. This is what makes
         // findProcessIdsByExecutablePath path-scoped in production.
+        if (
+          wmiPostKillLookupErrorPaths.has(normalizeRegistryKey(targetPathEnv)) &&
+          (wmiPathLookupCounts.get(normalizeRegistryKey(targetPathEnv)) ?? 0) >= 1
+        ) {
+          wmiPathLookupCounts.set(
+            normalizeRegistryKey(targetPathEnv),
+            (wmiPathLookupCounts.get(normalizeRegistryKey(targetPathEnv)) ?? 0) + 1
+          )
+          callback(
+            new Error('The RPC server is unavailable.'),
+            '',
+            'The RPC server is unavailable.'
+          )
+          return
+        }
+
         if (wmiLookupErrorPaths.has(normalizeRegistryKey(targetPathEnv))) {
           callback(
             new Error('The RPC server is unavailable.'),
@@ -583,6 +601,7 @@ beforeEach(async () => {
   wmiLookupErrorPaths.clear()
   pathsAppearingAfterKill.clear()
   wmiPathLookupCounts.clear()
+  wmiPostKillLookupErrorPaths.clear()
   pidsAccessDeniedButImageGone.clear()
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
@@ -3061,6 +3080,47 @@ test('a same-named path that respawns before the recheck is only counted once (#
   // deducted twice.
   expect(result.closedCount).toBe(0)
   expect(result.failedCount).toBe(2)
+})
+
+// CodeRabbit on PR #818, and the same mistake as its earlier finding one lookup
+// later: findProcessIdsByExecutablePath returns zero PIDs both when nothing is
+// there and when the lookup itself failed, so the count alone cannot tell those
+// apart. Reading a failed POST-kill lookup as "empty" would suppress a real
+// elevated leftover and subtract it from closedCount.
+test('a FAILED post-kill lookup does not make a path count as empty (#772)', async () => {
+  const acOverlay = 'C:/Tools/Overlay.exe'
+  const iracingOverlay = 'C:/UserApps/Overlay.exe'
+  markExistingPath(acOverlay)
+  markExistingPath(iracingOverlay)
+  processNames.add('overlay.exe')
+  // ac is a genuinely confirmed sibling at a different path, and fails to close
+  // so the image stays in the tasklist.
+  registerProcess(acOverlay, 'overlay.exe', '1111')
+  accessDeniedPids.add('1111')
+  // iracing finds nothing pre-kill, then its recheck blows up.
+  wmiPostKillLookupErrorPaths.add(normalizeRegistryKey(iracingOverlay))
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [acOverlay] }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingOverlay] }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  // Nothing established that iracing's path was empty, so the elevated
+  // inference stands and its leftover is reported.
+  expect(unclosedProcesses.get('iracing:c:\\userapps\\overlay.exe')).toMatchObject({
+    gameKey: 'iracing',
+    reason: 'access_denied'
+  })
 })
 
 test('a same-named path that is not running is not counted as closed (#772)', async () => {
