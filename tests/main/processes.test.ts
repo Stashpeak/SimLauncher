@@ -2344,6 +2344,61 @@ test('a child that exits while the lookup is in flight is dropped from the reque
   }
 })
 
+// The same Codex P1, for the half a handle cannot cover. A discovered PID is
+// just a number, so the defence is not to hold it: collecting every lookup
+// before asking anyone left the first answer sitting unused for as long as the
+// slowest lookup took, up to WMI_LOOKUP_TIMEOUT_MS, and that companion could
+// exit and hand its number to a stranger inside that gap.
+test('a discovered PID is asked as soon as its own lookup answers (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+    markExistingPath('C:/Tools/App3.exe')
+    processNames.add('app2.exe')
+    processNames.add('app3.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+    registerProcess('C:/Tools/App3.exe', 'app3.exe', '5555')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true, customapp3: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe', customapp3: 'C:/Tools/App3.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    // One-shot, so it parks whichever lookup goes out first and leaves the
+    // other one answering at its normal speed.
+    let releaseLookup: () => void = () => {}
+    wmiLookupBlocker = new Promise<void>((resolve) => {
+      releaseLookup = resolve
+    })
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+
+    // Exactly one: the target that already answered has been asked, while the
+    // parked lookup has not delayed it. Batching every result first would make
+    // this zero.
+    expect(gracefulRequests()).toHaveLength(1)
+
+    releaseLookup()
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    const askedPids = gracefulRequests()
+      .map((call) => call.args[call.args.indexOf('/PID') + 1])
+      .sort()
+    expect(askedPids).toEqual(['4321', '5555'])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 // The grace window is a window in which a well-behaved app is expected to exit,
 // which is exactly when a PID stops being a safe thing to signal: Node releases
 // the handle on exit and Windows may hand that number to something else, and

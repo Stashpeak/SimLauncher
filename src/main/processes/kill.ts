@@ -592,32 +592,45 @@ async function requestGracefulCloseForTargets(
   trackedChildren: ChildProcess[],
   pathTargets: { processName: string; appPath: string }[]
 ): Promise<void> {
-  const discovered = await Promise.all(
+  // Each path target is asked the moment ITS OWN lookup resolves, never after
+  // the slowest one. Every WMI query is bounded by WMI_LOOKUP_TIMEOUT_MS, so
+  // collecting all the results first left an already-discovered PID unsignalled
+  // for up to that long, and a number that stale may no longer mean the same
+  // process: if that companion exited on its own in the gap, Windows can hand
+  // its number to something we never launched, and `/T` would take that
+  // stranger's whole tree (Codex on #823). A raw PID carries no way to notice,
+  // so the only defence is to not hold it.
+  const askedByPath = await Promise.all(
     pathTargets.map(async ({ processName, appPath }) => {
       const { processIds } = await findProcessIdsByExecutablePath(processName, appPath)
-      return processIds
+      if (processIds.length === 0) {
+        return false
+      }
+      await requestGracefulClose(processIds)
+      return true
     })
   )
 
-  // Resolved AFTER the lookups above, never before. Each WMI query is bounded by
-  // WMI_LOOKUP_TIMEOUT_MS, so this function can sit here for seconds, and a
-  // tracked child that exits in that time releases its PID for Windows to reuse.
-  // Holding the handle rather than the number is what lets us notice
-  // (Codex on #823) — capturing `child.pid` up front would carry a number that
-  // may no longer mean the same process by the time it is signalled.
+  // A tracked child is the one thing that may be held across the lookups, for
+  // the same reason: we keep the ChildProcess, not the number, so the wait buys
+  // fresher evidence instead of decaying it. The liveness check therefore sits
+  // HERE, after the lookups, and a child that died while they were in flight is
+  // dropped rather than signalled by a number it no longer owns.
   const trackedPids = trackedChildren
     .filter((child) => !hasChildExited(child))
     .map((child) => child.pid)
     .filter((pid): pid is number => typeof pid === 'number')
 
-  const processIds = Array.from(new Set([...trackedPids, ...discovered.flat()]))
+  if (trackedPids.length > 0) {
+    await requestGracefulClose(trackedPids)
+  }
+
   // Nothing answered, so there is nothing to wait for. Skipping the window here
   // keeps "close with nothing running" instant even with the toggle on.
-  if (processIds.length === 0) {
+  if (trackedPids.length === 0 && !askedByPath.some(Boolean)) {
     return
   }
 
-  await requestGracefulClose(processIds)
   await wait(GRACEFUL_CLOSE_WINDOW_MS)
 }
 
