@@ -71,3 +71,7 @@ Three-process Electron app:
 ## Code documentation
 
 Comment the WHY, not the WHAT — explain non-obvious decisions, constraints, invariants, gotchas, and security-sensitive steps; never write comments that restate the code. Doc-comment public/exported items (TS JSDoc) where applicable. English only. Applies to AI agents too.
+
+## Rejected approaches
+
+[`AGENTS.md`](AGENTS.md) carries a **Rejected approaches** section plus a list of work no agent can settle by reading code (anything needing a profiler, a screen reader, or a product decision). Read it before proposing an optimization or an a11y change; it exists because the same handful of ideas kept arriving as PRs and getting closed for the same reasons.
