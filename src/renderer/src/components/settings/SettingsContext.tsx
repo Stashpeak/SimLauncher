@@ -59,6 +59,7 @@ export function SettingsProvider({
       startMinimized,
       minimizeToTray,
       showTrayIcon,
+      gracefulCloseEnabled,
       autoCheckUpdates,
       zoomFactor,
       isCustomColor,
@@ -85,6 +86,7 @@ export function SettingsProvider({
       setStartMinimized,
       setMinimizeToTray,
       setShowTrayIcon,
+      setGracefulCloseEnabled,
       setAutoCheckUpdates,
       setZoomFactor,
       setIsCustomColor,
@@ -116,6 +118,7 @@ export function SettingsProvider({
         'startMinimized',
         'minimizeToTray',
         'showTrayIcon',
+        'gracefulCloseEnabled',
         'launchDelayMs'
       ]),
       games: getDirtySubset(['gamePaths']),
@@ -151,6 +154,7 @@ export function SettingsProvider({
     setStartMinimized,
     setMinimizeToTray,
     setShowTrayIcon,
+    setGracefulCloseEnabled,
     setAutoCheckUpdates,
     setZoomFactor,
     setIsCustomColor,
@@ -362,6 +366,7 @@ export function SettingsProvider({
     startMinimized,
     minimizeToTray,
     showTrayIcon,
+    gracefulCloseEnabled,
     autoCheckUpdates,
     startWithWindows,
     zoomFactor,
@@ -465,11 +470,13 @@ export function SettingsProvider({
       startMinimized,
       minimizeToTray,
       showTrayIcon,
+      gracefulCloseEnabled,
       launchDelayMs,
       onStartWithWindowsChange: handleStartWithWindowsChange,
       onStartMinimizedChange: setStartMinimized,
       onMinimizeToTrayChange: setMinimizeToTray,
       onShowTrayIconChange: setShowTrayIcon,
+      onGracefulCloseEnabledChange: setGracefulCloseEnabled,
       onLaunchDelayMsChange: setLaunchDelayMs
     }),
     [
@@ -477,11 +484,13 @@ export function SettingsProvider({
       startMinimized,
       minimizeToTray,
       showTrayIcon,
+      gracefulCloseEnabled,
       launchDelayMs,
       handleStartWithWindowsChange,
       setStartMinimized,
       setMinimizeToTray,
       setShowTrayIcon,
+      setGracefulCloseEnabled,
       setLaunchDelayMs
     ]
   )

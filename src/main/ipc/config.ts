@@ -249,6 +249,7 @@ function getPersistedSettings() {
     minimizeToTray: store.get('minimizeToTray'),
     showTrayIcon: store.get('showTrayIcon'),
     autoCheckUpdates: store.get('autoCheckUpdates'),
+    gracefulCloseEnabled: store.get('gracefulCloseEnabled'),
     zoomFactor: getStoredZoomFactor()
   }
 }

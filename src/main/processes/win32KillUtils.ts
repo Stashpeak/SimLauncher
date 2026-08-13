@@ -36,7 +36,41 @@ function isStaleTaskMessage(message: string) {
   return /no running instance/i.test(message)
 }
 
-function runTaskkill(args: string[], description: string) {
+/**
+ * How long the whole graceful phase may take, once, for the entire batch (#659).
+ *
+ * Shared rather than per app on purpose: a per-target wait would make the close
+ * action take this long multiplied by the number of apps that ignore it, and the
+ * issue requires the total to stay bounded no matter how many do.
+ */
+export const GRACEFUL_CLOSE_WINDOW_MS = 3000
+
+/**
+ * Ask processes to close themselves. `taskkill` WITHOUT `/F` posts `WM_CLOSE`
+ * to a process's top-level windows, which is what lets an app run its own
+ * shutdown path and flush a layout, dashboard or device handle before it goes.
+ *
+ * Best effort by design, so this reports nothing. A console app with no message
+ * loop, an app that ignores the request, and an elevated app that denies it are
+ * all normal here; the force kill that follows is what decides the outcome, and
+ * it re-reports everything. That is also why the failures are not logged: at
+ * this stage they are expected, not errors.
+ *
+ * Takes PIDs rather than an image name so the request cannot broaden to a
+ * same-named process the user started outside SimLauncher, matching the
+ * guarantee the force-kill path already makes.
+ */
+export async function requestGracefulClose(processIds: number[]): Promise<void> {
+  await Promise.all(
+    processIds.map((processId) =>
+      runTaskkill(['/PID', String(processId), '/T'], `ask process ${processId} to close`, {
+        quiet: true
+      })
+    )
+  )
+}
+
+function runTaskkill(args: string[], description: string, options?: { quiet?: boolean }) {
   return new Promise<{
     success: boolean
     detail?: string
@@ -55,7 +89,7 @@ function runTaskkill(args: string[], description: string) {
       const staleTask = isStaleTaskMessage(detail)
       const accessDenied = isAccessDeniedMessage(detail)
 
-      if (!notFound) {
+      if (!notFound && !options?.quiet) {
         console.error(`Failed to ${description}: ${detail}`)
         writeAppErrorLog('kill', `Failed to ${description}: ${detail}`)
       }

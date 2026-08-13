@@ -42,6 +42,7 @@ interface UseSettingsLoadArgs {
   setStartMinimized: (startMinimized: boolean) => void
   setMinimizeToTray: (minimizeToTray: boolean) => void
   setShowTrayIcon: (showTrayIcon: boolean) => void
+  setGracefulCloseEnabled: (gracefulCloseEnabled: boolean) => void
   setAutoCheckUpdates: (autoCheckUpdates: boolean) => void
   setZoomFactor: (zoomFactor: number) => void
   setIsCustomColor: (isCustomColor: boolean) => void
@@ -71,6 +72,7 @@ export function useSettingsLoad({
   setStartMinimized,
   setMinimizeToTray,
   setShowTrayIcon,
+  setGracefulCloseEnabled,
   setAutoCheckUpdates,
   setZoomFactor,
   setIsCustomColor,
@@ -109,6 +111,8 @@ export function useSettingsLoad({
       startMinimized: settings.startMinimized || false,
       minimizeToTray: settings.minimizeToTray || false,
       showTrayIcon: settings.showTrayIcon ?? true,
+      // Opt-in, so anything other than an explicit true stays off (#659).
+      gracefulCloseEnabled: settings.gracefulCloseEnabled === true,
       autoCheckUpdates: settings.autoCheckUpdates !== false,
       zoomFactor: Number.isFinite(settings.zoomFactor) ? settings.zoomFactor : 1.0
     }
@@ -137,6 +141,7 @@ export function useSettingsLoad({
     setStartMinimized(snapshot.startMinimized)
     setMinimizeToTray(snapshot.minimizeToTray)
     setShowTrayIcon(snapshot.showTrayIcon)
+    setGracefulCloseEnabled(snapshot.gracefulCloseEnabled)
     setAutoCheckUpdates(snapshot.autoCheckUpdates)
     setZoomFactor(snapshot.zoomFactor)
 
@@ -201,6 +206,7 @@ export function useSettingsLoad({
     setLoading,
     setMinimizeToTray,
     setShowTrayIcon,
+    setGracefulCloseEnabled,
     setProfiles,
     setStartMinimized,
     setStartWithWindows,

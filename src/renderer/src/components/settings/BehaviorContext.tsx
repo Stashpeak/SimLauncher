@@ -5,11 +5,13 @@ export interface BehaviorContextValue {
   startMinimized: boolean
   minimizeToTray: boolean
   showTrayIcon: boolean
+  gracefulCloseEnabled: boolean
   launchDelayMs: number
   onStartWithWindowsChange: (checked: boolean) => void
   onStartMinimizedChange: (checked: boolean) => void
   onMinimizeToTrayChange: (checked: boolean) => void
   onShowTrayIconChange: (checked: boolean) => void
+  onGracefulCloseEnabledChange: (checked: boolean) => void
   onLaunchDelayMsChange: (delayMs: number) => void
 }
 

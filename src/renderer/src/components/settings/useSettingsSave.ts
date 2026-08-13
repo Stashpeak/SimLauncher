@@ -80,6 +80,7 @@ interface SettingsStateSnapshot {
   startMinimized: boolean
   minimizeToTray: boolean
   showTrayIcon: boolean
+  gracefulCloseEnabled: boolean
   autoCheckUpdates: boolean
   zoomFactor: number
 }
@@ -117,6 +118,7 @@ interface UseSettingsSaveArgs {
   startMinimized: boolean
   minimizeToTray: boolean
   showTrayIcon: boolean
+  gracefulCloseEnabled: boolean
   autoCheckUpdates: boolean
   startWithWindows: boolean
   zoomFactor: number
@@ -146,6 +148,7 @@ export function useSettingsSave({
   startMinimized,
   minimizeToTray,
   showTrayIcon,
+  gracefulCloseEnabled,
   autoCheckUpdates,
   startWithWindows,
   zoomFactor,
@@ -190,6 +193,7 @@ export function useSettingsSave({
           startMinimized,
           minimizeToTray,
           showTrayIcon,
+          gracefulCloseEnabled,
           autoCheckUpdates,
           startWithWindows,
           zoomFactor
@@ -248,6 +252,7 @@ export function useSettingsSave({
     focusActiveTitle,
     gamePaths,
     launchDelayMs,
+    gracefulCloseEnabled,
     minimizeToTray,
     showTrayIcon,
     notify,

@@ -359,6 +359,7 @@ test('sanitizeSettingsPatch round-trips every settings key with valid values', a
     minimizeToTray: true,
     showTrayIcon: false,
     autoCheckUpdates: false,
+    gracefulCloseEnabled: true,
     zoomFactor: 1.5
   }
 
