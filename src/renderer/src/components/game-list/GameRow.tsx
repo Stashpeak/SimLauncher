@@ -15,7 +15,7 @@ import {
   relaunchMissingProfile
 } from '../../lib/electron'
 import { formatKillFailures } from '../../lib/killFailures'
-import { formatStrandedConsentPrompts } from '../../lib/strandedConsentPrompts'
+import { formatStrandedConsentPrompts } from '../../../../shared/strandedConsentPrompts'
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
