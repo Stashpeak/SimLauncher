@@ -64,6 +64,10 @@ let storeReadShouldThrow = false
 // promise does — models a slow tasklist scan so a test can prove ordering
 // against it (#670). Consumed once, then cleared.
 let tasklistReadBlocker: Promise<void> | null = null
+// When set, the NEXT WMI path lookup resolves only after `promise` does. Models
+// a slow Get-CimInstance so a test can land an event inside the graceful
+// phase's await window (#659, #823). Consumed once, then cleared.
+let wmiLookupBlocker: Promise<void> | null = null
 // When set, the `atCall`-th isConsoleExecutable call (1-based) resolves only
 // after `promise` does — models a slow PE-subsystem probe so the abort-point
 // sweep can land a kill inside spawnDetachedApp's pre-spawn window for a
@@ -330,7 +334,17 @@ async function loadProcessModules() {
         if (processName && processNamesGoneAfterWmiLookup.has(processName)) {
           processNames.delete(processName)
         }
-        callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
+        const emitLookup = () =>
+          callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
+        // One-shot, same shape as tasklistReadBlocker: only the lookup it was
+        // armed for is delayed, so every other call keeps its exact timing.
+        if (wmiLookupBlocker) {
+          const blocker = wmiLookupBlocker
+          wmiLookupBlocker = null
+          void blocker.then(emitLookup)
+          return
+        }
+        emitLookup()
         return
       }
       // A `/PID` taskkill WITHOUT `/F` is the graceful request (#659): it posts
@@ -646,6 +660,7 @@ beforeEach(async () => {
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
   tasklistReadBlocker = null
+  wmiLookupBlocker = null
   consoleProbeBlocker = null
   consoleProbeCallCount = 0
   failTasklistAfterAccessDeniedPids.clear()
@@ -2260,6 +2275,70 @@ test('nothing running means no grace window at all (#659)', async () => {
     const result = await killPromise
     expect(gracefulRequests()).toHaveLength(0)
     expect(result.closedCount).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Codex P1 on #823. The graceful phase awaits a WMI lookup per path target,
+// each bounded by WMI_LOOKUP_TIMEOUT_MS, so it can sit there for seconds. A
+// tracked child that exits during that wait releases its PID, and Windows may
+// hand the number to something else before the polite request goes out. Holding
+// the ChildProcess handle instead of the raw number is what makes the exit
+// visible; capturing `child.pid` up front cannot notice.
+test('a child that exits while the lookup is in flight is dropped from the request (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Perplexity.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    processNames.add('perplexity.exe')
+    processNames.add('app2.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '5555')
+
+    const { killLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
+
+    // A tracked child, alive at the moment the close starts.
+    const trackedChild = { pid: 1234, exitCode: null as number | null, signalCode: null }
+    runningProcesses.set('c:\tools\perplexity.exe', {
+      process: trackedChild as never,
+      path: 'C:/Tools/Perplexity.exe',
+      name: 'Perplexity.exe',
+      gameKey: 'ac',
+      isGame: false
+    })
+
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    // Park the App2 path lookup, so the graceful phase is stuck awaiting it.
+    let releaseLookup: () => void = () => {}
+    wmiLookupBlocker = new Promise<void>((resolve) => {
+      releaseLookup = resolve
+    })
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The tracked child dies on its own while the lookup is still parked, which
+    // releases PID 1234 for Windows to hand to somebody else.
+    trackedChild.exitCode = 0
+    releaseLookup()
+
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    const askedPids = gracefulRequests().map((call) => call.args[call.args.indexOf('/PID') + 1])
+    // The companion that is still running is asked; the released number is not.
+    expect(askedPids).toContain('5555')
+    expect(askedPids).not.toContain('1234')
   } finally {
     vi.useRealTimers()
   }

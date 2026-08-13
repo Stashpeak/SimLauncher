@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'child_process'
 import path from 'path'
 
 import {
@@ -31,6 +32,7 @@ import type {
 import {
   GRACEFUL_CLOSE_WINDOW_MS,
   findProcessIdsByExecutablePath,
+  hasChildExited,
   isFullExePath,
   isPathScopedExe,
   killProcessByImageName,
@@ -587,7 +589,7 @@ function withStrandedConsentPrompts(result: KillResult, strandedPromptCount: num
  * timing phase into the handler #715 and #782 are about to restructure.
  */
 async function requestGracefulCloseForTargets(
-  trackedPids: number[],
+  trackedChildren: ChildProcess[],
   pathTargets: { processName: string; appPath: string }[]
 ): Promise<void> {
   const discovered = await Promise.all(
@@ -596,6 +598,17 @@ async function requestGracefulCloseForTargets(
       return processIds
     })
   )
+
+  // Resolved AFTER the lookups above, never before. Each WMI query is bounded by
+  // WMI_LOOKUP_TIMEOUT_MS, so this function can sit here for seconds, and a
+  // tracked child that exits in that time releases its PID for Windows to reuse.
+  // Holding the handle rather than the number is what lets us notice
+  // (Codex on #823) — capturing `child.pid` up front would carry a number that
+  // may no longer mean the same process by the time it is signalled.
+  const trackedPids = trackedChildren
+    .filter((child) => !hasChildExited(child))
+    .map((child) => child.pid)
+    .filter((pid): pid is number => typeof pid === 'number')
 
   const processIds = Array.from(new Set([...trackedPids, ...discovered.flat()]))
   // Nothing answered, so there is nothing to wait for. Skipping the window here
@@ -629,7 +642,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // everything before the graceful phase below ever ran (#659). Nothing starts
   // until these are called.
   const killTasks: (() => Promise<KillAttemptResult>)[] = []
-  const gracefulPids: number[] = []
+  const gracefulChildren: ChildProcess[] = []
   const gracefulPathTargets: { processName: string; appPath: string }[] = []
 
   runningProcesses.forEach((appProcess, runningKey) => {
@@ -655,9 +668,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
     if (processNames.has(processName)) {
       suppressProcessNameMismatchWarning(appPath)
-      if (child.pid) {
-        gracefulPids.push(child.pid)
-      }
+      gracefulChildren.push(child)
       killTasks.push(() => killProcessTree(child, appPath, appProcess.gameKey))
     } else {
       runningProcesses.delete(runningKey)
@@ -686,7 +697,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // Ask first, then force. Only ever from here: `killProfileApps` (the profile
   // switch) deliberately does not opt in, see requestGracefulCloseForTargets.
   if (getStoredBoolean('gracefulCloseEnabled')) {
-    await requestGracefulCloseForTargets(gracefulPids, gracefulPathTargets)
+    await requestGracefulCloseForTargets(gracefulChildren, gracefulPathTargets)
   }
 
   const result = await finalizeKillAttempts(

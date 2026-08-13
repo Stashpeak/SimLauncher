@@ -37,6 +37,25 @@ function isStaleTaskMessage(message: string) {
 }
 
 /**
+ * Whether a child we spawned has already exited, judged on POSITIVE evidence
+ * only. A live `ChildProcess` reports `null` for both; `undefined` means we are
+ * not looking at a real handle and must not be read as "gone".
+ *
+ * This is the guard on signalling a PID at all. Once a process exits Node
+ * releases its handle and Windows may hand that number to something else, so a
+ * `taskkill /PID` issued afterwards can hit a stranger, and `/T` takes that
+ * stranger's children too. While the handle reports neither an exit code nor a
+ * signal it is open, and the PID cannot have been recycled.
+ *
+ * Exported so the force kill and the graceful phase share one definition. They
+ * are separated by seconds of awaited work, so a second copy of this rule would
+ * drift (Codex on #823).
+ */
+export function hasChildExited(child: ChildProcess): boolean {
+  return typeof child.exitCode === 'number' || typeof child.signalCode === 'string'
+}
+
+/**
  * How long the whole graceful phase may take, once, for the entire batch (#659).
  *
  * Shared rather than per app on purpose: a per-target wait would make the close
@@ -272,7 +291,7 @@ export async function killProcessTree(
   // Reports exactly what `taskkill` would have reported had it been called and
   // found nothing (`success: notFound`), so no downstream accounting has to
   // learn a new shape.
-  if (typeof child.exitCode === 'number' || typeof child.signalCode === 'string') {
+  if (hasChildExited(child)) {
     return { processName, appPath, gameKey, success: true, notFound: true }
   }
 
