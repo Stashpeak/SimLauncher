@@ -2190,7 +2190,7 @@ test('killLaunchedApps keeps generic no-op message for unrelated game wrapper wa
   })
 })
 
-// hasClosableLaunchedApps drives the tray "Close Apps" enabled state (#519) and
+// hasClosableLaunchedApps has no production caller today (see its JSDoc) and
 // must mirror killLaunchedApps' own target selection.
 test('hasClosableLaunchedApps is false when nothing is running', async () => {
   const { hasClosableLaunchedApps } = await loadProcessModules()

@@ -1,7 +1,7 @@
 import { dialog } from 'electron'
 
 import { writeMainErrorLog } from './errorLog'
-import { hasClosableLaunchedApps, killLaunchedApps } from './processes'
+import { killLaunchedApps } from './processes'
 import type { KillFailure } from './processes'
 import { formatStrandedConsentPrompts } from '../shared/strandedConsentPrompts'
 
@@ -33,10 +33,10 @@ function formatCloseFailures(failures: KillFailure[]): string {
  * so making the tray a genuine one-click action matches the per-row button,
  * which has never confirmed either.
  *
- * Closability is decided here at click time with a one-shot check rather than a
- * cached predicate kept fresh by a periodic scan. That keeps the tray free of
- * background polling and removes a class of cache/state-sync bugs; when nothing
- * is running we simply say so.
+ * The item is always enabled. There is no cached predicate kept fresh by a
+ * periodic scan, which keeps the tray free of background polling and removes a
+ * class of cache/state-sync bugs; when there was nothing to close we simply say
+ * so afterwards.
  *
  * Native dialogs rather than the renderer's, because the tray menu can be
  * triggered with the window hidden in the tray, where a React modal rendered
@@ -50,17 +50,17 @@ export async function closeAppsFromTray(): Promise<void> {
   isCloseAppsActive = true
 
   try {
-    if (!(await hasClosableLaunchedApps())) {
-      await dialog.showMessageBox({
-        type: 'info',
-        title: 'Close Apps',
-        message: 'No companion apps are currently running.',
-        detail:
-          'SimLauncher closes the overlays, telemetry tools, and other utilities it launched when they are running.'
-      })
-      return
-    }
-
+    // Kill FIRST, then decide what to say, rather than checking whether anything
+    // is closable and bailing out early (Codex P1 on #819).
+    //
+    // The check could only see processes. A launch that is still in its pre-spawn
+    // scan, in an inter-app delay, or parked on an unanswered UAC prompt has
+    // nothing visible yet, so the check said "nothing is running" and returned.
+    // But `killLaunchedApps`' prologue is what calls `abortActiveLaunches` and
+    // `cancelPendingElevatedHandoffs`, so skipping it left the launch free to
+    // carry on and start companions moments after the user had been told there
+    // were none. Reaching the kill unconditionally is the only way the tray gets
+    // the same #670 cancellation guarantee the row button has.
     const result = await killLaunchedApps()
     // A cancelled elevated handoff leaves its consent prompt on screen (#809).
     // The row button appends this to its toast; the tray has no toast, and the
@@ -72,6 +72,24 @@ export async function closeAppsFromTray(): Promise<void> {
         'Some apps could not be closed',
         [formatCloseFailures(result.failures), strandedNote].filter(Boolean).join('\n\n')
       )
+      return
+    }
+
+    if (result.closedCount === 0) {
+      // Says what the action does rather than asserting what it found. A launch
+      // in flight is aborted by the kill above and leaves no closed count
+      // behind, so "nothing was running" would not always be true.
+      await dialog.showMessageBox({
+        type: 'info',
+        title: 'Close Apps',
+        message: 'No companion apps to close.',
+        detail: [
+          'SimLauncher closes the overlays, telemetry tools and other utilities it launched, and stops any launch still in progress.',
+          strandedNote
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      })
       return
     }
 

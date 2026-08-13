@@ -934,8 +934,16 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 /**
  * Whether killLaunchedApps(gameKey) currently has at least one target it would
  * try to close: a tracked non-game process whose exe is running, or a configured
- * / hardcoded companion whose process is running. Drives the tray "Close Apps"
- * enabled state (#519).
+ * / hardcoded companion whose process is running.
+ *
+ * NOT currently called from production. It was written for a tray "Close Apps"
+ * item whose enabled state was cached and kept fresh by listeners; that design
+ * was replaced by an always-enabled item, and the re-land in #519 does not use a
+ * pre-check at all, because deciding "nothing to close" before reaching
+ * killLaunchedApps skips the abort/cancel prologue and lets an in-flight launch
+ * carry on (Codex P1 on #819). Kept because #673 plans to expose it over IPC for
+ * the missing Close Apps affordance after a restart. If that changes, delete it
+ * rather than leaving it to look load-bearing again.
  *
  * KEEP IN SYNC with killLaunchedApps above — the two membership conditions here
  * mirror its two kill-task branches. Deliberately NOT derived from

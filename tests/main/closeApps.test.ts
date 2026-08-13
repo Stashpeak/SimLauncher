@@ -8,7 +8,6 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 import type { dialog as mockDialog } from './electronMock'
 
-const hasClosableLaunchedApps = vi.fn()
 const killLaunchedApps = vi.fn()
 const writeMainErrorLog = vi.fn()
 
@@ -20,7 +19,7 @@ const CLOSED_NOTHING_PENDING = {
 }
 
 async function loadCloseApps() {
-  const processesMock = { hasClosableLaunchedApps, killLaunchedApps }
+  const processesMock = { killLaunchedApps }
   vi.doMock('./processes', () => processesMock)
   vi.doMock('/src/main/processes.ts', () => processesMock)
   vi.doMock('../../src/main/processes', () => processesMock)
@@ -42,24 +41,33 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-// Always-enabled item: when nothing is running it tells the user rather than
-// silently doing nothing, and never reaches the kill.
-test('shows an info dialog and does not kill when nothing is running', async () => {
+// Codex P1 on PR #819. The kill must run even when nothing looks closable,
+// because its prologue is what aborts an in-flight launch and cancels a pending
+// elevated handoff. An earlier version checked hasClosableLaunchedApps() first
+// and returned, so a launch still in its pre-spawn scan, in an inter-app delay,
+// or parked on an unanswered UAC prompt carried on and started companions right
+// after the user had been told there were none.
+test('always reaches the kill, so an in-flight launch is cancelled (#519)', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(false)
+  killLaunchedApps.mockResolvedValue({
+    success: true,
+    closedCount: 0,
+    failedCount: 0,
+    failures: []
+  })
 
   await mod.closeAppsFromTray()
 
+  expect(killLaunchedApps).toHaveBeenCalledTimes(1)
+  // Still tells the user rather than silently doing nothing.
   expect(dialog.showMessageBox).toHaveBeenCalledTimes(1)
   expect(dialog.showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'info' })
-  expect(killLaunchedApps).not.toHaveBeenCalled()
 })
 
 // The whole point of the re-land: one click, no question. The per-row button has
 // never confirmed either, and neither one can touch the game.
 test('closes every companion in one click, with no confirmation (#519)', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(true)
   killLaunchedApps.mockResolvedValue(CLOSED_NOTHING_PENDING)
 
   await mod.closeAppsFromTray()
@@ -74,7 +82,6 @@ test('closes every companion in one click, with no confirmation (#519)', async (
 
 test('surfaces apps that could not be closed', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(true)
   killLaunchedApps.mockResolvedValue({
     success: false,
     closedCount: 0,
@@ -97,7 +104,6 @@ test('surfaces apps that could not be closed', async () => {
 // this is covered in tests/renderer/gameRowStrandedConsentPrompt.test.tsx.
 test('explains a stranded consent prompt after a clean close (#809)', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(true)
   killLaunchedApps.mockResolvedValue({
     ...CLOSED_NOTHING_PENDING,
     strandedConsentPrompts: 1
@@ -113,7 +119,6 @@ test('explains a stranded consent prompt after a clean close (#809)', async () =
 
 test('explains a stranded consent prompt alongside a failure (#809)', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(true)
   killLaunchedApps.mockResolvedValue({
     success: false,
     closedCount: 0,
@@ -136,7 +141,6 @@ test('explains a stranded consent prompt alongside a failure (#809)', async () =
 
 test('says nothing extra when no prompt was stranded (#809)', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(true)
   killLaunchedApps.mockResolvedValue(CLOSED_NOTHING_PENDING)
 
   await mod.closeAppsFromTray()
@@ -146,7 +150,6 @@ test('says nothing extra when no prompt was stranded (#809)', async () => {
 
 test('a kill failure is logged and surfaced to the user', async () => {
   const { mod, dialog } = await loadCloseApps()
-  hasClosableLaunchedApps.mockResolvedValue(true)
   killLaunchedApps.mockRejectedValue(new Error('boom'))
 
   await mod.closeAppsFromTray()
@@ -164,21 +167,21 @@ test('a kill failure is logged and surfaced to the user', async () => {
 // makes this MORE reachable, not less: there is no dialog in the way any more.
 test('ignores a second invocation while one is in flight', async () => {
   const { mod, dialog } = await loadCloseApps()
-  let resolveCheck: (value: boolean) => void = () => {}
-  hasClosableLaunchedApps.mockReturnValue(
-    new Promise<boolean>((resolve) => {
-      resolveCheck = resolve
+  let resolveKill: (value: unknown) => void = () => {}
+  killLaunchedApps.mockReturnValue(
+    new Promise((resolve) => {
+      resolveKill = resolve
     })
   )
 
   const first = mod.closeAppsFromTray()
-  // Second call happens while the first is still awaiting the closable check.
+  // Second click lands while the first kill is still in flight.
   const second = mod.closeAppsFromTray()
 
-  resolveCheck(false)
+  resolveKill({ success: true, closedCount: 0, failedCount: 0, failures: [] })
   await Promise.all([first, second])
 
-  // The lock short-circuited the second call before it ran any check or dialog.
-  expect(hasClosableLaunchedApps).toHaveBeenCalledTimes(1)
+  // The lock short-circuited the second call before it issued a second kill.
+  expect(killLaunchedApps).toHaveBeenCalledTimes(1)
   expect(dialog.showMessageBox).toHaveBeenCalledTimes(1)
 })
