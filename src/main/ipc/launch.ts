@@ -308,7 +308,8 @@ export function registerLaunchHandlers(): void {
               launchedCount: 0,
               skippedCount: 0,
               failedCount: killResult?.failedCount,
-              killFailures: killResult?.failures
+              killFailures: killResult?.failures,
+              strandedConsentPrompts: killResult?.strandedConsentPrompts
             }
           }
 
@@ -318,7 +319,8 @@ export function registerLaunchHandlers(): void {
             launchedCount: 0,
             skippedCount: 0,
             failedCount: killResult?.failedCount,
-            killFailures: killResult?.failures
+            killFailures: killResult?.failures,
+            strandedConsentPrompts: killResult?.strandedConsentPrompts
           }
         }
 
@@ -333,7 +335,11 @@ export function registerLaunchHandlers(): void {
         return {
           ...launchResult,
           failedCount: (launchResult.failedCount || 0) + (killResult?.failedCount || 0),
-          killFailures: killResult?.failures
+          killFailures: killResult?.failures,
+          // The kill phase of a switch can cancel a pending elevated handoff,
+          // which strands its consent prompt. Without this the count dies here
+          // with killResult and the user is never told (#809).
+          strandedConsentPrompts: killResult?.strandedConsentPrompts
         }
       } finally {
         unregisterActiveLaunch(gameKey, launchController)

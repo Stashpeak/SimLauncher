@@ -17,6 +17,7 @@ import {
 
 import {
   consumeProcessNameMismatchWarningSuppression,
+  noteStrandedConsentPrompt,
   hasOtherActiveLaunchControllers,
   processNameMismatchWarnings,
   registerActiveLaunch,
@@ -660,9 +661,29 @@ function launchElevated(
     // unblocks the launch sequence immediately instead of leaving it parked
     // until the user answers a prompt they no longer want.
     let handoffPending = true
+    /**
+     * Killing the host does not remove the consent prompt, so whoever reports
+     * the cancellation has to explain the dialog left behind (#809). Noted here
+     * rather than at the caller because this is the moment we know a prompt was
+     * pending, which also covers the window before the grace timer, where the
+     * pending-handoff registry is still empty.
+     *
+     * Once per handoff, deliberately. A Close Apps arriving after the grace
+     * window reaches the SAME handoff through both mechanisms, the abort signal
+     * and the registry, and without this guard one prompt gets counted twice
+     * and described in the plural.
+     */
+    let strandedPromptNoted = false
+    const noteStrandedPromptOnce = () => {
+      if (!strandedPromptNoted) {
+        strandedPromptNoted = true
+        noteStrandedConsentPrompt()
+      }
+    }
     const onAbort = () => {
       if (handoffPending) {
         noteHandoffCancelled()
+        noteStrandedPromptOnce()
         child.kill()
       }
     }
@@ -719,6 +740,9 @@ function launchElevated(
         cancel: () => {
           cancelledByKill = true
           noteHandoffCancelled()
+          // Same reason as onAbort (#809), and the same guard: mid-sequence
+          // both this and the abort fire for this one handoff.
+          noteStrandedPromptOnce()
           child.kill()
         }
       })
