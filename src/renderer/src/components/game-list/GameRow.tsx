@@ -276,11 +276,21 @@ export function GameRow({
 
           onLaunchStart(game.key)
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
+          // The kill phase runs before the switch can cancel or fail, so a
+          // stranded consent prompt has to be reported on every one of the
+          // three exits below — main already drained the count to build this
+          // result, so whichever branch drops it drops it for good (#809).
+          const strandedNote = formatStrandedConsentPrompts(result.strandedConsentPrompts)
           // Close Apps mid-switch cancels the new profile's launch sequence
           // (#670) — the user asked to stop, so this is neither a success nor
           // an error; the switch is not saved and can simply be retried.
           if (result.cancelled) {
-            notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+            notify(
+              [result.message || 'Launch cancelled — closed apps instead.', strandedNote]
+                .filter(Boolean)
+                .join(' '),
+              'warn'
+            )
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
@@ -289,7 +299,12 @@ export function GameRow({
               result.skipped && result.skipped.length > 0
                 ? ` ${formatSkippedLaunchEntries(result.skipped, { gameKey: game.key, gameName: game.name })}`
                 : ''
-            notify(`${result.error || 'Failed to switch profile'}${failedSkippedDetail}`, 'error')
+            notify(
+              [`${result.error || 'Failed to switch profile'}${failedSkippedDetail}`, strandedNote]
+                .filter(Boolean)
+                .join(' '),
+              'error'
+            )
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
@@ -307,11 +322,9 @@ export function GameRow({
           if (result.warning) {
             switchWarnings.push(result.warning)
           }
-          // A switch's kill phase can cancel a pending elevated handoff, which
-          // leaves its consent prompt on screen. This flow never displays
-          // `result.message`, so without an entry here the user gets a plain
-          // "Switched to X" and an unexplained dialog (#809).
-          const strandedNote = formatStrandedConsentPrompts(result.strandedConsentPrompts)
+          // The success path never displays `result.message`, so without an
+          // entry here the user gets a plain "Switched to X" and an
+          // unexplained dialog (#809).
           if (strandedNote) {
             switchWarnings.push(strandedNote)
           }

@@ -20,13 +20,15 @@ import { createRoot, type Root } from 'react-dom/client'
 
 const notifyMock = vi.fn()
 const killLaunchedAppsMock = vi.fn()
+const switchProfileAppsMock = vi.fn()
+const getProfileSwitchDiffMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: vi.fn(),
   killLaunchedApps: (...args: unknown[]) => killLaunchedAppsMock(...args),
   relaunchMissingProfile: vi.fn(),
-  getProfileSwitchDiff: vi.fn(),
-  switchProfileApps: vi.fn()
+  getProfileSwitchDiff: (...args: unknown[]) => getProfileSwitchDiffMock(...args),
+  switchProfileApps: (...args: unknown[]) => switchProfileAppsMock(...args)
 }))
 
 vi.mock('../../src/renderer/src/lib/store', () => ({
@@ -49,10 +51,20 @@ vi.mock('../../src/renderer/src/components/Notify', () => ({
   NotifyProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
+// Two profiles, so the menu has something to switch *to*. The kill tests only
+// ever needed one, but the switch flow returns early when the clicked profile
+// is already active.
 const PROFILE_SET = {
   activeProfileId: 'default',
-  profiles: [{ id: 'default', name: 'Default' }]
+  profiles: [
+    { id: 'default', name: 'Default' },
+    { id: 'race', name: 'Race' }
+  ]
 }
+
+// Read at render time, not when the mock factory is built, so a test can open
+// the profile menu before mounting.
+let profileMenuOpen = false
 
 vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
   useGameProfile: () => ({
@@ -66,7 +78,7 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
 
 vi.mock('../../src/renderer/src/hooks/useProfileMenu', () => ({
   useProfileMenu: () => ({
-    profileMenuOpen: false,
+    profileMenuOpen,
     setProfileMenuOpen: vi.fn(),
     openProfileMenu: vi.fn(),
     closeProfileMenu: vi.fn(),
@@ -144,14 +156,44 @@ async function clickCloseApps(): Promise<void> {
   })
 }
 
+/**
+ * Click a profile in the open menu, then confirm the "switch while running"
+ * dialog. Both steps are required: the first only stages the confirmation,
+ * and it is the confirmed call that actually runs the kill-then-launch.
+ */
+async function switchToProfile(name: string): Promise<void> {
+  const option = Array.from(container.querySelectorAll('button[role="menuitemradio"]')).find(
+    (button) => button.textContent?.includes(name)
+  ) as HTMLButtonElement | undefined
+  expect(option).toBeDefined()
+  await act(async () => {
+    option!.click()
+  })
+
+  // ConfirmDialog portals to document.body, so it is outside `container`.
+  const confirm = Array.from(document.body.querySelectorAll('button')).find(
+    (button) => button.textContent?.trim() === 'Switch Profile'
+  ) as HTMLButtonElement | undefined
+  expect(confirm).toBeDefined()
+  await act(async () => {
+    confirm!.click()
+  })
+}
+
 /** Everything the toast said, across however many notify() calls. */
 function allToastText(): string {
   return notifyMock.mock.calls.map((call) => String(call[0])).join(' | ')
 }
 
 beforeEach(() => {
+  profileMenuOpen = false
   notifyMock.mockClear()
   killLaunchedAppsMock.mockReset()
+  switchProfileAppsMock.mockReset()
+  getProfileSwitchDiffMock.mockReset()
+  // Non-zero counts are what make the switch prompt for confirmation rather
+  // than silently doing nothing.
+  getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 1 })
 })
 
 afterEach(() => {
@@ -250,5 +292,104 @@ describe('GameRow stranded consent prompt toast (#809)', () => {
 
     expect(allToastText()).toContain(SINGULAR)
     expect(allToastText()).not.toContain('undefined')
+  })
+})
+
+/**
+ * The switch flow kills the outgoing profile's apps *before* it can cancel or
+ * fail, so all three of its exits can be carrying a stranded prompt. The first
+ * version of this fix only handled the success exit, which is the same defect
+ * as #809 itself one layer up: main drains the count to build the result, so
+ * whichever branch drops it drops it permanently, and the user's next Close
+ * Apps is silent too.
+ */
+describe('profile switch stranded consent prompt toast (#809)', () => {
+  const DIALOG_PROMPT = 'Switch to "Race" while the game is running?'
+
+  test('a switch cancelled by Close Apps still explains the stranded prompt', async () => {
+    switchProfileAppsMock.mockResolvedValue({
+      success: false,
+      cancelled: true,
+      message: 'Launch cancelled, closed apps instead.',
+      launchedCount: 0,
+      skippedCount: 0,
+      strandedConsentPrompts: 1
+    })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+    await switchToProfile('Race')
+
+    expect(allToastText()).toContain(SINGULAR)
+    // The cancellation is still reported; the note is appended, not swapped in.
+    expect(allToastText()).toContain('Launch cancelled')
+    expect(allToastText()).not.toContain('undefined')
+  })
+
+  test('a FAILED switch still explains the stranded prompt', async () => {
+    switchProfileAppsMock.mockResolvedValue({
+      success: false,
+      error: 'Failed to start Race apps',
+      launchedCount: 0,
+      skippedCount: 0,
+      strandedConsentPrompts: 1
+    })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+    await switchToProfile('Race')
+
+    expect(allToastText()).toContain(SINGULAR)
+    expect(allToastText()).toContain('Failed to start Race apps')
+  })
+
+  test('a successful switch explains it alongside the switch confirmation', async () => {
+    switchProfileAppsMock.mockResolvedValue({
+      success: true,
+      launchedCount: 1,
+      skippedCount: 0,
+      strandedConsentPrompts: 2
+    })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+    await switchToProfile('Race')
+
+    expect(allToastText()).toContain(PLURAL)
+  })
+
+  test('an ordinary switch says nothing about a prompt', async () => {
+    switchProfileAppsMock.mockResolvedValue({
+      success: true,
+      launchedCount: 1,
+      skippedCount: 0
+    })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+    await switchToProfile('Race')
+
+    expect(allToastText()).not.toContain('permission prompt')
+    expect(allToastText()).toContain('Switched to Race')
+  })
+
+  // Guards the harness itself: if the menu or the dialog ever stops rendering,
+  // switchToProfile() would throw rather than pass vacuously, but this pins the
+  // reason the confirmation step exists at all.
+  test('the switch is only attempted after the running-profile dialog is confirmed', async () => {
+    switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 1, skippedCount: 0 })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+
+    const option = Array.from(container.querySelectorAll('button[role="menuitemradio"]')).find(
+      (button) => button.textContent?.includes('Race')
+    ) as HTMLButtonElement
+    await act(async () => {
+      option.click()
+    })
+
+    expect(document.body.textContent).toContain(DIALOG_PROMPT)
+    expect(switchProfileAppsMock).not.toHaveBeenCalled()
   })
 })

@@ -1952,6 +1952,55 @@ test('an ordinary Close Apps with no pending handoff says nothing about a prompt
   expect(result.strandedConsentPrompts).toBeUndefined()
 })
 
+// The other kill entry point, and the one a profile switch actually goes
+// through. It carries the same drain + attach prologue as killLaunchedApps, so
+// without this every #809 test would prove the feature on the path the user
+// reaches by clicking Close Apps and none of it on the path they reach by
+// switching profile.
+test('a profile switch that cancels a pending handoff explains the stranded prompt (#809)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // The switch stops the outgoing profile's apps, not the elevated one whose
+    // prompt is still up. The handoff is cancelled by gameKey either way, so
+    // the count must survive a kill that targets something else entirely.
+    const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('an ordinary profile switch with no pending handoff says nothing about a prompt (#809)', async () => {
+  markExistingPath('C:/Tools/App2.exe')
+  processNames.add('app2.exe')
+  registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+
+  expect(result.strandedConsentPrompts).toBeUndefined()
+})
+
 // Codex P2 on PR #779. A denial arriving while the loop is still running was
 // only subtracted from the counts, so the sequence still returned success:true
 // with "All profile applications launched." and no failedCount.
