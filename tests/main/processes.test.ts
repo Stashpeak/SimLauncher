@@ -2965,6 +2965,58 @@ test('a coincidental basename does not collapse another profile away (#772)', as
   expect(unclosedProcesses.has('unknown:garage61 telemetry agent.exe')).toBe(false)
 })
 
+test('a path target covering only one of two owners does not collapse the name target (#772)', async () => {
+  // Found by mutation, not by review: with the collapse condition weakened from
+  // `every` to `some` the whole suite stayed green, which meant nothing pinned
+  // the difference. This is the case that does.
+  //
+  // `ac` enables the curated utility AND tracks its executable; `iracing`
+  // enables the same utility with no path of its own. The path target therefore
+  // covers `ac` but not `iracing`, so it is not a duplicate of the name target
+  // and cannot replace it: collapsing would leave `iracing` with no coverage at
+  // all, since a path-scoped kill only ever touches that one file.
+  const acPath = 'C:/Tools/Garage61 telemetry agent.exe'
+  markExistingPath(acPath)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(acPath, 'garage61 telemetry agent.exe', '5555')
+
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          { id: 'default', name: 'Default', garage61: true, trackedProcessPaths: [acPath] }
+        ]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+  accessDeniedImageNames.add('garage61 telemetry agent.exe')
+  accessDeniedPids.add('5555')
+
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toEqual(
+    expect.arrayContaining([
+      ['/IM', 'garage61 telemetry agent.exe', '/T', '/F'],
+      ['/PID', '5555', '/T', '/F']
+    ])
+  )
+
+  // The name target is owned by both profiles, so it stays unattributed. The
+  // path target is owned by `ac` alone, so it is attributed.
+  expect(unclosedProcesses.get('unknown:garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: ''
+  })
+  expect(unclosedProcesses.get('ac:c:\\tools\\garage61 telemetry agent.exe')).toMatchObject({
+    gameKey: 'ac'
+  })
+})
+
 test('pruneUnclosedProcesses removes stale entries and keeps running entries', async () => {
   const { pruneUnclosedProcesses, unclosedProcesses } = await loadProcessModules()
   unclosedProcesses.set('ac:c:\\tools\\stale.exe', {
