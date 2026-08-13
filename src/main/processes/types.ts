@@ -16,6 +16,36 @@ export interface KillFailure {
 }
 
 /**
+ * The outcome of one kill attempt against one process name.
+ *
+ * Lives here rather than in `kill.ts` because it is the contract BETWEEN the two
+ * halves of the kill path: `win32KillUtils.ts` produces these, `kill.ts`
+ * interprets them. Declaring it in either half would make the other import from
+ * its own consumer (#773).
+ */
+export interface KillAttemptResult {
+  processName: string
+  success: boolean
+  appPath?: string
+  gameKey?: string
+  error?: string
+  accessDenied?: boolean
+  notFound?: boolean
+  staleTask?: boolean
+  stillRunning?: boolean
+  /**
+   * Set only when this attempt positively observed a process under
+   * `processName`: PIDs discovered at its path, a tracked child that was really
+   * there, or an `/IM` taskkill that found something to act on.
+   *
+   * Deliberately NOT the inverse of `notFound`. A WMI lookup that errors out
+   * returns neither, and treating that absence as evidence would let a failed
+   * lookup vouch for a sibling it never looked at (CodeRabbit on #818).
+   */
+  targetConfirmed?: boolean
+}
+
+/**
  * `invalid` — the configured path failed the .exe path-shape check
  * (isValidExePath). `missing` — the path is a well-formed .exe path but the
  * file no longer exists on disk (moved after a game update, or uninstalled).
