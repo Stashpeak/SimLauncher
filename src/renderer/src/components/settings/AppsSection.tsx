@@ -134,14 +134,14 @@ export function AppsSection(): ReactNode {
               // icon instead of showing a broken image on the PRIMARY tier.
               <img
                 src={utilityIcons[utility.key]}
-                alt="Icon"
+                alt=""
                 className="h-8 w-8 object-contain drop-shadow-md shrink-0"
                 onError={() => onIconLoadError(getBundledIconErrorKey(utility.key))}
               />
             ) : appIcons[utility.key] && !iconLoadErrors.has(utility.key) ? (
               <img
                 src={appIcons[utility.key]}
-                alt="Icon"
+                alt=""
                 className="h-8 w-8 object-contain drop-shadow-md shrink-0"
                 onError={() => onIconLoadError(utility.key)}
               />
