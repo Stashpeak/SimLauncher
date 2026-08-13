@@ -467,6 +467,20 @@ export async function finalizeKillAttempts(
   // sibling's POST-kill state, which is what #674 builds. The trade is
   // deliberate: the false positive suppressed here is far likelier than the
   // false negative left behind.
+  // Image names a bare-name `/IM` attempt actually closed. That kill is not
+  // path-scoped, so it takes down whatever was running under the name, including
+  // whatever a same-named path target was aiming at. Such a path attempt then
+  // finds nothing and would otherwise be counted as a second closed app, one
+  // process reported as two (Codex P2 on #818).
+  //
+  // Used ONLY for counting. It cannot decide that the path was empty, since the
+  // process it closed may be exactly the one that path tracks.
+  const imagesClosedByNameKill = new Set(
+    attempts
+      .filter((attempt) => !isPathScopedExe(attempt.appPath) && attempt.success)
+      .map((attempt) => attempt.processName)
+  )
+
   const confirmedPathsByImage = new Map<string, Set<string>>()
   attempts.forEach((attempt) => {
     if (!attempt.targetConfirmed || !isPathScopedExe(attempt.appPath)) {
@@ -520,24 +534,44 @@ export async function finalizeKillAttempts(
       // Requiring 0 PIDs on the recheck makes the two mutually exclusive by
       // construction rather than by a second filter.
       let isEmptySameNameTarget = false
+      let closedNothing = false
       if (isFullPathAttempt) {
         const { processIds, detail: lookupError } = await findProcessIdsByExecutablePath(
           attempt.processName,
           appPath
         )
 
+        // Verifiably nothing at this path: none before the kill, none after, and
+        // both lookups actually ran. A lookup that FAILED also returns zero PIDs,
+        // so the count alone cannot tell "nothing is there" from "could not
+        // look" -- the same mistake as reading confirmation off an absent
+        // `notFound`, one lookup later (CodeRabbit on #818).
+        const verifiablyEmpty =
+          attempt.notFound === true && lookupError === undefined && processIds.length === 0
+
+        // Whether this path was EMPTY is a stronger claim than whether it closed
+        // anything, and it needs stronger evidence: a confirmed sibling at a
+        // DIFFERENT path. A bare-name `/IM` confirmation cannot serve, because
+        // the process it found may be the very one this path tracks (Codex P2).
+        //
+        // The two are separated because they answer different questions. This
+        // one suppresses the elevated-process inference, so being wrong invents
+        // or hides a leftover. `closedNothing` only decides whether to count the
+        // attempt, and an attempt that found nothing closed nothing no matter
+        // what else was running.
         const ownPath = normalizePathForComparison(appPath)
         const confirmedPaths = confirmedPathsByImage.get(attempt.processName)
         isEmptySameNameTarget =
-          attempt.notFound === true &&
-          // A lookup that FAILED also returns zero PIDs, so the count alone
-          // cannot tell "nothing is there" from "could not look". Same mistake
-          // as reading confirmation off an absent `notFound`, one lookup later
-          // (CodeRabbit on #818).
-          lookupError === undefined &&
-          processIds.length === 0 &&
+          verifiablyEmpty &&
           !!confirmedPaths &&
           Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)
+
+        // Either kind of sibling is enough to say this attempt closed nothing.
+        // Without one, a lone empty attempt keeps its long-standing treatment
+        // rather than having its counting quietly changed here.
+        closedNothing =
+          isEmptySameNameTarget ||
+          (verifiablyEmpty && imagesClosedByNameKill.has(attempt.processName))
 
         // When the post-kill tasklist read failed, treat any unverified
         // "process gone" signal as inconclusive rather than success: a
@@ -565,17 +599,18 @@ export async function finalizeKillAttempts(
         stillRunning,
         imageGoneFromTasklist,
         isEmptySameNameTarget,
+        closedNothing,
         accessDenied: attempt.accessDenied || isElevatedInconclusive
       }
     })
   )
 
-  finalizedAttempts.forEach((attempt) => {
-    const failedToClose =
-      attempt.stillRunning ||
-      (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
+  const hasFailedToClose = (attempt: (typeof finalizedAttempts)[number]) =>
+    attempt.stillRunning ||
+    (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
 
-    if (failedToClose) {
+  finalizedAttempts.forEach((attempt) => {
+    if (hasFailedToClose(attempt)) {
       registerUnclosedProcess(attempt)
       return
     }
@@ -599,18 +634,15 @@ export async function finalizeKillAttempts(
     })
   })
 
-  const failedAttempts = finalizedAttempts.filter(
-    (attempt) =>
-      attempt.stillRunning ||
-      (!attempt.success && !attempt.notFound && !attempt.imageGoneFromTasklist)
-  )
-  // An attempt that found nothing at its own path while a sibling accounted for
-  // the image closed nothing, so it is neither a success nor a failure. Counting
-  // it as closed reported one app as two.
-  const emptySameNameTargets = finalizedAttempts.filter(
-    (attempt) => attempt.isEmptySameNameTarget
+  const failedAttempts = finalizedAttempts.filter(hasFailedToClose)
+  // Counted by filtering rather than by subtracting two overlapping tallies. An
+  // attempt that verifiably found nothing at its path closed nothing, so it is
+  // neither a success nor a failure: counting it reported one process as two
+  // whenever a sibling had already covered it, and subtracting it separately
+  // could deduct the same attempt twice (Codex P2 on #818).
+  const closedCount = finalizedAttempts.filter(
+    (attempt) => !hasFailedToClose(attempt) && !attempt.closedNothing
   ).length
-  const closedCount = finalizedAttempts.length - failedAttempts.length - emptySameNameTargets
   const failures: KillFailure[] = failedAttempts.map((attempt) => {
     const appPath = attempt.appPath || attempt.processName
     return {

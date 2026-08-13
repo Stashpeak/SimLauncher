@@ -3123,6 +3123,41 @@ test('a FAILED post-kill lookup does not make a path count as empty (#772)', asy
   })
 })
 
+// Codex P2 on PR #818. When one profile curated-enables a utility and another
+// tracks a same-named path, both targets are deliberately kept so neither loses
+// coverage. If only the tracked instance is running, the /IM kill takes it down
+// and the path attempt then finds nothing, so one process was reported as two.
+test('an /IM kill that covered the only instance is not counted twice (#772)', async () => {
+  const iracingPath = 'C:/UserApps/Garage61 telemetry agent.exe'
+  markExistingPath(iracingPath)
+  processNames.add('garage61 telemetry agent.exe')
+  registerProcess(iracingPath, 'garage61 telemetry agent.exe', '8888')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [iracingPath] }]
+      }
+    }
+  })
+
+  const result = await killLaunchedApps()
+
+  // Both targets are still attempted, which is the point of keeping them.
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toEqual(
+    expect.arrayContaining([['/IM', 'garage61 telemetry agent.exe', '/T', '/F']])
+  )
+  // But there was only ever one process.
+  expect(result.closedCount).toBe(1)
+  expect(result.failedCount).toBe(0)
+})
+
 test('a same-named path that is not running is not counted as closed (#772)', async () => {
   // The other half of the same finding. With ac's instance actually closing,
   // the image leaves the tasklist, which finalize reads as success for EVERY
