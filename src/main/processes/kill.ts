@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'child_process'
 import path from 'path'
 
 import {
@@ -6,8 +7,8 @@ import {
   getStoredProfiles,
   isUtilityEnabled
 } from '../profiles'
-import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath, normalizePathForComparison, pathsEqual } from '../utils'
+import { getStoredBoolean, getStoredStringRecord } from '../store'
+import { getExeName, isValidExePath, normalizePathForComparison, pathsEqual, wait } from '../utils'
 
 import {
   abortActiveLaunches,
@@ -29,11 +30,14 @@ import type {
   KillResult
 } from './types'
 import {
+  GRACEFUL_CLOSE_WINDOW_MS,
   findProcessIdsByExecutablePath,
+  hasChildExited,
   isFullExePath,
   isPathScopedExe,
   killProcessByImageName,
-  killProcessTree
+  killProcessTree,
+  requestGracefulClose
 } from './win32KillUtils'
 
 // Hardcoded list of companion process names for utilities that spawn background
@@ -565,6 +569,71 @@ function withStrandedConsentPrompts(result: KillResult, strandedPromptCount: num
     : result
 }
 
+/**
+ * The opt-in graceful phase (#659): ask everything we are about to close to
+ * close itself, then wait once, then let the caller force-kill whatever is left.
+ *
+ * There is deliberately NO re-check of who survived. The force kill IS the
+ * re-check: `taskkill` on a process that already exited reports `notFound`,
+ * which the existing accounting already treats as closed rather than failed. A
+ * separate survivor scan would add a TOCTOU window (exit between scan and kill)
+ * and, if it used the name-scoped `readRunningProcessNames`, would answer wrong
+ * for two same-named exes at different paths, which is the class #772 and #674
+ * are about.
+ *
+ * NOT used by `killProfileApps`. A profile switch already contains close-then-
+ * relaunch pairs today: identity is `{key, path}` (`ipc/launch.ts:31`) while
+ * `appArgs` is global per slot key, so moving one exe between slots stops and
+ * restarts it (`ipc/launch.ts:283-290`). Waiting politely for an app that is
+ * about to be started again is latency spent on nothing, and it would put a new
+ * timing phase into the handler #715 and #782 are about to restructure.
+ */
+async function requestGracefulCloseForTargets(
+  trackedChildren: ChildProcess[],
+  pathTargets: { processName: string; appPath: string }[]
+): Promise<void> {
+  // Each path target is asked the moment ITS OWN lookup resolves, never after
+  // the slowest one. Every WMI query is bounded by WMI_LOOKUP_TIMEOUT_MS, so
+  // collecting all the results first left an already-discovered PID unsignalled
+  // for up to that long, and a number that stale may no longer mean the same
+  // process: if that companion exited on its own in the gap, Windows can hand
+  // its number to something we never launched, and `/T` would take that
+  // stranger's whole tree (Codex on #823). A raw PID carries no way to notice,
+  // so the only defence is to not hold it.
+  const askedByPath = await Promise.all(
+    pathTargets.map(async ({ processName, appPath }) => {
+      const { processIds } = await findProcessIdsByExecutablePath(processName, appPath)
+      if (processIds.length === 0) {
+        return false
+      }
+      await requestGracefulClose(processIds)
+      return true
+    })
+  )
+
+  // A tracked child is the one thing that may be held across the lookups, for
+  // the same reason: we keep the ChildProcess, not the number, so the wait buys
+  // fresher evidence instead of decaying it. The liveness check therefore sits
+  // HERE, after the lookups, and a child that died while they were in flight is
+  // dropped rather than signalled by a number it no longer owns.
+  const trackedPids = trackedChildren
+    .filter((child) => !hasChildExited(child))
+    .map((child) => child.pid)
+    .filter((pid): pid is number => typeof pid === 'number')
+
+  if (trackedPids.length > 0) {
+    await requestGracefulClose(trackedPids)
+  }
+
+  // Nothing answered, so there is nothing to wait for. Skipping the window here
+  // keeps "close with nothing running" instant even with the toggle on.
+  if (trackedPids.length === 0 && !askedByPath.some(Boolean)) {
+    return
+  }
+
+  await wait(GRACEFUL_CLOSE_WINDOW_MS)
+}
+
 export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // Cancel any in-flight launchProfileApps sequence for this gameKey (or all
   // of them, for the gameKey-less tray/global kill) before touching the
@@ -581,7 +650,13 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
   const companionTargets = getProfileCompanionTargets(gameKey)
-  const killTasks: Promise<KillAttemptResult>[] = []
+  // Thunks, not promises. A `killProcessTree(...)` expression starts the kill
+  // the moment it is evaluated, so building the list eagerly would force-kill
+  // everything before the graceful phase below ever ran (#659). Nothing starts
+  // until these are called.
+  const killTasks: (() => Promise<KillAttemptResult>)[] = []
+  const gracefulChildren: ChildProcess[] = []
+  const gracefulPathTargets: { processName: string; appPath: string }[] = []
 
   runningProcesses.forEach((appProcess, runningKey) => {
     const { process: child, path: appPath } = appProcess
@@ -606,7 +681,8 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
     if (processNames.has(processName)) {
       suppressProcessNameMismatchWarning(appPath)
-      killTasks.push(killProcessTree(child, appPath, appProcess.gameKey))
+      gracefulChildren.push(child)
+      killTasks.push(() => killProcessTree(child, appPath, appProcess.gameKey))
     } else {
       runningProcesses.delete(runningKey)
     }
@@ -614,7 +690,14 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 
   companionTargets.forEach((target) => {
     if (processNames.has(target.processName)) {
-      killTasks.push(
+      // Only a full path can be asked to close politely. A bare-name target
+      // would have to go through `/IM`, which is not path-scoped, and asking
+      // every same-named process to close would break the same guarantee the
+      // force kill upholds.
+      if (isFullExePath(target.appPath)) {
+        gracefulPathTargets.push({ processName: target.processName, appPath: target.appPath })
+      }
+      killTasks.push(() =>
         killProcessByImageName(
           target.processName,
           target.appPath,
@@ -624,7 +707,16 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     }
   })
 
-  const result = await finalizeKillAttempts(await Promise.all(killTasks), gameKey)
+  // Ask first, then force. Only ever from here: `killProfileApps` (the profile
+  // switch) deliberately does not opt in, see requestGracefulCloseForTargets.
+  if (getStoredBoolean('gracefulCloseEnabled')) {
+    await requestGracefulCloseForTargets(gracefulChildren, gracefulPathTargets)
+  }
+
+  const result = await finalizeKillAttempts(
+    await Promise.all(killTasks.map((startKill) => startKill())),
+    gameKey
+  )
   await publishRunningApps('kill')
   return withStrandedConsentPrompts(result, strandedPromptCount)
 }

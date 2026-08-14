@@ -17,6 +17,7 @@ export interface Settings {
   minimizeToTray: boolean
   showTrayIcon: boolean
   autoCheckUpdates: boolean
+  gracefulCloseEnabled: boolean
   zoomFactor: number
 }
 

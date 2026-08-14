@@ -36,7 +36,60 @@ function isStaleTaskMessage(message: string) {
   return /no running instance/i.test(message)
 }
 
-function runTaskkill(args: string[], description: string) {
+/**
+ * Whether a child we spawned has already exited, judged on POSITIVE evidence
+ * only. A live `ChildProcess` reports `null` for both; `undefined` means we are
+ * not looking at a real handle and must not be read as "gone".
+ *
+ * This is the guard on signalling a PID at all. Once a process exits Node
+ * releases its handle and Windows may hand that number to something else, so a
+ * `taskkill /PID` issued afterwards can hit a stranger, and `/T` takes that
+ * stranger's children too. While the handle reports neither an exit code nor a
+ * signal it is open, and the PID cannot have been recycled.
+ *
+ * Exported so the force kill and the graceful phase share one definition. They
+ * are separated by seconds of awaited work, so a second copy of this rule would
+ * drift (Codex on #823).
+ */
+export function hasChildExited(child: ChildProcess): boolean {
+  return typeof child.exitCode === 'number' || typeof child.signalCode === 'string'
+}
+
+/**
+ * How long the whole graceful phase may take, once, for the entire batch (#659).
+ *
+ * Shared rather than per app on purpose: a per-target wait would make the close
+ * action take this long multiplied by the number of apps that ignore it, and the
+ * issue requires the total to stay bounded no matter how many do.
+ */
+export const GRACEFUL_CLOSE_WINDOW_MS = 3000
+
+/**
+ * Ask processes to close themselves. `taskkill` WITHOUT `/F` posts `WM_CLOSE`
+ * to a process's top-level windows, which is what lets an app run its own
+ * shutdown path and flush a layout, dashboard or device handle before it goes.
+ *
+ * Best effort by design, so this reports nothing. A console app with no message
+ * loop, an app that ignores the request, and an elevated app that denies it are
+ * all normal here; the force kill that follows is what decides the outcome, and
+ * it re-reports everything. That is also why the failures are not logged: at
+ * this stage they are expected, not errors.
+ *
+ * Takes PIDs rather than an image name so the request cannot broaden to a
+ * same-named process the user started outside SimLauncher, matching the
+ * guarantee the force-kill path already makes.
+ */
+export async function requestGracefulClose(processIds: number[]): Promise<void> {
+  await Promise.all(
+    processIds.map((processId) =>
+      runTaskkill(['/PID', String(processId), '/T'], `ask process ${processId} to close`, {
+        quiet: true
+      })
+    )
+  )
+}
+
+function runTaskkill(args: string[], description: string, options?: { quiet?: boolean }) {
   return new Promise<{
     success: boolean
     detail?: string
@@ -55,7 +108,7 @@ function runTaskkill(args: string[], description: string) {
       const staleTask = isStaleTaskMessage(detail)
       const accessDenied = isAccessDeniedMessage(detail)
 
-      if (!notFound) {
+      if (!notFound && !options?.quiet) {
         console.error(`Failed to ${description}: ${detail}`)
         writeAppErrorLog('kill', `Failed to ${description}: ${detail}`)
       }
@@ -224,6 +277,23 @@ export async function killProcessTree(
   gameKey?: string
 ): Promise<KillAttemptResult> {
   const processName = getExeName(appPath)
+
+  // The child already exited, so there is nothing to signal. Bailing out here is
+  // not an optimisation, it is a safety check: once a process exits, Node
+  // releases its handle and Windows is free to hand that PID to something else,
+  // and `/T` would then take an unrelated process tree with it.
+  //
+  // Cheap before #659, load-bearing after it: the graceful phase deliberately
+  // opens a window in which a well-behaved app is expected to exit, so the gap
+  // between "decide to kill" and "kill" went from microseconds to seconds
+  // (CodeRabbit on #823).
+  //
+  // Reports exactly what `taskkill` would have reported had it been called and
+  // found nothing (`success: notFound`), so no downstream accounting has to
+  // learn a new shape.
+  if (hasChildExited(child)) {
+    return { processName, appPath, gameKey, success: true, notFound: true }
+  }
 
   if (process.platform === 'win32' && child.pid) {
     const result = await runTaskkill(

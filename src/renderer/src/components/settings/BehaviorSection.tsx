@@ -15,17 +15,20 @@ export function BehaviorSection(): ReactNode {
   const showTrayIconId = useId()
   const startMinimizedId = useId()
   const minimizeToTrayId = useId()
+  const gracefulCloseId = useId()
 
   const {
     startWithWindows,
     startMinimized,
     minimizeToTray,
     showTrayIcon,
+    gracefulCloseEnabled,
     launchDelayMs,
     onStartWithWindowsChange,
     onStartMinimizedChange,
     onMinimizeToTrayChange,
     onShowTrayIconChange,
+    onGracefulCloseEnabledChange,
     onLaunchDelayMsChange
   } = useBehaviorSettings()
   const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
@@ -82,6 +85,22 @@ export function BehaviorSection(): ReactNode {
           checked={minimizeToTray}
           onChange={onMinimizeToTrayChange}
           disabled={!showTrayIcon}
+        />
+      </div>
+      <div className="settings-row">
+        <div className="settings-label-group">
+          <label htmlFor={gracefulCloseId} className="settings-label">
+            Close apps gracefully
+          </label>
+          <span className="settings-sublabel">
+            When you use Close Apps, ask them to save and close first, then force-close anything
+            still running
+          </span>
+        </div>
+        <Toggle
+          id={gracefulCloseId}
+          checked={gracefulCloseEnabled}
+          onChange={onGracefulCloseEnabledChange}
         />
       </div>
       <div className="settings-row settings-row-responsive">

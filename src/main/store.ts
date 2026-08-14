@@ -60,6 +60,7 @@ const STORE_OPTIONS = {
     minimizeToTray: { type: 'boolean', default: false },
     showTrayIcon: { type: 'boolean', default: true },
     autoCheckUpdates: { type: 'boolean', default: true },
+    gracefulCloseEnabled: { type: 'boolean', default: false },
     zoomFactor: { type: 'number', default: DEFAULT_ZOOM_FACTOR },
     windowBounds: { type: 'object', default: {} },
     profileUtilityOrderMigrated: { type: 'boolean', default: false },
@@ -283,6 +284,7 @@ export const EXPECTED_CONFIG_KEYS = new Set([
   'minimizeToTray',
   'showTrayIcon',
   'autoCheckUpdates',
+  'gracefulCloseEnabled',
   'zoomFactor',
   'windowBounds',
   'profileUtilityOrderMigrated',
@@ -303,6 +305,7 @@ const BOOLEAN_CONFIG_KEYS = new Set([
   'minimizeToTray',
   'showTrayIcon',
   'autoCheckUpdates',
+  'gracefulCloseEnabled',
   'profileUtilityOrderMigrated',
   'profileSetsMigrated',
   'migrated'

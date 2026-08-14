@@ -35,6 +35,7 @@ export interface SettingsStateBundle {
     startMinimized: boolean
     minimizeToTray: boolean
     showTrayIcon: boolean
+    gracefulCloseEnabled: boolean
     autoCheckUpdates: boolean
     zoomFactor: number
     isCustomColor: boolean
@@ -65,6 +66,7 @@ export interface SettingsStateBundle {
     setStartMinimized: Dispatch<SetStateAction<boolean>>
     setMinimizeToTray: Dispatch<SetStateAction<boolean>>
     setShowTrayIcon: Dispatch<SetStateAction<boolean>>
+    setGracefulCloseEnabled: Dispatch<SetStateAction<boolean>>
     setAutoCheckUpdates: Dispatch<SetStateAction<boolean>>
     setZoomFactor: Dispatch<SetStateAction<number>>
     setIsCustomColor: Dispatch<SetStateAction<boolean>>
@@ -97,6 +99,7 @@ export interface SettingsStateBundle {
     startMinimized: boolean
     minimizeToTray: boolean
     showTrayIcon: boolean
+    gracefulCloseEnabled: boolean
     autoCheckUpdates: boolean
     zoomFactor: number
   }
@@ -126,6 +129,7 @@ export function useSettingsState(): SettingsStateBundle {
   const [startMinimized, setStartMinimized] = useState<boolean>(false)
   const [minimizeToTray, setMinimizeToTray] = useState<boolean>(false)
   const [showTrayIcon, setShowTrayIcon] = useState<boolean>(true)
+  const [gracefulCloseEnabled, setGracefulCloseEnabled] = useState<boolean>(false)
   const [autoCheckUpdates, setAutoCheckUpdates] = useState<boolean>(true)
   const [zoomFactor, setZoomFactor] = useState<number>(1.0)
 
@@ -185,6 +189,7 @@ export function useSettingsState(): SettingsStateBundle {
       startMinimized,
       minimizeToTray,
       showTrayIcon,
+      gracefulCloseEnabled,
       autoCheckUpdates,
       zoomFactor
     }),
@@ -205,6 +210,7 @@ export function useSettingsState(): SettingsStateBundle {
       startMinimized,
       minimizeToTray,
       showTrayIcon,
+      gracefulCloseEnabled,
       autoCheckUpdates,
       zoomFactor
     ]
@@ -229,6 +235,7 @@ export function useSettingsState(): SettingsStateBundle {
       startMinimized,
       minimizeToTray,
       showTrayIcon,
+      gracefulCloseEnabled,
       autoCheckUpdates,
       zoomFactor,
       isCustomColor,
@@ -255,6 +262,7 @@ export function useSettingsState(): SettingsStateBundle {
       setStartMinimized,
       setMinimizeToTray,
       setShowTrayIcon,
+      setGracefulCloseEnabled,
       setAutoCheckUpdates,
       setZoomFactor,
       setIsCustomColor,

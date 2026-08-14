@@ -17,6 +17,10 @@ const accessDeniedPids = new Set<string>()
 const accessDeniedImageNames = new Set<string>()
 const inaccessibleExecutablePathProcesses = new Set<string>()
 const nullExecutablePathPids = new Set<string>()
+// #659: PIDs whose process actually honours a graceful (non-`/F`) close
+// request. Everything else ignores it and is still there for the force kill,
+// which is the realistic default (console apps, apps with no message loop).
+const gracefulClosePids = new Set<string>()
 const staleTaskkillPids = new Set<string>()
 // "Process exited cleanly BEFORE the kill ran" — when a name is in this set,
 // the path-scoped WMI lookup removes it from `processNames` so the post-kill
@@ -60,6 +64,10 @@ let storeReadShouldThrow = false
 // promise does — models a slow tasklist scan so a test can prove ordering
 // against it (#670). Consumed once, then cleared.
 let tasklistReadBlocker: Promise<void> | null = null
+// When set, the NEXT WMI path lookup resolves only after `promise` does. Models
+// a slow Get-CimInstance so a test can land an event inside the graceful
+// phase's await window (#659, #823). Consumed once, then cleared.
+let wmiLookupBlocker: Promise<void> | null = null
 // When set, the `atCall`-th isConsoleExecutable call (1-based) resolves only
 // after `promise` does — models a slow PE-subsystem probe so the abort-point
 // sweep can land a kill inside spawnDetachedApp's pre-spawn window for a
@@ -326,7 +334,33 @@ async function loadProcessModules() {
         if (processName && processNamesGoneAfterWmiLookup.has(processName)) {
           processNames.delete(processName)
         }
-        callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
+        const emitLookup = () =>
+          callback(null, pids.length ? JSON.stringify(pids.map(Number)) : '', '')
+        // One-shot, same shape as tasklistReadBlocker: only the lookup it was
+        // armed for is delayed, so every other call keeps its exact timing.
+        if (wmiLookupBlocker) {
+          const blocker = wmiLookupBlocker
+          wmiLookupBlocker = null
+          void blocker.then(emitLookup)
+          return
+        }
+        emitLookup()
+        return
+      }
+      // A `/PID` taskkill WITHOUT `/F` is the graceful request (#659): it posts
+      // WM_CLOSE rather than terminating, so it only removes a process that
+      // chose to honour it. Modelling this separately is what makes "the app
+      // ignored us and had to be force-killed" expressible at all.
+      if (command === 'taskkill' && args.includes('/PID') && !args.includes('/F')) {
+        const pid = args[args.indexOf('/PID') + 1]
+        if (gracefulClosePids.has(pid)) {
+          const entry = findRegistryEntryByPid(pid)
+          if (entry) {
+            processNames.delete(entry.processName)
+          }
+          nullExecutablePathPids.delete(pid)
+        }
+        callback(null, '', '')
         return
       }
       if (command === 'taskkill' && args.includes('/PID')) {
@@ -377,6 +411,11 @@ async function loadProcessModules() {
       const handlers = new Map<string, (...args: unknown[]) => void>()
       const child = {
         pid: 1234,
+        // A live ChildProcess reports null on both until it exits. Present so a
+        // test can model "the app exited during the grace window" (#659), and
+        // so the exit check reads real values rather than undefined.
+        exitCode: null as number | null,
+        signalCode: null as string | null,
         once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
           handlers.set(event, handler)
           if (event === 'error' && spawnErrors.has(appPath)) {
@@ -465,6 +504,14 @@ async function loadProcessModules() {
           (entry): entry is [string, string] => typeof entry[1] === 'string'
         )
       )
+    },
+    // #659: the graceful-close toggle is read straight from the store by
+    // killLaunchedApps. Mirrors the real signature (opt-in, so anything that is
+    // not an explicit true is false) rather than hardcoding false, so a test can
+    // switch it on by writing `storeData.gracefulCloseEnabled = true`.
+    getStoredBoolean: (key: string, fallback = false) => {
+      const value = storeData[key]
+      return typeof value === 'boolean' ? value : fallback
     },
     store: {
       store: storeData,
@@ -600,6 +647,7 @@ beforeEach(async () => {
   accessDeniedImageNames.clear()
   inaccessibleExecutablePathProcesses.clear()
   nullExecutablePathPids.clear()
+  gracefulClosePids.clear()
   staleTaskkillPids.clear()
   processNamesGoneAfterWmiLookup.clear()
   processNamesGoneAfterKill.clear()
@@ -612,6 +660,7 @@ beforeEach(async () => {
   tasklistReadShouldFail = false
   storeReadShouldThrow = false
   tasklistReadBlocker = null
+  wmiLookupBlocker = null
   consoleProbeBlocker = null
   consoleProbeCallCount = 0
   failTasklistAfterAccessDeniedPids.clear()
@@ -2002,6 +2051,431 @@ test('an ordinary Close Apps with no pending handoff says nothing about a prompt
 
   // The unchanged case must read exactly as it did before this issue.
   expect(result.strandedConsentPrompts).toBeUndefined()
+})
+
+// ---------------------------------------------------------------------------
+// #659 graceful close. Every test here drives killLaunchedApps, the path both
+// explicit Close Apps affordances (tray item and row button) go through.
+// ---------------------------------------------------------------------------
+
+// A polite request is a `/PID` taskkill WITHOUT `/F`: that posts WM_CLOSE
+// instead of terminating. The force kill keeps its `/F`, so the two are told
+// apart by the flag alone.
+function gracefulRequests() {
+  return execFileCalls.filter(
+    (call) => call.command === 'taskkill' && call.args.includes('/PID') && !call.args.includes('/F')
+  )
+}
+
+function forceKills() {
+  return execFileCalls.filter(
+    (call) => call.command === 'taskkill' && call.args.includes('/PID') && call.args.includes('/F')
+  )
+}
+
+test('graceful close is off by default, so the close path is unchanged (#659)', async () => {
+  markExistingPath('C:/Tools/App2.exe')
+  processNames.add('app2.exe')
+  registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+      }
+    },
+    appPaths: { customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const result = await killLaunchedApps('ac')
+
+  // Not merely "no delay": nothing is even asked. The default close stays the
+  // single force kill it has always been.
+  expect(gracefulRequests()).toHaveLength(0)
+  expect(forceKills()).toHaveLength(1)
+  expect(result.closedCount).toBe(1)
+})
+
+test('with the toggle on, a target is asked to close before anything is forced (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+    processNames.add('app2.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    // Asked by PID, not by image name: an `/IM` request would reach every
+    // same-named process, including one the user started themselves.
+    expect(gracefulRequests()).toEqual([
+      expect.objectContaining({ command: 'taskkill', args: ['/PID', '4321', '/T'] })
+    ])
+    // And the ordering is the entire feature.
+    const askedAt = execFileCalls.indexOf(gracefulRequests()[0])
+    const forcedAt = execFileCalls.indexOf(forceKills()[0])
+    expect(askedAt).toBeLessThan(forcedAt)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('an app that honours the request is reported closed, not failed (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+    processNames.add('app2.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+    // This one saves its state and exits on its own.
+    gracefulClosePids.add('4321')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    const result = await killPromise
+
+    // It left during the grace window, so the force kill finds nothing. That
+    // has to read as "closed", never as a failure the user must act on.
+    expect(result.success).toBe(true)
+    expect(result.closedCount).toBe(1)
+    expect(result.failures).toEqual([])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('an app that ignores the request is still force-killed (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+    processNames.add('app2.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+    // Deliberately not in gracefulClosePids: a console app, or one that simply
+    // ignores WM_CLOSE.
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    const result = await killPromise
+
+    expect(forceKills()).toEqual([expect.objectContaining({ args: ['/PID', '4321', '/T', '/F'] })])
+    expect(result.closedCount).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('the grace window is one shared wait, not one per app (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+    markExistingPath('C:/Tools/App3.exe')
+    processNames.add('app2.exe')
+    processNames.add('app3.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+    registerProcess('C:/Tools/App3.exe', 'app3.exe', '5555')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true, customapp3: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe', customapp3: 'C:/Tools/App3.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    let settled = false
+    const killPromise = killLaunchedApps('ac').then((value) => {
+      settled = true
+      return value
+    })
+
+    // Two apps, both ignoring the request. Advancing ONE window must be
+    // enough: a per-app wait would need two, and the issue requires the total
+    // to stay bounded however many apps ignore it.
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    expect(settled).toBe(true)
+    expect(gracefulRequests()).toHaveLength(2)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('nothing running means no grace window at all (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
+
+    let settled = false
+    const killPromise = killLaunchedApps('ac').then((value) => {
+      settled = true
+      return value
+    })
+
+    // The assertion that matters is the clock NOT moving. Advancing by zero
+    // only drains microtasks, so settling here proves the close returned
+    // without entering the window at all. An earlier version used real timers
+    // and would have passed just as happily while waiting the full three
+    // seconds, pinning nothing (CodeRabbit on #823).
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(true)
+
+    const result = await killPromise
+    expect(gracefulRequests()).toHaveLength(0)
+    expect(result.closedCount).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Codex P1 on #823. The graceful phase awaits a WMI lookup per path target,
+// each bounded by WMI_LOOKUP_TIMEOUT_MS, so it can sit there for seconds. A
+// tracked child that exits during that wait releases its PID, and Windows may
+// hand the number to something else before the polite request goes out. Holding
+// the ChildProcess handle instead of the raw number is what makes the exit
+// visible; capturing `child.pid` up front cannot notice.
+test('a child that exits while the lookup is in flight is dropped from the request (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Perplexity.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    processNames.add('perplexity.exe')
+    processNames.add('app2.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '5555')
+
+    const { killLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe' }
+    })
+
+    // A tracked child, alive at the moment the close starts.
+    const trackedChild = { pid: 1234, exitCode: null as number | null, signalCode: null }
+    runningProcesses.set(String.raw`c:\tools\perplexity.exe`, {
+      process: trackedChild as never,
+      path: 'C:/Tools/Perplexity.exe',
+      name: 'Perplexity.exe',
+      gameKey: 'ac',
+      isGame: false
+    })
+
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    // Park the App2 path lookup, so the graceful phase is stuck awaiting it.
+    let releaseLookup: () => void = () => {}
+    wmiLookupBlocker = new Promise<void>((resolve) => {
+      releaseLookup = resolve
+    })
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The tracked child dies on its own while the lookup is still parked, which
+    // releases PID 1234 for Windows to hand to somebody else.
+    trackedChild.exitCode = 0
+    releaseLookup()
+
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    const askedPids = gracefulRequests().map((call) => call.args[call.args.indexOf('/PID') + 1])
+    // The companion that is still running is asked; the released number is not.
+    expect(askedPids).toContain('5555')
+    expect(askedPids).not.toContain('1234')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The same Codex P1, for the half a handle cannot cover. A discovered PID is
+// just a number, so the defence is not to hold it: collecting every lookup
+// before asking anyone left the first answer sitting unused for as long as the
+// slowest lookup took, up to WMI_LOOKUP_TIMEOUT_MS, and that companion could
+// exit and hand its number to a stranger inside that gap.
+test('a discovered PID is asked as soon as its own lookup answers (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/App2.exe')
+    markExistingPath('C:/Tools/App3.exe')
+    processNames.add('app2.exe')
+    processNames.add('app3.exe')
+    registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+    registerProcess('C:/Tools/App3.exe', 'app3.exe', '5555')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true, customapp3: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/App2.exe', customapp3: 'C:/Tools/App3.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    // One-shot, so it parks whichever lookup goes out first and leaves the
+    // other one answering at its normal speed.
+    let releaseLookup: () => void = () => {}
+    wmiLookupBlocker = new Promise<void>((resolve) => {
+      releaseLookup = resolve
+    })
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(0)
+
+    // Exactly one: the target that already answered has been asked, while the
+    // parked lookup has not delayed it. Batching every result first would make
+    // this zero.
+    expect(gracefulRequests()).toHaveLength(1)
+
+    releaseLookup()
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    const askedPids = gracefulRequests()
+      .map((call) => call.args[call.args.indexOf('/PID') + 1])
+      .sort()
+    expect(askedPids).toEqual(['4321', '5555'])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The grace window is a window in which a well-behaved app is expected to exit,
+// which is exactly when a PID stops being a safe thing to signal: Node releases
+// the handle on exit and Windows may hand that number to something else, and
+// `/T` would take that stranger's whole tree. Tested directly against
+// win32KillUtils, which is the seam #773 extracted for precisely this.
+test('a child that already exited is never signalled again (#659)', async () => {
+  await loadProcessModules()
+  const { killProcessTree } = await import('../../src/main/processes/win32KillUtils')
+
+  const exitedChild = {
+    pid: 4321,
+    exitCode: 0,
+    signalCode: null,
+    kill: vi.fn()
+  } as unknown as Parameters<typeof killProcessTree>[0]
+
+  const result = await killProcessTree(exitedChild, 'C:/Tools/App2.exe', 'ac')
+
+  // No taskkill at all, not even a failed one: the PID is never put on the wire.
+  expect(execFileCalls.filter((call) => call.command === 'taskkill')).toHaveLength(0)
+  // Reported exactly as taskkill would have reported finding nothing, so the
+  // accounting downstream needs no special case.
+  expect(result).toMatchObject({ success: true, notFound: true, processName: 'app2.exe' })
+  expect(result.targetConfirmed).toBeUndefined()
+})
+
+test('a bare-name target is never asked politely, to keep the phase path-scoped (#659)', async () => {
+  vi.useFakeTimers()
+  try {
+    // The garage61 companion agent is a hardcoded bare process name with no
+    // configured path, so it can only be reached by `/IM`. Asking by name
+    // would broaden the request to every same-named process, breaking the
+    // guarantee the force-kill path already refuses to break.
+    processNames.add('garage61 telemetry agent.exe')
+    markExistingPath('C:/Tools/Garage61.exe')
+
+    const { killLaunchedApps } = await loadProcessModulesWithStore({
+      gracefulCloseEnabled: true,
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', garage61: true }]
+        }
+      },
+      appPaths: { garage61: 'C:/Tools/Garage61.exe' }
+    })
+    const { GRACEFUL_CLOSE_WINDOW_MS } = await import('../../src/main/processes/win32KillUtils')
+
+    const killPromise = killLaunchedApps('ac')
+    await vi.advanceTimersByTimeAsync(GRACEFUL_CLOSE_WINDOW_MS)
+    await killPromise
+
+    expect(gracefulRequests()).toHaveLength(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The scope decision, pinned. A profile switch already contains close-then-
+// relaunch pairs (a slot-key move of the same exe, see ipc/launch.ts), so a
+// grace window there is latency spent on an app that is about to be started
+// again moments later. If someone later routes the switch through the graceful
+// phase, this is the test that should stop them and send them to #659 first.
+test('a profile switch never runs the graceful phase, toggle or not (#659)', async () => {
+  markExistingPath('C:/Tools/App2.exe')
+  processNames.add('app2.exe')
+  registerProcess('C:/Tools/App2.exe', 'app2.exe', '4321')
+
+  const { killProfileApps } = await loadProcessModulesWithStore({
+    gracefulCloseEnabled: true,
+    appPaths: { customapp2: 'C:/Tools/App2.exe' }
+  })
+
+  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+
+  expect(gracefulRequests()).toHaveLength(0)
+  expect(result.closedCount).toBe(1)
 })
 
 // The other kill entry point, and the one a profile switch actually goes
