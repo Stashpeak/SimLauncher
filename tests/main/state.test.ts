@@ -153,8 +153,10 @@ test('abortActiveLaunches skips the except controller but still aborts every oth
 // is fire-and-forget and a companion-only or failed sequence can finish before
 // that publish's tasklist read resolves, so no scan ever sees an active launch.
 test('registering a launch clears that game exit evidence (#204)', () => {
-  gamesSeenRunning.add('iracing')
-  gamesSeenRunning.add('ac')
+  // The value is the monotonic timestamp of the first read in the streak; only
+  // its presence matters here.
+  gamesSeenRunning.set('iracing', 0)
+  gamesSeenRunning.set('ac', 0)
 
   const controller = registerActiveLaunch('iracing')
 

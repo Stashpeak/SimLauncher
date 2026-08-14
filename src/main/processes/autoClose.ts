@@ -1,16 +1,13 @@
+import { performance } from 'perf_hooks'
+
 import { writeAppErrorLog } from '../errorLog'
 import { getActiveStoredProfile, getStoredProfiles, type StoredProfile } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
+import { getExeName, isValidExePath } from '../utils'
 
 import { killLaunchedApps } from './kill'
 import { registerProcessScanObserver, type ProcessScanObserver } from './running'
-import {
-  gamesSeenRunning,
-  getLaunchGeneration,
-  isLaunchActiveForGame,
-  processNameMismatchWarnings
-} from './state'
+import { gamesSeenRunning, getLaunchGeneration, isLaunchActiveForGame } from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { RunningProcessNamesResult } from './tasklist'
 
@@ -33,6 +30,25 @@ import type { RunningProcessNamesResult } from './tasklist'
  * has both hands on the wheel and cannot intervene.
  */
 export const AUTO_CLOSE_GRACE_MS = 15000
+
+/**
+ * How long a game must have been seen running before its disappearance counts
+ * as the end of a session (#204).
+ *
+ * Launcher stubs are the reason. Steam and EA App style entry points show up
+ * under the configured game name, hand off to a differently-named child and
+ * exit, all within seconds. Their disappearance is not an exit, it is the
+ * session starting, and closing the user's overlays there lands mid-race.
+ *
+ * A duration rather than provenance: the alternative was to trust only games
+ * SimLauncher launched itself, since only those produce a mismatch warning, and
+ * that silently excluded everyone who starts their sim from Steam (Codex on
+ * #826). This rule needs no evidence about who started the game.
+ *
+ * Two minutes costs nothing real. A session shorter than that had no telemetry
+ * worth flushing and no overlays worth closing on a timer.
+ */
+export const MIN_SESSION_MS = 120000
 
 // A game only becomes a close candidate by leaving `gamesSeenRunning`, so the
 // first observation after startup (or after the observer is re-registered) can
@@ -65,19 +81,13 @@ function isAutoCloseArmed(gameKey: string): boolean {
     return false
   }
 
-  // A mismatch warning means this exe exited right after launch and the real
-  // game is running under a different name, which is the launcher-stub case
-  // (Steam, EA App). The game exe's absence is then meaningless, so refuse,
-  // BUT only while it is the only thing we could watch. Once the user has
-  // followed the warning and configured a secondary executable, we have a
-  // signal that is not lying and the refusal would be permanent for no reason
-  // (Codex on #826). The secondary is what `getArmedGameExeNames` then watches.
-  if (
-    getDistinctSecondaryExeNames(gameKey, profile).size === 0 &&
-    processNameMismatchWarnings.has(normalizePathForComparison(gamePath))
-  ) {
-    return false
-  }
+  // NOTE: there is deliberately no launcher-stub check here any more. It used
+  // to refuse whenever `processNameMismatchWarnings` held this game path, but
+  // that warning is written in exactly one place, spawn.ts' child exit handler,
+  // so it only ever exists for a game SimLauncher launched itself. A stub
+  // started from Steam never produced one, and its brief appearance read as a
+  // whole session (Codex on #826). MIN_SESSION_MS covers both cases with one
+  // rule that needs no evidence about who started the game.
 
   // Watching is by process name, so if another configured game is a different
   // copy of the same exe, one process satisfies both profiles at once: both
@@ -130,28 +140,6 @@ function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
 }
 
 /**
- * Secondary executables that contribute a process name the primary does not.
- *
- * Only these may lift the mismatch refusal (CodeRabbit on #826). Watching is by
- * process NAME, so a secondary that is the game path again, or a same-named exe
- * from another install, collapses into the primary's name and adds no signal.
- * Counting it would grant the bypass and then arm on the very name the warning
- * says is unreliable, which is the destructive false close the refusal exists
- * to prevent. `getExeName` lowercases, so this comparison is case-safe.
- */
-function getDistinctSecondaryExeNames(
-  gameKey: string,
-  profile: StoredProfile | undefined
-): Set<string> {
-  const primaryExeName = getExeName(getStoredStringRecord('gamePaths')[gameKey])
-  return new Set(
-    getSecondaryGamePaths(profile)
-      .map(getExeName)
-      .filter((exeName) => exeName.length > 0 && exeName !== primaryExeName)
-  )
-}
-
-/**
  * Every process whose presence means this game's session is still going: the
  * configured game exe plus any "Secondary executables to watch".
  *
@@ -183,13 +171,17 @@ interface ArmedSnapshot {
   profileId: string | undefined
   exeNames: Set<string>
   launchGeneration: number
+  // Carried so the failed-read path can put the streak back exactly as it was,
+  // rather than restarting the clock and demanding another MIN_SESSION_MS.
+  seenRunningSince: number
 }
 
-function captureArming(gameKey: string): ArmedSnapshot {
+function captureArming(gameKey: string, seenRunningSince: number): ArmedSnapshot {
   return {
     profileId: getActiveProfileId(gameKey),
     exeNames: getArmedGameExeNames(gameKey),
-    launchGeneration: getLaunchGeneration(gameKey)
+    launchGeneration: getLaunchGeneration(gameKey),
+    seenRunningSince
   }
 }
 
@@ -278,7 +270,7 @@ async function runAutoClose(gameKey: string, armed: ArmedSnapshot): Promise<void
     // putting it back would resurrect the previous session's evidence for a
     // later scan to arm on (CodeRabbit on #826).
     if (isSameArming(gameKey, armed)) {
-      gamesSeenRunning.add(gameKey)
+      gamesSeenRunning.set(gameKey, armed.seenRunningSince)
     }
     return
   }
@@ -286,7 +278,7 @@ async function runAutoClose(gameKey: string, armed: ArmedSnapshot): Promise<void
   // Any one of them still up means the session is not over: a relaunch, or a
   // restart we never saw stop in a scan. Not an exit.
   if (isAnyRunning(exeNames, processNames)) {
-    gamesSeenRunning.add(gameKey)
+    gamesSeenRunning.set(gameKey, armed.seenRunningSince)
     return
   }
 
@@ -367,7 +359,12 @@ export const observeProcessScan: ProcessScanObserver = ({
     }
 
     if (isAnyRunning(exeNames, processNames)) {
-      gamesSeenRunning.add(gameKey)
+      // First read of a streak starts its clock; later ones leave it alone, so
+      // the value is how long the game has been up rather than how long ago the
+      // last scan was.
+      if (!gamesSeenRunning.has(gameKey)) {
+        gamesSeenRunning.set(gameKey, performance.now())
+      }
       cancelPendingAutoClose(gameKey)
       return
     }
@@ -377,8 +374,19 @@ export const observeProcessScan: ProcessScanObserver = ({
     // the game gone, gets false and does not push the window out again. A
     // separate `!pendingAutoCloses.has(...)` check would look like the guard
     // doing that work and never once decide anything.
-    if (gamesSeenRunning.delete(gameKey)) {
-      const armed = captureArming(gameKey)
+    const seenRunningSince = gamesSeenRunning.get(gameKey)
+    if (seenRunningSince !== undefined) {
+      gamesSeenRunning.delete(gameKey)
+
+      // Seen, but never for long enough to have been a session: a launcher stub
+      // that flickered through a scan or two and handed off to its child. The
+      // streak is consumed either way, so this cannot arm later on the strength
+      // of it.
+      if (performance.now() - seenRunningSince < MIN_SESSION_MS) {
+        return
+      }
+
+      const armed = captureArming(gameKey, seenRunningSince)
       pendingAutoCloses.set(
         gameKey,
         setTimeout(() => {

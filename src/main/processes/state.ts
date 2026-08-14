@@ -20,7 +20,14 @@ export const suppressedProcessNameMismatchWarnings = new Set<string>()
 const activeLaunchControllers = new Map<string, AbortController>()
 
 /**
- * Games whose exe has been seen running in a succeeded tasklist read (#204).
+ * Games seen running in a succeeded tasklist read, mapped to the monotonic
+ * timestamp of the FIRST read in the current streak (#204).
+ *
+ * A timestamp rather than a bare marker because auto-close only treats a
+ * disappearance as the end of a session once the game has been running for
+ * long enough to have been one. That is what keeps a launcher stub, which
+ * flickers through a scan or two and hands off to a differently-named child,
+ * from reading as an exit (Codex on #826).
  *
  * Auto-close's state, kept HERE rather than in autoClose.ts so that
  * `registerActiveLaunch` below can clear it synchronously. Clearing it from a
@@ -31,7 +38,7 @@ const activeLaunchControllers = new Map<string, AbortController>()
  * session's marker and close the companions the launch had just started
  * (Codex on #826).
  */
-export const gamesSeenRunning = new Set<string>()
+export const gamesSeenRunning = new Map<string, number>()
 
 /**
  * Monotonic count of launches registered per game (#204).
