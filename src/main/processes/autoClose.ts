@@ -1,5 +1,5 @@
 import { writeAppErrorLog } from '../errorLog'
-import { getActiveStoredProfile, getStoredProfiles } from '../profiles'
+import { getActiveStoredProfile, getStoredProfiles, type StoredProfile } from '../profiles'
 import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
@@ -42,8 +42,7 @@ const pendingAutoCloses = new Map<string, ReturnType<typeof setTimeout>>()
  * time passes, and the user can change any of this inside it.
  */
 function isAutoCloseArmed(gameKey: string): boolean {
-  const profileEntry = getStoredProfiles()[gameKey]
-  const profile = profileEntry ? getActiveStoredProfile(profileEntry) : undefined
+  const profile = getActiveProfile(gameKey)
 
   // The only profile boolean that is opt-in, so `=== true`: absent
   // configuration must never authorise closing a user's apps.
@@ -64,20 +63,66 @@ function isAutoCloseArmed(gameKey: string): boolean {
 
   // A mismatch warning means this exe exited right after launch and the real
   // game is running under a different name, which is the launcher-stub case
-  // (Steam, EA App). For those games EVERY exit signal we have is wrong: the
-  // exe is gone from the tasklist while the session is very much alive. Refuse
-  // to arm rather than act on a signal we already know is lying. The user's
-  // route back is "Secondary executables to watch" in the profile editor.
-  if (processNameMismatchWarnings.has(normalizePathForComparison(gamePath))) {
+  // (Steam, EA App). The game exe's absence is then meaningless, so refuse,
+  // BUT only while it is the only thing we could watch. Once the user has
+  // followed the warning and configured a secondary executable, we have a
+  // signal that is not lying and the refusal would be permanent for no reason
+  // (Codex on #826). The secondary is what `getArmedGameExeNames` then watches.
+  if (
+    getSecondaryGamePaths(profile).length === 0 &&
+    processNameMismatchWarnings.has(normalizePathForComparison(gamePath))
+  ) {
     return false
   }
 
   return true
 }
 
-function getArmedGameExeName(gameKey: string): string | undefined {
+function getActiveProfile(gameKey: string): StoredProfile | undefined {
+  const profileEntry = getStoredProfiles()[gameKey]
+  return profileEntry ? getActiveStoredProfile(profileEntry) : undefined
+}
+
+function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
+  return Array.isArray(profile?.trackedProcessPaths)
+    ? profile.trackedProcessPaths.filter(isValidExePath)
+    : []
+}
+
+/**
+ * Every process whose presence means this game's session is still going: the
+ * configured game exe plus any "Secondary executables to watch".
+ *
+ * Deliberately NOT `getProfileTrackablePaths`, which also folds in the enabled
+ * utilities. Those are the very processes auto-close exists to close, so
+ * waiting for them to stop would mean waiting for the thing this is supposed
+ * to cause.
+ *
+ * The trade-off in reusing that user-facing list: it is worded as secondary
+ * executables generally, so a user who files a COMPANION under it turns
+ * auto-close for that profile into a no-op, because that companion is still
+ * running at the moment we ask. That fails safe (nothing is closed) and it is
+ * the price of making the launcher-stub repair path actually work.
+ */
+function getArmedGameExeNames(gameKey: string): Set<string> {
   const gamePath = getStoredStringRecord('gamePaths')[gameKey]
-  return isValidExePath(gamePath) ? getExeName(gamePath) : undefined
+  const paths = [gamePath, ...getSecondaryGamePaths(getActiveProfile(gameKey))].filter(
+    isValidExePath
+  )
+  return new Set(paths.map(getExeName))
+}
+
+// Order-independent, because the identity that matters is WHICH processes are
+// watched, not how the profile happens to list them.
+function sameExeNames(a: Set<string>, b: Set<string>): boolean {
+  return a.size === b.size && [...a].every((name) => b.has(name))
+}
+
+// The session is over only when EVERY watched process is gone. Any survivor
+// means the game is still up under one of its names, which is exactly the
+// launcher-stub case this set exists for.
+function isAnyRunning(exeNames: Set<string>, processNames: Set<string>): boolean {
+  return [...exeNames].some((exeName) => processNames.has(exeName))
 }
 
 function cancelPendingAutoClose(gameKey: string): void {
@@ -101,8 +146,8 @@ async function runAutoClose(gameKey: string): Promise<void> {
     return
   }
 
-  const exeName = getArmedGameExeName(gameKey)
-  if (!exeName) {
+  const exeNames = getArmedGameExeNames(gameKey)
+  if (exeNames.size === 0) {
     return
   }
 
@@ -123,9 +168,9 @@ async function runAutoClose(gameKey: string): Promise<void> {
     return
   }
 
-  // It came back inside the window (a relaunch, or a restart we never saw stop
-  // in a scan). Not an exit.
-  if (processNames.has(exeName)) {
+  // Any one of them still up means the session is not over: a relaunch, or a
+  // restart we never saw stop in a scan. Not an exit.
+  if (isAnyRunning(exeNames, processNames)) {
     gamesSeenRunning.add(gameKey)
     return
   }
@@ -133,9 +178,9 @@ async function runAutoClose(gameKey: string): Promise<void> {
   // Eligibility is re-read here too, not just before the await. The presence
   // check above is deliberately adjacent to the kill; leaving the permission
   // check on the far side of an I/O boundary would be the same mistake in the
-  // other half, and a game path edited mid-read would kill against an exe name
+  // other half, and a profile edited mid-read would kill against a process set
   // we no longer target (CodeRabbit on #826).
-  if (!isAutoCloseArmed(gameKey) || getArmedGameExeName(gameKey) !== exeName) {
+  if (!isAutoCloseArmed(gameKey) || !sameExeNames(getArmedGameExeNames(gameKey), exeNames)) {
     return
   }
 
@@ -170,12 +215,12 @@ export const observeProcessScan: ProcessScanObserver = ({
       return
     }
 
-    const exeName = getArmedGameExeName(gameKey)
-    if (!exeName) {
+    const exeNames = getArmedGameExeNames(gameKey)
+    if (exeNames.size === 0) {
       return
     }
 
-    if (processNames.has(exeName)) {
+    if (isAnyRunning(exeNames, processNames)) {
       gamesSeenRunning.add(gameKey)
       cancelPendingAutoClose(gameKey)
       return

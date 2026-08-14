@@ -277,9 +277,65 @@ test('repointing the game path while the final read is in flight aborts the clos
   expect(killLaunchedAppsMock).not.toHaveBeenCalled()
 })
 
-// The launcher-stub case. The exe exited right after launch and the real game
-// runs under another name, so "the exe is gone" is already known to be a lie
-// for this game and must not be acted on.
+// The launcher-stub repair path, and the reason the refusal below is
+// conditional (Codex on #826). Refusing forever would mean Steam/EA-launched
+// games can never use this feature, while the warning we show tells the user
+// exactly how to give us a signal that is not lying.
+const STUB_SECONDARY = 'C:/Games/acs_real.exe'
+const STUB_PROFILES = { ac: { ...ARMED, trackedProcessPaths: [STUB_SECONDARY] } }
+const STUB_MISMATCH = ['c:\\games\\acs.exe']
+const REAL_RUNNING = { processNames: new Set(['acs_real.exe']), succeeded: true }
+
+test('a stub-launched game arms once a secondary executable is configured (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: STUB_PROFILES,
+    gamePaths: AC_GAME_PATHS,
+    mismatchPaths: STUB_MISMATCH
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  // The stub exe is long gone; the real game is what is running.
+  observeProcessScan(REAL_RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).toHaveBeenCalledWith('ac')
+})
+
+test('a secondary executable still running keeps the session open (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: STUB_PROFILES,
+    gamePaths: AC_GAME_PATHS,
+    mismatchPaths: STUB_MISMATCH
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  // The stub exits, which is normal for a stub, while the game plays on.
+  observeProcessScan({ processNames: new Set(['acs.exe', 'acs_real.exe']), succeeded: true })
+  observeProcessScan(REAL_RUNNING)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+test('a secondary found running by the final recheck aborts the close (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: STUB_PROFILES,
+    gamePaths: AC_GAME_PATHS,
+    mismatchPaths: STUB_MISMATCH
+  })
+  readRunningProcessNamesMock.mockResolvedValue(REAL_RUNNING)
+
+  observeProcessScan(REAL_RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// Still refused when the warning is the ONLY thing we could go on: the game
+// exe exited right after launch and the real game runs under another name, so
+// "the exe is gone" is already known to be a lie for this game.
 test('a game carrying a process-name mismatch warning never arms (#204)', async () => {
   const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,
