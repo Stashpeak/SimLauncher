@@ -471,6 +471,28 @@ test('a failed read does not resurrect evidence a launch has superseded (#204)',
   expect(killLaunchedAppsMock).not.toHaveBeenCalled()
 })
 
+// The residual half of the ownership check (Codex on #826): comparing each
+// watched set against the other profiles' PRIMARY exes left secondary-to-
+// secondary collisions open, and a secondary is matched by name exactly like a
+// primary.
+test('two profiles sharing a secondary exe name never arm (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: {
+      ac: { ...ARMED, trackedProcessPaths: ['C:/Shared/session.exe'] },
+      ams2: { ...ARMED, trackedProcessPaths: ['D:/Other/session.exe'] }
+    },
+    // Distinct primaries, so the earlier primary-only check passes both.
+    gamePaths: { ac: 'C:/Games/acs.exe', ams2: 'D:/Games/AMS2.exe' }
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  observeProcessScan({ processNames: new Set(['session.exe']), succeeded: true })
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
 test('a launch starting during the final read aborts the close (#204)', async () => {
   const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,

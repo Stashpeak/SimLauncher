@@ -93,17 +93,28 @@ function isAutoCloseArmed(gameKey: string): boolean {
 }
 
 /**
- * Whether any process name this game would watch is also the configured game
- * exe of a DIFFERENT game key. Covers the secondary names too, since those are
- * matched by name exactly like the primary.
+ * Whether any process name this game would watch is also watched by a DIFFERENT
+ * game key.
+ *
+ * Compares whole watched sets, not this game's set against the others' primary
+ * exes. Secondaries are matched by name exactly like primaries, so two profiles
+ * naming the same secondary collide in the same way and with the same
+ * consequence: one process marks both games as seen, and its exit closes the
+ * companions of a profile the user never played (Codex on #826).
+ *
+ * Contested by ANY configured game, armed or not. The other profile does not
+ * have to arm for its process to be the one we mistake for ours.
  */
 function hasContestedExeName(gameKey: string): boolean {
   const watched = getArmedGameExeNames(gameKey)
-  return Object.entries(getStoredStringRecord('gamePaths')).some(
-    ([otherGameKey, otherGamePath]) =>
-      otherGameKey !== gameKey &&
-      isValidExePath(otherGamePath) &&
-      watched.has(getExeName(otherGamePath))
+  const otherGameKeys = new Set([
+    ...Object.keys(getStoredProfiles()),
+    ...Object.keys(getStoredStringRecord('gamePaths'))
+  ])
+  otherGameKeys.delete(gameKey)
+
+  return [...otherGameKeys].some((otherGameKey) =>
+    [...getArmedGameExeNames(otherGameKey)].some((exeName) => watched.has(exeName))
   )
 }
 
