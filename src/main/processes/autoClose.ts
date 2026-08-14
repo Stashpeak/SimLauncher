@@ -5,7 +5,7 @@ import { getExeName, isValidExePath, normalizePathForComparison } from '../utils
 
 import { killLaunchedApps } from './kill'
 import { registerProcessScanObserver, type ProcessScanObserver } from './running'
-import { isLaunchActiveForGame, processNameMismatchWarnings } from './state'
+import { gamesSeenRunning, isLaunchActiveForGame, processNameMismatchWarnings } from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { RunningProcessNamesResult } from './tasklist'
 
@@ -29,11 +29,10 @@ import type { RunningProcessNamesResult } from './tasklist'
  */
 export const AUTO_CLOSE_GRACE_MS = 15000
 
-// Games whose exe has been SEEN running in a SUCCEEDED read. A game only
-// becomes a close candidate by leaving this set, so the first observation after
-// startup (or after the observer is re-registered) can never look like an exit.
-const gamesSeenRunning = new Set<string>()
-
+// A game only becomes a close candidate by leaving `gamesSeenRunning`, so the
+// first observation after startup (or after the observer is re-registered) can
+// never look like an exit. The set lives in state.ts so that registering a
+// launch can clear it synchronously; see the comment there.
 const pendingAutoCloses = new Map<string, ReturnType<typeof setTimeout>>()
 
 /**
@@ -75,7 +74,32 @@ function isAutoCloseArmed(gameKey: string): boolean {
     return false
   }
 
+  // Watching is by process name, so if another configured game is a different
+  // copy of the same exe, one process satisfies both profiles at once: both
+  // record exit evidence, its exit arms two timers, and the companions of a
+  // profile the user never played get closed (Codex on #826). This is the #674
+  // collision class, and `getExternallyAdoptableGameKeys` already refuses to
+  // adopt on the same ambiguity, so refusing here keeps the two consistent.
+  if (hasContestedExeName(gameKey)) {
+    return false
+  }
+
   return true
+}
+
+/**
+ * Whether any process name this game would watch is also the configured game
+ * exe of a DIFFERENT game key. Covers the secondary names too, since those are
+ * matched by name exactly like the primary.
+ */
+function hasContestedExeName(gameKey: string): boolean {
+  const watched = getArmedGameExeNames(gameKey)
+  return Object.entries(getStoredStringRecord('gamePaths')).some(
+    ([otherGameKey, otherGamePath]) =>
+      otherGameKey !== gameKey &&
+      isValidExePath(otherGamePath) &&
+      watched.has(getExeName(otherGamePath))
+  )
 }
 
 function getActiveProfile(gameKey: string): StoredProfile | undefined {
@@ -289,18 +313,16 @@ export const observeProcessScan: ProcessScanObserver = ({
     // because with `gamePosition: 'last'` the game starts after its utilities
     // and `launchDelayMs` allows up to 30s between entries (Codex on #826).
     //
-    // The seen-marker is dropped as well as the timer, and that second half is
-    // the load-bearing one. Cancelling alone left the PREVIOUS session's
-    // evidence in place whenever the launch began before any absence scan had
-    // consumed it, roughly a two second gap at the FAST cadence. Then a launch
-    // that ends without the game appearing, because `launchAutomatically` is
-    // off for this profile or the spawn failed, hands that stale marker to the
-    // next scan, which arms on it and closes the companions the launch had just
-    // started (Codex on #826). Nothing is lost by dropping it: a launch that
-    // does bring the game up gets the marker re-added by the very next scan.
+    // Only the timer is dropped here. The seen-marker is cleared by
+    // `registerActiveLaunch` instead, because this branch cannot be relied on
+    // to run at all: `publishRunningApps('launch')` is fire-and-forget and a
+    // companion-only or failed sequence can finish before that publish's
+    // tasklist read resolves, so no scan need ever observe an active launch
+    // (Codex on #826). Clearing it a second time here would be dead: every
+    // launch path registers, and this early return means nothing re-adds the
+    // marker for the duration of a launch either.
     if (isLaunchActiveForGame(gameKey)) {
       cancelPendingAutoClose(gameKey)
-      gamesSeenRunning.delete(gameKey)
       return
     }
 

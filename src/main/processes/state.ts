@@ -19,9 +19,26 @@ export const suppressedProcessNameMismatchWarnings = new Set<string>()
 // import between the two process-lifecycle modules (#670).
 const activeLaunchControllers = new Map<string, AbortController>()
 
+/**
+ * Games whose exe has been seen running in a succeeded tasklist read (#204).
+ *
+ * Auto-close's state, kept HERE rather than in autoClose.ts so that
+ * `registerActiveLaunch` below can clear it synchronously. Clearing it from a
+ * scan instead is not sound: `publishRunningApps('launch')` is fire-and-forget
+ * (spawn.ts), observers only run after that publish's tasklist await, and a
+ * companion-only or failed sequence can finish and unregister before the read
+ * resolves. The scan would then see no active launch, consume the PREVIOUS
+ * session's marker and close the companions the launch had just started
+ * (Codex on #826).
+ */
+export const gamesSeenRunning = new Set<string>()
+
 export function registerActiveLaunch(gameKey: string): AbortController {
   const controller = new AbortController()
   activeLaunchControllers.set(gameKey, controller)
+  // A new launch supersedes the previous session, so its exit evidence must go
+  // at the moment the launch is registered, not whenever a scan next lands.
+  gamesSeenRunning.delete(gameKey)
   return controller
 }
 

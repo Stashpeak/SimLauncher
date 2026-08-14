@@ -5,7 +5,9 @@ import {
   abortActiveLaunches,
   consumeProcessNameMismatchWarningSuppression,
   dismissAppIcon,
+  gamesSeenRunning,
   getUnclosedProcessKey,
+  isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
   pruneStoppedRunningProcesses,
@@ -142,4 +144,35 @@ test('abortActiveLaunches skips the except controller but still aborts every oth
     unregisterActiveLaunch('iracing', ownSwitchController)
     unregisterActiveLaunch('acc', unrelatedController)
   }
+})
+
+// #204. Auto-close's exit evidence lives here rather than in autoClose.ts for
+// exactly this: registering a launch has to drop it SYNCHRONOUSLY. Clearing it
+// from a process scan instead is not sound, because publishRunningApps('launch')
+// is fire-and-forget and a companion-only or failed sequence can finish before
+// that publish's tasklist read resolves, so no scan ever sees an active launch.
+test('registering a launch clears that game exit evidence (#204)', () => {
+  gamesSeenRunning.add('iracing')
+  gamesSeenRunning.add('ac')
+
+  const controller = registerActiveLaunch('iracing')
+
+  expect(gamesSeenRunning.has('iracing')).toBe(false)
+  // Only the launching game: another game's session is none of its business.
+  expect(gamesSeenRunning.has('ac')).toBe(true)
+
+  unregisterActiveLaunch('iracing', controller)
+  gamesSeenRunning.clear()
+})
+
+test('isLaunchActiveForGame tracks the registration it is named for (#204)', () => {
+  expect(isLaunchActiveForGame('iracing')).toBe(false)
+
+  const controller = registerActiveLaunch('iracing')
+  expect(isLaunchActiveForGame('iracing')).toBe(true)
+  // Per game key, so one profile launching says nothing about another.
+  expect(isLaunchActiveForGame('ac')).toBe(false)
+
+  unregisterActiveLaunch('iracing', controller)
+  expect(isLaunchActiveForGame('iracing')).toBe(false)
 })
