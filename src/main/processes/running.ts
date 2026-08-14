@@ -21,6 +21,14 @@ import {
 } from './state'
 import { readRunningProcessNames, type RunningProcessNamesResult } from './tasklist'
 
+/**
+ * A main-process consumer of one raw tasklist read.
+ *
+ * `succeeded === false` means the read failed and `processNames` is an empty
+ * Set carrying no information. An observer MUST treat that as "no observation"
+ * rather than "nothing is running", or one failed read reads as everything on
+ * the machine having stopped at once.
+ */
 export type ProcessScanObserver = (result: RunningProcessNamesResult) => void
 
 const processScanObservers = new Set<ProcessScanObserver>()
@@ -198,10 +206,6 @@ async function getTrackedRunningApps(
  */
 export function registerProcessScanObserver(observer: ProcessScanObserver): void {
   processScanObservers.add(observer)
-}
-
-export function unregisterProcessScanObserver(observer: ProcessScanObserver): void {
-  processScanObservers.delete(observer)
 }
 
 export async function getRunningApps(): Promise<RunningApp[]> {

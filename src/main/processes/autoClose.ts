@@ -42,7 +42,7 @@ const pendingAutoCloses = new Map<string, ReturnType<typeof setTimeout>>()
  * time passes, and the user can change any of this inside it.
  */
 function isAutoCloseArmed(gameKey: string): boolean {
-  const profileEntry = getStoredProfiles()?.[gameKey]
+  const profileEntry = getStoredProfiles()[gameKey]
   const profile = profileEntry ? getActiveStoredProfile(profileEntry) : undefined
 
   // The only profile boolean that is opt-in, so `=== true`: absent
@@ -57,7 +57,7 @@ function isAutoCloseArmed(gameKey: string): boolean {
     return false
   }
 
-  const gamePath = getStoredStringRecord('gamePaths')?.[gameKey]
+  const gamePath = getStoredStringRecord('gamePaths')[gameKey]
   if (!isValidExePath(gamePath)) {
     return false
   }
@@ -76,7 +76,7 @@ function isAutoCloseArmed(gameKey: string): boolean {
 }
 
 function getArmedGameExeName(gameKey: string): string | undefined {
-  const gamePath = getStoredStringRecord('gamePaths')?.[gameKey]
+  const gamePath = getStoredStringRecord('gamePaths')[gameKey]
   return isValidExePath(gamePath) ? getExeName(gamePath) : undefined
 }
 
@@ -109,9 +109,17 @@ async function runAutoClose(gameKey: string): Promise<void> {
   invalidateProcessNameCache()
   const { processNames, succeeded } = await readRunningProcessNames()
 
-  // "We could not look" is not "it is gone". Skip this close entirely rather
-  // than acting on a read that told us nothing; the next scan re-observes.
+  // "We could not look" is not "it is gone". Skip this close rather than act on
+  // a read that told us nothing.
+  //
+  // Putting the evidence back is what makes that a skip rather than a permanent
+  // opt-out (CodeRabbit on #826): arming consumed the `gamesSeenRunning` entry,
+  // so without this the next scan, which still finds the game absent, gets
+  // `false` from the delete and never arms again. One transient tasklist
+  // failure at the wrong moment would disable auto-close for the rest of the
+  // session.
   if (!succeeded) {
+    gamesSeenRunning.add(gameKey)
     return
   }
 
@@ -119,6 +127,15 @@ async function runAutoClose(gameKey: string): Promise<void> {
   // in a scan). Not an exit.
   if (processNames.has(exeName)) {
     gamesSeenRunning.add(gameKey)
+    return
+  }
+
+  // Eligibility is re-read here too, not just before the await. The presence
+  // check above is deliberately adjacent to the kill; leaving the permission
+  // check on the far side of an I/O boundary would be the same mistake in the
+  // other half, and a game path edited mid-read would kill against an exe name
+  // we no longer target (CodeRabbit on #826).
+  if (!isAutoCloseArmed(gameKey) || getArmedGameExeName(gameKey) !== exeName) {
     return
   }
 
@@ -142,7 +159,7 @@ export const observeProcessScan: ProcessScanObserver = ({
     return
   }
 
-  const profiles = getStoredProfiles() || {}
+  const profiles = getStoredProfiles()
 
   Object.keys(profiles).forEach((gameKey) => {
     if (!isAutoCloseArmed(gameKey)) {
@@ -187,14 +204,14 @@ export const observeProcessScan: ProcessScanObserver = ({
   })
 }
 
+/**
+ * Subscribe auto-close to the process scan. Inert until some profile opts in,
+ * so registering it costs a Set lookup per scan and nothing else.
+ *
+ * Call AFTER the profile migration has run: every decision here reads the
+ * stored profile shape, and observing a half-migrated one would answer against
+ * data that is about to change.
+ */
 export function initAutoClose(): void {
   registerProcessScanObserver(observeProcessScan)
-}
-
-// Test seam: the module holds cross-scan state by design, so a suite that
-// exercises several scenarios needs a way back to a known one.
-export function resetAutoCloseState(): void {
-  pendingAutoCloses.forEach((timer) => clearTimeout(timer))
-  pendingAutoCloses.clear()
-  gamesSeenRunning.clear()
 }

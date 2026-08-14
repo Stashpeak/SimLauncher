@@ -46,10 +46,7 @@ async function loadAutoCloseModule(opts?: {
 
   // Only initAutoClose touches running.ts, and these tests call the observer
   // directly, so the registration seam is stubbed rather than exercised here.
-  const runningMock = {
-    registerProcessScanObserver: vi.fn(),
-    unregisterProcessScanObserver: vi.fn()
-  }
+  const runningMock = { registerProcessScanObserver: vi.fn() }
   vi.doMock('./running', () => runningMock)
   vi.doMock('/src/main/processes/running.ts', () => runningMock)
   vi.doMock('../../src/main/processes/running', () => runningMock)
@@ -209,6 +206,69 @@ test('a failed read at the end of the window aborts the close (#204)', async () 
     gamePaths: AC_GAME_PATHS
   })
   readRunningProcessNamesMock.mockResolvedValue(READ_FAILED)
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// A skip, not an opt-out (CodeRabbit on #826). Arming consumes the evidence
+// that the game was running, so unless the aborted close puts it back, one
+// badly-timed tasklist failure disables auto-close for the rest of the session.
+test('a close aborted by a failed read can still arm again afterwards (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(READ_FAILED)
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+
+  // tasklist recovers, and the game is still gone.
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).toHaveBeenCalledWith('ac')
+})
+
+// The permission check has to be as adjacent to the kill as the presence check
+// is. These two pin the far side of that I/O boundary (CodeRabbit on #826).
+test('disarming while the final read is in flight aborts the close (#204)', async () => {
+  const profiles: Record<string, Record<string, unknown>> = { ac: { ...ARMED } }
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockImplementation(async () => {
+    profiles.ac.closeAppsOnGameExit = false
+    return GONE
+  })
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+test('repointing the game path while the final read is in flight aborts the close (#204)', async () => {
+  const gamePaths: Record<string, string> = { ...AC_GAME_PATHS }
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths
+  })
+  readRunningProcessNamesMock.mockImplementation(async () => {
+    // The window is long enough for a user to edit the profile in it, and the
+    // absence we are about to act on was measured against the OLD exe.
+    gamePaths.ac = 'C:/Games/other.exe'
+    return GONE
+  })
 
   observeProcessScan(RUNNING)
   observeProcessScan(GONE)
