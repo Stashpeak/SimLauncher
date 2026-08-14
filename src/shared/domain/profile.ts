@@ -28,6 +28,11 @@ export interface Profile {
   launchAutomatically?: boolean
   gamePosition?: GamePosition
   trackingEnabled?: boolean
+  // Opt-in auto-close of this profile's companions when the game exits (#204).
+  // The ONLY profile boolean that defaults to OFF, so every read is `=== true`
+  // rather than the `!== false` the others use: closing a user's apps is
+  // destructive, so absent configuration must never mean "yes".
+  closeAppsOnGameExit?: boolean
   killControlsEnabled?: boolean
   relaunchControlsEnabled?: boolean
   trackedProcessPaths?: string[]

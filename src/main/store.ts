@@ -32,6 +32,7 @@ const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const PROFILE_BOOLEAN_KEYS = [
   'launchAutomatically',
   'trackingEnabled',
+  'closeAppsOnGameExit',
   'killControlsEnabled',
   'relaunchControlsEnabled'
 ]

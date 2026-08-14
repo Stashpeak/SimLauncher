@@ -5,6 +5,7 @@ import { closeAppsFromTray } from './closeApps'
 import { installMainProcessErrorLogging, writeMainErrorLog } from './errorLog'
 import { registerHandlers } from './ipc'
 import { migrateProfilesToNamedSets } from './migrator'
+import { initAutoClose } from './processes'
 import { registerContentSecurityPolicy } from './security'
 import { store } from './store'
 import { configureTray, createTray } from './tray'
@@ -51,6 +52,11 @@ if (!gotTheLock) {
         console.error('Profile migration failed; leaving stored profiles unchanged.', error)
       }
       registerHandlers()
+      // Registers an observer on the process scan (#204). Cheap and inert until
+      // some profile opts in, and registered here rather than at import time so
+      // it cannot observe anything before the migration above has settled the
+      // profile shape it reads.
+      initAutoClose()
       configureTray({
         getIconPath: getAppIconPath,
         showMainWindow,

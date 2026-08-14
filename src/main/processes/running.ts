@@ -19,7 +19,11 @@ import {
   runningProcesses,
   unclosedProcesses
 } from './state'
-import { readRunningProcessNames } from './tasklist'
+import { readRunningProcessNames, type RunningProcessNamesResult } from './tasklist'
+
+export type ProcessScanObserver = (result: RunningProcessNamesResult) => void
+
+const processScanObservers = new Set<ProcessScanObserver>()
 
 export interface RunningApp {
   path: string
@@ -177,8 +181,42 @@ async function getTrackedRunningApps(
   return trackedApps
 }
 
+/**
+ * Register a main-process observer of the RAW tasklist result (#204).
+ *
+ * Deliberately raw rather than the published `RunningApp[]`: the #399 guard
+ * below protects PRUNING only, so on a failed read the empty `processNames`
+ * still flows into `unclosedApps`, `getExternallyAdoptableGameKeys` and
+ * `getTrackedRunningApps`, and an externally adopted game plus every tracked
+ * companion drop out of the published snapshot for that tick. Anything deciding
+ * "the game exited" from that list would read one failed read as an exit. An
+ * observer gets `succeeded` and can treat false as "no observation" instead.
+ *
+ * A registration hook rather than a direct import so this module never has to
+ * know about auto-close, which reaches `killLaunchedApps` and would otherwise
+ * deepen the existing running/kill import cycle.
+ */
+export function registerProcessScanObserver(observer: ProcessScanObserver): void {
+  processScanObservers.add(observer)
+}
+
+export function unregisterProcessScanObserver(observer: ProcessScanObserver): void {
+  processScanObservers.delete(observer)
+}
+
 export async function getRunningApps(): Promise<RunningApp[]> {
-  const { processNames, succeeded: tasklistReadSucceeded } = await readRunningProcessNames()
+  const readResult = await readRunningProcessNames()
+  const { processNames, succeeded: tasklistReadSucceeded } = readResult
+  // Observers run before any derivation below, on every read rather than only
+  // on scan ticks, and never get to break the caller: a throwing observer must
+  // not take the running-apps list down with it.
+  processScanObservers.forEach((observer) => {
+    try {
+      observer(readResult)
+    } catch (err) {
+      console.error('Process scan observer error:', err)
+    }
+  })
   // When the tasklist read failed, processNames is an empty Set with no
   // signal value — skip pruning so we don't silently clear running/unclosed
   // state based on bogus "everything is gone" data (see #399).
