@@ -6,9 +6,11 @@ interface ProfileBehaviorSectionProps {
   launchAutomatically: boolean
   gamePosition: GamePosition
   trackingEnabled: boolean
+  closeAppsOnGameExit: boolean
   onLaunchAutomaticallyChange: Dispatch<SetStateAction<boolean>>
   onGamePositionChange: Dispatch<SetStateAction<GamePosition>>
   onTrackingEnabledChange: Dispatch<SetStateAction<boolean>>
+  onCloseAppsOnGameExitChange: Dispatch<SetStateAction<boolean>>
 }
 
 const GAME_POSITION_OPTIONS: { value: GamePosition; label: string }[] = [
@@ -20,9 +22,11 @@ export function ProfileBehaviorSection({
   launchAutomatically,
   gamePosition,
   trackingEnabled,
+  closeAppsOnGameExit,
   onLaunchAutomaticallyChange,
   onGamePositionChange,
-  onTrackingEnabledChange
+  onTrackingEnabledChange,
+  onCloseAppsOnGameExitChange
 }: ProfileBehaviorSectionProps): ReactNode {
   return (
     <div className="border-t border-(--glass-border) pt-4">
@@ -38,6 +42,21 @@ export function ProfileBehaviorSection({
           checked={trackingEnabled}
           onToggle={() => onTrackingEnabledChange((value) => !value)}
           onChange={onTrackingEnabledChange}
+        />
+        {/* Auto-close needs the running indicator: without tracking there is no
+            exit to detect, so the toggle is disabled rather than left settable
+            and silently inert. */}
+        <ProfileToggleRow
+          label="Close apps when the game exits"
+          sublabel={
+            trackingEnabled
+              ? 'Waits a few seconds so tools can finish saving'
+              : 'Needs the running indicator above'
+          }
+          checked={closeAppsOnGameExit}
+          disabled={!trackingEnabled}
+          onToggle={() => onCloseAppsOnGameExitChange((value) => !value)}
+          onChange={onCloseAppsOnGameExitChange}
         />
         {/* Game position is only meaningful when "Launch game with profile" is
             on; dim and disable it via pointer-events-none + opacity rather than

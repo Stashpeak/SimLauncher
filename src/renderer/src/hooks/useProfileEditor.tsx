@@ -60,6 +60,8 @@ export interface UseProfileEditorResult {
   setGamePosition: Dispatch<SetStateAction<GamePosition>>
   trackingEnabled: boolean
   setTrackingEnabled: Dispatch<SetStateAction<boolean>>
+  closeAppsOnGameExit: boolean
+  setCloseAppsOnGameExit: Dispatch<SetStateAction<boolean>>
   killControlsEnabled: boolean
   setKillControlsEnabled: Dispatch<SetStateAction<boolean>>
   relaunchControlsEnabled: boolean
@@ -141,6 +143,9 @@ export function useProfileEditor({
   const [launchAutomatically, setLaunchAutomatically] = useState(true)
   const [gamePosition, setGamePosition] = useState<GamePosition>('first')
   const [trackingEnabled, setTrackingEnabled] = useState(true)
+  // Default OFF, unlike every other profile toggle: this one closes the user's
+  // apps, so it has to be asked for (#204).
+  const [closeAppsOnGameExit, setCloseAppsOnGameExit] = useState(false)
   // Default ON (see useGameProfile getProfileState / #590); the load below uses
   // the same `!== false` rule so only an explicit opt-out reads as off.
   const [killControlsEnabled, setKillControlsEnabled] = useState(true)
@@ -191,6 +196,9 @@ export function useProfileEditor({
       // Anything other than an explicit 'last' means game-first (#471)
       setGamePosition(profile.gamePosition === 'last' ? 'last' : 'first')
       setTrackingEnabled(profile.trackingEnabled !== false)
+      // `=== true`, not the `!== false` its neighbours use: an unset value has
+      // to read as off.
+      setCloseAppsOnGameExit(profile.closeAppsOnGameExit === true)
       setKillControlsEnabled(profile.killControlsEnabled !== false)
       setRelaunchControlsEnabled(profile.relaunchControlsEnabled !== false)
       setTrackedProcessPaths(
@@ -268,6 +276,7 @@ export function useProfileEditor({
       launchAutomatically,
       gamePosition,
       trackingEnabled,
+      closeAppsOnGameExit,
       killControlsEnabled,
       relaunchControlsEnabled,
       trackedProcessPaths
@@ -278,6 +287,7 @@ export function useProfileEditor({
       launchAutomatically,
       gamePosition,
       trackingEnabled,
+      closeAppsOnGameExit,
       killControlsEnabled,
       relaunchControlsEnabled,
       trackedProcessPaths
@@ -538,6 +548,7 @@ export function useProfileEditor({
         launchAutomatically,
         gamePosition,
         trackingEnabled,
+        closeAppsOnGameExit,
         killControlsEnabled,
         relaunchControlsEnabled,
         trackedProcessPaths: trackedProcessPaths.filter(
@@ -594,6 +605,7 @@ export function useProfileEditor({
         launchAutomatically,
         gamePosition,
         trackingEnabled,
+        closeAppsOnGameExit,
         killControlsEnabled,
         relaunchControlsEnabled,
         trackedProcessPaths: trackedProcessPaths.filter(
@@ -702,6 +714,8 @@ export function useProfileEditor({
     setGamePosition,
     trackingEnabled,
     setTrackingEnabled,
+    closeAppsOnGameExit,
+    setCloseAppsOnGameExit,
     killControlsEnabled,
     setKillControlsEnabled,
     relaunchControlsEnabled,

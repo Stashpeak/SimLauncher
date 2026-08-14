@@ -5,7 +5,10 @@ import {
   abortActiveLaunches,
   consumeProcessNameMismatchWarningSuppression,
   dismissAppIcon,
+  gamesSeenRunning,
+  getLaunchGeneration,
   getUnclosedProcessKey,
+  isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
   pruneStoppedRunningProcesses,
@@ -142,4 +145,59 @@ test('abortActiveLaunches skips the except controller but still aborts every oth
     unregisterActiveLaunch('iracing', ownSwitchController)
     unregisterActiveLaunch('acc', unrelatedController)
   }
+})
+
+// #204. Auto-close's exit evidence lives here rather than in autoClose.ts for
+// exactly this: registering a launch has to drop it SYNCHRONOUSLY. Clearing it
+// from a process scan instead is not sound, because publishRunningApps('launch')
+// is fire-and-forget and a companion-only or failed sequence can finish before
+// that publish's tasklist read resolves, so no scan ever sees an active launch.
+test('registering a launch clears that game exit evidence (#204)', () => {
+  // The value is the monotonic timestamp of the first read in the streak; only
+  // its presence matters here.
+  gamesSeenRunning.set('iracing', 0)
+  gamesSeenRunning.set('ac', 0)
+
+  const controller = registerActiveLaunch('iracing')
+
+  expect(gamesSeenRunning.has('iracing')).toBe(false)
+  // Only the launching game: another game's session is none of its business.
+  expect(gamesSeenRunning.has('ac')).toBe(true)
+
+  unregisterActiveLaunch('iracing', controller)
+  gamesSeenRunning.clear()
+})
+
+test('isLaunchActiveForGame tracks the registration it is named for (#204)', () => {
+  expect(isLaunchActiveForGame('iracing')).toBe(false)
+
+  const controller = registerActiveLaunch('iracing')
+  expect(isLaunchActiveForGame('iracing')).toBe(true)
+  // Per game key, so one profile launching says nothing about another.
+  expect(isLaunchActiveForGame('ac')).toBe(false)
+
+  unregisterActiveLaunch('iracing', controller)
+  expect(isLaunchActiveForGame('iracing')).toBe(false)
+})
+
+// The counter exists because "is a launch active" is a point-in-time sample: a
+// companion-only sequence can register AND unregister inside one tasklist read,
+// so an auto-close that samples before and after its read misses it entirely
+// and then closes what that launch just started (CodeRabbit on #826).
+test('registering a launch bumps that game launch generation (#204)', () => {
+  const before = getLaunchGeneration('iracing')
+
+  const first = registerActiveLaunch('iracing')
+  expect(getLaunchGeneration('iracing')).toBe(before + 1)
+  // Unregistering must NOT roll it back, or a sequence that finished inside a
+  // pending close's read would become invisible again.
+  unregisterActiveLaunch('iracing', first)
+  expect(getLaunchGeneration('iracing')).toBe(before + 1)
+
+  const second = registerActiveLaunch('iracing')
+  expect(getLaunchGeneration('iracing')).toBe(before + 2)
+  // Per game key, like every other launch registry here.
+  expect(getLaunchGeneration('ac')).toBe(0)
+
+  unregisterActiveLaunch('iracing', second)
 })

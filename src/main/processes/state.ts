@@ -19,9 +19,50 @@ export const suppressedProcessNameMismatchWarnings = new Set<string>()
 // import between the two process-lifecycle modules (#670).
 const activeLaunchControllers = new Map<string, AbortController>()
 
+/**
+ * Games seen running in a succeeded tasklist read, mapped to the monotonic
+ * timestamp of the FIRST read in the current streak (#204).
+ *
+ * A timestamp rather than a bare marker because auto-close only treats a
+ * disappearance as the end of a session once the game has been running for
+ * long enough to have been one. That is what keeps a launcher stub, which
+ * flickers through a scan or two and hands off to a differently-named child,
+ * from reading as an exit (Codex on #826).
+ *
+ * Auto-close's state, kept HERE rather than in autoClose.ts so that
+ * `registerActiveLaunch` below can clear it synchronously. Clearing it from a
+ * scan instead is not sound: `publishRunningApps('launch')` is fire-and-forget
+ * (spawn.ts), observers only run after that publish's tasklist await, and a
+ * companion-only or failed sequence can finish and unregister before the read
+ * resolves. The scan would then see no active launch, consume the PREVIOUS
+ * session's marker and close the companions the launch had just started
+ * (Codex on #826).
+ */
+export const gamesSeenRunning = new Map<string, number>()
+
+/**
+ * Monotonic count of launches registered per game (#204).
+ *
+ * "Is a launch active right now" is a point-in-time sample, and a
+ * companion-only or failed sequence can register AND unregister inside a single
+ * tasklist read, so an auto-close that samples it before and after its read can
+ * miss the launch entirely and then close what that launch just started
+ * (CodeRabbit on #826). A counter cannot be missed: a pending close records the
+ * value it was armed against and refuses to act if it has moved.
+ */
+const launchGenerations = new Map<string, number>()
+
+export function getLaunchGeneration(gameKey: string): number {
+  return launchGenerations.get(gameKey) ?? 0
+}
+
 export function registerActiveLaunch(gameKey: string): AbortController {
   const controller = new AbortController()
   activeLaunchControllers.set(gameKey, controller)
+  launchGenerations.set(gameKey, getLaunchGeneration(gameKey) + 1)
+  // A new launch supersedes the previous session, so its exit evidence must go
+  // at the moment the launch is registered, not whenever a scan next lands.
+  gamesSeenRunning.delete(gameKey)
   return controller
 }
 
@@ -125,6 +166,19 @@ export function unregisterActiveLaunch(gameKey: string, controller: AbortControl
  * the caller's own threaded-through controller, so a handler's launch is not
  * blocked by its own registration.
  */
+/**
+ * Whether a launch sequence for this game is in flight right now (#204).
+ *
+ * Auto-close needs this because "the game exe is absent" is also true for the
+ * whole run-up of a launch: with `gamePosition: 'last'` the game starts after
+ * its utilities, and `launchDelayMs` allows up to 30s between entries, so the
+ * exe can legitimately be missing for far longer than the grace window while a
+ * new session is starting.
+ */
+export function isLaunchActiveForGame(gameKey: string): boolean {
+  return activeLaunchControllers.has(gameKey)
+}
+
 export function hasOtherActiveLaunchControllers(except?: AbortController): boolean {
   for (const controller of activeLaunchControllers.values()) {
     if (controller !== except) {

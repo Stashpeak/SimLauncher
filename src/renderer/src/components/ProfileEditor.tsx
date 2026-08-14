@@ -127,9 +127,11 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
           launchAutomatically={editor.launchAutomatically}
           gamePosition={editor.gamePosition}
           trackingEnabled={editor.trackingEnabled}
+          closeAppsOnGameExit={editor.closeAppsOnGameExit}
           onLaunchAutomaticallyChange={editor.setLaunchAutomatically}
           onGamePositionChange={editor.setGamePosition}
           onTrackingEnabledChange={editor.setTrackingEnabled}
+          onCloseAppsOnGameExitChange={editor.setCloseAppsOnGameExit}
         />
 
         <ProcessTrackingSection
