@@ -335,6 +335,31 @@ test('a launch that ends without the game appearing still cancels the close (#20
   expect(killLaunchedAppsMock).not.toHaveBeenCalled()
 })
 
+// The gap the cancel alone could not close: the launch begins before any
+// absence scan has consumed the previous session's evidence, so cancelling the
+// timer leaves that evidence armed for later. A profile whose game does not
+// launch (launchAutomatically off, or a failed spawn) then never overwrites it,
+// and the first post-launch scan closes what the launch just started.
+test('a launch supersedes the previous session rather than deferring it (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  // Seen running, then the launch starts before any scan observes the exit.
+  observeProcessScan(RUNNING)
+  launchingGames.add('ac')
+  observeProcessScan(GONE)
+
+  // The sequence starts the utilities but never the game, and finishes.
+  launchingGames.delete('ac')
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
 test('a launch starting during the final read aborts the close (#204)', async () => {
   const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,

@@ -288,10 +288,19 @@ export const observeProcessScan: ProcessScanObserver = ({
     // for a new session, and the run-up to it looks exactly like an exit,
     // because with `gamePosition: 'last'` the game starts after its utilities
     // and `launchDelayMs` allows up to 30s between entries (Codex on #826).
-    // Cancelling rather than deferring, because the launch will put the game
-    // back in `gamesSeenRunning` and a later exit arms a fresh window.
+    //
+    // The seen-marker is dropped as well as the timer, and that second half is
+    // the load-bearing one. Cancelling alone left the PREVIOUS session's
+    // evidence in place whenever the launch began before any absence scan had
+    // consumed it, roughly a two second gap at the FAST cadence. Then a launch
+    // that ends without the game appearing, because `launchAutomatically` is
+    // off for this profile or the spawn failed, hands that stale marker to the
+    // next scan, which arms on it and closes the companions the launch had just
+    // started (Codex on #826). Nothing is lost by dropping it: a launch that
+    // does bring the game up gets the marker re-added by the very next scan.
     if (isLaunchActiveForGame(gameKey)) {
       cancelPendingAutoClose(gameKey)
+      gamesSeenRunning.delete(gameKey)
       return
     }
 
