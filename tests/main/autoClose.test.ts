@@ -15,11 +15,13 @@ const ARMED = { closeAppsOnGameExit: true }
 const launchingGames = new Set<string>()
 // The real set lives in state.ts so registerActiveLaunch can clear it.
 const seenRunning = new Set<string>()
+const launchGenerations = new Map<string, number>()
 
-// Mirrors registerActiveLaunch: registering a launch drops the previous
-// session's evidence synchronously, without waiting for a scan.
+// Mirrors registerActiveLaunch: registering a launch bumps the generation and
+// drops the previous session's evidence, both synchronously.
 function startLaunch(gameKey: string): void {
   launchingGames.add(gameKey)
+  launchGenerations.set(gameKey, (launchGenerations.get(gameKey) ?? 0) + 1)
   seenRunning.delete(gameKey)
 }
 
@@ -75,6 +77,7 @@ async function loadAutoCloseModule(opts?: {
     // Read live rather than captured, so a test can start a launch part-way
     // through a scenario the way the real registry would.
     isLaunchActiveForGame: (gameKey: string) => launchingGames.has(gameKey),
+    getLaunchGeneration: (gameKey: string) => launchGenerations.get(gameKey) ?? 0,
     gamesSeenRunning: seenRunning
   }
   vi.doMock('./state', () => stateMock)
@@ -123,6 +126,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   launchingGames.clear()
   seenRunning.clear()
+  launchGenerations.clear()
   readRunningProcessNamesMock.mockReset()
   invalidateProcessNameCacheMock.mockReset()
   killLaunchedAppsMock.mockClear()
@@ -412,6 +416,55 @@ test('two configured games sharing an exe name never arm (#204)', async () => {
   readRunningProcessNamesMock.mockResolvedValue(GONE)
 
   observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// The mirror image of the arming-side hole, on the firing side (CodeRabbit on
+// #826). "Is a launch active" is sampled at one instant, so a companion-only
+// sequence that registers AND unregisters inside the confirming read is
+// invisible to it: absent before, absent after, yet it started the very
+// companions this close is about to kill. Only a counter survives that.
+test('a launch that begins and ends inside the confirming read aborts the close (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockImplementation(async () => {
+    startLaunch('ac')
+    endLaunch('ac')
+    return GONE
+  })
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+test('a failed read does not resurrect evidence a launch has superseded (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockImplementation(async () => {
+    startLaunch('ac')
+    endLaunch('ac')
+    return READ_FAILED
+  })
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+
+  // The failed-read path puts the seen-marker back so a transient failure is a
+  // skip rather than an opt-out, but the launch cleared it on purpose. Putting
+  // it back regardless would hand the previous session's evidence to this scan.
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
   observeProcessScan(GONE)
   await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
 

@@ -5,7 +5,12 @@ import { getExeName, isValidExePath, normalizePathForComparison } from '../utils
 
 import { killLaunchedApps } from './kill'
 import { registerProcessScanObserver, type ProcessScanObserver } from './running'
-import { gamesSeenRunning, isLaunchActiveForGame, processNameMismatchWarnings } from './state'
+import {
+  gamesSeenRunning,
+  getLaunchGeneration,
+  isLaunchActiveForGame,
+  processNameMismatchWarnings
+} from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { RunningProcessNamesResult } from './tasklist'
 
@@ -166,10 +171,15 @@ function getArmedGameExeNames(gameKey: string): Set<string> {
 interface ArmedSnapshot {
   profileId: string | undefined
   exeNames: Set<string>
+  launchGeneration: number
 }
 
 function captureArming(gameKey: string): ArmedSnapshot {
-  return { profileId: getActiveProfileId(gameKey), exeNames: getArmedGameExeNames(gameKey) }
+  return {
+    profileId: getActiveProfileId(gameKey),
+    exeNames: getArmedGameExeNames(gameKey),
+    launchGeneration: getLaunchGeneration(gameKey)
+  }
 }
 
 /**
@@ -190,6 +200,10 @@ function getActiveProfileId(gameKey: string): string | undefined {
 
 function isSameArming(gameKey: string, armed: ArmedSnapshot): boolean {
   return (
+    // Counts every launch since arming, including one that registered AND
+    // unregistered inside our own tasklist read, which no "is a launch active"
+    // sample can see (CodeRabbit on #826).
+    getLaunchGeneration(gameKey) === armed.launchGeneration &&
     getActiveProfileId(gameKey) === armed.profileId &&
     sameExeNames(getArmedGameExeNames(gameKey), armed.exeNames)
   )
@@ -248,7 +262,13 @@ async function runAutoClose(gameKey: string, armed: ArmedSnapshot): Promise<void
   // failure at the wrong moment would disable auto-close for the rest of the
   // session.
   if (!succeeded) {
-    gamesSeenRunning.add(gameKey)
+    // ...but only if nothing superseded this session while we were looking. A
+    // launch registered during the read cleared the marker on purpose, and
+    // putting it back would resurrect the previous session's evidence for a
+    // later scan to arm on (CodeRabbit on #826).
+    if (isSameArming(gameKey, armed)) {
+      gamesSeenRunning.add(gameKey)
+    }
     return
   }
 
@@ -268,14 +288,12 @@ async function runAutoClose(gameKey: string, armed: ArmedSnapshot): Promise<void
     return
   }
 
-  // An absent game exe is ALSO what a launch in progress looks like, and
-  // `killLaunchedApps` opens by aborting active launches, so firing here would
-  // cancel the session the user just asked for and close the companions it had
-  // already started (Codex on #826). Checked last, so a launch begun during the
-  // read is still caught.
-  if (isLaunchActiveForGame(gameKey)) {
-    return
-  }
+  // No "is a launch active" check here on purpose. It used to sit at this
+  // point, and it was strictly weaker than the generation comparison above: a
+  // timer can never be armed while a launch is active, because the observer
+  // returns before arming, so any launch running now must have registered after
+  // arming and has already moved the generation. Keeping both would leave a
+  // line that cannot decide anything.
 
   // Failures propagate to the scheduler's catch, which is the single place
   // auto-close reports a problem. Handling it twice would log it twice.
@@ -313,14 +331,20 @@ export const observeProcessScan: ProcessScanObserver = ({
     // because with `gamePosition: 'last'` the game starts after its utilities
     // and `launchDelayMs` allows up to 30s between entries (Codex on #826).
     //
-    // Only the timer is dropped here. The seen-marker is cleared by
-    // `registerActiveLaunch` instead, because this branch cannot be relied on
-    // to run at all: `publishRunningApps('launch')` is fire-and-forget and a
-    // companion-only or failed sequence can finish before that publish's
+    // An early cancel, NOT a correctness guard, and the distinction is worth
+    // keeping straight because this branch used to be both.
+    //
+    // Superseding a session is handled entirely by `registerActiveLaunch`: it
+    // clears the seen-marker so nothing can arm, and bumps the generation so an
+    // already-armed timer refuses to act. Neither can be missed. This branch
+    // cannot carry that weight anyway, since `publishRunningApps('launch')` is
+    // fire-and-forget and a companion-only sequence can finish before its
     // tasklist read resolves, so no scan need ever observe an active launch
-    // (Codex on #826). Clearing it a second time here would be dead: every
-    // launch path registers, and this early return means nothing re-adds the
-    // marker for the duration of a launch either.
+    // (Codex on #826).
+    //
+    // What it still buys: a timer that is already doomed does not get to spend
+    // a `tasklist` spawn and drop everyone else's process-name cache on its way
+    // to deciding nothing.
     if (isLaunchActiveForGame(gameKey)) {
       cancelPendingAutoClose(gameKey)
       return

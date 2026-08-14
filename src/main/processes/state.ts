@@ -33,9 +33,26 @@ const activeLaunchControllers = new Map<string, AbortController>()
  */
 export const gamesSeenRunning = new Set<string>()
 
+/**
+ * Monotonic count of launches registered per game (#204).
+ *
+ * "Is a launch active right now" is a point-in-time sample, and a
+ * companion-only or failed sequence can register AND unregister inside a single
+ * tasklist read, so an auto-close that samples it before and after its read can
+ * miss the launch entirely and then close what that launch just started
+ * (CodeRabbit on #826). A counter cannot be missed: a pending close records the
+ * value it was armed against and refuses to act if it has moved.
+ */
+const launchGenerations = new Map<string, number>()
+
+export function getLaunchGeneration(gameKey: string): number {
+  return launchGenerations.get(gameKey) ?? 0
+}
+
 export function registerActiveLaunch(gameKey: string): AbortController {
   const controller = new AbortController()
   activeLaunchControllers.set(gameKey, controller)
+  launchGenerations.set(gameKey, getLaunchGeneration(gameKey) + 1)
   // A new launch supersedes the previous session, so its exit evidence must go
   // at the moment the launch is registered, not whenever a scan next lands.
   gamesSeenRunning.delete(gameKey)
