@@ -69,7 +69,7 @@ function isAutoCloseArmed(gameKey: string): boolean {
   // signal that is not lying and the refusal would be permanent for no reason
   // (Codex on #826). The secondary is what `getArmedGameExeNames` then watches.
   if (
-    getSecondaryGamePaths(profile).length === 0 &&
+    getDistinctSecondaryExeNames(gameKey, profile).size === 0 &&
     processNameMismatchWarnings.has(normalizePathForComparison(gamePath))
   ) {
     return false
@@ -87,6 +87,28 @@ function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
   return Array.isArray(profile?.trackedProcessPaths)
     ? profile.trackedProcessPaths.filter(isValidExePath)
     : []
+}
+
+/**
+ * Secondary executables that contribute a process name the primary does not.
+ *
+ * Only these may lift the mismatch refusal (CodeRabbit on #826). Watching is by
+ * process NAME, so a secondary that is the game path again, or a same-named exe
+ * from another install, collapses into the primary's name and adds no signal.
+ * Counting it would grant the bypass and then arm on the very name the warning
+ * says is unreliable, which is the destructive false close the refusal exists
+ * to prevent. `getExeName` lowercases, so this comparison is case-safe.
+ */
+function getDistinctSecondaryExeNames(
+  gameKey: string,
+  profile: StoredProfile | undefined
+): Set<string> {
+  const primaryExeName = getExeName(getStoredStringRecord('gamePaths')[gameKey])
+  return new Set(
+    getSecondaryGamePaths(profile)
+      .map(getExeName)
+      .filter((exeName) => exeName.length > 0 && exeName !== primaryExeName)
+  )
 }
 
 /**

@@ -333,6 +333,26 @@ test('a secondary found running by the final recheck aborts the close (#204)', a
   expect(killLaunchedAppsMock).not.toHaveBeenCalled()
 })
 
+// A secondary that collapses to the primary's process name adds no signal, and
+// watching is by name (CodeRabbit on #826). Counting it would lift the refusal
+// and then arm on the exact name the warning calls unreliable, producing the
+// destructive false close the refusal exists to prevent.
+test('a same-named secondary does not lift the mismatch refusal (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: { ac: { ...ARMED, trackedProcessPaths: ['D:/SteamLibrary/acs.exe'] } },
+    gamePaths: AC_GAME_PATHS,
+    mismatchPaths: STUB_MISMATCH
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  // The stub exits fast, as stubs do, while the real game plays on unseen.
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
 // Still refused when the warning is the ONLY thing we could go on: the game
 // exe exited right after launch and the real game runs under another name, so
 // "the exe is gone" is already known to be a lie for this game.
