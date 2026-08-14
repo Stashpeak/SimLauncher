@@ -408,7 +408,7 @@ test('a launch supersedes the previous session rather than deferring it (#204)',
 // launch is active, and the guard that depends on one never fires. Clearing at
 // registration is what makes this safe.
 test('a launch no scan ever observes still supersedes the session (#204)', async () => {
-  const { observeProcessScan, AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } = await loadAutoCloseModule({
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,
     gamePaths: AC_GAME_PATHS
   })
@@ -644,7 +644,7 @@ test('a game that only flickers is not treated as a session (#204)', async () =>
 // Steam never had one and its stub read as a whole session. Nothing in this
 // test tells auto-close who started the game, which is the point.
 test('a stub started outside SimLauncher is not treated as a session (#204)', async () => {
-  const { observeProcessScan, AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } = await loadAutoCloseModule({
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,
     gamePaths: AC_GAME_PATHS
   })
@@ -722,7 +722,7 @@ test('turning the toggle off inside the window cancels the pending close (#204)'
 // scan of a session (or the first after the observer is re-registered) looks
 // exactly like an exit.
 test('a game absent from the very first scan is not treated as an exit (#204)', async () => {
-  const { observeProcessScan, AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } = await loadAutoCloseModule({
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,
     gamePaths: AC_GAME_PATHS
   })
