@@ -5,7 +5,7 @@ import { getExeName, isValidExePath, normalizePathForComparison } from '../utils
 
 import { killLaunchedApps } from './kill'
 import { registerProcessScanObserver, type ProcessScanObserver } from './running'
-import { processNameMismatchWarnings } from './state'
+import { isLaunchActiveForGame, processNameMismatchWarnings } from './state'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
 import type { RunningProcessNamesResult } from './tasklist'
 
@@ -134,6 +134,43 @@ function getArmedGameExeNames(gameKey: string): Set<string> {
   return new Set(paths.map(getExeName))
 }
 
+/**
+ * What was true when the window was armed, so the eventual kill can prove it is
+ * still acting on that same intent rather than on whatever is configured 15
+ * seconds later.
+ */
+interface ArmedSnapshot {
+  profileId: string | undefined
+  exeNames: Set<string>
+}
+
+function captureArming(gameKey: string): ArmedSnapshot {
+  return { profileId: getActiveProfileId(gameKey), exeNames: getArmedGameExeNames(gameKey) }
+}
+
+/**
+ * The active profile's id, or undefined for a legacy flat profile entry, which
+ * has only one profile and therefore nothing to switch between.
+ *
+ * Watched exe names alone cannot stand in for this (Codex on #826): two
+ * profiles for the same game necessarily share the game exe, so switching
+ * between them is invisible to a name comparison. The profile switch starts the
+ * incoming profile's companions, and `killLaunchedApps` resolves its targets
+ * from whichever profile is active when it runs, so a stale timer would close
+ * apps that belong to a session the user just started.
+ */
+function getActiveProfileId(gameKey: string): string | undefined {
+  const id = getActiveProfile(gameKey)?.id
+  return typeof id === 'string' ? id : undefined
+}
+
+function isSameArming(gameKey: string, armed: ArmedSnapshot): boolean {
+  return (
+    getActiveProfileId(gameKey) === armed.profileId &&
+    sameExeNames(getArmedGameExeNames(gameKey), armed.exeNames)
+  )
+}
+
 // Order-independent, because the identity that matters is WHICH processes are
 // watched, not how the profile happens to list them.
 function sameExeNames(a: Set<string>, b: Set<string>): boolean {
@@ -161,17 +198,18 @@ function cancelPendingAutoClose(gameKey: string): void {
  * world to have changed, and the cached read is up to 500ms stale on top, so
  * the cache is dropped and one fresh read is taken here.
  */
-async function runAutoClose(gameKey: string): Promise<void> {
+async function runAutoClose(gameKey: string, armed: ArmedSnapshot): Promise<void> {
   pendingAutoCloses.delete(gameKey)
 
-  if (!isAutoCloseArmed(gameKey)) {
+  // An early-out, NOT a correctness guard: the identical check runs after the
+  // read, which is the one that decides. This exists so a timer that is already
+  // moot does not drop everyone else's process-name cache on its way to
+  // deciding nothing, since `invalidateProcessNameCache` is shared state.
+  if (!isAutoCloseArmed(gameKey) || !isSameArming(gameKey, armed)) {
     return
   }
 
-  const exeNames = getArmedGameExeNames(gameKey)
-  if (exeNames.size === 0) {
-    return
-  }
+  const { exeNames } = armed
 
   invalidateProcessNameCache()
   const { processNames, succeeded } = await readRunningProcessNames()
@@ -202,7 +240,16 @@ async function runAutoClose(gameKey: string): Promise<void> {
   // check on the far side of an I/O boundary would be the same mistake in the
   // other half, and a profile edited mid-read would kill against a process set
   // we no longer target (CodeRabbit on #826).
-  if (!isAutoCloseArmed(gameKey) || !sameExeNames(getArmedGameExeNames(gameKey), exeNames)) {
+  if (!isAutoCloseArmed(gameKey) || !isSameArming(gameKey, armed)) {
+    return
+  }
+
+  // An absent game exe is ALSO what a launch in progress looks like, and
+  // `killLaunchedApps` opens by aborting active launches, so firing here would
+  // cancel the session the user just asked for and close the companions it had
+  // already started (Codex on #826). Checked last, so a launch begun during the
+  // read is still caught.
+  if (isLaunchActiveForGame(gameKey)) {
     return
   }
 
@@ -237,6 +284,17 @@ export const observeProcessScan: ProcessScanObserver = ({
       return
     }
 
+    // A launch for this game supersedes any pending close: the user has asked
+    // for a new session, and the run-up to it looks exactly like an exit,
+    // because with `gamePosition: 'last'` the game starts after its utilities
+    // and `launchDelayMs` allows up to 30s between entries (Codex on #826).
+    // Cancelling rather than deferring, because the launch will put the game
+    // back in `gamesSeenRunning` and a later exit arms a fresh window.
+    if (isLaunchActiveForGame(gameKey)) {
+      cancelPendingAutoClose(gameKey)
+      return
+    }
+
     const exeNames = getArmedGameExeNames(gameKey)
     if (exeNames.size === 0) {
       return
@@ -254,13 +312,14 @@ export const observeProcessScan: ProcessScanObserver = ({
     // separate `!pendingAutoCloses.has(...)` check would look like the guard
     // doing that work and never once decide anything.
     if (gamesSeenRunning.delete(gameKey)) {
+      const armed = captureArming(gameKey)
       pendingAutoCloses.set(
         gameKey,
         setTimeout(() => {
           // Caught here rather than left to `void`: a rejection from the read
           // or the kill would otherwise surface as an unhandled rejection with
           // no indication which game it came from.
-          runAutoClose(gameKey).catch((err: unknown) => {
+          runAutoClose(gameKey, armed).catch((err: unknown) => {
             const detail = err instanceof Error ? err.message : String(err)
             console.error(`Auto-close failed for ${gameKey}:`, err)
             writeAppErrorLog('autoClose', `[${gameKey}] Auto-close failed: ${detail}`)

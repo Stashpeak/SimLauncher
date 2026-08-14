@@ -125,6 +125,19 @@ export function unregisterActiveLaunch(gameKey: string, controller: AbortControl
  * the caller's own threaded-through controller, so a handler's launch is not
  * blocked by its own registration.
  */
+/**
+ * Whether a launch sequence for this game is in flight right now (#204).
+ *
+ * Auto-close needs this because "the game exe is absent" is also true for the
+ * whole run-up of a launch: with `gamePosition: 'last'` the game starts after
+ * its utilities, and `launchDelayMs` allows up to 30s between entries, so the
+ * exe can legitimately be missing for far longer than the grace window while a
+ * new session is starting.
+ */
+export function isLaunchActiveForGame(gameKey: string): boolean {
+  return activeLaunchControllers.has(gameKey)
+}
+
 export function hasOtherActiveLaunchControllers(except?: AbortController): boolean {
   for (const controller of activeLaunchControllers.values()) {
     if (controller !== except) {

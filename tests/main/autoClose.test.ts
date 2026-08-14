@@ -11,6 +11,9 @@ const killLaunchedAppsMock = vi.fn(async () => ({ success: true, closedCount: 1,
 
 const ARMED = { closeAppsOnGameExit: true }
 
+// Game keys with a launch sequence in flight, mirroring activeLaunchControllers.
+const launchingGames = new Set<string>()
+
 async function loadAutoCloseModule(opts?: {
   profiles?: Record<string, unknown>
   gamePaths?: Record<string, string>
@@ -55,7 +58,10 @@ async function loadAutoCloseModule(opts?: {
   const stateMock = {
     processNameMismatchWarnings: new Map(
       (opts?.mismatchPaths ?? []).map((warnedPath) => [warnedPath.toLowerCase(), { warning: 'x' }])
-    )
+    ),
+    // Read live rather than captured, so a test can start a launch part-way
+    // through a scenario the way the real registry would.
+    isLaunchActiveForGame: (gameKey: string) => launchingGames.has(gameKey)
   }
   vi.doMock('./state', () => stateMock)
   vi.doMock('/src/main/processes/state.ts', () => stateMock)
@@ -101,6 +107,7 @@ const READ_FAILED = { processNames: new Set<string>(), succeeded: false }
 
 beforeEach(() => {
   vi.useFakeTimers()
+  launchingGames.clear()
   readRunningProcessNamesMock.mockReset()
   invalidateProcessNameCacheMock.mockReset()
   killLaunchedAppsMock.mockClear()
@@ -272,6 +279,100 @@ test('repointing the game path while the final read is in flight aborts the clos
 
   observeProcessScan(RUNNING)
   observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// An in-flight launch looks exactly like an exit: with the game set to start
+// after its utilities, and up to 30s of launch delay between entries, its exe
+// is legitimately absent for longer than the whole grace window. Firing there
+// would abort the launch in killLaunchedApps' prologue and close the companions
+// it had just started (Codex on #826).
+test('a launch starting inside the window cancels the pending close (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+
+  // The user has had enough of waiting and starts the profile again. The game
+  // itself has not appeared yet, so the scan still sees nothing.
+  launchingGames.add('ac')
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS / 3)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// The case only the observer's guard can catch: the launch is over by the time
+// the timer fires, so the check next to the kill sees no active launch, and the
+// game never appeared so the presence check sees nothing either. Without the
+// cancel, a launch that failed to start its game takes out the utilities the
+// user just watched start.
+test('a launch that ends without the game appearing still cancels the close (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+
+  launchingGames.add('ac')
+  await vi.advanceTimersByTimeAsync(1000)
+  observeProcessScan(GONE)
+  // The sequence gives up (a broken game path, an aborted launch) long before
+  // the window would have elapsed.
+  launchingGames.delete('ac')
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+test('a launch starting during the final read aborts the close (#204)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles: AC_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  // No scan gets a chance to notice: the launch begins while the confirming
+  // read is in flight, which is why that check sits last.
+  readRunningProcessNamesMock.mockImplementation(async () => {
+    launchingGames.add('ac')
+    return GONE
+  })
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+  await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// Two profiles for the same game necessarily share the game exe, so the
+// watched-name comparison cannot see a switch between them. Without the profile
+// id the timer would close the incoming profile's companions on the strength of
+// the outgoing profile's exit (Codex on #826).
+test('switching the active profile inside the window aborts the close (#204)', async () => {
+  const profiles: Record<string, Record<string, unknown>> = {
+    ac: { ...ARMED, id: 'practice' }
+  }
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
+    profiles,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  observeProcessScan(RUNNING)
+  observeProcessScan(GONE)
+
+  // Same game, same exe, different profile now active.
+  profiles.ac.id = 'race'
   await vi.advanceTimersByTimeAsync(AUTO_CLOSE_GRACE_MS)
 
   expect(killLaunchedAppsMock).not.toHaveBeenCalled()
