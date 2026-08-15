@@ -12,7 +12,11 @@ import { expect, test, vi, beforeEach } from 'vitest'
 
 type MockIpcHandler = (...args: unknown[]) => unknown
 interface SaveSettingsResult {
-  settings: { appPaths: Record<string, string>; gamePaths: Record<string, string> }
+  settings: {
+    appPaths: Record<string, string>
+    gamePaths: Record<string, string>
+    startWithWindows?: boolean
+  }
   dropped: { field: string; key: string; reason: string }[]
 }
 
@@ -164,4 +168,22 @@ test('save-settings leaves the login item alone when startWithWindows is absent 
   await invokeSaveSettings({ appPaths: { simhub: 'C:/Tools/SimHub.exe' }, customSlots: 1 })
 
   expect(app.setLoginItemSettings).not.toHaveBeenCalled()
+})
+
+// A failing OS write must not fail the save (CodeRabbit on #831). The store is
+// already written by this point and window.ts re-applies it on every window
+// creation, so the registry converges on the next start. Rejecting instead
+// would tell the user the save failed while it persisted, and leave the
+// renderer dirty against a store that already agrees with it.
+test('save-settings survives a throwing login-item write (#676)', async () => {
+  await loadConfigModule()
+  const { app } = await import('electron')
+  vi.mocked(app.setLoginItemSettings).mockImplementationOnce(() => {
+    throw new Error('registry write refused')
+  })
+
+  const result = await invokeSaveSettings({ startWithWindows: true, customSlots: 1 })
+
+  expect(result.settings.startWithWindows).toBe(true)
+  expect(result.dropped).toEqual([])
 })

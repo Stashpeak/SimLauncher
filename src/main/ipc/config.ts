@@ -462,8 +462,20 @@ export function registerConfigHandlers(): void {
       // app start re-applied it (window.ts). Read back through getStoredBoolean
       // rather than trusting the patch, so this is the same spelling as the two
       // startup call sites and cannot drift from what was actually persisted.
+      //
+      // The OS write must not be able to fail the save. The store is the source
+      // of truth and window.ts re-applies it from there on every window
+      // creation, so a failed write converges on the next app start; that repair
+      // path is exactly why this bug was one unexpected boot rather than a
+      // permanent one. Letting it reject instead would report "failed to save"
+      // for a patch that did persist, and leave the renderer dirty against a
+      // store that already agrees with it (CodeRabbit on #831).
       if (changedKeys.includes('startWithWindows')) {
-        app.setLoginItemSettings({ openAtLogin: getStoredBoolean('startWithWindows') })
+        try {
+          app.setLoginItemSettings({ openAtLogin: getStoredBoolean('startWithWindows') })
+        } catch (err) {
+          console.error('Failed to apply the login item setting:', err)
+        }
       }
       notifyStoreConfigChanged({ reason: 'save-settings', keys: changedKeys })
     }
