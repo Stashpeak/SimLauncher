@@ -1,4 +1,3 @@
-import { execFile, spawn } from 'child_process'
 import type { WebContents } from 'electron'
 import fs from 'fs'
 import path from 'path'
@@ -15,6 +14,7 @@ import {
   wait
 } from '../utils'
 
+import { execFileUnlessAborted, spawnUnlessAborted } from './guardedStart'
 import {
   consumeProcessNameMismatchWarningSuppression,
   noteStrandedConsentPrompt,
@@ -242,9 +242,10 @@ export async function launchProfileApps(
       return true
     })
 
-    // A kill can land during the pre-loop awaits (the tasklist scan above) —
-    // the early returns below must report the cancellation like the loop
-    // paths do, not a plain success/error the user's Close Apps contradicts.
+    // REPORTING, not prevention (#715). Nothing has been started yet and the
+    // guarded start would refuse to start anything now anyway — but the early
+    // returns below would otherwise answer a Close Apps with a plain
+    // success/error that contradicts it, so the cancellation is named here.
     if (launchController.signal.aborted) {
       return {
         success: false,
@@ -284,11 +285,21 @@ export async function launchProfileApps(
     const launchResults: AppLaunchResult[] = []
 
     for (let index = 0; index < appsToLaunch.length; index += 1) {
-      // Checked at the TOP of every iteration, not just after the wait below:
-      // a kill can land in the gap between spawnDetachedApp resolving and the
-      // wait call starting, and an already-aborted signal resolves wait()
-      // immediately — without this check the loop would still spawn one more
-      // app on that immediate resolution (#670).
+      // PROMPTNESS, not prevention (#715). Whichever suspension point a kill
+      // lands in — the wait below, the probe inside spawnDetachedApp, or one a
+      // later feature adds (#625, #626) — spawnUnlessAborted starts nothing and
+      // spawnDetachedApp answers 'cancelled'. Deleting this check cannot make a
+      // cancelled launch spawn something; it can only make it slower to admit
+      // it, by entering spawnDetachedApp for an app it will never start and
+      // paying that app's PE-subsystem probe first (Codex P2 on #828). That
+      // probe has no timeout, and the process-wide launch guard is held until
+      // this whole sequence returns, so every window's Launch waits on it.
+      //
+      // Which is why it is a check about latency, not correctness, and why the
+      // features queued behind this refactor must not copy it as protection.
+      // The difference is visible in the tests: remove this and one test slows
+      // down and asserts an extra probe; remove the guarded start and eleven
+      // fail.
       if (launchController.signal.aborted) {
         break
       }
@@ -300,8 +311,7 @@ export async function launchProfileApps(
         gamePath,
         launchController.signal
       )
-      // The abort landed during spawnDetachedApp's pre-spawn probe — nothing
-      // was spawned, so don't count it (and don't arm the post-launch
+      // Nothing was started, so don't count it (and don't arm the post-launch
       // cooldown for an attempt that never happened).
       if (launchResult.status === 'cancelled') {
         break
@@ -362,10 +372,12 @@ export async function launchProfileApps(
     // Neither a failed nor a cancelled handoff started anything.
     const launchedCount = launchResults.length - failedResults.length - cancelledElevatedCount
 
-    // A kill (Close Apps) mid-sequence aborts launchController before doing its
-    // own work (#670) — report this as neither success nor failure, and stop
-    // before the failure/success branches below account for apps that were
-    // deliberately never spawned.
+    // REPORTING, not prevention (#715): the loop has already ended and the
+    // guarded start decided what did and did not start. A kill (Close Apps)
+    // mid-sequence aborts launchController before doing its own work (#670) —
+    // report that as neither success nor failure, and stop before the
+    // failure/success branches below account for apps deliberately never
+    // started.
     if (launchController.signal.aborted) {
       // Elevated apps that completed their UAC handoff before (or despite)
       // the abort survive the kill — SimLauncher cannot close them (#670
@@ -680,11 +692,16 @@ function launchElevated(
         noteStrandedConsentPrompt()
       }
     }
+    // `child` is null only when the abort beat the host's start, and that path
+    // returns below without arming the timer or attaching this listener — so
+    // the optional call here and in the timer's cancel is never the reason
+    // nothing gets killed. It is declared above the start because the callback
+    // execFile is given references it, and that callback can fire synchronously.
     const onAbort = () => {
       if (handoffPending) {
         noteHandoffCancelled()
         noteStrandedPromptOnce()
-        child.kill()
+        child?.kill()
       }
     }
 
@@ -743,7 +760,7 @@ function launchElevated(
           // Same reason as onAbort (#809), and the same guard: mid-sequence
           // both this and the abort fire for this one handoff.
           noteStrandedPromptOnce()
-          child.kill()
+          child?.kill()
         }
       })
       resolve({
@@ -755,7 +772,8 @@ function launchElevated(
       })
     }, ELEVATED_HANDOFF_MAX_WAIT_MS)
 
-    const child = execFile(
+    const child = execFileUnlessAborted(
+      signal,
       'powershell.exe',
       [
         '-NoProfile',
@@ -819,6 +837,18 @@ function launchElevated(
         })
       }
     )
+
+    if (!child) {
+      // The launch was cancelled before the elevation host started. No consent
+      // prompt was ever raised, so there is no host to kill and nothing
+      // stranded on screen for the caller to explain (#809) — unlike every
+      // later cancellation point in this function.
+      handoffPending = false
+      clearTimeout(handoffTimer)
+      resolve({ status: 'cancelled', appPath })
+      return
+    }
+
     signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
@@ -836,16 +866,13 @@ export async function spawnDetachedApp(
   // executing, #486). Spawned non-detached they allocate their own console,
   // and children outlive the parent on Windows either way. GUI apps keep the
   // long-standing detached behavior.
+  //
+  // A kill (Close Apps) can land while this PE-subsystem probe is in flight —
+  // and while anything else the launch sequence awaits before reaching here is
+  // in flight. None of those windows needs its own check: spawnUnlessAborted
+  // re-reads the signal in the same synchronous block as spawn() (#715).
   const consoleApp = await isConsoleExecutable(appPath)
 
-  // A kill (Close Apps) can land while the PE-subsystem probe above is in
-  // flight. The kill's snapshot cannot include a process that hasn't spawned
-  // yet, so spawning now would leave an app running that the user just asked
-  // to close (#670). There is no further await between this check and spawn()
-  // below, so the window is fully closed.
-  if (signal?.aborted) {
-    return { status: 'cancelled', appPath }
-  }
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -867,11 +894,17 @@ export async function spawnDetachedApp(
       // Apps that resolve assets relative to their CWD (e.g. iOverlay's WIC
       // sprite loads) break — and can leak memory until OOM — when they
       // inherit SimLauncher's CWD instead (#483).
-      const child = spawn(appPath, args, {
+      const child = spawnUnlessAborted(signal, appPath, args, {
         cwd: path.dirname(appPath),
         detached: !consoleApp,
         stdio: 'ignore'
       })
+      if (!child) {
+        // The launch was cancelled before this app started. Nothing to
+        // register, nothing to unwind, nothing running for the kill to miss.
+        resolveOnce({ status: 'cancelled', appPath })
+        return
+      }
       const runningKey = normalizePathForComparison(appPath)
       runningProcesses.set(runningKey, {
         process: child,
@@ -910,15 +943,10 @@ export async function spawnDetachedApp(
         // A UAC elevation request is a handoff, not a failure — don't write a
         // failure entry for it; launchElevated logs its own genuine failures.
         if (isElevatedLaunchError(err)) {
-          // A kill (Close Apps) can land between spawn() and this error event.
-          // Handing off now would pop a UAC prompt right after the user's
-          // Close Apps click — and start an elevated app the kill's snapshot
-          // can never include (#670). Nothing is running (the spawn failed),
-          // so report the attempt as cancelled instead.
-          if (signal?.aborted) {
-            resolveOnce({ status: 'cancelled', appPath })
-            return
-          }
+          // A kill (Close Apps) can land between spawn() and this error event,
+          // in which case launchElevated starts nothing and reports the attempt
+          // as cancelled — its own start is guarded (#715). Nothing is running
+          // here either way: this spawn failed.
           resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal))
           return
         }
