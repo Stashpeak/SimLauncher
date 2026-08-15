@@ -162,6 +162,50 @@ describe('GameIcon dismiss menu (#737)', () => {
     expect(container.querySelector('button')).toBeNull()
   })
 
+  // The dot's colour is the only thing a sighted user reads off the icon, and
+  // for a mismatch-warning entry "running" is not a fact we have: the entry is
+  // surfaced precisely because the launched exe is gone from the tasklist, which
+  // means either it exited or it handed off to a child under another name.
+  // Pinned here because nothing else can catch it: the class is the whole fix.
+  const dotClass = () => container.querySelector('.status-dot')!.className
+
+  test('an untracked mismatch warning does not claim the game is running (#737)', async () => {
+    await render(
+      <GameIcon
+        game={GAME}
+        isRunning={true}
+        iconUrl={ICON}
+        warning={WARNING}
+        dismissPath={GAME_PATH}
+      />
+    )
+    expect(dotClass()).toContain('bg-(--status-warning)')
+    expect(dotClass()).not.toContain('bg-(--status-running)')
+  })
+
+  test('a tracked kill-failed warning keeps the running dot (#737)', async () => {
+    // This one IS running: `unclosedProcesses` entries surface only while the
+    // image is still in the tasklist. Amber here would turn a fact into a guess.
+    await render(
+      <GameIcon
+        game={GAME}
+        isRunning={true}
+        iconUrl={ICON}
+        warning={WARNING}
+        dismissPath={GAME_PATH}
+        tracked={true}
+      />
+    )
+    expect(dotClass()).toContain('bg-(--status-running)')
+    expect(dotClass()).not.toContain('bg-(--status-warning)')
+  })
+
+  test('a plain running game keeps the running dot (#737)', async () => {
+    await render(<GameIcon game={GAME} isRunning={true} iconUrl={ICON} />)
+    expect(dotClass()).toContain('bg-(--status-running)')
+    expect(dotClass()).not.toContain('bg-(--status-warning)')
+  })
+
   test('a failed dismiss notifies the user instead of failing silently', async () => {
     // The menu closes optimistically, so a rejected dismiss would otherwise
     // leave the dot in place with no feedback (#764 CodeRabbit).

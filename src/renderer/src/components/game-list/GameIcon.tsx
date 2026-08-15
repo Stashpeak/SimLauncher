@@ -20,8 +20,17 @@ interface GameIconProps {
   tracked?: boolean
 }
 
-const STATUS_DOT_CLASS =
-  'status-dot absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-(--status-running) shadow-[0_0_8px_var(--status-running)]'
+const STATUS_DOT_BASE_CLASS = 'status-dot absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full'
+const STATUS_DOT_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-running) shadow-[0_0_8px_var(--status-running)]`
+// "We cannot tell", not "running" (#737). A mismatch-warning entry is surfaced
+// only when the launched exe is ABSENT from the tasklist (running.ts), and at
+// that point both readings are live at once: the game exited, or it handed off
+// to a child process under a name nothing here can see. Green asserts the
+// second; nothing asserts the first; neither is known. `--status-warning` is
+// the amber already used for the strip's elevated-companion triangle, and it
+// aliases `--warning-text`, so it follows the theme without a per-theme entry
+// (same as --status-danger / --status-success).
+const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-warning) shadow-[0_0_8px_var(--status-warning)]`
 
 export function GameIcon({
   game,
@@ -83,7 +92,15 @@ export function GameIcon({
             {...dismissMenu.getTriggerProps()}
           >
             {iconContent}
-            <span aria-hidden="true" className={STATUS_DOT_CLASS} />
+            {/* Only the UNTRACKED warning is the unknown state. This branch also
+                serves a tracked one: a game exe that failed to close and is
+                still running, surfaced from `unclosedProcesses` only while its
+                image IS in the tasklist. That one genuinely is running, so
+                amber would downgrade a fact to a guess. */}
+            <span
+              aria-hidden="true"
+              className={tracked ? STATUS_DOT_CLASS : STATUS_DOT_UNKNOWN_CLASS}
+            />
           </button>
         </Tooltip>
         {dismissMenu.menu}
