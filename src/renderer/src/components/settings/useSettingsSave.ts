@@ -127,6 +127,7 @@ interface UseSettingsSaveArgs {
   notify: (message: string, type: 'success' | 'error' | 'warn', duration?: number) => void
   resetDirty: (state?: SettingsStateSnapshot) => void
   setAppPaths: (appPaths: Record<string, string>) => void
+  setAppNames: (appNames: Record<string, string>) => void
   setGamePaths: (gamePaths: Record<string, string>) => void
   setAppArgs: (appArgs: Record<string, string>) => void
   setLaunchDelayMs: (launchDelayMs: number) => void
@@ -157,6 +158,7 @@ export function useSettingsSave({
   notify,
   resetDirty,
   setAppPaths,
+  setAppNames,
   setGamePaths,
   setAppArgs,
   setLaunchDelayMs
@@ -213,6 +215,13 @@ export function useSettingsSave({
       // entry the sanitizer rejected is reflected as gone here too, instead
       // of lingering in the input as if it had been saved. #669
       if (!changedDuringSave.appPaths) setAppPaths(persistedSettings.appPaths)
+      // appNames was the one tracked dictionary with no write-back (#711). Its
+      // absence did not just leave a rejected value on screen: the baseline
+      // below IS built from persistedSettings, so live state kept a key the
+      // baseline lacked and useDirtyTracking re-derived isDirty back to true
+      // immediately after resetDirty cleared it. The panel then stayed dirty
+      // for the rest of the session, through every later save.
+      if (!changedDuringSave.appNames) setAppNames(persistedSettings.appNames)
       if (!changedDuringSave.gamePaths) setGamePaths(persistedSettings.gamePaths)
       if (!changedDuringSave.appArgs) setAppArgs(persistedSettings.appArgs)
 
@@ -264,6 +273,7 @@ export function useSettingsSave({
     zoomFactor,
     settingsObjectEditVersions,
     setAppPaths,
+    setAppNames,
     setGamePaths,
     setAppArgs,
     setLaunchDelayMs
