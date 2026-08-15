@@ -175,9 +175,13 @@ test('save-settings leaves the login item alone when startWithWindows is absent 
 // creation, so the registry converges on the next start. Rejecting instead
 // would tell the user the save failed while it persisted, and leave the
 // renderer dirty against a store that already agrees with it.
-test('save-settings survives a throwing login-item write (#676)', async () => {
+// The log is asserted, not just tolerated: swallowing is the whole point of the
+// catch, so the log is the only trace a failed write leaves. Drop it and the
+// failure becomes invisible with nothing to notice (CodeRabbit on #831).
+test('save-settings survives a throwing login-item write, and says so (#676)', async () => {
   await loadConfigModule()
   const { app } = await import('electron')
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.mocked(app.setLoginItemSettings).mockImplementationOnce(() => {
     throw new Error('registry write refused')
   })
@@ -186,4 +190,9 @@ test('save-settings survives a throwing login-item write (#676)', async () => {
 
   expect(result.settings.startWithWindows).toBe(true)
   expect(result.dropped).toEqual([])
+  expect(consoleError).toHaveBeenCalledWith(
+    'Failed to apply the login item setting:',
+    expect.objectContaining({ message: 'registry write refused' })
+  )
+  consoleError.mockRestore()
 })
