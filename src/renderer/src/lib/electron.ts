@@ -30,7 +30,6 @@ export const onUpdateError = window.electronAPI.onUpdateError
 export const installUpdate = () => window.electronAPI.installUpdate()
 export const checkForUpdates = () => window.electronAPI.checkForUpdates()
 export const getUpdateInfo = () => window.electronAPI.getUpdateInfo()
-export const setLoginItem = window.electronAPI.setLoginItem
 export const setZoom = window.electronAPI.setZoom
 export const getAssetData = window.electronAPI.getAssetData
 export const getFileIcon = window.electronAPI.getFileIcon

@@ -293,7 +293,6 @@ export interface ElectronAPI {
   previewImportConfig: () => Promise<ConfigImportPreviewResult>
   applyImportConfig: (token: string) => Promise<ConfigFileResult>
   cancelImportConfig: (token: string) => Promise<ConfigFileResult>
-  setLoginItem: (openAtLogin: boolean) => Promise<void>
   setZoom: (factor: number) => Promise<void>
   getAssetData: (filename: string) => Promise<string | null>
   getFileIcon: (filePath: string) => Promise<string | null>

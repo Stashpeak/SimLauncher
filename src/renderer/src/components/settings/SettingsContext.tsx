@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useDirtyTracking } from '../../hooks/useDirtyTracking'
 import { getUtilities } from '../../lib/config'
-import {
-  browsePath,
-  getFileIcon,
-  setLoginItem,
-  setPendingMinimizeToTray,
-  setZoom
-} from '../../lib/electron'
+import { browsePath, getFileIcon, setPendingMinimizeToTray, setZoom } from '../../lib/electron'
 import type { ThemeMode } from '../../lib/theme'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useNotify } from '../Notify'
@@ -227,10 +221,16 @@ export function SettingsProvider({
     [setZoomFactor]
   )
 
+  // Unlike the other eager-apply handlers here, this one only moves renderer
+  // state: the OS write happens in `save-settings` (#676). Every other eager
+  // side effect on this screen lives in the main process and dies with it, so
+  // Discard reverting renderer state is enough. An HKCU Run entry is not: it
+  // outlives a crash or a power loss between the toggle and the Discard, so
+  // applying it before the user has committed makes the registry disagree with
+  // both the UI and the store until the next app start repairs it.
   const handleStartWithWindowsChange = useCallback(
     (checked: boolean) => {
       setStartWithWindows(checked)
-      setLoginItem(checked)
     },
     [setStartWithWindows]
   )

@@ -15,6 +15,7 @@ import {
   formatConfigRecoveryNotice,
   getDroppedSettingsEntries,
   getSupportedConfigValues,
+  getStoredBoolean,
   getStoredZoomFactor,
   requireSafeZoomFactor,
   sanitizeImportedConfig,
@@ -428,11 +429,6 @@ export function registerConfigHandlers(): void {
     return notice ? formatConfigRecoveryNotice(notice) : null
   })
 
-  ipcMain.handle('set-login-item', (_event, openAtLogin: unknown) => {
-    if (typeof openAtLogin !== 'boolean') return
-    app.setLoginItemSettings({ openAtLogin })
-  })
-
   ipcMain.handle('set-zoom', (_event, factor: unknown) => {
     const zoomFactor = requireSafeZoomFactor(factor)
     const webContents = getMainWindow()?.webContents
@@ -459,6 +455,15 @@ export function registerConfigHandlers(): void {
       setStoreEntries(safe)
       if (changedKeys.includes('showTrayIcon')) {
         applyTrayVisibility(store.get('showTrayIcon') !== false)
+      }
+      // Applied on SAVE, not on toggle (#676). The renderer used to write this
+      // straight to the OS when the switch moved, so a Discard left an HKCU Run
+      // entry behind that contradicted both the UI and the store until the next
+      // app start re-applied it (window.ts). Read back through getStoredBoolean
+      // rather than trusting the patch, so this is the same spelling as the two
+      // startup call sites and cannot drift from what was actually persisted.
+      if (changedKeys.includes('startWithWindows')) {
+        app.setLoginItemSettings({ openAtLogin: getStoredBoolean('startWithWindows') })
       }
       notifyStoreConfigChanged({ reason: 'save-settings', keys: changedKeys })
     }

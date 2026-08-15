@@ -125,3 +125,43 @@ test('save-settings returns settings + dropped: [] even for a non-object patch',
   expect(result.dropped).toEqual([])
   expect(result.settings).toBeDefined()
 })
+
+/**
+ * #676: the login item used to be written to the OS by the renderer the moment
+ * the switch moved, so Discard left an HKCU Run entry contradicting both the UI
+ * and the store until the next app start repaired it. It is applied on SAVE
+ * now, which makes Discard correct by construction rather than by remembering
+ * to compensate for it.
+ */
+test('save-settings applies the login item when startWithWindows changes (#676)', async () => {
+  await loadConfigModule()
+  const { app } = await import('electron')
+
+  await invokeSaveSettings({ startWithWindows: true, customSlots: 1 })
+
+  expect(app.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true })
+})
+
+// Deliberately a SECOND save rather than a second assertion on the first: any
+// truthiness shortcut (applying `true` whenever the key is present) passes the
+// test above and fails only here.
+test('save-settings applies a later startWithWindows: false too (#676)', async () => {
+  await loadConfigModule()
+  const { app } = await import('electron')
+
+  await invokeSaveSettings({ startWithWindows: true, customSlots: 1 })
+  await invokeSaveSettings({ startWithWindows: false, customSlots: 1 })
+
+  expect(app.setLoginItemSettings).toHaveBeenLastCalledWith({ openAtLogin: false })
+})
+
+// Hoisting the apply out of the changedKeys guard would re-write the registry
+// on every unrelated save, which is how the eager-apply version behaved.
+test('save-settings leaves the login item alone when startWithWindows is absent (#676)', async () => {
+  await loadConfigModule()
+  const { app } = await import('electron')
+
+  await invokeSaveSettings({ appPaths: { simhub: 'C:/Tools/SimHub.exe' }, customSlots: 1 })
+
+  expect(app.setLoginItemSettings).not.toHaveBeenCalled()
+})

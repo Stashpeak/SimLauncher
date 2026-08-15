@@ -111,8 +111,7 @@ const electronAPI: ElectronAPI = {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getUpdateInfo: () => ipcRenderer.invoke('get-update-info'),
 
-  // startup & zoom
-  setLoginItem: (openAtLogin: boolean) => ipcRenderer.invoke('set-login-item', openAtLogin),
+  // zoom
   setZoom: (factor: number) => ipcRenderer.invoke('set-zoom', factor),
 
   // typed store channels
