@@ -30,7 +30,11 @@ const STATUS_DOT_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-running) shadow-
 // the amber already used for the strip's elevated-companion triangle, and it
 // aliases `--warning-text`, so it follows the theme without a per-theme entry
 // (same as --status-danger / --status-success).
-const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-warning) shadow-[0_0_8px_var(--status-warning)]`
+// `status-dot-unknown` carries no styling of its own outside Windows High
+// Contrast, where App.css turns it into a hollow ring: that mode strips every
+// status dot to one system colour, which would otherwise make this state
+// indistinguishable from a running one (Codex P2 on #829).
+const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} status-dot-unknown bg-(--status-warning) shadow-[0_0_8px_var(--status-warning)]`
 
 export function GameIcon({
   game,

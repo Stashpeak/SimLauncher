@@ -884,6 +884,17 @@ button:focus-visible,
     box-shadow: none !important;
   }
 
+  /* The unknown-state dot (#737: the game may have exited, or handed off to a
+     child process we cannot see) differs from the confirmed-running dot ONLY by
+     colour, and the rule above deletes colour as a carrier here. Carry it as a
+     shape instead: a hollow ring rather than a filled disc. Must stay AFTER
+     .status-dot — same specificity, both !important, so source order decides.
+     tests/renderer/gameIconDismiss.test.tsx pins the class pairing. */
+  .status-dot-unknown {
+    background: Canvas !important;
+    border: 2px solid CanvasText !important;
+  }
+
   /* Don't dim inactive game rows below contrast — keep every title fully legible. */
   .game-row-container {
     opacity: 1 !important;
