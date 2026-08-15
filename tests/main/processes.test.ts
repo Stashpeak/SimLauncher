@@ -534,6 +534,23 @@ async function loadProcessModules() {
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
       p.profiles.find((i) => i.id === p.activeProfileId)
     ),
+    // Resolves through the same storeData the rest of this harness writes, so a
+    // test can turn tracking off for one game by editing its profile fixture
+    // (#591). Flat profiles and profile sets both appear in this file.
+    getActiveProfileForGame: vi.fn((gameKey: string) => {
+      const profiles = storeData.profiles
+      if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return undefined
+      const entry = (profiles as Record<string, unknown>)[gameKey]
+      if (!entry || typeof entry !== 'object') return undefined
+      const set = entry as { activeProfileId?: string; profiles?: { id: string }[] }
+      return Array.isArray(set.profiles)
+        ? set.profiles.find((profile) => profile.id === set.activeProfileId) || set.profiles[0]
+        : entry
+    }),
+    // The real predicate, not a stub: these tests decide tracking through their
+    // profile fixtures, so stubbing it would answer the question for them.
+    isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
+      profile?.trackingEnabled !== false,
     getStoredProfiles: vi.fn(() => {
       const value = storeData.profiles
 
@@ -5723,4 +5740,154 @@ test('finalizeKillAttempts treats a notFound elevated-suspect attempt as still r
     reason: 'access_denied'
   })
   expect(unclosedProcesses.size).toBe(1)
+})
+
+// --- Fire-and-forget when tracking is off (#591) ---
+//
+// The rule is applied at the SOURCE: an untracked profile's launched apps are
+// never recorded in `runningProcesses`. An earlier attempt filtered them on the
+// way out of getRunningApps instead and was reverted, because two things
+// downstream read the unfiltered list and a display filter cannot reach either.
+// The second test below is that reverted approach's worst case.
+
+test('a tracking-off profile launches its apps and records nothing (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, getRunningApps, runningProcesses } = await loadProcessModulesWithStore(
+    {
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+        }
+      },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    }
+  )
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  // It really launched: opting out of tracking is not opting out of launching.
+  expect(spawnCalls.map((call) => call.appPath)).toContain('C:/Tools/SimHub.exe')
+  // ...and left nothing behind to surface, count, kill or auto-close.
+  expect(runningProcesses.size).toBe(0)
+  await expect(getRunningApps()).resolves.toEqual([])
+})
+
+// The same fixture WITHOUT the flag, because that is what every existing
+// profile looks like: nobody has `trackingEnabled` set.
+//
+// What this pins is that the launch path is WIRED to the rule and records when
+// it says yes: with the tracking-off test above, a guard hardcoded either way
+// fails one of the two. It cannot pin the rule ITSELF, because this suite mocks
+// `../profiles` and the mock carries its own copy of the predicate, so the real
+// one could be inverted with every test here still green. The default is pinned
+// against the real function in profiles.test.ts, which is where it belongs.
+test('a profile with no tracking flag is still tracked (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default' }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  expect(runningProcesses.size).toBe(1)
+})
+
+// M2 from the reverted output-filter spike, and the reason the fix lives at the
+// source. `launchedExeNames` is a GLOBAL basename dedup set built from the
+// unfiltered list, so an untracked profile launching a shared exe used to
+// suppress a tracked profile's own copy of it, and the final filter then
+// removed the untracked copy: the companion surfaced nowhere. Shared companion
+// exes are the normal case for anyone running more than one sim.
+test('an untracked profile launching a shared exe does not hide it from a tracked one (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  // Both game exes exist AND both games are running below, so AC is adoptable
+  // on every axis except the one under test. Without that the "nothing for AC"
+  // assertion would hold for the wrong reason.
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Games/iRacingUI.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['C:/Tools/SimHub.exe'] }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe', iracing: 'C:/Games/iRacingUI.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  // Both games are already running, so both profiles are adoptable and their
+  // tracked paths would be surfaced from the tasklist.
+  processNames.add('iracingui.exe')
+  processNames.add('assettocorsa.exe')
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  // SimHub is now up because AC's profile started it. The tasklist snapshot is
+  // cached for 500ms and the launch already primed it, so invalidate rather
+  // than waiting the window out.
+  processNames.add('simhub.exe')
+  ;(await import('../../src/main/processes/tasklist')).invalidateProcessNameCache()
+
+  const runningApps = await getRunningApps()
+
+  expect(runningApps).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/SimHub.exe', gameKey: 'iracing', tracked: true })
+    ])
+  )
+  // And it is not attributed to the profile that opted out.
+  expect(runningApps.filter((app) => app.gameKey === 'ac')).toEqual([])
+})
+
+// The mismatch warning exists to say "tracking was lost". It has nothing to
+// tell a profile that asked not to be tracked, and it would be the one thing
+// still lighting that game's card.
+test('a tracking-off profile gets no process-name-mismatch warning (#591)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Games/AssettoCorsa.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // A fast exit inside the post-launch window: exactly what writes the warning
+  // for a tracked profile.
+  childHandlers.get('exit')?.()
+
+  expect(processNameMismatchWarnings.size).toBe(0)
 })

@@ -6,7 +6,8 @@ import {
   StoredProfileEntry,
   getActiveStoredProfile,
   getProfileTrackablePaths,
-  getStoredProfiles
+  getStoredProfiles,
+  isProcessTrackingEnabled
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
@@ -164,7 +165,7 @@ async function getTrackedRunningApps(
 
     const profile = getActiveStoredProfile(profileEntry)
 
-    if (profile?.trackingEnabled === false) {
+    if (!isProcessTrackingEnabled(profile)) {
       return
     }
 

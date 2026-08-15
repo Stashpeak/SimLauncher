@@ -206,3 +206,34 @@ test('getProfileTrackablePaths tolerates a missing profile and missing path reco
 
   expect(getProfileTrackablePaths('iracing', undefined, undefined, undefined)).toEqual([])
 })
+
+// #591: tracking is ON unless the user turned it off, matching every profile
+// boolean except closeAppsOnGameExit. Pinned explicitly because the difference
+// between `!== false` and `=== true` is invisible in behavioural tests that all
+// set the key: nobody has it set, so an inverted predicate would silently make
+// every existing profile untracked, and the launch path would stop recording
+// anything for anyone.
+test('isProcessTrackingEnabled treats an absent flag as tracking ON (#591)', async () => {
+  const { isProcessTrackingEnabled } = await import('../../src/main/profiles')
+
+  expect(isProcessTrackingEnabled({})).toBe(true)
+  expect(isProcessTrackingEnabled(undefined)).toBe(true)
+  expect(isProcessTrackingEnabled({ trackingEnabled: true })).toBe(true)
+  expect(isProcessTrackingEnabled({ trackingEnabled: false })).toBe(false)
+})
+
+test('getActiveProfileForGame resolves the active member of a profile set (#591)', async () => {
+  const { getActiveProfileForGame } = await import('../../src/main/profiles')
+  storeData.profiles = {
+    ac: {
+      activeProfileId: 'race',
+      profiles: [
+        { id: 'default', name: 'Default', trackingEnabled: false },
+        { id: 'race', name: 'Race', trackingEnabled: true }
+      ]
+    }
+  }
+
+  expect(getActiveProfileForGame('ac')).toMatchObject({ id: 'race', trackingEnabled: true })
+  expect(getActiveProfileForGame('unknown')).toBeUndefined()
+})

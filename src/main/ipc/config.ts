@@ -23,6 +23,7 @@ import {
   store
 } from '../store'
 import { isRecord } from '../utils'
+import { publishRunningApps } from '../processes'
 import { applyTrayVisibility } from '../tray'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
@@ -499,6 +500,12 @@ export function registerConfigHandlers(): void {
     profiles[gameKey] = sanitizedProfileSet
     store.set('profiles', profiles)
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
+    // Republish so a tracking toggle takes effect on save rather than on the
+    // next poll (#591). Saving a profile changes which processes are surfaced
+    // at all, and the tasklist scan is the only other thing that would notice,
+    // up to 12s later on the SLOW cadence. This is also what finally gives the
+    // 'config' change reason a producer; it has been declared and unused.
+    void publishRunningApps('config')
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {

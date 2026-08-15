@@ -40,7 +40,11 @@ async function loadRunningModule(opts?: {
   const profilesMock = {
     getStoredProfiles: vi.fn(() => opts?.profiles ?? {}),
     getActiveStoredProfile: vi.fn(() => undefined),
-    getProfileTrackablePaths: vi.fn(() => opts?.trackablePaths ?? [])
+    getProfileTrackablePaths: vi.fn(() => opts?.trackablePaths ?? []),
+    // The real predicate rather than a stub, so a tracking-off fixture is
+    // decided by the rule under test and not by the mock.
+    isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
+      profile?.trackingEnabled !== false
   }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)

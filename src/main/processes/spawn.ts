@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 
 import { writeAppErrorLog } from '../errorLog'
+import { getActiveProfileForGame, isProcessTrackingEnabled } from '../profiles'
 import { getStoredStringRecord, store } from '../store'
 import {
   getErrorCode,
@@ -872,6 +873,9 @@ export async function spawnDetachedApp(
   // in flight. None of those windows needs its own check: spawnUnlessAborted
   // re-reads the signal in the same synchronous block as spawn() (#715).
   const consoleApp = await isConsoleExecutable(appPath)
+  // Read once per app rather than at each use below, so one launch cannot be
+  // half-tracked if the user flips the toggle while its handlers are pending.
+  const trackingEnabled = isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
 
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
@@ -906,13 +910,29 @@ export async function spawnDetachedApp(
         return
       }
       const runningKey = normalizePathForComparison(appPath)
-      runningProcesses.set(runningKey, {
-        process: child,
-        path: appPath,
-        name: path.basename(appPath),
-        gameKey,
-        isGame: !!gamePath && pathsEqual(appPath, gamePath)
-      })
+      // Fire-and-forget when this game's profile has tracking off (#591): the
+      // app is never recorded, so it cannot be surfaced, counted, killed or
+      // auto-closed later. Not recorded rather than filtered on the way out,
+      // deliberately. A display filter was tried and reverted for two reasons
+      // a filter cannot avoid: `launchedExeNames` is a global basename dedup
+      // set built from the UNFILTERED list, so an untracked profile launching
+      // a shared exe (SimHub is the normal case for multi-sim users) would
+      // suppress a tracked profile's own copy of it and surface the companion
+      // nowhere; and profile switch derives `isRunning` from the same list,
+      // so hiding the apps silently skipped its stop/start pipeline while
+      // reporting success.
+      //
+      // Not managing them afterwards is the feature, not a gap: the user asked
+      // SimLauncher to be a launcher and nothing else.
+      if (trackingEnabled) {
+        runningProcesses.set(runningKey, {
+          process: child,
+          path: appPath,
+          name: path.basename(appPath),
+          gameKey,
+          isGame: !!gamePath && pathsEqual(appPath, gamePath)
+        })
+      }
 
       child.once('spawn', () => {
         child.unref()
@@ -968,7 +988,11 @@ export async function spawnDetachedApp(
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
-        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
+        // The whole warning is about tracking having been lost, so it has
+        // nothing to say to a profile that asked not to be tracked (#591). It
+        // would also be the one thing still lighting that game's card, which is
+        // exactly what fire-and-forget promises not to do.
+        if (trackingEnabled && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
 
           processNameMismatchWarnings.set(normalizePathForComparison(appPath), {

@@ -96,7 +96,13 @@ async function loadAutoCloseModule(opts?: {
     getStoredProfiles: vi.fn(() => opts?.profiles ?? {}),
     // Tests pass a flat profile per game key; profile-set resolution is
     // profiles.ts' concern and has its own suite.
-    getActiveStoredProfile: vi.fn((entry: unknown) => entry)
+    getActiveStoredProfile: vi.fn((entry: unknown) => entry),
+    getActiveProfileForGame: vi.fn((gameKey: string) => (opts?.profiles ?? {})[gameKey] as unknown),
+    // The real predicate, not a stub: these tests drive `trackingEnabled`
+    // through their fixtures, so stubbing it would decide the answer here
+    // instead of exercising it.
+    isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
+      profile?.trackingEnabled !== false
   }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
