@@ -431,7 +431,10 @@ test('switch-profile-apps never kills or relaunches the game executable', async 
   const controller = registerActiveLaunch.mock.results[0]!.value as AbortController
   expect(controller.signal.aborted).toBe(false)
   expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA.path], { except: controller })
-  expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [utilB], { controller })
+  expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [utilB], {
+    controller,
+    profileId: 'p-to'
+  })
   expect(unregisterActiveLaunch).toHaveBeenCalledWith('iracing', controller)
 })
 
@@ -576,4 +579,32 @@ test('get-profile-switch-diff counts stops/starts without the game executable', 
   await expect(
     handlers['get-profile-switch-diff'](event, 'iracing', 'p-from', 'p-to')
   ).resolves.toEqual({ toStopCount: 1, toStartCount: 1 })
+})
+
+// #591: the renderer launches the incoming profile's apps and only saves the
+// new activeProfileId afterwards, so anything resolving "the active profile"
+// from the store mid-switch gets the OUTGOING one. Whether the launched apps
+// are tracked at all now depends on that, so the handler has to name the
+// profile it is actually launching.
+test('switch-profile-apps tells the launch which profile it is launching (#591)', async () => {
+  const handlers = await loadLaunchHandlers()
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  const utilB = { key: 'customapp2', path: 'C:/Tools/UtilB.exe' }
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY, utilB]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe']),
+    succeeded: true
+  })
+  launchProfileApps.mockResolvedValue({ success: true, launchedCount: 1, skippedCount: 0 })
+
+  await handlers['switch-profile-apps'](event, 'iracing', 'p-from', 'p-to')
+
+  expect(launchProfileApps).toHaveBeenCalledWith(
+    sender,
+    'iracing',
+    [utilB],
+    expect.objectContaining({ profileId: 'p-to' })
+  )
 })

@@ -221,11 +221,20 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
     notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
+    // An import replaces every profile, so it can turn tracking on or off for
+    // any of them (#591). Both branches publish, because a rollback restores a
+    // different set of profiles than the one that was briefly live.
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
   } catch (err) {
     store.clear()
     setStoreEntries(snapshot)
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
     throw err
   }
 }
@@ -505,7 +514,9 @@ export function registerConfigHandlers(): void {
     // at all, and the tasklist scan is the only other thing that would notice,
     // up to 12s later on the SLOW cadence. This is also what finally gives the
     // 'config' change reason a producer; it has been declared and unused.
-    void publishRunningApps('config')
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {
@@ -513,6 +524,11 @@ export function registerConfigHandlers(): void {
     if (!sanitizedProfiles) return
     store.set('profiles', sanitizedProfiles)
     notifyStoreConfigChanged({ reason: 'save-profiles', keys: ['profiles'] })
+    // Same reason as save-profile above: this is the bulk write, so it can
+    // change tracking for several games at once.
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
   })
 
   ipcMain.handle('get-migration-flags', () => {

@@ -3,7 +3,12 @@ import fs from 'fs'
 import path from 'path'
 
 import { writeAppErrorLog } from '../errorLog'
-import { getActiveProfileForGame, isProcessTrackingEnabled } from '../profiles'
+import {
+  getActiveProfileForGame,
+  getStoredProfiles,
+  isProcessTrackingEnabled,
+  resolveNamedProfile
+} from '../profiles'
 import { getStoredStringRecord, store } from '../store'
 import {
   getErrorCode,
@@ -207,6 +212,18 @@ export async function launchProfileApps(
     const launchDelayMs = getLaunchDelayMs()
     const gamePaths = getStoredStringRecord('gamePaths')
     const gamePath = gamePaths?.[gameKey]
+    // Resolved from the profile these entries came FROM, which during a profile
+    // switch is not the one the store calls active: the renderer launches the
+    // incoming profile's apps and saves the new activeProfileId afterwards
+    // (GameRow). Reading the store here would apply the OUTGOING profile's
+    // tracking setting, so switching to a fire-and-forget profile would still
+    // record its apps, and switching away from one would leave the incoming
+    // tracked profile with no running strip at all.
+    const trackingEnabled = isProcessTrackingEnabled(
+      options?.profileId
+        ? resolveNamedProfile(getStoredProfiles()[gameKey], options.profileId)
+        : getActiveProfileForGame(gameKey)
+    )
     const { processNames } = await readRunningProcessNames()
     const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
     // Entries filtered out below never reach spawn — tracked here (not just
@@ -310,7 +327,8 @@ export async function launchProfileApps(
         gameKey,
         appsToLaunch[index],
         gamePath,
-        launchController.signal
+        launchController.signal,
+        trackingEnabled
       )
       // Nothing was started, so don't count it (and don't arm the post-launch
       // cooldown for an attempt that never happened).
@@ -859,7 +877,8 @@ export async function spawnDetachedApp(
   gameKey: string,
   entry: ProfileLaunchEntry,
   gamePath?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  trackingEnabled?: boolean
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
@@ -873,9 +892,13 @@ export async function spawnDetachedApp(
   // in flight. None of those windows needs its own check: spawnUnlessAborted
   // re-reads the signal in the same synchronous block as spawn() (#715).
   const consoleApp = await isConsoleExecutable(appPath)
-  // Read once per app rather than at each use below, so one launch cannot be
-  // half-tracked if the user flips the toggle while its handlers are pending.
-  const trackingEnabled = isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
+  // Resolved once per app rather than at each use below, so one launch cannot
+  // end up half-tracked if the user flips the toggle while its handlers are
+  // still pending.
+  //
+  // The caller passes it whenever the profile being launched is not the
+  // persisted active one; the fallback covers direct use of this function.
+  const isTracked = trackingEnabled ?? isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
 
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
@@ -924,7 +947,7 @@ export async function spawnDetachedApp(
       //
       // Not managing them afterwards is the feature, not a gap: the user asked
       // SimLauncher to be a launcher and nothing else.
-      if (trackingEnabled) {
+      if (isTracked) {
         runningProcesses.set(runningKey, {
           process: child,
           path: appPath,
@@ -992,7 +1015,7 @@ export async function spawnDetachedApp(
         // nothing to say to a profile that asked not to be tracked (#591). It
         // would also be the one thing still lighting that game's card, which is
         // exactly what fire-and-forget promises not to do.
-        if (trackingEnabled && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
+        if (isTracked && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
 
           processNameMismatchWarnings.set(normalizePathForComparison(appPath), {

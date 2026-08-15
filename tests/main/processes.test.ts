@@ -551,6 +551,14 @@ async function loadProcessModules() {
     // profile fixtures, so stubbing it would answer the question for them.
     isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
       profile?.trackingEnabled !== false,
+    // Resolves a NAMED profile, which is what a profile switch launches: the
+    // store still calls the outgoing one active at that moment.
+    resolveNamedProfile: vi.fn((entry: unknown, profileId: string) => {
+      const set = entry as { profiles?: { id: string }[] } | undefined
+      return Array.isArray(set?.profiles)
+        ? set.profiles.find((profile) => profile.id === profileId) || set.profiles[0]
+        : entry
+    }),
     getStoredProfiles: vi.fn(() => {
       const value = storeData.profiles
 
@@ -5890,4 +5898,56 @@ test('a tracking-off profile gets no process-name-mismatch warning (#591)', asyn
   childHandlers.get('exit')?.()
 
   expect(processNameMismatchWarnings.size).toBe(0)
+})
+
+// A profile switch launches the incoming profile's apps BEFORE the renderer
+// saves the new activeProfileId, so the store still calls the outgoing profile
+// active while these apps start. Resolving tracking from the store there would
+// apply the wrong profile's setting in both directions: switching to a
+// fire-and-forget profile would still record its apps, and switching away from
+// one would leave the incoming tracked profile with no running strip at all.
+test('a switch to an untracked profile records nothing, before the switch is saved (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+    // The store still says 'default' (tracked) is active, exactly as it would
+    // be mid-switch.
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          { id: 'default', name: 'Default' },
+          { id: 'quiet', name: 'Quiet', trackingEnabled: false }
+        ]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'], { profileId: 'quiet' })
+
+  expect(spawnCalls.map((call) => call.appPath)).toContain('C:/Tools/SimHub.exe')
+  expect(runningProcesses.size).toBe(0)
+})
+
+// The same switch in the other direction, which is the worse failure: reading
+// the store would take the outgoing untracked profile's setting and leave the
+// incoming tracked profile with nothing in its strip.
+test('a switch away from an untracked profile still records the incoming one (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [
+          { id: 'quiet', name: 'Quiet', trackingEnabled: false },
+          { id: 'default', name: 'Default' }
+        ]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'], { profileId: 'default' })
+
+  expect(runningProcesses.size).toBe(1)
 })
