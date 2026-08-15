@@ -270,16 +270,11 @@ test('save-settings stores sanitized patch values only', async () => {
   expect(storeModule.store.set).toHaveBeenCalledWith('appArgs', { customapp1: '--safe' })
 })
 
-test('set-login-item ignores non-boolean runtime values', async () => {
-  await loadConfigModule()
-  const { app } = await import('electron')
-
-  await invokeConfigHandler('set-login-item', {}, 'true')
-  expect(app.setLoginItemSettings).not.toHaveBeenCalled()
-
-  await invokeConfigHandler('set-login-item', {}, true)
-  expect(app.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true })
-})
+// The `set-login-item` channel and its runtime type guard were deleted with the
+// eager apply (#676): the login item is now written from the store during
+// `save-settings`, where getStoredBoolean already guarantees a boolean, so there
+// is no untrusted renderer value left to reject. Coverage for the new call site
+// lives in configSaveSettings.test.ts.
 
 test('save-profile widens customSlots when profile references a slot beyond the stored count', async () => {
   await loadConfigModule()
