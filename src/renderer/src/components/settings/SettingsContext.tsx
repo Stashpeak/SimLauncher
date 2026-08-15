@@ -375,6 +375,7 @@ export function SettingsProvider({
     notify,
     resetDirty,
     setAppPaths,
+    setAppNames,
     setGamePaths,
     setAppArgs,
     setLaunchDelayMs

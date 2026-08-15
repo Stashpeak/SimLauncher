@@ -43,6 +43,7 @@ vi.mock('../../src/renderer/src/lib/store', () => ({
 const notifyMock = vi.fn()
 const resetDirtyMock = vi.fn()
 const setAppPathsMock = vi.fn()
+const setAppNamesMock = vi.fn()
 const setGamePathsMock = vi.fn()
 const setAppArgsMock = vi.fn()
 const setLaunchDelayMsMock = vi.fn()
@@ -96,6 +97,7 @@ function buildArgs(overrides: Partial<SaveArgs> = {}): SaveArgs {
     notify: notifyMock,
     resetDirty: resetDirtyMock,
     setAppPaths: setAppPathsMock,
+    setAppNames: setAppNamesMock,
     setGamePaths: setGamePathsMock,
     setAppArgs: setAppArgsMock,
     setLaunchDelayMs: setLaunchDelayMsMock,
@@ -409,6 +411,108 @@ describe('useSettingsSave (#645)', () => {
 
       expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('path is too long'), 'warn')
       expect(notifyMock).not.toHaveBeenCalledWith(expect.stringContaining('.exe path'), 'warn')
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // #711: appNames was the one tracked dictionary with no write-back. The
+  // visible symptom was not the stale input but a permanently dirty panel: the
+  // resetDirty baseline IS built from persistedSettings, so live state kept a
+  // key the baseline lacked and useDirtyTracking re-derived isDirty back to
+  // true straight after resetDirty cleared it, for the rest of the session.
+  test('#711: a rejected name is written back so live state matches the baseline', async () => {
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) =>
+      Promise.resolve({
+        // The sanitizer omits the rejected key entirely.
+        settings: { ...patch, appNames: {} },
+        dropped: [{ field: 'appNames', key: 'simhub', reason: 'too-long' }]
+      })
+    )
+
+    const harness = await renderSave(buildArgs())
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(setAppNamesMock).toHaveBeenCalledWith({})
+      // Same record the baseline is built from: that agreement is the fix.
+      expect(resetDirtyMock.mock.calls[0][0].appNames).toEqual({})
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The path users actually hit: clearing a name to get the default label back.
+  // The sanitizer drops blank entries WITHOUT reporting them, so this reports
+  // nothing dropped and shows a plain success toast. Deliberately a separate
+  // test rather than a second assertion, because gating the write-back on
+  // `saveResult.dropped.length > 0` is a plausible shortcut that the test above
+  // passes and only this one catches.
+  test('#711: a cleared name is written back even though nothing is reported dropped', async () => {
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) =>
+      Promise.resolve({ settings: { ...patch, appNames: {} }, dropped: [] })
+    )
+
+    const harness = await renderSave(buildArgs({ appNames: { simhub: '   ' } }))
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(setAppNamesMock).toHaveBeenCalledWith({})
+      expect(resetDirtyMock.mock.calls[0][0].appNames).toEqual({})
+      // And the user is told it saved, because from their side it did.
+      expect(notifyMock).toHaveBeenCalledWith('Settings saved!', 'success', 2500)
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The write-back must obey the same save-race guard as the other three, or it
+  // would clobber a name typed while the IPC write was in flight.
+  test('#711: a name edited during the save is not overwritten by the persisted copy', async () => {
+    const versions = { current: createSettingsObjectVersions() }
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      // The user types while the write is in flight.
+      versions.current.appNames += 1
+      return Promise.resolve({ settings: { ...patch, appNames: {} }, dropped: [] })
+    })
+
+    const harness = await renderSave(buildArgs({ settingsObjectEditVersions: versions }))
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(setAppNamesMock).not.toHaveBeenCalled()
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // Pins a caveat the #711 brief flagged as unenforced: the dropped-entry
+  // warning is built from the PRE-SAVE appNames on purpose, so it can name the
+  // value the user typed. "Tidying" it to persistedSettings.appNames alongside
+  // the new write-back reads as consistent and silently degrades the warning to
+  // the slot's default label, which tells the user nothing about what they lost.
+  test('#711: the drop warning names the typed value, not the slot default', async () => {
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) =>
+      Promise.resolve({
+        settings: { ...patch, appNames: {} },
+        dropped: [{ field: 'appNames', key: 'customapp1', reason: 'too-long' }]
+      })
+    )
+
+    const harness = await renderSave(buildArgs({ appNames: { customapp1: 'Left Rig Overlay' } }))
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('Left Rig Overlay'), 'warn')
+      expect(notifyMock).not.toHaveBeenCalledWith(expect.stringContaining('Custom App 1'), 'warn')
     } finally {
       harness.unmount()
     }
