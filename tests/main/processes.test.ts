@@ -4398,13 +4398,21 @@ test('a throw during launch prep releases the launch guard instead of wedging it
   })
 })
 
-// Abort-point sweep (#670): the "nothing spawns after a kill's abort" invariant
-// is enforced by a separate check at EVERY await in the launch path — each
-// suspension point is its own race window, and all five #714 review findings
-// were instances of this one class landing at different points. The sweep
-// drives the full launch sequence through each suspension point in turn, lands
-// the abort while the launch is provably parked there, and asserts nothing
-// further spawned. Adding a new await to the launch path? Add a row here.
+// Abort-point sweep (#670): the "nothing spawns after a kill's abort"
+// invariant, exercised through the real launch sequence. Each row parks the
+// launch at one suspension point, lands the abort while it is provably parked
+// there, and asserts nothing further spawned.
+//
+// Since #715 the rows are no longer the enforcement. The invariant lives in
+// spawnUnlessAborted, which re-reads the signal in the same synchronous block
+// as spawn(), so a suspension point with no row of its own is covered anyway —
+// which is the whole point, because the five #714 findings were all a
+// suspension point nobody had thought to add a check for. What these rows still
+// buy is end-to-end evidence that the primitive is actually reached through the
+// launch path (remove its check and all of them fail), and that the launch
+// REPORTS an abort at each point the way the user is told it does. So a new
+// await does not need a row; a new user-visible cancellation path does.
+// The structural half of the guarantee is in tests/main/guardedStart.test.ts.
 // (The post-spawn EACCES elevation handoff is the one abortable point this
 // table can't reach — it has its own test right below.)
 const abortPointSweep: {
