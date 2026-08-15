@@ -131,14 +131,30 @@ const NON_LAUNCH_PROCESS_STARTERS = [
   'src/main/processes/win32KillUtils.ts'
 ]
 
+// Both signals are required, and each covers the other's blind spot. The call
+// pattern alone matches `someRegex.exec(...)`, which would fail this test for a
+// file that starts nothing — and the remedy a future reader reaches for is
+// adding it to the list above, quietly exempting a real file from the check
+// forever. The import alone would clear `kill.ts` and `types.ts`, which import
+// only the ChildProcess *type* and so cannot start anything. Requiring both
+// also keeps namespace imports (`cp.spawn(...)`) in scope.
+function startsAProcess(source: string): boolean {
+  const code = stripComments(source)
+  const importsChildProcessAtRuntime = /^\s*import\s+(?!type\s)[^;]*from\s+'child_process'/m.test(
+    code
+  )
+  return (
+    importsChildProcessAtRuntime &&
+    /\b(spawn|execFile|exec|fork|execFileSync|spawnSync|execSync)\s*\(/.test(code)
+  )
+}
+
 test('the launch path starts processes only through the guarded primitives (#715)', () => {
-  const startsAProcess = listSourceFiles('src/main').filter((file) =>
-    /\b(spawn|execFile|exec|fork|execFileSync|spawnSync|execSync)\s*\(/.test(
-      stripComments(readSource(file))
-    )
+  const processStarters = listSourceFiles('src/main').filter((file) =>
+    startsAProcess(readSource(file))
   )
 
-  expect(startsAProcess.sort()).toEqual(
+  expect(processStarters.sort()).toEqual(
     ['src/main/processes/guardedStart.ts', ...NON_LAUNCH_PROCESS_STARTERS].sort()
   )
 })
