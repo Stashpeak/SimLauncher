@@ -4503,6 +4503,34 @@ test.each(abortPointSweep)(
   }
 )
 
+// The loop-top check is about promptness, not prevention (#715): the guarded
+// start already makes it impossible for the app below to spawn. What it buys is
+// that a cancelled launch does not first walk into spawnDetachedApp and pay an
+// unbounded PE-subsystem probe for an app it will never start — while holding
+// the process-wide launch guard that every window's Launch waits on (Codex P2
+// on #828). Asserted on the probe count, because that is the cost, and because
+// a check no test can distinguish from its own absence is decoration.
+test('a cancelled launch does not probe the app it will never start (#715)', async () => {
+  markExistingPath('C:/Tools/App1.exe')
+  markExistingPath('C:/Tools/App2.exe')
+  storeData.launchDelayMs = 5000
+  const { launchProfileApps, killLaunchedApps } = await loadProcessModules()
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
+  await flushMicrotasks()
+  // App1 has spawned and the loop is parked on the inter-app wait, which the
+  // abort below releases.
+  expect(spawnCalls.length).toBe(1)
+  expect(consoleProbeCallCount).toBe(1)
+
+  await killLaunchedApps('ac')
+
+  await expect(launchPromise).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
+  expect(spawnCalls.length).toBe(1)
+  // The point: App2 was never probed, not merely never spawned.
+  expect(consoleProbeCallCount).toBe(1)
+})
+
 // The abort can also land AFTER spawn() was attempted: the child fails with
 // EACCES (asynchronously, some time after spawn returns) and the error handler
 // hands off to an elevated launch — which would pop a UAC prompt right after

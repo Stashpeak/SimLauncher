@@ -284,11 +284,26 @@ export async function launchProfileApps(
 
     const launchResults: AppLaunchResult[] = []
 
-    // The loop deliberately has no `signal.aborted` check of its own. Whichever
-    // of its suspension points a kill lands in — the wait below, the probe
-    // inside spawnDetachedApp, or one a later feature adds (#625, #626) —
-    // spawnDetachedApp starts nothing and answers 'cancelled' (#715).
     for (let index = 0; index < appsToLaunch.length; index += 1) {
+      // PROMPTNESS, not prevention (#715). Whichever suspension point a kill
+      // lands in — the wait below, the probe inside spawnDetachedApp, or one a
+      // later feature adds (#625, #626) — spawnUnlessAborted starts nothing and
+      // spawnDetachedApp answers 'cancelled'. Deleting this check cannot make a
+      // cancelled launch spawn something; it can only make it slower to admit
+      // it, by entering spawnDetachedApp for an app it will never start and
+      // paying that app's PE-subsystem probe first (Codex P2 on #828). That
+      // probe has no timeout, and the process-wide launch guard is held until
+      // this whole sequence returns, so every window's Launch waits on it.
+      //
+      // Which is why it is a check about latency, not correctness, and why the
+      // features queued behind this refactor must not copy it as protection.
+      // The difference is visible in the tests: remove this and one test slows
+      // down and asserts an extra probe; remove the guarded start and eleven
+      // fail.
+      if (launchController.signal.aborted) {
+        break
+      }
+
       const launchResult = await spawnDetachedApp(
         sender,
         gameKey,
