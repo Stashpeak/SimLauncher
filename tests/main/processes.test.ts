@@ -5951,3 +5951,110 @@ test('a switch away from an untracked profile still records the incoming one (#5
 
   expect(runningProcesses.size).toBe(1)
 })
+
+// #591 desired behavior 2, verbatim: "Tray 'Close Apps' must not offer that
+// profile." Not recording the launch is not enough on its own, because
+// `getProfileCompanionTargets` rebuilds targets from the STORED profile rather
+// than from what was launched — so the global Close Apps found and killed the
+// companion anyway, whether SimLauncher started it or the user did. Found by
+// Codex on PR #834, not by the tests above, all of which assert on
+// `runningProcesses` and are blind to the target map.
+test('close apps does not kill a tracking-off profile companion (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', garage61: true, trackingEnabled: false }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls).toHaveLength(0)
+})
+
+// The same rule from the other side, and the half the user actually sees: the
+// action must not be OFFERED. Both read `getProfileCompanionTargets`, so one
+// guard covers them, but a future refactor could easily give them separate
+// paths again.
+test('close apps is not offered for a tracking-off profile (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', garage61: true, trackingEnabled: false }]
+      }
+    }
+  })
+
+  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(false)
+})
+
+// The same profile with tracking left ON, so the two tests above cannot pass by
+// the target map being empty for some unrelated reason.
+test('close apps still targets the same companion when tracking is on (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { killLaunchedApps, hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'loud',
+        profiles: [{ id: 'loud', name: 'Loud', garage61: true }]
+      }
+    }
+  })
+
+  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toContainEqual([
+    '/IM',
+    'garage61 telemetry agent.exe',
+    '/T',
+    '/F'
+  ])
+})
+
+// Turning tracking OFF has to act on what is already recorded, not only on the
+// next launch. `runningProcesses` is written at launch time and nothing removes
+// an entry until its exe exits, so the strip, the dot and Close Apps used to
+// keep offering the apps for the rest of the session — the saved setting simply
+// did not apply to the state it was saved to change.
+//
+// `simhub.exe` is added to `processNames` for every read that matters, so the
+// entry does NOT disappear via `pruneStoppedRunningProcesses`: it has to be this
+// rule removing it, not the exe appearing to have exited. It is added AFTER the
+// launch because an app already in the tasklist is skipped as already running.
+test('turning tracking off forgets apps already recorded under it (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, getRunningApps, runningProcesses } = await loadProcessModulesWithStore(
+    {
+      profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    }
+  )
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(runningProcesses.size).toBe(1)
+  processNames.add('simhub.exe')
+  await expect(getRunningApps()).resolves.not.toEqual([])
+
+  // What saving the profile with the toggle off does to the store.
+  profile.trackingEnabled = false
+
+  await expect(getRunningApps()).resolves.toEqual([])
+  // Forgotten, not killed: nothing was asked to close.
+  expect(runningProcesses.size).toBe(0)
+  expect(execFileCalls.filter((call) => call.command === 'taskkill')).toHaveLength(0)
+})

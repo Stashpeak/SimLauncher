@@ -256,6 +256,35 @@ export function pruneStoppedRunningProcesses(processNames: Set<string>): void {
   })
 }
 
+/**
+ * Drop every surfaced record belonging to a game whose active profile has
+ * process tracking off (#591), without touching the processes themselves.
+ *
+ * Takes the keys rather than reading the store so this module stays free of
+ * profile knowledge, matching `pruneStoppedRunningProcesses` above.
+ */
+export function pruneUntrackedGames(untrackedGameKeys: Set<string>): void {
+  if (untrackedGameKeys.size === 0) {
+    return
+  }
+
+  runningProcesses.forEach((entry, key) => {
+    if (untrackedGameKeys.has(entry.gameKey)) {
+      runningProcesses.delete(key)
+    }
+  })
+  unclosedProcesses.forEach((entry, key) => {
+    if (untrackedGameKeys.has(entry.gameKey)) {
+      unclosedProcesses.delete(key)
+    }
+  })
+  processNameMismatchWarnings.forEach((entry, key) => {
+    if (untrackedGameKeys.has(entry.gameKey)) {
+      processNameMismatchWarnings.delete(key)
+    }
+  })
+}
+
 export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()): void {
   processNameMismatchWarnings.forEach((entry, key) => {
     if (entry.expiresAt !== undefined && entry.expiresAt <= now) {

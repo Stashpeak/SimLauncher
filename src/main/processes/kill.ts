@@ -5,6 +5,7 @@ import {
   getActiveStoredProfile,
   getProfileTrackablePaths,
   getStoredProfiles,
+  isProcessTrackingEnabled,
   isUtilityEnabled
 } from '../profiles'
 import { getStoredBoolean, getStoredStringRecord } from '../store'
@@ -464,6 +465,17 @@ function getProfileCompanionTargets(gameKey?: string) {
     }
 
     const profile = getActiveStoredProfile(profileEntry)
+
+    // Tracking off means SimLauncher does not manage this profile's apps at all
+    // (#591, desired behavior 2). Skipping the recording in spawn.ts is not
+    // enough on its own: this function rebuilds targets from the stored profile
+    // rather than from what was launched, so without this guard the tray's
+    // always-enabled Close Apps would still find and kill apps the user
+    // explicitly opted out of us touching. `hasClosableLaunchedApps` reads the
+    // same map, so this also stops the action being offered for that profile.
+    if (!isProcessTrackingEnabled(profile)) {
+      return
+    }
 
     // The hardcoded list is curated utility process names — never a game — so it
     // needs no game filtering. Only the path-based tracked companions can name a

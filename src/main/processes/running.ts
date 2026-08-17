@@ -17,6 +17,7 @@ import {
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
   pruneStoppedRunningProcesses,
+  pruneUntrackedGames,
   runningProcesses,
   unclosedProcesses
 } from './state'
@@ -230,6 +231,27 @@ export async function getRunningApps(): Promise<RunningApp[]> {
     pruneUnclosedProcesses(processNames)
   }
   pruneExpiredProcessNameMismatchWarnings()
+  // Hoisted above the prune below because it needs the same profiles; the reads
+  // are pure store lookups, so their position carries no other meaning.
+  const profiles = getStoredProfiles()
+  const appPaths = getStoredStringRecord('appPaths')
+  const gamePaths = getStoredStringRecord('gamePaths')
+  // Turning tracking off has to take effect on apps that are ALREADY recorded,
+  // not just on the next launch (#591). `runningProcesses` is written at launch
+  // time and nothing removes an entry until its exe exits, so a profile that was
+  // launched while tracked would otherwise keep its strip icons, its dot and its
+  // Close Apps entry for the rest of the session, contradicting the setting the
+  // user just saved. Forget, never kill: those apps were started deliberately,
+  // and fire-and-forget means they outlive our interest in them.
+  pruneUntrackedGames(
+    new Set(
+      Object.entries(profiles || {})
+        .filter(
+          ([, profileEntry]) => !isProcessTrackingEnabled(getActiveStoredProfile(profileEntry))
+        )
+        .map(([gameKey]) => gameKey)
+    )
+  )
 
   const launchedApps = Array.from(runningProcesses.values()).map((appProcess) => ({
     path: appProcess.path,
@@ -272,9 +294,6 @@ export async function getRunningApps(): Promise<RunningApp[]> {
     )
   )
   const launchedExeNames = new Set(surfacedApps.map((appProcess) => getExeName(appProcess.path)))
-  const profiles = getStoredProfiles()
-  const appPaths = getStoredStringRecord('appPaths')
-  const gamePaths = getStoredStringRecord('gamePaths')
   const launchedGameKeys = new Set(
     [...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey)
   )
