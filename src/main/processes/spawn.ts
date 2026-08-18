@@ -926,6 +926,17 @@ function launchElevated(
   })
 }
 
+/**
+ * Starts one profile entry and reports how it settled.
+ *
+ * @param trackingEnabled Whether SimLauncher manages what it starts. `false`
+ * means fire-and-forget (#591): the process is never recorded, so it cannot
+ * afterwards be surfaced in the running strip, counted, closed by Close Apps,
+ * or auto-closed with the game. Omit it to resolve the setting from the active
+ * profile in the store; pass it explicitly whenever the caller knows which
+ * profile these entries came from, because mid profile-switch the store still
+ * names the OUTGOING one (see `LaunchProfileAppsOptions.profileId`).
+ */
 export async function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
