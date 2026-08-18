@@ -1054,7 +1054,13 @@ export async function spawnDetachedApp(
 
       child.once('exit', () => {
         const processEntry = runningProcesses.get(runningKey)
-        const wasGame = processEntry?.isGame ?? false
+        // Derived the same way as at record time rather than read back off the
+        // entry, because the entry is not guaranteed to still be there: the
+        // untracked reconcile prunes it (#591), and `?? false` then claimed the
+        // game exe was a companion and toasted about it (Codex on #834).
+        // Whether this path IS the game does not depend on whether we recorded
+        // it, so it should not be stored in something prunable.
+        const wasGame = !!gamePath && pathsEqual(appPath, gamePath)
         // Only drop the entry if it is still ours. Two slots can share a
         // canonical key (#357), and a late exit event for an already-killed
         // child must not wipe an entry that a subsequent spawn has just
@@ -1069,7 +1075,23 @@ export async function spawnDetachedApp(
         // nothing to say to a profile that asked not to be tracked (#591). It
         // would also be the one thing still lighting that game's card, which is
         // exactly what fire-and-forget promises not to do.
-        if (isTracked && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
+        //
+        // Both the launch-time decision AND the current one, because they can
+        // disagree: this fires up to POST_LAUNCH_BLOCK_MS after the launch, so
+        // a toggle inside that window leaves `isTracked` stale (Codex on #834).
+        // The stored warning would be pruned by the reconcile on the next
+        // publish, but the toast is already on the user's screen and there is
+        // no retracting it. Re-read rather than replace: the message is only
+        // ever true if the app was tracked when it started as well.
+        //
+        // Residual, accepted: mid profile-switch the store still names the
+        // OUTGOING profile, so switching from an untracked profile to a tracked
+        // one can swallow a legitimate warning for a few milliseconds. A missed
+        // warning costs the user nothing permanent; a wrong one is a toast they
+        // cannot dismiss the cause of.
+        const stillTracked = isTracked && isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
+
+        if (stillTracked && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
 
           processNameMismatchWarnings.set(normalizePathForComparison(appPath), {

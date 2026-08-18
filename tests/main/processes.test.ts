@@ -6471,3 +6471,101 @@ test('a tracked profile still gets the plural detection promise (#591)', async (
   expect(result.warning).toContain('will detect when')
   expect(result.warning).not.toContain('Process tracking is off')
 })
+
+// The fast-exit warning fires up to POST_LAUNCH_BLOCK_MS after the launch, so
+// the launch-time tracking decision can be stale by the time it speaks (Codex on
+// #834). The stored warning would be pruned by the reconcile on the next
+// publish, but the toast is already on screen and cannot be retracted.
+test('a toggle inside the post-launch window silences the fast-exit warning (#591)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 4321,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/Perplexity.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModulesWithStore({
+    profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Perplexity.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // Tracking goes off while the app is still inside the window, i.e. after the
+  // sequence has ended and its own reconcile has already run.
+  profile.trackingEnabled = false
+
+  processNames.delete('perplexity.exe')
+  processNames.add('perplexity-helper.exe')
+  childHandlers.get('exit')?.()
+
+  expect(processNameMismatchWarnings.size).toBe(0)
+  expect(
+    sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
+  ).toHaveLength(0)
+})
+
+// `isGame` was read back off the running record, and the reconcile can delete
+// that record while the app is still alive. The exe being the game does not
+// depend on us having recorded it, so it must not be looked up in something
+// prunable (Codex on #834). Contrived path to reach the state, but it is the
+// only one that reaches it with tracking back on.
+test('the game exe keeps its toast suppressed after its record is pruned (#591)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 5678,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, publishRunningApps, runningProcesses, processNameMismatchWarnings } =
+    await loadProcessModulesWithStore({
+      profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Games/AssettoCorsa.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+  expect(runningProcesses.size).toBe(1)
+
+  // Off, then the reconcile forgets the record, then the user changes their mind.
+  profile.trackingEnabled = false
+  await publishRunningApps('config')
+  expect(runningProcesses.size).toBe(0)
+  profile.trackingEnabled = true
+
+  processNames.delete('assettocorsa.exe')
+  processNames.add('acs.exe')
+  childHandlers.get('exit')?.()
+
+  // Tracking is on again, so the card warning is correct to appear.
+  expect(processNameMismatchWarnings.size).toBe(1)
+  // A launcher stub exiting fast is the normal pattern for the game exe, so the
+  // toast stays suppressed. Nothing in the record survives to say so.
+  expect(
+    sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
+  ).toHaveLength(0)
+})
