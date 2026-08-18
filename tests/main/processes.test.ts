@@ -102,6 +102,13 @@ const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
+// Makes `spawn()` THROW synchronously rather than emit an 'error' event.
+// `spawnDetachedApp` handles the two separately: the event lands in
+// `child.once('error')`, the throw in the surrounding try/catch, and each has
+// its own `isElevatedLaunchError` branch calling `launchElevated`. Only the
+// event path had a fixture, so the whole catch branch was uncovered - dropping
+// an argument from its call left all 166 tests green (#591).
+const spawnThrows = new Map<string, NodeJS.ErrnoException>()
 // #675: when true, the elevated (-EncodedCommand) PowerShell call never invokes
 // its callback, modelling a UAC consent prompt the user never answers.
 let elevatedLaunchHangs = false
@@ -408,6 +415,9 @@ async function loadProcessModules() {
     }),
     spawn: vi.fn((appPath: string, args: string[] = [], options: Record<string, unknown> = {}) => {
       spawnCalls.push({ appPath, args, options })
+      if (spawnThrows.has(appPath)) {
+        throw spawnThrows.get(appPath)!
+      }
       const handlers = new Map<string, (...args: unknown[]) => void>()
       const child = {
         pid: 1234,
@@ -695,6 +705,7 @@ beforeEach(async () => {
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
+  spawnThrows.clear()
   elevatedLaunchHangs = false
   heldElevatedCallback = null
   heldElevatedCallbacks.length = 0
@@ -6057,4 +6068,178 @@ test('turning tracking off forgets apps already recorded under it (#591)', async
   // Forgotten, not killed: nothing was asked to close.
   expect(runningProcesses.size).toBe(0)
   expect(execFileCalls.filter((call) => call.command === 'taskkill')).toHaveLength(0)
+})
+
+// The same defect as the two Close Apps findings above, one layer down, and the
+// tests above are blind to it for the same reason: they assert on
+// `runningProcesses`, and the pending-handoff registry is neither that map nor
+// the companion-target map.
+//
+// `cancelPendingElevatedHandoffs` runs in BOTH kill entry points' prologues,
+// before any profile filtering, so a global Close Apps would kill the
+// PowerShell host of an app the user opted out of us managing. The late
+// approval would then start nothing, and they would be told a consent prompt
+// was stranded by a profile SimLauncher promised not to touch.
+test('a tracking-off profile does not register its elevated handoff for Close Apps (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'quiet',
+          profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // The global (tray) form, with no gameKey, which is the one that reaches
+    // every profile regardless of which game the user was looking at.
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    // The host stays alive, so answering the prompt still starts the app.
+    expect(elevatedHostKills).toHaveLength(0)
+    // Absent rather than 0: `withStrandedConsentPrompts` only attaches the
+    // field when the count is above zero, so this IS the "nothing stranded"
+    // shape, and the paired test below shows the same fixture producing 1.
+    expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The same fixture with tracking left ON, so the test above cannot pass because
+// the handoff never reached the grace window in the first place.
+test('a tracked profile still registers its elevated handoff for Close Apps (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'loud',
+          profiles: [{ id: 'loud', name: 'Loud' }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The same rule on the OTHER elevation branch. `spawnDetachedApp` reaches
+// `launchElevated` from two places: the 'error' event (covered above) and the
+// try/catch around a synchronous throw from spawn(). Both had to be given the
+// tracking decision, and only the first had a fixture, so dropping the argument
+// from this one left the whole suite green.
+test('the same holds when spawn throws elevation synchronously (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnThrows.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'quiet',
+          profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(0)
+    expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// And the positive control for that branch, which also pins that the throw
+// fixture reaches the elevation path at all rather than failing the launch.
+test('a tracked profile registers it on the synchronous-throw branch too (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnThrows.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: { activeProfileId: 'loud', profiles: [{ id: 'loud', name: 'Loud' }] }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
 })

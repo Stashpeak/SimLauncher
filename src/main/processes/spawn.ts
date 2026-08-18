@@ -680,7 +680,8 @@ function launchElevated(
   appPath: string,
   args: string[] = [],
   gameKey?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  tracked = true
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
     const elevatedWarning = `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
@@ -771,17 +772,32 @@ function launchElevated(
       // still-live host so a later Close Apps can still reach it (#779 Codex
       // P1), otherwise approving the prompt afterwards would start the app the
       // user just asked to close.
-      registerPendingElevatedHandoff(handoffId, {
-        gameKey,
-        cancel: () => {
-          cancelledByKill = true
-          noteHandoffCancelled()
-          // Same reason as onAbort (#809), and the same guard: mid-sequence
-          // both this and the abort fire for this one handoff.
-          noteStrandedPromptOnce()
-          child?.kill()
-        }
-      })
+      //
+      // Not for a fire-and-forget profile though (#591). This registry has
+      // exactly one consumer, `cancelPendingElevatedHandoffs`, called from both
+      // kill entry points BEFORE they filter profile targets, so registering
+      // here would let a global Close Apps kill the host of an app the user
+      // opted out of us managing: the late approval would then start nothing
+      // and they would be told a consent prompt was stranded. Not registering
+      // is what leaves the prompt answerable.
+      //
+      // Only the post-grace-window registry is skipped. The abort signal above
+      // still cancels this handoff while the sequence is in flight, because
+      // cancelling a launch in progress is a different thing from managing the
+      // apps it already started.
+      if (tracked) {
+        registerPendingElevatedHandoff(handoffId, {
+          gameKey,
+          cancel: () => {
+            cancelledByKill = true
+            noteHandoffCancelled()
+            // Same reason as onAbort (#809), and the same guard: mid-sequence
+            // both this and the abort fire for this one handoff.
+            noteStrandedPromptOnce()
+            child?.kill()
+          }
+        })
+      }
       resolve({
         status: 'elevated',
         appPath,
@@ -990,7 +1006,7 @@ export async function spawnDetachedApp(
           // in which case launchElevated starts nothing and reports the attempt
           // as cancelled — its own start is guarded (#715). Nothing is running
           // here either way: this spawn failed.
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal))
+          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked))
           return
         }
 
@@ -1050,7 +1066,7 @@ export async function spawnDetachedApp(
 
       // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey), gameKey, signal).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked).then(resolveOnce)
         return
       }
 
