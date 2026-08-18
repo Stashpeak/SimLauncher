@@ -484,6 +484,27 @@ export async function launchProfileApps(
     }
     activeLaunches.delete(gameKey)
     unregisterActiveLaunch(gameKey, launchController)
+    // A tracking toggle saved DURING this sequence was skipped by the reconcile,
+    // which refuses to judge a game mid-launch because the store's active
+    // profile is unreliable then (#591). Nothing else publishes when a sequence
+    // ENDS: every per-app publish above runs before this unregister, and the
+    // poll stops outright once the last subscriber goes, so the stale records
+    // and any pending elevated handoff could otherwise outlive the toggle
+    // indefinitely and still be closed by a tray Close Apps (Codex on #834).
+    //
+    // Only when no `profileId` was passed, which is the exact condition: the
+    // caller supplies it precisely when the profile being launched is NOT the
+    // persisted active one, i.e. a switch whose new `activeProfileId` the
+    // renderer has not saved yet. Reconciling there would prune the incoming
+    // profile's records on the authority of the outgoing one, and the switch's
+    // own `save-profile` publish covers it with a store that agrees with itself
+    // by then. Gating on `options.controller` instead is NOT equivalent and the
+    // switch regression test says so: it passes a profileId without one.
+    if (!options?.profileId) {
+      publishRunningApps('config').catch((err) => {
+        console.error('Failed to publish running apps after a launch sequence:', err)
+      })
+    }
   }
 }
 

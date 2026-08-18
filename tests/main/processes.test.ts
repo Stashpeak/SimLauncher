@@ -102,6 +102,10 @@ const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
+// Runs at the moment `spawn()` is called for a given path, so a test can change
+// the world MID-sequence (turning a profile's tracking off while the launch
+// loop is still running, say) rather than only before or after it.
+const spawnHooks = new Map<string, () => void>()
 // Makes `spawn()` THROW synchronously rather than emit an 'error' event.
 // `spawnDetachedApp` handles the two separately: the event lands in
 // `child.once('error')`, the throw in the surrounding try/catch, and each has
@@ -415,6 +419,7 @@ async function loadProcessModules() {
     }),
     spawn: vi.fn((appPath: string, args: string[] = [], options: Record<string, unknown> = {}) => {
       spawnCalls.push({ appPath, args, options })
+      spawnHooks.get(appPath)?.()
       if (spawnThrows.has(appPath)) {
         throw spawnThrows.get(appPath)!
       }
@@ -706,6 +711,7 @@ beforeEach(async () => {
   spawnCalls.length = 0
   spawnErrors.clear()
   spawnThrows.clear()
+  spawnHooks.clear()
   elevatedLaunchHangs = false
   heldElevatedCallback = null
   heldElevatedCallbacks.length = 0
@@ -6333,4 +6339,41 @@ test('a shared companion is still a target when a tracked profile configures it 
     '/T',
     '/F'
   ])
+})
+
+// The deferred half of the reconcile (Codex on #834). Saving the toggle DURING
+// a launch is skipped on purpose, because the store's active profile is
+// unreliable mid-sequence. Nothing else publishes when a sequence ENDS, though:
+// every per-app publish runs before the unregister, and the poll stops outright
+// once the last subscriber goes. So the sequence has to reconcile on its way
+// out or the stale records can outlive the toggle indefinitely.
+test('a toggle saved during a launch is applied when the sequence ends (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/CrewChief.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, runningProcesses, getRunningApps } = await loadProcessModulesWithStore(
+    {
+      profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    }
+  )
+
+  // Flipped WHILE the sequence is in flight: the first app's publish reconciles
+  // and must skip this game, because a launch is active.
+  spawnHooks.set('C:/Tools/SimHub.exe', () => {
+    profile.trackingEnabled = false
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe', 'C:/Tools/CrewChief.exe'])
+
+  // Both really started: turning tracking off is not cancelling the launch.
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(
+    expect.arrayContaining(['C:/Tools/SimHub.exe', 'C:/Tools/CrewChief.exe'])
+  )
+  // And by the time the sequence returns, the toggle has been applied.
+  expect(runningProcesses.size).toBe(0)
+  await expect(getRunningApps()).resolves.toEqual([])
 })
