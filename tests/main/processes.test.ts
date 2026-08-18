@@ -6377,3 +6377,44 @@ test('a toggle saved during a launch is applied when the sequence ends (#591)', 
   expect(runningProcesses.size).toBe(0)
   await expect(getRunningApps()).resolves.toEqual([])
 })
+
+// The elevation warning is a PROMISE about what SimLauncher will do next, and
+// it was made unconditionally (CodeRabbit on #834). Telling a fire-and-forget
+// profile that we "will detect when it's running" is the same lie #591 exists
+// to stop: we will not, deliberately.
+test('the elevated warning does not promise detection to an untracked profile (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+
+  expect(result.warning).toContain('Process tracking is off for this profile')
+  expect(result.warning).not.toContain('will detect when')
+})
+
+// The same launch with tracking on keeps the original promise, which is true
+// there: the tasklist scan really does surface an elevated app it cannot close.
+test('a tracked profile still gets the detection promise (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+    profiles: {
+      ac: { activeProfileId: 'loud', profiles: [{ id: 'loud', name: 'Loud' }] }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+
+  expect(result.warning).toContain('will detect when')
+  expect(result.warning).not.toContain('Process tracking is off')
+})

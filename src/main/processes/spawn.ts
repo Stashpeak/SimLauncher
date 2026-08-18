@@ -705,7 +705,14 @@ function launchElevated(
   tracked = true
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
-    const elevatedWarning = `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+    // Two sentences because the second one is a promise, and it is only true
+    // when we are tracking (CodeRabbit on #834). Telling a fire-and-forget
+    // profile that SimLauncher "will detect when it's running" is exactly the
+    // lie #591 exists to stop: it will not, deliberately, because the user
+    // asked it not to.
+    const elevatedWarning = tracked
+      ? `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+      : `${path.basename(appPath)} requested administrator permission. Process tracking is off for this profile, so SimLauncher will not detect or close it.`
 
     // A kill (Close Apps) can land while the UAC handoff is still pending —
     // the consent prompt sits on screen until the user answers it, so this
