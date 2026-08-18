@@ -283,6 +283,22 @@ export function pruneUntrackedGames(untrackedGameKeys: Set<string>): void {
       processNameMismatchWarnings.delete(key)
     }
   })
+  // The fourth map, and the one that is easy to miss because it holds a
+  // callback rather than a record (Codex on #834). `launchElevated` already
+  // refuses to register a handoff for a profile that was untracked AT LAUNCH,
+  // but a launch that started while tracked and timed out into this registry
+  // predates the toggle, so only this pass can reach it. Left behind, a later
+  // Close Apps would still kill its PowerShell host and strand the consent
+  // prompt of a profile that is now fire-and-forget.
+  //
+  // Deleted WITHOUT calling `cancel`. That callback is what kills the host, and
+  // killing it is precisely what this is preventing: forgetting the handoff has
+  // to leave the prompt answerable.
+  pendingElevatedHandoffs.forEach((entry, handoffId) => {
+    if (entry.gameKey !== undefined && untrackedGameKeys.has(entry.gameKey)) {
+      pendingElevatedHandoffs.delete(handoffId)
+    }
+  })
 }
 
 export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()): void {

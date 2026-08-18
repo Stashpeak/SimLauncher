@@ -6243,3 +6243,55 @@ test('a tracked profile registers it on the synchronous-throw branch too (#591)'
     vi.useRealTimers()
   }
 })
+
+// The toggle has to reach a handoff that was registered BEFORE it was flipped.
+// `launchElevated` refuses to register one for a profile that is untracked at
+// launch, but a launch that started while tracked and timed out into the
+// registry predates the toggle entirely, so only the reconcile pass can reach
+// it (Codex on #834). Left behind, a later Close Apps still kills its host and
+// strands the prompt of a profile that is now fire-and-forget.
+test('turning tracking off forgets a handoff registered while it was on (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+      id: 'default',
+      name: 'Default'
+    }
+    const { launchProfileApps, killLaunchedApps, getRunningApps } =
+      await loadProcessModulesWithStore({
+        appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+        gamePaths: { ac: 'C:/Games/Race.exe' },
+        profiles: { ac: { activeProfileId: 'default', profiles: [profile] } }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // Launched while TRACKED, so the handoff really is registered.
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // What saving the profile with the toggle off does to the store, followed
+    // by the publish that reconciles against it.
+    profile.trackingEnabled = false
+    await getRunningApps()
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    // Forgotten, not cancelled: the host is alive, so the prompt is still
+    // answerable, and nothing is reported as stranded.
+    expect(elevatedHostKills).toHaveLength(0)
+    expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
