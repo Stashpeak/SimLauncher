@@ -6295,3 +6295,42 @@ test('turning tracking off forgets a handoff registered while it was on (#591)',
     vi.useRealTimers()
   }
 })
+
+// The BOUNDARY of the Close Apps guard above, pinned so the residual is a
+// recorded decision rather than something a later reader discovers.
+//
+// `addOwner` never overwrites, so a tracked profile contributes a shared
+// companion on its own and the target survives the untracked profile being
+// skipped. The process is therefore still killed, exactly as it was before this
+// PR, because back then the untracked profile contributed the same target
+// itself. The guard only ever changed the case where NO tracked profile
+// configures the app.
+//
+// #839 holds the decision on whether that should change. If it does, this test
+// is the one to update, deliberately.
+test('a shared companion is still a target when a tracked profile configures it too (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', garage61: true, trackingEnabled: false }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toContainEqual([
+    '/IM',
+    'garage61 telemetry agent.exe',
+    '/T',
+    '/F'
+  ])
+})
