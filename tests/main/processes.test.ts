@@ -6418,3 +6418,56 @@ test('a tracked profile still gets the detection promise (#591)', async () => {
   expect(result.warning).toContain('will detect when')
   expect(result.warning).not.toContain('Process tracking is off')
 })
+
+// Two elevated apps do not produce two warnings: the plural branch REPLACES the
+// per-app ones with a count, so fixing the singular copy alone left the promise
+// standing behind a second app (Codex on #834).
+test('the plural elevated warning does not promise detection either (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  markExistingPath('C:/Tools/Admin Tool 2.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe', admin2: 'C:/Tools/Admin Tool 2.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+  spawnErrors.set('C:/Tools/Admin Tool 2.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/Admin Tool.exe',
+    'C:/Tools/Admin Tool 2.exe'
+  ])
+
+  expect(result.elevatedCount).toBe(2)
+  expect(result.warning).toContain('2 apps requested administrator permission')
+  expect(result.warning).toContain('Process tracking is off for this profile')
+  expect(result.warning).not.toContain('will detect when')
+})
+
+// Same pairing as the singular case: with tracking on the plural promise is
+// true, so the fix must not have flattened both branches into the safe wording.
+test('a tracked profile still gets the plural detection promise (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  markExistingPath('C:/Tools/Admin Tool 2.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe', admin2: 'C:/Tools/Admin Tool 2.exe' },
+    profiles: {
+      ac: { activeProfileId: 'loud', profiles: [{ id: 'loud', name: 'Loud' }] }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+  spawnErrors.set('C:/Tools/Admin Tool 2.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/Admin Tool.exe',
+    'C:/Tools/Admin Tool 2.exe'
+  ])
+
+  expect(result.elevatedCount).toBe(2)
+  expect(result.warning).toContain('will detect when')
+  expect(result.warning).not.toContain('Process tracking is off')
+})

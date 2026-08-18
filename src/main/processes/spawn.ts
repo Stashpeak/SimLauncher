@@ -162,6 +162,16 @@ export function buildLaunchSummaryMessage(
   return 'All profile applications launched.'
 }
 
+// Mirrors the per-app wording built in `launchElevated`. Kept in step with it
+// deliberately: the plural branch REPLACES those warnings rather than joining
+// them, so an unconditional plural string puts the promise back the moment a
+// second app needs elevation (Codex on #834).
+function buildPluralElevatedWarning(count: number, tracked: boolean): string {
+  return tracked
+    ? `${count} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
+    : `${count} apps requested administrator permission. Process tracking is off for this profile, so SimLauncher will not detect or close them.`
+}
+
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
@@ -466,7 +476,7 @@ export async function launchProfileApps(
       standingElevated.length === 1
         ? standingElevated[0].warning
         : standingElevated.length > 1
-          ? `${standingElevated.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
+          ? buildPluralElevatedWarning(standingElevated.length, trackingEnabled)
           : undefined
 
     return {
