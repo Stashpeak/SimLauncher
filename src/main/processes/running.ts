@@ -246,7 +246,7 @@ export function registerProcessScanObserver(observer: ProcessScanObserver): void
 function reconcileUntrackedGames(): void {
   pruneUntrackedGames(
     new Set(
-      Object.entries(getStoredProfiles() || {})
+      Object.entries(getStoredProfiles())
         .filter(
           ([gameKey, profileEntry]) =>
             !isLaunchActiveForGame(gameKey) &&
