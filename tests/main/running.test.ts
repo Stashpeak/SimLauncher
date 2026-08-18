@@ -39,7 +39,19 @@ async function loadRunningModule(opts?: {
 
   const profilesMock = {
     getStoredProfiles: vi.fn(() => opts?.profiles ?? {}),
-    getActiveStoredProfile: vi.fn(() => undefined),
+    // Resolves the fixture rather than returning undefined (CodeRabbit on
+    // #834). It used to answer `undefined` unconditionally, which fed
+    // `undefined` into the predicate below and therefore always said "tracked":
+    // a `trackingEnabled: false` fixture could not reach the pruning or
+    // tracked-app paths at all, and the comment under it claimed otherwise.
+    // Nothing was silently passing yet, because no test had tried, but the next
+    // one to write that fixture would have got a green test for no reason.
+    getActiveStoredProfile: vi.fn((entry: unknown) => {
+      const set = entry as { activeProfileId?: string; profiles?: { id: string }[] } | undefined
+      return Array.isArray(set?.profiles)
+        ? set.profiles.find((profile) => profile.id === set.activeProfileId) || set.profiles[0]
+        : entry
+    }),
     getProfileTrackablePaths: vi.fn(() => opts?.trackablePaths ?? []),
     // The real predicate rather than a stub, so a tracking-off fixture is
     // decided by the rule under test and not by the mock.
@@ -350,4 +362,117 @@ test('an externally-adopted app keeps the poll fast even with empty maps (#672)'
   const reads = readRunningProcessNamesMock.mock.calls.length
   await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
   expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
+// Proves the loader's profile resolution actually reaches the rule, rather than
+// leaving the fixture inert (CodeRabbit on #834). Before the mock was fixed
+// both of these passed identically, because every profile read as tracked.
+//
+// Paired deliberately: the tracking-off half alone would pass on a harness that
+// surfaces nothing for any reason, so the tracking-on half is what proves the
+// fixture is otherwise live.
+test('tracking off prunes the seeded state and surfaces nothing (#591)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      iracing: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  seedState(stateModule)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe', 'crewchief.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(stateModule.runningProcesses.size).toBe(0)
+  expect(stateModule.unclosedProcesses.size).toBe(0)
+  expect(apps).toEqual([])
+})
+
+test('the same fixture with tracking on keeps both entries (#591)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      iracing: {
+        activeProfileId: 'loud',
+        profiles: [{ id: 'loud', name: 'Loud' }]
+      }
+    }
+  })
+  seedState(stateModule)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe', 'crewchief.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(stateModule.runningProcesses.size).toBe(1)
+  expect(apps.map((app) => app.path).sort()).toEqual([
+    'C:/Tools/CrewChief.exe',
+    'C:/Tools/SimHub.exe'
+  ])
+})
+
+// The reconcile has to happen at CALL time, not inside the publish's promise
+// chain (CodeRabbit on #834). `save-profile` writes the store and then calls
+// this synchronously, so anything reading `runningProcesses` before the publish
+// settles - `killLaunchedApps` on a tray click - would otherwise still find the
+// entries the user just opted out of, for one tasklist read.
+//
+// Deliberately NOT awaited before the assertion. Awaiting would pass either
+// way and prove nothing.
+test('a config publish reconciles before it returns, not after (#591)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      iracing: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  seedState(stateModule)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe', 'crewchief.exe']),
+    succeeded: true
+  })
+  expect(stateModule.runningProcesses.size).toBe(1)
+
+  const pending = runningModule.publishRunningApps('config')
+
+  expect(stateModule.runningProcesses.size).toBe(0)
+  await pending
+})
+
+// Running the reconcile synchronously moved it onto the CALLER's stack, so a
+// throw in it would now fail `save-profile` itself, where the same throw inside
+// the promise chain was contained by the caller's `.catch`. Reconciling a view
+// of running apps must never take down a settings write.
+//
+// Asserting the log rather than only the absence of a throw: swallowing IS the
+// point of the catch, so the log line is the only evidence it happened, and a
+// silent swallow is the failure mode worth catching.
+test('a throwing reconcile does not fail the caller (#591)', async () => {
+  const opts = {} as { profiles?: Record<string, unknown> }
+  Object.defineProperty(opts, 'profiles', {
+    get() {
+      throw new Error('store unavailable')
+    }
+  })
+  const { runningModule } = await loadRunningModule(opts)
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+  try {
+    expect(() => runningModule.publishRunningApps('config')).not.toThrow()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to reconcile untracked games before publishing:',
+      expect.any(Error)
+    )
+  } finally {
+    consoleError.mockRestore()
+  }
 })

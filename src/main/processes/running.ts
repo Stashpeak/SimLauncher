@@ -14,6 +14,7 @@ import { getExeName, isValidExePath, normalizePathForComparison } from '../utils
 
 import { pruneUnclosedProcesses } from './kill'
 import {
+  isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
   pruneStoppedRunningProcesses,
@@ -210,6 +211,52 @@ export function registerProcessScanObserver(observer: ProcessScanObserver): void
   processScanObservers.add(observer)
 }
 
+/**
+ * Drop every surfaced record belonging to a game whose active profile has
+ * process tracking off (#591).
+ *
+ * Turning tracking off has to take effect on apps that are ALREADY recorded,
+ * not just on the next launch. `runningProcesses` is written at launch time and
+ * nothing removes an entry until its exe exits, so a profile launched while
+ * tracked would otherwise keep its strip icons, its dot and its Close Apps
+ * entry for the rest of the session, contradicting the setting the user just
+ * saved. Forget, never kill: those apps were started deliberately, and
+ * fire-and-forget means they outlive our interest in them.
+ *
+ * Deliberately SYNCHRONOUS, and called from two places for that reason
+ * (CodeRabbit on #834). Doing it only inside `getRunningApps` puts it behind
+ * that function's `tasklist` await, leaving a window after the profile is saved
+ * in which `killLaunchedApps` still finds the stale entries and closes apps the
+ * user just opted out of. `publishRunningApps` runs it at call time instead, so
+ * a save reconciles before it returns; `getRunningApps` keeps its own call for
+ * the paths that reach it without a publish (the `get-running-apps` handler).
+ * Idempotent, so running it twice per publish costs one store read.
+ *
+ * Games with a launch in flight are skipped, and that is load-bearing rather
+ * than an optimisation. This reads the store's ACTIVE profile, which during a
+ * profile switch still names the OUTGOING one: the renderer launches the
+ * incoming profile's apps before saving the new `activeProfileId`. Reconciling
+ * in that window would prune the entries the incoming TRACKED profile just
+ * correctly recorded, on the authority of the outgoing untracked one. It is the
+ * same staleness `LaunchProfileAppsOptions.profileId` exists to defeat, and the
+ * same reason auto-close consults this primitive before reading an absence as
+ * an exit (#204). A toggle saved mid-launch is simply applied by the next
+ * publish, once the sequence has ended and the store agrees with itself.
+ */
+function reconcileUntrackedGames(): void {
+  pruneUntrackedGames(
+    new Set(
+      Object.entries(getStoredProfiles() || {})
+        .filter(
+          ([gameKey, profileEntry]) =>
+            !isLaunchActiveForGame(gameKey) &&
+            !isProcessTrackingEnabled(getActiveStoredProfile(profileEntry))
+        )
+        .map(([gameKey]) => gameKey)
+    )
+  )
+}
+
 export async function getRunningApps(): Promise<RunningApp[]> {
   const readResult = await readRunningProcessNames()
   const { processNames, succeeded: tasklistReadSucceeded } = readResult
@@ -231,27 +278,10 @@ export async function getRunningApps(): Promise<RunningApp[]> {
     pruneUnclosedProcesses(processNames)
   }
   pruneExpiredProcessNameMismatchWarnings()
-  // Hoisted above the prune below because it needs the same profiles; the reads
-  // are pure store lookups, so their position carries no other meaning.
+  reconcileUntrackedGames()
   const profiles = getStoredProfiles()
   const appPaths = getStoredStringRecord('appPaths')
   const gamePaths = getStoredStringRecord('gamePaths')
-  // Turning tracking off has to take effect on apps that are ALREADY recorded,
-  // not just on the next launch (#591). `runningProcesses` is written at launch
-  // time and nothing removes an entry until its exe exits, so a profile that was
-  // launched while tracked would otherwise keep its strip icons, its dot and its
-  // Close Apps entry for the rest of the session, contradicting the setting the
-  // user just saved. Forget, never kill: those apps were started deliberately,
-  // and fire-and-forget means they outlive our interest in them.
-  pruneUntrackedGames(
-    new Set(
-      Object.entries(profiles || {})
-        .filter(
-          ([, profileEntry]) => !isProcessTrackingEnabled(getActiveStoredProfile(profileEntry))
-        )
-        .map(([gameKey]) => gameKey)
-    )
-  )
 
   const launchedApps = Array.from(runningProcesses.values()).map((appProcess) => ({
     path: appProcess.path,
@@ -406,6 +436,21 @@ export function publishRunningApps(
   // settling process set is tracked live even if the window is hidden.
   if (reason !== 'scan') {
     noteRunningAppsActivity()
+  }
+  // Before the chain, not inside it: a `'config'` publish follows the profile
+  // write synchronously, so reconciling here is what makes the tracking toggle
+  // take effect by the time the save handler returns rather than one tasklist
+  // read later (#591).
+  //
+  // Guarded, because running it synchronously moved it onto the CALLER's stack:
+  // `save-profile` calls this right after writing the store, so an exception in
+  // here would now fail the save itself, where the same exception inside the
+  // promise chain below was contained by the caller's `.catch`. Reconciling the
+  // running-apps view must never be able to take down a settings write.
+  try {
+    reconcileUntrackedGames()
+  } catch (err) {
+    console.error('Failed to reconcile untracked games before publishing:', err)
   }
 
   const next = (publishRunningAppsPromise || Promise.resolve(null))
