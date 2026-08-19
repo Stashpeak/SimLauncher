@@ -3,6 +3,12 @@ import fs from 'fs'
 import path from 'path'
 
 import { writeAppErrorLog } from '../errorLog'
+import {
+  getActiveProfileForGame,
+  getStoredProfiles,
+  isProcessTrackingEnabled,
+  resolveNamedProfile
+} from '../profiles'
 import { getStoredStringRecord, store } from '../store'
 import {
   getErrorCode,
@@ -156,6 +162,16 @@ export function buildLaunchSummaryMessage(
   return 'All profile applications launched.'
 }
 
+// Mirrors the per-app wording built in `launchElevated`. Kept in step with it
+// deliberately: the plural branch REPLACES those warnings rather than joining
+// them, so an unconditional plural string puts the promise back the moment a
+// second app needs elevation (Codex on #834).
+function buildPluralElevatedWarning(count: number, tracked: boolean): string {
+  return tracked
+    ? `${count} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
+    : `${count} apps requested administrator permission. Process tracking is off for this profile, so SimLauncher will not detect or close them.`
+}
+
 export async function launchProfileApps(
   sender: WebContents,
   gameKey: string,
@@ -206,6 +222,18 @@ export async function launchProfileApps(
     const launchDelayMs = getLaunchDelayMs()
     const gamePaths = getStoredStringRecord('gamePaths')
     const gamePath = gamePaths?.[gameKey]
+    // Resolved from the profile these entries came FROM, which during a profile
+    // switch is not the one the store calls active: the renderer launches the
+    // incoming profile's apps and saves the new activeProfileId afterwards
+    // (GameRow). Reading the store here would apply the OUTGOING profile's
+    // tracking setting, so switching to a fire-and-forget profile would still
+    // record its apps, and switching away from one would leave the incoming
+    // tracked profile with no running strip at all.
+    const trackingEnabled = isProcessTrackingEnabled(
+      options?.profileId
+        ? resolveNamedProfile(getStoredProfiles()[gameKey], options.profileId)
+        : getActiveProfileForGame(gameKey)
+    )
     const { processNames } = await readRunningProcessNames()
     const normalizedEntries = profileApps.map((input) => normalizeLaunchInput(input, gameKey))
     // Entries filtered out below never reach spawn — tracked here (not just
@@ -309,7 +337,8 @@ export async function launchProfileApps(
         gameKey,
         appsToLaunch[index],
         gamePath,
-        launchController.signal
+        launchController.signal,
+        trackingEnabled
       )
       // Nothing was started, so don't count it (and don't arm the post-launch
       // cooldown for an attempt that never happened).
@@ -447,7 +476,7 @@ export async function launchProfileApps(
       standingElevated.length === 1
         ? standingElevated[0].warning
         : standingElevated.length > 1
-          ? `${standingElevated.length} apps requested administrator permission. SimLauncher will detect when they're running but cannot close them from here.`
+          ? buildPluralElevatedWarning(standingElevated.length, trackingEnabled)
           : undefined
 
     return {
@@ -465,6 +494,27 @@ export async function launchProfileApps(
     }
     activeLaunches.delete(gameKey)
     unregisterActiveLaunch(gameKey, launchController)
+    // A tracking toggle saved DURING this sequence was skipped by the reconcile,
+    // which refuses to judge a game mid-launch because the store's active
+    // profile is unreliable then (#591). Nothing else publishes when a sequence
+    // ENDS: every per-app publish above runs before this unregister, and the
+    // poll stops outright once the last subscriber goes, so the stale records
+    // and any pending elevated handoff could otherwise outlive the toggle
+    // indefinitely and still be closed by a tray Close Apps (Codex on #834).
+    //
+    // Only when no `profileId` was passed, which is the exact condition: the
+    // caller supplies it precisely when the profile being launched is NOT the
+    // persisted active one, i.e. a switch whose new `activeProfileId` the
+    // renderer has not saved yet. Reconciling there would prune the incoming
+    // profile's records on the authority of the outgoing one, and the switch's
+    // own `save-profile` publish covers it with a store that agrees with itself
+    // by then. Gating on `options.controller` instead is NOT equivalent and the
+    // switch regression test says so: it passes a profileId without one.
+    if (!options?.profileId) {
+      publishRunningApps('config').catch((err) => {
+        console.error('Failed to publish running apps after a launch sequence:', err)
+      })
+    }
   }
 }
 
@@ -661,10 +711,18 @@ function launchElevated(
   appPath: string,
   args: string[] = [],
   gameKey?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  tracked = true
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
-    const elevatedWarning = `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+    // Two sentences because the second one is a promise, and it is only true
+    // when we are tracking (CodeRabbit on #834). Telling a fire-and-forget
+    // profile that SimLauncher "will detect when it's running" is exactly the
+    // lie #591 exists to stop: it will not, deliberately, because the user
+    // asked it not to.
+    const elevatedWarning = tracked
+      ? `${path.basename(appPath)} requested administrator permission. SimLauncher will detect when it's running but cannot close it from here.`
+      : `${path.basename(appPath)} requested administrator permission. Process tracking is off for this profile, so SimLauncher will not detect or close it.`
 
     // A kill (Close Apps) can land while the UAC handoff is still pending —
     // the consent prompt sits on screen until the user answers it, so this
@@ -752,17 +810,32 @@ function launchElevated(
       // still-live host so a later Close Apps can still reach it (#779 Codex
       // P1), otherwise approving the prompt afterwards would start the app the
       // user just asked to close.
-      registerPendingElevatedHandoff(handoffId, {
-        gameKey,
-        cancel: () => {
-          cancelledByKill = true
-          noteHandoffCancelled()
-          // Same reason as onAbort (#809), and the same guard: mid-sequence
-          // both this and the abort fire for this one handoff.
-          noteStrandedPromptOnce()
-          child?.kill()
-        }
-      })
+      //
+      // Not for a fire-and-forget profile though (#591). This registry has
+      // exactly one consumer, `cancelPendingElevatedHandoffs`, called from both
+      // kill entry points BEFORE they filter profile targets, so registering
+      // here would let a global Close Apps kill the host of an app the user
+      // opted out of us managing: the late approval would then start nothing
+      // and they would be told a consent prompt was stranded. Not registering
+      // is what leaves the prompt answerable.
+      //
+      // Only the post-grace-window registry is skipped. The abort signal above
+      // still cancels this handoff while the sequence is in flight, because
+      // cancelling a launch in progress is a different thing from managing the
+      // apps it already started.
+      if (tracked) {
+        registerPendingElevatedHandoff(handoffId, {
+          gameKey,
+          cancel: () => {
+            cancelledByKill = true
+            noteHandoffCancelled()
+            // Same reason as onAbort (#809), and the same guard: mid-sequence
+            // both this and the abort fire for this one handoff.
+            noteStrandedPromptOnce()
+            child?.kill()
+          }
+        })
+      }
       resolve({
         status: 'elevated',
         appPath,
@@ -853,12 +926,24 @@ function launchElevated(
   })
 }
 
+/**
+ * Starts one profile entry and reports how it settled.
+ *
+ * @param trackingEnabled Whether SimLauncher manages what it starts. `false`
+ * means fire-and-forget (#591): the process is never recorded, so it cannot
+ * afterwards be surfaced in the running strip, counted, closed by Close Apps,
+ * or auto-closed with the game. Omit it to resolve the setting from the active
+ * profile in the store; pass it explicitly whenever the caller knows which
+ * profile these entries came from, because mid profile-switch the store still
+ * names the OUTGOING one (see `LaunchProfileAppsOptions.profileId`).
+ */
 export async function spawnDetachedApp(
   sender: WebContents,
   gameKey: string,
   entry: ProfileLaunchEntry,
   gamePath?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  trackingEnabled?: boolean
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
@@ -872,6 +957,13 @@ export async function spawnDetachedApp(
   // in flight. None of those windows needs its own check: spawnUnlessAborted
   // re-reads the signal in the same synchronous block as spawn() (#715).
   const consoleApp = await isConsoleExecutable(appPath)
+  // Resolved once per app rather than at each use below, so one launch cannot
+  // end up half-tracked if the user flips the toggle while its handlers are
+  // still pending.
+  //
+  // The caller passes it whenever the profile being launched is not the
+  // persisted active one; the fallback covers direct use of this function.
+  const isTracked = trackingEnabled ?? isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
 
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
@@ -906,13 +998,29 @@ export async function spawnDetachedApp(
         return
       }
       const runningKey = normalizePathForComparison(appPath)
-      runningProcesses.set(runningKey, {
-        process: child,
-        path: appPath,
-        name: path.basename(appPath),
-        gameKey,
-        isGame: !!gamePath && pathsEqual(appPath, gamePath)
-      })
+      // Fire-and-forget when this game's profile has tracking off (#591): the
+      // app is never recorded, so it cannot be surfaced, counted, killed or
+      // auto-closed later. Not recorded rather than filtered on the way out,
+      // deliberately. A display filter was tried and reverted for two reasons
+      // a filter cannot avoid: `launchedExeNames` is a global basename dedup
+      // set built from the UNFILTERED list, so an untracked profile launching
+      // a shared exe (SimHub is the normal case for multi-sim users) would
+      // suppress a tracked profile's own copy of it and surface the companion
+      // nowhere; and profile switch derives `isRunning` from the same list,
+      // so hiding the apps silently skipped its stop/start pipeline while
+      // reporting success.
+      //
+      // Not managing them afterwards is the feature, not a gap: the user asked
+      // SimLauncher to be a launcher and nothing else.
+      if (isTracked) {
+        runningProcesses.set(runningKey, {
+          process: child,
+          path: appPath,
+          name: path.basename(appPath),
+          gameKey,
+          isGame: !!gamePath && pathsEqual(appPath, gamePath)
+        })
+      }
 
       child.once('spawn', () => {
         child.unref()
@@ -947,7 +1055,7 @@ export async function spawnDetachedApp(
           // in which case launchElevated starts nothing and reports the attempt
           // as cancelled — its own start is guarded (#715). Nothing is running
           // here either way: this spawn failed.
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal))
+          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked))
           return
         }
 
@@ -957,7 +1065,13 @@ export async function spawnDetachedApp(
 
       child.once('exit', () => {
         const processEntry = runningProcesses.get(runningKey)
-        const wasGame = processEntry?.isGame ?? false
+        // Derived the same way as at record time rather than read back off the
+        // entry, because the entry is not guaranteed to still be there: the
+        // untracked reconcile prunes it (#591), and `?? false` then claimed the
+        // game exe was a companion and toasted about it (Codex on #834).
+        // Whether this path IS the game does not depend on whether we recorded
+        // it, so it should not be stored in something prunable.
+        const wasGame = !!gamePath && pathsEqual(appPath, gamePath)
         // Only drop the entry if it is still ours. Two slots can share a
         // canonical key (#357), and a late exit event for an already-killed
         // child must not wipe an entry that a subsequent spawn has just
@@ -968,7 +1082,27 @@ export async function spawnDetachedApp(
         const exitedDuringPostLaunchWindow = Date.now() - launchStartedAt <= POST_LAUNCH_BLOCK_MS
         const wasClosedBySimLauncher = consumeProcessNameMismatchWarningSuppression(appPath)
 
-        if (exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
+        // The whole warning is about tracking having been lost, so it has
+        // nothing to say to a profile that asked not to be tracked (#591). It
+        // would also be the one thing still lighting that game's card, which is
+        // exactly what fire-and-forget promises not to do.
+        //
+        // Both the launch-time decision AND the current one, because they can
+        // disagree: this fires up to POST_LAUNCH_BLOCK_MS after the launch, so
+        // a toggle inside that window leaves `isTracked` stale (Codex on #834).
+        // The stored warning would be pruned by the reconcile on the next
+        // publish, but the toast is already on the user's screen and there is
+        // no retracting it. Re-read rather than replace: the message is only
+        // ever true if the app was tracked when it started as well.
+        //
+        // Residual, accepted: mid profile-switch the store still names the
+        // OUTGOING profile, so switching from an untracked profile to a tracked
+        // one can swallow a legitimate warning for a few milliseconds. A missed
+        // warning costs the user nothing permanent; a wrong one is a toast they
+        // cannot dismiss the cause of.
+        const stillTracked = isTracked && isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
+
+        if (stillTracked && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
           const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
 
           processNameMismatchWarnings.set(normalizePathForComparison(appPath), {
@@ -1003,7 +1137,7 @@ export async function spawnDetachedApp(
 
       // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey), gameKey, signal).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked).then(resolveOnce)
         return
       }
 

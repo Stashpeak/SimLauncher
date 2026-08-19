@@ -329,7 +329,12 @@ export function registerLaunchHandlers(): void {
         // stop profile B from launching — launchProfileApps checks the same
         // signal before it spawns anything.
         const launchResult = await launchProfileApps(event.sender, gameKey, entriesToStart, {
-          controller: launchController
+          controller: launchController,
+          // The store still says the OUTGOING profile is active at this point:
+          // the renderer saves the new activeProfileId only after this call
+          // returns. Naming the incoming profile is what lets the launch read
+          // ITS tracking setting rather than the one being left behind (#591).
+          profileId: toProfileId
         })
 
         return {

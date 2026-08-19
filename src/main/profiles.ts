@@ -228,6 +228,28 @@ export function getActiveStoredProfile(
   return profileEntry
 }
 
+export function getActiveProfileForGame(gameKey: string): StoredProfile | undefined {
+  const profileEntry = getStoredProfiles()[gameKey]
+  return profileEntry ? getActiveStoredProfile(profileEntry) : undefined
+}
+
+/**
+ * Whether SimLauncher should follow this game's processes at all (#591).
+ *
+ * `!== false` rather than `=== true`, matching every profile boolean except
+ * `closeAppsOnGameExit`: tracking is on unless the user turned it off, so an
+ * absent or malformed value means on. Nobody has the key set, so inverting this
+ * would silently make every existing profile untracked.
+ *
+ * One spelling on purpose. The rule is read from three places now (launch
+ * recording, tasklist discovery, auto-close arming), and it decides whether a
+ * process is recorded at all rather than merely displayed, so two of them
+ * drifting apart would leave a game surfaced by one and invisible to the others.
+ */
+export function isProcessTrackingEnabled(profile: StoredProfile | undefined): boolean {
+  return profile?.trackingEnabled !== false
+}
+
 export function getProfileTrackablePaths(
   gameKey: string,
   profile: StoredProfile | undefined,
