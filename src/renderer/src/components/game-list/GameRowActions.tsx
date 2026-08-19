@@ -46,20 +46,41 @@ export function GameRowActions({
   // WHY a colon separator: no em dashes in public-facing copy, and profile
   // names often contain hyphens, so a dash-style separator would get lost.
   const launchTarget = `${gameName}: ${activeProfileName} profile`
-  const primaryTitle =
-    isLaunching && !canKill ? 'Launching' : canKill ? 'Close Apps' : `Launch ${launchTarget}`
+  // While a launch is in flight, or in its post-launch cooldown, these buttons
+  // do nothing — so their tooltip and accessible name have to say why instead of
+  // naming an action that cannot run (#830). `isLaunchBlocked` is global (any
+  // game launching blocks every row), so the reason depends on whose launch it
+  // is; `isLaunching` is this row's. Deliberately not two sentences: the tooltip
+  // is 350ms of hover, and "please wait" is the part that says it is temporary.
+  const blockedReason = isLaunching ? 'Launching, please wait' : 'Another launch is in progress'
+  const isPrimaryBlocked = isLaunchBlocked && !canKill
+  const primaryTitle = canKill
+    ? 'Close Apps'
+    : isPrimaryBlocked
+      ? blockedReason
+      : `Launch ${launchTarget}`
 
   return (
     <div className="flex items-center gap-3 no-drag">
       <div className="flex h-9 w-9 items-center justify-center">
         {canRelaunch && (
-          <Tooltip label="Relaunch missing apps">
+          <Tooltip label={isLaunchBlocked ? blockedReason : 'Relaunch missing apps'}>
             <button
               type="button"
-              onClick={onRelaunchMissing}
-              disabled={isLaunchBlocked}
+              // aria-disabled rather than `disabled`, for both buttons here
+              // (#830). A `disabled` button is removed from the tab order AND
+              // is dispatched no mouse events, so the very tooltip that
+              // explains the block is the one thing a blocked user cannot
+              // reach, by hover or by keyboard. Dropping the handler is what
+              // makes the click inert; the attribute is what announces it.
+              onClick={isLaunchBlocked ? undefined : onRelaunchMissing}
+              aria-disabled={isLaunchBlocked || undefined}
               className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
-              aria-label={`Relaunch missing apps for ${gameName}`}
+              aria-label={
+                isLaunchBlocked
+                  ? `Relaunch missing apps for ${gameName}. ${blockedReason}`
+                  : `Relaunch missing apps for ${gameName}`
+              }
             >
               <RefreshIcon
                 width={18}
@@ -80,15 +101,17 @@ export function GameRowActions({
         <Tooltip label={primaryTitle}>
           <button
             type="button"
-            onClick={primaryAction}
-            disabled={isLaunchBlocked && !canKill}
+            onClick={isPrimaryBlocked ? undefined : primaryAction}
+            aria-disabled={isPrimaryBlocked || undefined}
             className={`launcher-play-btn group/btn flex h-9 w-[54px] shrink-0 cursor-pointer items-center justify-center rounded-r-full transition-all ${primaryButtonClass}`}
             aria-label={
-              isLaunching && !canKill
-                ? `Launching ${gameName}`
-                : canKill
-                  ? `Close companion apps for ${gameName}`
-                  : `Launch ${launchTarget}`
+              canKill
+                ? `Close companion apps for ${gameName}`
+                : isLaunching
+                  ? `Launching ${gameName}`
+                  : isPrimaryBlocked
+                    ? `Launch ${launchTarget}. ${blockedReason}`
+                    : `Launch ${launchTarget}`
             }
             aria-busy={isLaunching && !canKill ? true : undefined}
           >

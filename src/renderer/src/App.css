@@ -300,14 +300,28 @@ textarea {
   outline-offset: 2px;
 }
 
+/* `aria-disabled` carries the same look as `disabled` (#830). A control that
+   must explain WHY it is unavailable cannot use the `disabled` attribute: that
+   removes it from the tab order and stops mouse events being dispatched, so its
+   tooltip becomes unreachable by exactly the users who need it. Such controls
+   drop their click handler and mark themselves with aria-disabled instead, and
+   this pairing is what keeps them looking identical to a truly disabled one. */
 .accent-action:disabled,
+.accent-action[aria-disabled='true'],
 .accent-surface-action:disabled,
+.accent-surface-action[aria-disabled='true'],
 .accent-subtle-hover:disabled,
+.accent-subtle-hover[aria-disabled='true'],
 .neutral-action:disabled,
+.neutral-action[aria-disabled='true'],
 .danger-action:disabled,
+.danger-action[aria-disabled='true'],
 .icon-action:disabled,
+.icon-action[aria-disabled='true'],
 .dropdown-item:disabled,
-.selected-surface:disabled {
+.dropdown-item[aria-disabled='true'],
+.selected-surface:disabled,
+.selected-surface[aria-disabled='true'] {
   cursor: not-allowed;
   filter: none;
   opacity: 0.55;
