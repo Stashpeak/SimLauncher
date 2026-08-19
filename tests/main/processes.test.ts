@@ -102,6 +102,17 @@ const wmiLookupCounts = new Map<string, number>()
 const execFileCalls: { command: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnCalls: { appPath: string; args: string[]; options: Record<string, unknown> }[] = []
 const spawnErrors = new Map<string, NodeJS.ErrnoException>()
+// Runs at the moment `spawn()` is called for a given path, so a test can change
+// the world MID-sequence (turning a profile's tracking off while the launch
+// loop is still running, say) rather than only before or after it.
+const spawnHooks = new Map<string, () => void>()
+// Makes `spawn()` THROW synchronously rather than emit an 'error' event.
+// `spawnDetachedApp` handles the two separately: the event lands in
+// `child.once('error')`, the throw in the surrounding try/catch, and each has
+// its own `isElevatedLaunchError` branch calling `launchElevated`. Only the
+// event path had a fixture, so the whole catch branch was uncovered - dropping
+// an argument from its call left all 166 tests green (#591).
+const spawnThrows = new Map<string, NodeJS.ErrnoException>()
 // #675: when true, the elevated (-EncodedCommand) PowerShell call never invokes
 // its callback, modelling a UAC consent prompt the user never answers.
 let elevatedLaunchHangs = false
@@ -408,6 +419,10 @@ async function loadProcessModules() {
     }),
     spawn: vi.fn((appPath: string, args: string[] = [], options: Record<string, unknown> = {}) => {
       spawnCalls.push({ appPath, args, options })
+      spawnHooks.get(appPath)?.()
+      if (spawnThrows.has(appPath)) {
+        throw spawnThrows.get(appPath)!
+      }
       const handlers = new Map<string, (...args: unknown[]) => void>()
       const child = {
         pid: 1234,
@@ -534,6 +549,31 @@ async function loadProcessModules() {
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
       p.profiles.find((i) => i.id === p.activeProfileId)
     ),
+    // Resolves through the same storeData the rest of this harness writes, so a
+    // test can turn tracking off for one game by editing its profile fixture
+    // (#591). Flat profiles and profile sets both appear in this file.
+    getActiveProfileForGame: vi.fn((gameKey: string) => {
+      const profiles = storeData.profiles
+      if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return undefined
+      const entry = (profiles as Record<string, unknown>)[gameKey]
+      if (!entry || typeof entry !== 'object') return undefined
+      const set = entry as { activeProfileId?: string; profiles?: { id: string }[] }
+      return Array.isArray(set.profiles)
+        ? set.profiles.find((profile) => profile.id === set.activeProfileId) || set.profiles[0]
+        : entry
+    }),
+    // The real predicate, not a stub: these tests decide tracking through their
+    // profile fixtures, so stubbing it would answer the question for them.
+    isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
+      profile?.trackingEnabled !== false,
+    // Resolves a NAMED profile, which is what a profile switch launches: the
+    // store still calls the outgoing one active at that moment.
+    resolveNamedProfile: vi.fn((entry: unknown, profileId: string) => {
+      const set = entry as { profiles?: { id: string }[] } | undefined
+      return Array.isArray(set?.profiles)
+        ? set.profiles.find((profile) => profile.id === profileId) || set.profiles[0]
+        : entry
+    }),
     getStoredProfiles: vi.fn(() => {
       const value = storeData.profiles
 
@@ -670,6 +710,8 @@ beforeEach(async () => {
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
+  spawnThrows.clear()
+  spawnHooks.clear()
   elevatedLaunchHangs = false
   heldElevatedCallback = null
   heldElevatedCallbacks.length = 0
@@ -5723,4 +5765,807 @@ test('finalizeKillAttempts treats a notFound elevated-suspect attempt as still r
     reason: 'access_denied'
   })
   expect(unclosedProcesses.size).toBe(1)
+})
+
+// --- Fire-and-forget when tracking is off (#591) ---
+//
+// The rule is applied at the SOURCE: an untracked profile's launched apps are
+// never recorded in `runningProcesses`. An earlier attempt filtered them on the
+// way out of getRunningApps instead and was reverted, because two things
+// downstream read the unfiltered list and a display filter cannot reach either.
+// The second test below is that reverted approach's worst case.
+
+test('a tracking-off profile launches its apps and records nothing (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, getRunningApps, runningProcesses } = await loadProcessModulesWithStore(
+    {
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+        }
+      },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    }
+  )
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  // It really launched: opting out of tracking is not opting out of launching.
+  expect(spawnCalls.map((call) => call.appPath)).toContain('C:/Tools/SimHub.exe')
+  // ...and left nothing behind to surface, count, kill or auto-close.
+  expect(runningProcesses.size).toBe(0)
+  await expect(getRunningApps()).resolves.toEqual([])
+})
+
+// The same fixture WITHOUT the flag, because that is what every existing
+// profile looks like: nobody has `trackingEnabled` set.
+//
+// What this pins is that the launch path is WIRED to the rule and records when
+// it says yes: with the tracking-off test above, a guard hardcoded either way
+// fails one of the two. It cannot pin the rule ITSELF, because this suite mocks
+// `../profiles` and the mock carries its own copy of the predicate, so the real
+// one could be inverted with every test here still green. The default is pinned
+// against the real function in profiles.test.ts, which is where it belongs.
+test('a profile with no tracking flag is still tracked (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default' }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  expect(runningProcesses.size).toBe(1)
+})
+
+// M2 from the reverted output-filter spike, and the reason the fix lives at the
+// source. `launchedExeNames` is a GLOBAL basename dedup set built from the
+// unfiltered list, so an untracked profile launching a shared exe used to
+// suppress a tracked profile's own copy of it, and the final filter then
+// removed the untracked copy: the companion surfaced nowhere. Shared companion
+// exes are the normal case for anyone running more than one sim.
+test('an untracked profile launching a shared exe does not hide it from a tracked one (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  // Both game exes exist AND both games are running below, so AC is adoptable
+  // on every axis except the one under test. Without that the "nothing for AC"
+  // assertion would hold for the wrong reason.
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Games/iRacingUI.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['C:/Tools/SimHub.exe'] }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe', iracing: 'C:/Games/iRacingUI.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  // Both games are already running, so both profiles are adoptable and their
+  // tracked paths would be surfaced from the tasklist.
+  processNames.add('iracingui.exe')
+  processNames.add('assettocorsa.exe')
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  // SimHub is now up because AC's profile started it. The tasklist snapshot is
+  // cached for 500ms and the launch already primed it, so invalidate rather
+  // than waiting the window out.
+  processNames.add('simhub.exe')
+  ;(await import('../../src/main/processes/tasklist')).invalidateProcessNameCache()
+
+  const runningApps = await getRunningApps()
+
+  expect(runningApps).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/SimHub.exe', gameKey: 'iracing', tracked: true })
+    ])
+  )
+  // And it is not attributed to the profile that opted out.
+  expect(runningApps.filter((app) => app.gameKey === 'ac')).toEqual([])
+})
+
+// The mismatch warning exists to say "tracking was lost". It has nothing to
+// tell a profile that asked not to be tracked, and it would be the one thing
+// still lighting that game's card.
+test('a tracking-off profile gets no process-name-mismatch warning (#591)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Games/AssettoCorsa.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // A fast exit inside the post-launch window: exactly what writes the warning
+  // for a tracked profile.
+  childHandlers.get('exit')?.()
+
+  expect(processNameMismatchWarnings.size).toBe(0)
+})
+
+// A profile switch launches the incoming profile's apps BEFORE the renderer
+// saves the new activeProfileId, so the store still calls the outgoing profile
+// active while these apps start. Resolving tracking from the store there would
+// apply the wrong profile's setting in both directions: switching to a
+// fire-and-forget profile would still record its apps, and switching away from
+// one would leave the incoming tracked profile with no running strip at all.
+test('a switch to an untracked profile records nothing, before the switch is saved (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+    // The store still says 'default' (tracked) is active, exactly as it would
+    // be mid-switch.
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [
+          { id: 'default', name: 'Default' },
+          { id: 'quiet', name: 'Quiet', trackingEnabled: false }
+        ]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'], { profileId: 'quiet' })
+
+  expect(spawnCalls.map((call) => call.appPath)).toContain('C:/Tools/SimHub.exe')
+  expect(runningProcesses.size).toBe(0)
+})
+
+// The same switch in the other direction, which is the worse failure: reading
+// the store would take the outgoing untracked profile's setting and leave the
+// incoming tracked profile with nothing in its strip.
+test('a switch away from an untracked profile still records the incoming one (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [
+          { id: 'quiet', name: 'Quiet', trackingEnabled: false },
+          { id: 'default', name: 'Default' }
+        ]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'], { profileId: 'default' })
+
+  expect(runningProcesses.size).toBe(1)
+})
+
+// #591 desired behavior 2, verbatim: "Tray 'Close Apps' must not offer that
+// profile." Not recording the launch is not enough on its own, because
+// `getProfileCompanionTargets` rebuilds targets from the STORED profile rather
+// than from what was launched — so the global Close Apps found and killed the
+// companion anyway, whether SimLauncher started it or the user did. Found by
+// Codex on PR #834, not by the tests above, all of which assert on
+// `runningProcesses` and are blind to the target map.
+test('close apps does not kill a tracking-off profile companion (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', garage61: true, trackingEnabled: false }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls).toHaveLength(0)
+})
+
+// The same rule from the other side, and the half the user actually sees: the
+// action must not be OFFERED. Both read `getProfileCompanionTargets`, so one
+// guard covers them, but a future refactor could easily give them separate
+// paths again.
+test('close apps is not offered for a tracking-off profile (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', garage61: true, trackingEnabled: false }]
+      }
+    }
+  })
+
+  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(false)
+})
+
+// The same profile with tracking left ON, so the two tests above cannot pass by
+// the target map being empty for some unrelated reason.
+test('close apps still targets the same companion when tracking is on (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { killLaunchedApps, hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'loud',
+        profiles: [{ id: 'loud', name: 'Loud', garage61: true }]
+      }
+    }
+  })
+
+  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toContainEqual([
+    '/IM',
+    'garage61 telemetry agent.exe',
+    '/T',
+    '/F'
+  ])
+})
+
+// Turning tracking OFF has to act on what is already recorded, not only on the
+// next launch. `runningProcesses` is written at launch time and nothing removes
+// an entry until its exe exits, so the strip, the dot and Close Apps used to
+// keep offering the apps for the rest of the session — the saved setting simply
+// did not apply to the state it was saved to change.
+//
+// `simhub.exe` is added to `processNames` for every read that matters, so the
+// entry does NOT disappear via `pruneStoppedRunningProcesses`: it has to be this
+// rule removing it, not the exe appearing to have exited. It is added AFTER the
+// launch because an app already in the tasklist is skipped as already running.
+test('turning tracking off forgets apps already recorded under it (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, getRunningApps, runningProcesses } = await loadProcessModulesWithStore(
+    {
+      profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    }
+  )
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(runningProcesses.size).toBe(1)
+  processNames.add('simhub.exe')
+  await expect(getRunningApps()).resolves.not.toEqual([])
+
+  // What saving the profile with the toggle off does to the store.
+  profile.trackingEnabled = false
+
+  await expect(getRunningApps()).resolves.toEqual([])
+  // Forgotten, not killed: nothing was asked to close.
+  expect(runningProcesses.size).toBe(0)
+  expect(execFileCalls.filter((call) => call.command === 'taskkill')).toHaveLength(0)
+})
+
+// The same defect as the two Close Apps findings above, one layer down, and the
+// tests above are blind to it for the same reason: they assert on
+// `runningProcesses`, and the pending-handoff registry is neither that map nor
+// the companion-target map.
+//
+// `cancelPendingElevatedHandoffs` runs in BOTH kill entry points' prologues,
+// before any profile filtering, so a global Close Apps would kill the
+// PowerShell host of an app the user opted out of us managing. The late
+// approval would then start nothing, and they would be told a consent prompt
+// was stranded by a profile SimLauncher promised not to touch.
+test('a tracking-off profile does not register its elevated handoff for Close Apps (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'quiet',
+          profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // The global (tray) form, with no gameKey, which is the one that reaches
+    // every profile regardless of which game the user was looking at.
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    // The host stays alive, so answering the prompt still starts the app.
+    expect(elevatedHostKills).toHaveLength(0)
+    // Absent rather than 0: `withStrandedConsentPrompts` only attaches the
+    // field when the count is above zero, so this IS the "nothing stranded"
+    // shape, and the paired test below shows the same fixture producing 1.
+    expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The same fixture with tracking left ON, so the test above cannot pass because
+// the handoff never reached the grace window in the first place.
+test('a tracked profile still registers its elevated handoff for Close Apps (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'loud',
+          profiles: [{ id: 'loud', name: 'Loud' }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The same rule on the OTHER elevation branch. `spawnDetachedApp` reaches
+// `launchElevated` from two places: the 'error' event (covered above) and the
+// try/catch around a synchronous throw from spawn(). Both had to be given the
+// tracking decision, and only the first had a fixture, so dropping the argument
+// from this one left the whole suite green.
+test('the same holds when spawn throws elevation synchronously (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnThrows.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'quiet',
+          profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(0)
+    expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// And the positive control for that branch, which also pins that the throw
+// fixture reaches the elevation path at all rather than failing the launch.
+test('a tracked profile registers it on the synchronous-throw branch too (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnThrows.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killLaunchedApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: { activeProfileId: 'loud', profiles: [{ id: 'loud', name: 'Loud' }] }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The toggle has to reach a handoff that was registered BEFORE it was flipped.
+// `launchElevated` refuses to register one for a profile that is untracked at
+// launch, but a launch that started while tracked and timed out into the
+// registry predates the toggle entirely, so only the reconcile pass can reach
+// it (Codex on #834). Left behind, a later Close Apps still kills its host and
+// strands the prompt of a profile that is now fire-and-forget.
+test('turning tracking off forgets a handoff registered while it was on (#591)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+      id: 'default',
+      name: 'Default'
+    }
+    const { launchProfileApps, killLaunchedApps, getRunningApps } =
+      await loadProcessModulesWithStore({
+        appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+        gamePaths: { ac: 'C:/Games/Race.exe' },
+        profiles: { ac: { activeProfileId: 'default', profiles: [profile] } }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // Launched while TRACKED, so the handoff really is registered.
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // What saving the profile with the toggle off does to the store, followed
+    // by the publish that reconciles against it.
+    profile.trackingEnabled = false
+    await getRunningApps()
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    // Forgotten, not cancelled: the host is alive, so the prompt is still
+    // answerable, and nothing is reported as stranded.
+    expect(elevatedHostKills).toHaveLength(0)
+    expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The BOUNDARY of the Close Apps guard above, pinned so the residual is a
+// recorded decision rather than something a later reader discovers.
+//
+// `addOwner` never overwrites, so a tracked profile contributes a shared
+// companion on its own and the target survives the untracked profile being
+// skipped. The process is therefore still killed, exactly as it was before this
+// PR, because back then the untracked profile contributed the same target
+// itself. The guard only ever changed the case where NO tracked profile
+// configures the app.
+//
+// #839 holds the decision on whether that should change. If it does, this test
+// is the one to update, deliberately.
+test('a shared companion is still a target when a tracked profile configures it too (#591)', async () => {
+  processNames.add('garage61 telemetry agent.exe')
+
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', garage61: true, trackingEnabled: false }]
+      },
+      iracing: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    }
+  })
+
+  await killLaunchedApps()
+
+  const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
+  expect(killCalls.map((call) => call.args)).toContainEqual([
+    '/IM',
+    'garage61 telemetry agent.exe',
+    '/T',
+    '/F'
+  ])
+})
+
+// The deferred half of the reconcile (Codex on #834). Saving the toggle DURING
+// a launch is skipped on purpose, because the store's active profile is
+// unreliable mid-sequence. Nothing else publishes when a sequence ENDS, though:
+// every per-app publish runs before the unregister, and the poll stops outright
+// once the last subscriber goes. So the sequence has to reconcile on its way
+// out or the stale records can outlive the toggle indefinitely.
+test('a toggle saved during a launch is applied when the sequence ends (#591)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Tools/CrewChief.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, runningProcesses, getRunningApps } = await loadProcessModulesWithStore(
+    {
+      profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    }
+  )
+
+  // Flipped WHILE the sequence is in flight: the first app's publish reconciles
+  // and must skip this game, because a launch is active.
+  spawnHooks.set('C:/Tools/SimHub.exe', () => {
+    profile.trackingEnabled = false
+  })
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe', 'C:/Tools/CrewChief.exe'])
+
+  // Both really started: turning tracking off is not cancelling the launch.
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(
+    expect.arrayContaining(['C:/Tools/SimHub.exe', 'C:/Tools/CrewChief.exe'])
+  )
+  // And by the time the sequence returns, the toggle has been applied.
+  expect(runningProcesses.size).toBe(0)
+  await expect(getRunningApps()).resolves.toEqual([])
+})
+
+// The elevation warning is a PROMISE about what SimLauncher will do next, and
+// it was made unconditionally (CodeRabbit on #834). Telling a fire-and-forget
+// profile that we "will detect when it's running" is the same lie #591 exists
+// to stop: we will not, deliberately.
+test('the elevated warning does not promise detection to an untracked profile (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+
+  expect(result.warning).toContain('Process tracking is off for this profile')
+  expect(result.warning).not.toContain('will detect when')
+})
+
+// The same launch with tracking on keeps the original promise, which is true
+// there: the tasklist scan really does surface an elevated app it cannot close.
+test('a tracked profile still gets the detection promise (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+    profiles: {
+      ac: { activeProfileId: 'loud', profiles: [{ id: 'loud', name: 'Loud' }] }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+
+  expect(result.warning).toContain('will detect when')
+  expect(result.warning).not.toContain('Process tracking is off')
+})
+
+// Two elevated apps do not produce two warnings: the plural branch REPLACES the
+// per-app ones with a count, so fixing the singular copy alone left the promise
+// standing behind a second app (Codex on #834).
+test('the plural elevated warning does not promise detection either (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  markExistingPath('C:/Tools/Admin Tool 2.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe', admin2: 'C:/Tools/Admin Tool 2.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+  spawnErrors.set('C:/Tools/Admin Tool 2.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/Admin Tool.exe',
+    'C:/Tools/Admin Tool 2.exe'
+  ])
+
+  expect(result.elevatedCount).toBe(2)
+  expect(result.warning).toContain('2 apps requested administrator permission')
+  expect(result.warning).toContain('Process tracking is off for this profile')
+  expect(result.warning).not.toContain('will detect when')
+})
+
+// Same pairing as the singular case: with tracking on the plural promise is
+// true, so the fix must not have flattened both branches into the safe wording.
+test('a tracked profile still gets the plural detection promise (#591)', async () => {
+  markExistingPath('C:/Tools/Admin Tool.exe')
+  markExistingPath('C:/Tools/Admin Tool 2.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    appPaths: { admin: 'C:/Tools/Admin Tool.exe', admin2: 'C:/Tools/Admin Tool 2.exe' },
+    profiles: {
+      ac: { activeProfileId: 'loud', profiles: [{ id: 'loud', name: 'Loud' }] }
+    }
+  })
+  spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+  spawnErrors.set('C:/Tools/Admin Tool 2.exe', makeAccessDeniedError())
+
+  const result = await launchProfileApps(sender, 'ac', [
+    'C:/Tools/Admin Tool.exe',
+    'C:/Tools/Admin Tool 2.exe'
+  ])
+
+  expect(result.elevatedCount).toBe(2)
+  expect(result.warning).toContain('will detect when')
+  expect(result.warning).not.toContain('Process tracking is off')
+})
+
+// The fast-exit warning fires up to POST_LAUNCH_BLOCK_MS after the launch, so
+// the launch-time tracking decision can be stale by the time it speaks (Codex on
+// #834). The stored warning would be pruned by the reconcile on the next
+// publish, but the toast is already on screen and cannot be retracted.
+test('a toggle inside the post-launch window silences the fast-exit warning (#591)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 4321,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/Perplexity.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, processNameMismatchWarnings } = await loadProcessModulesWithStore({
+    profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Perplexity.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // Tracking goes off while the app is still inside the window, i.e. after the
+  // sequence has ended and its own reconcile has already run.
+  profile.trackingEnabled = false
+
+  processNames.delete('perplexity.exe')
+  processNames.add('perplexity-helper.exe')
+  childHandlers.get('exit')?.()
+
+  expect(processNameMismatchWarnings.size).toBe(0)
+  expect(
+    sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
+  ).toHaveLength(0)
+})
+
+// `isGame` was read back off the running record, and the reconcile can delete
+// that record while the app is still alive. The exe being the game does not
+// depend on us having recorded it, so it must not be looked up in something
+// prunable (Codex on #834). Contrived path to reach the state, but it is the
+// only one that reaches it with tracking back on.
+test('the game exe keeps its toast suppressed after its record is pruned (#591)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 5678,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+    id: 'default',
+    name: 'Default'
+  }
+  const { launchProfileApps, publishRunningApps, runningProcesses, processNameMismatchWarnings } =
+    await loadProcessModulesWithStore({
+      profiles: { ac: { activeProfileId: 'default', profiles: [profile] } },
+      gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' }
+    })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Games/AssettoCorsa.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+  expect(runningProcesses.size).toBe(1)
+
+  // Off, then the reconcile forgets the record, then the user changes their mind.
+  profile.trackingEnabled = false
+  await publishRunningApps('config')
+  expect(runningProcesses.size).toBe(0)
+  profile.trackingEnabled = true
+
+  processNames.delete('assettocorsa.exe')
+  processNames.add('acs.exe')
+  childHandlers.get('exit')?.()
+
+  // Tracking is on again, so the card warning is correct to appear.
+  expect(processNameMismatchWarnings.size).toBe(1)
+  // A launcher stub exiting fast is the normal pattern for the game exe, so the
+  // toast stays suppressed. Nothing in the record survives to say so.
+  expect(
+    sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
+  ).toHaveLength(0)
 })

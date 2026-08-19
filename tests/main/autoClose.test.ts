@@ -96,7 +96,13 @@ async function loadAutoCloseModule(opts?: {
     getStoredProfiles: vi.fn(() => opts?.profiles ?? {}),
     // Tests pass a flat profile per game key; profile-set resolution is
     // profiles.ts' concern and has its own suite.
-    getActiveStoredProfile: vi.fn((entry: unknown) => entry)
+    getActiveStoredProfile: vi.fn((entry: unknown) => entry),
+    getActiveProfileForGame: vi.fn((gameKey: string) => (opts?.profiles ?? {})[gameKey] as unknown),
+    // The real predicate, not a stub: these tests drive `trackingEnabled`
+    // through their fixtures, so stubbing it would decide the answer here
+    // instead of exercising it.
+    isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
+      profile?.trackingEnabled !== false
   }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
@@ -721,6 +727,33 @@ test('turning the toggle off inside the window cancels the pending close (#204)'
 // A game that was never seen running cannot have exited. Without this the first
 // scan of a session (or the first after the observer is re-registered) looks
 // exactly like an exit.
+// The same re-check, driven by the OTHER switch. The test above pins it for
+// `closeAppsOnGameExit`; this one pins it for `trackingEnabled`, which reaches
+// the same guard by a different field and is the switch #591 is about. Without
+// it, `pendingAutoCloses` would be the one registry in this subsystem that
+// survives the tracking toggle and then KILLS apps, rather than merely
+// surfacing them.
+test('turning tracking off inside the window cancels the pending close (#591)', async () => {
+  const profiles: Record<string, Record<string, unknown>> = { ac: { ...ARMED } }
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } = await loadAutoCloseModule({
+    profiles,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  // Armed while tracked, so the timer really is pending before the toggle.
+  observeProcessScan(RUNNING)
+  await advance(MIN_SESSION_MS)
+  observeProcessScan(GONE)
+  await advance(AUTO_CLOSE_GRACE_MS / 2)
+
+  profiles.ac.trackingEnabled = false
+  observeProcessScan(GONE)
+  await advance(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
 test('a game absent from the very first scan is not treated as an exit (#204)', async () => {
   const { observeProcessScan, AUTO_CLOSE_GRACE_MS } = await loadAutoCloseModule({
     profiles: AC_PROFILES,

@@ -50,7 +50,15 @@ async function loadConfigModule() {
     }
   }))
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
-  vi.doMock('../../src/main/profiles', () => ({ isStoredProfileSet: vi.fn() }))
+  // The real discriminator rather than a stub: the profile handlers below bail
+  // early when it says no, so a stub would make their tests pass vacuously.
+  vi.doMock('../../src/main/profiles', () => ({
+    isStoredProfileSet: (value: unknown) =>
+      !!value &&
+      typeof value === 'object' &&
+      Array.isArray((value as { profiles?: unknown }).profiles)
+  }))
+  vi.doMock('../../src/main/processes', () => ({ publishRunningApps: vi.fn(async () => {}) }))
   vi.doMock('../../src/main/tray', () => ({ applyTrayVisibility: vi.fn() }))
   vi.doMock('../../src/main/window', () => ({
     applyRuntimeConfigSettings: vi.fn(),
@@ -195,4 +203,54 @@ test('save-settings survives a throwing login-item write, and says so (#676)', a
     expect.objectContaining({ message: 'registry write refused' })
   )
   consoleError.mockRestore()
+})
+
+/**
+ * #591: a tracking toggle is a `profiles` write, and nothing else in the main
+ * process notices one until the next tasklist scan, which is up to 12s away on
+ * the SLOW cadence. Every path that writes `profiles` therefore republishes.
+ *
+ * Asserted rather than assumed: the call is fire-and-forget, so dropping it
+ * changes nothing observable in the handler's return value.
+ */
+async function invokeProfileHandler(channel: string, ...args: unknown[]): Promise<void> {
+  const { __ipcHandlers } = await import('electron')
+  await (__ipcHandlers as Record<string, MockIpcHandler>)[channel]({}, ...args)
+}
+
+test('save-profile republishes the running apps (#591)', async () => {
+  await loadConfigModule()
+  const { publishRunningApps } = await import('../../src/main/processes')
+
+  await invokeProfileHandler('save-profile', 'ac', {
+    activeProfileId: 'default',
+    profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+  })
+
+  expect(publishRunningApps).toHaveBeenCalledWith('config')
+})
+
+// The bulk write, which the Settings screen uses and which can change tracking
+// for several games at once. Separate test: wiring only the single-profile
+// handler passes the one above and fails this.
+test('save-profiles republishes the running apps too (#591)', async () => {
+  await loadConfigModule()
+  const { publishRunningApps } = await import('../../src/main/processes')
+
+  await invokeProfileHandler('save-profiles', {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  })
+
+  expect(publishRunningApps).toHaveBeenCalledWith('config')
+})
+
+// A save that the sanitizer rejects writes nothing, so it must not claim the
+// running list changed either.
+test('a rejected profile save does not republish (#591)', async () => {
+  await loadConfigModule()
+  const { publishRunningApps } = await import('../../src/main/processes')
+
+  await invokeProfileHandler('save-profile', '', { activeProfileId: 'default', profiles: [] })
+
+  expect(publishRunningApps).not.toHaveBeenCalled()
 })

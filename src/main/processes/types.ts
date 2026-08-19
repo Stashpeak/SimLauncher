@@ -117,6 +117,15 @@ export interface KillResult {
  */
 export interface LaunchProfileAppsOptions {
   controller?: AbortController
+  /**
+   * Which profile these entries came from, when it is NOT the persisted active
+   * one. Only `switch-profile-apps` needs it: the renderer launches the incoming
+   * profile's apps and saves the new `activeProfileId` afterwards, so anything
+   * reading the store mid-switch sees the OUTGOING profile. Today that decides
+   * whether the launched apps are tracked at all (#591), which is the difference
+   * between a fire-and-forget profile and a managed one.
+   */
+  profileId?: string
 }
 
 /**

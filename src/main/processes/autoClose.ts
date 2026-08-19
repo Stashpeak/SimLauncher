@@ -1,7 +1,12 @@
 import { performance } from 'perf_hooks'
 
 import { writeAppErrorLog } from '../errorLog'
-import { getActiveStoredProfile, getStoredProfiles, type StoredProfile } from '../profiles'
+import {
+  getActiveProfileForGame,
+  getStoredProfiles,
+  isProcessTrackingEnabled,
+  type StoredProfile
+} from '../profiles'
 import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath } from '../utils'
 
@@ -62,7 +67,7 @@ const pendingAutoCloses = new Map<string, ReturnType<typeof setTimeout>>()
  * time passes, and the user can change any of this inside it.
  */
 function isAutoCloseArmed(gameKey: string): boolean {
-  const profile = getActiveProfile(gameKey)
+  const profile = getActiveProfileForGame(gameKey)
 
   // The only profile boolean that is opt-in, so `=== true`: absent
   // configuration must never authorise closing a user's apps.
@@ -72,7 +77,7 @@ function isAutoCloseArmed(gameKey: string): boolean {
 
   // Tracking off means SimLauncher deliberately does not follow this game's
   // process (#591), so there is no exit to detect and arming would be a lie.
-  if (profile.trackingEnabled === false) {
+  if (!isProcessTrackingEnabled(profile)) {
     return false
   }
 
@@ -128,11 +133,6 @@ function hasContestedExeName(gameKey: string): boolean {
   )
 }
 
-function getActiveProfile(gameKey: string): StoredProfile | undefined {
-  const profileEntry = getStoredProfiles()[gameKey]
-  return profileEntry ? getActiveStoredProfile(profileEntry) : undefined
-}
-
 function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
   return Array.isArray(profile?.trackedProcessPaths)
     ? profile.trackedProcessPaths.filter(isValidExePath)
@@ -156,7 +156,7 @@ function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
  */
 function getArmedGameExeNames(gameKey: string): Set<string> {
   const gamePath = getStoredStringRecord('gamePaths')[gameKey]
-  const paths = [gamePath, ...getSecondaryGamePaths(getActiveProfile(gameKey))].filter(
+  const paths = [gamePath, ...getSecondaryGamePaths(getActiveProfileForGame(gameKey))].filter(
     isValidExePath
   )
   return new Set(paths.map(getExeName))
@@ -197,7 +197,7 @@ function captureArming(gameKey: string, seenRunningSince: number): ArmedSnapshot
  * apps that belong to a session the user just started.
  */
 function getActiveProfileId(gameKey: string): string | undefined {
-  const id = getActiveProfile(gameKey)?.id
+  const id = getActiveProfileForGame(gameKey)?.id
   return typeof id === 'string' ? id : undefined
 }
 
