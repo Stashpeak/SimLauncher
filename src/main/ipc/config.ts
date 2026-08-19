@@ -4,7 +4,7 @@ import fs from 'fs'
 
 import { getHighestReferencedCustomSlot } from '../../shared/domain/slots'
 import { migrateProfilesToNamedSets } from '../migrator'
-import { isStoredProfileSet } from '../profiles'
+import { getProfileSwitchLeavingPaths, isStoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
@@ -23,7 +23,7 @@ import {
   store
 } from '../store'
 import { isRecord } from '../utils'
-import { publishRunningApps } from '../processes'
+import { cancelPendingElevatedHandoffs, publishRunningApps } from '../processes'
 import { applyTrayVisibility } from '../tray'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
@@ -504,10 +504,30 @@ export function registerConfigHandlers(): void {
     if (typeof gameKey !== 'string' || !gameKey) return
     const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
     if (!sanitizedProfileSet) return
+    // Computed BEFORE the write, because the outgoing side only exists on disk
+    // until the next line replaces it.
+    const leavingPaths = getProfileSwitchLeavingPaths(gameKey, sanitizedProfileSet)
     const storedProfiles = store.get('profiles')
     const profiles = isRecord(storedProfiles) ? storedProfiles : {}
     profiles[gameKey] = sanitizedProfileSet
     store.set('profiles', profiles)
+    // A pending UAC handoff has never started, so it is in no tasklist snapshot,
+    // so `switch-profile-apps` can never see it: it decides what to stop from
+    // exactly such a snapshot and only calls the kill path when that set is
+    // non-empty. Worse, the renderer often does not reach that handler at all,
+    // because it gates the whole IPC on a diff the handoff contributes zero to
+    // (GameRow) and falls through to this save instead. Approving the old prompt
+    // afterwards then starts a companion belonging to a profile the user has
+    // already left (#782).
+    //
+    // Here rather than in the switch handler because THIS is the call the
+    // renderer cannot skip: every switch saves, whether or not it stops
+    // anything. Scoped to the leaving paths, so a plain profile edit (same
+    // `activeProfileId`) cancels nothing, and a switch never touches a prompt
+    // for an app the incoming profile also enables.
+    if (leavingPaths.length > 0) {
+      cancelPendingElevatedHandoffs(gameKey, leavingPaths)
+    }
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
     // Republish so a tracking toggle takes effect on save rather than on the
     // next poll (#591). Saving a profile changes which processes are surfaced

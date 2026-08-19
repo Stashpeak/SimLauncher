@@ -2542,14 +2542,49 @@ test('a profile switch that cancels a pending handoff explains the stranded prom
     await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
     await launchPromise
 
-    // The switch stops the outgoing profile's apps, not the elevated one whose
-    // prompt is still up. The handoff is cancelled by gameKey either way, so
-    // the count must survive a kill that targets something else entirely.
-    const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+    // The elevated app is among the paths this kill is stopping, which is what
+    // brings its handoff into scope (#782). It is not running, and that is the
+    // point: a pending handoff never is.
+    const result = await killProfileApps('ac', ['C:/Tools/Admin Tool.exe', 'C:/Tools/App2.exe'])
     await vi.advanceTimersByTimeAsync(0)
 
     expect(elevatedHostKills).toHaveLength(1)
     expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The other half of #782, and the half nothing had ever asserted. The scope used
+// to be the whole game, so ANY switch that stopped ANYTHING took every pending
+// handoff with it, including one for an app the incoming profile also enables.
+// The user loses a permission prompt they were about to approve, and it is
+// counted against them as a stranded prompt on top.
+test('a kill does not cancel a handoff for an app it is not stopping (#782)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Same game, and deliberately NOT the elevated app's path.
+    const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(0)
+    // Nothing was stranded, because nothing was killed. Reporting a prompt here
+    // would tell the user to dismiss a dialog that is still doing its job.
+    expect(result.strandedConsentPrompts).toBeUndefined()
   } finally {
     vi.useRealTimers()
   }

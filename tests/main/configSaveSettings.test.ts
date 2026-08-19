@@ -56,9 +56,16 @@ async function loadConfigModule() {
     isStoredProfileSet: (value: unknown) =>
       !!value &&
       typeof value === 'object' &&
-      Array.isArray((value as { profiles?: unknown }).profiles)
+      Array.isArray((value as { profiles?: unknown }).profiles),
+    // Stubbed to "nothing is leaving": these tests are about the store write and
+    // the republish, not about #782's cancellation. The real behaviour is pinned
+    // in configProfileSwitchHandoff.test.ts against the real module.
+    getProfileSwitchLeavingPaths: vi.fn(() => [])
   }))
-  vi.doMock('../../src/main/processes', () => ({ publishRunningApps: vi.fn(async () => {}) }))
+  vi.doMock('../../src/main/processes', () => ({
+    publishRunningApps: vi.fn(async () => {}),
+    cancelPendingElevatedHandoffs: vi.fn()
+  }))
   vi.doMock('../../src/main/tray', () => ({ applyTrayVisibility: vi.fn() }))
   vi.doMock('../../src/main/window', () => ({
     applyRuntimeConfigSettings: vi.fn(),

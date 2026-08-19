@@ -13,7 +13,7 @@ import type {
 } from '../shared/domain/profile'
 import type { ProfileLaunchEntry } from './processes/types'
 import { getStoredStringRecord, store } from './store'
-import { isRecord, isValidExePath, normalizePathForComparison } from './utils'
+import { isRecord, isValidExePath, normalizePathForComparison, pathsEqual } from './utils'
 
 // Profile domain types are process-agnostic (#692); the canonical defs live in
 // the shared domain layer. Re-exported here under the main process's historical
@@ -151,6 +151,46 @@ function buildProfileLaunchEntries(gameKey: string, profile: StoredNamedProfile)
 export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchEntry[] {
   const profiles = getStoredProfiles()
   return buildProfileLaunchEntries(gameKey, resolveActiveProfile(profiles[gameKey]))
+}
+
+/**
+ * The app paths a profile switch leaves behind: enabled in the OUTGOING profile
+ * and not in the incoming one, with the game excluded the same way the switch
+ * diff excludes it.
+ *
+ * Takes the incoming set as an argument rather than reading it back, because the
+ * one caller runs BEFORE the store is written and the outgoing side has to come
+ * from what is still on disk.
+ *
+ * Returns nothing unless `activeProfileId` actually changed. Editing the profile
+ * you are already on is not a switch, however much its contents moved, and
+ * treating it as one would let a profile edit cancel a permission prompt (#782).
+ */
+export function getProfileSwitchLeavingPaths(
+  gameKey: string,
+  nextEntry: StoredProfileEntry | undefined
+): string[] {
+  const storedEntry = getStoredProfiles()[gameKey]
+  const fromProfileId = isStoredProfileSet(storedEntry) ? storedEntry.activeProfileId : undefined
+  const toProfileId = isStoredProfileSet(nextEntry) ? nextEntry.activeProfileId : undefined
+
+  if (!fromProfileId || !toProfileId || fromProfileId === toProfileId) {
+    return []
+  }
+
+  const gamePath = getStoredStringRecord('gamePaths')[gameKey]
+  const utilityPaths = (entry: StoredProfileEntry | undefined, profileId: string): string[] =>
+    buildProfileLaunchEntries(gameKey, resolveNamedProfile(entry, profileId))
+      .filter((launchEntry) => !gamePath || !pathsEqual(launchEntry.path, gamePath))
+      .map((launchEntry) => launchEntry.path)
+
+  const incoming = new Set(
+    utilityPaths(nextEntry, toProfileId).map((appPath) => normalizePathForComparison(appPath))
+  )
+
+  return utilityPaths(storedEntry, fromProfileId).filter(
+    (appPath) => !incoming.has(normalizePathForComparison(appPath))
+  )
 }
 
 export function buildNamedProfileLaunchEntries(

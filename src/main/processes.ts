@@ -7,6 +7,7 @@ export {
   unsubscribeRunningApps
 } from './processes/running'
 export {
+  cancelPendingElevatedHandoffs,
   dismissAppIcon,
   hasOtherActiveLaunchControllers,
   registerActiveLaunch,

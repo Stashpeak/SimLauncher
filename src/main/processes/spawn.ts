@@ -826,6 +826,11 @@ function launchElevated(
       if (tracked) {
         registerPendingElevatedHandoff(handoffId, {
           gameKey,
+          // Recorded so cancellation can target the app rather than the whole
+          // game (#782). A pending handoff has never started, so it has no
+          // image name in any tasklist snapshot: this path is the only handle
+          // anything downstream gets on which app it belongs to.
+          appPath,
           cancel: () => {
             cancelledByKill = true
             noteHandoffCancelled()

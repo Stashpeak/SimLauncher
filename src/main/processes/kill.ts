@@ -828,7 +828,13 @@ export async function killProfileApps(
   // Same reason as killLaunchedApps: a timed-out handoff is not reachable
   // through the abort signal once its sequence ended (#779 Codex P1). And the
   // same consequence: each one killed leaves its consent prompt behind (#809).
-  cancelPendingElevatedHandoffs(gameKey)
+  //
+  // Scoped to the paths this call is actually stopping, unlike killLaunchedApps
+  // which really does mean the whole game. This one is a SUBSET operation: a
+  // profile switch stopping one app was cancelling every pending handoff for
+  // the game, including one for an app both profiles enable and that the switch
+  // was never going to touch (#782).
+  cancelPendingElevatedHandoffs(gameKey, validAppPathsToKill)
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()

@@ -78,11 +78,14 @@ export function registerActiveLaunch(gameKey: string): AbortController {
  * Lives here, next to activeLaunchControllers, for the same reason: kill.ts must
  * reach it without importing spawn.ts.
  */
-const pendingElevatedHandoffs = new Map<number, { gameKey?: string; cancel: () => void }>()
+const pendingElevatedHandoffs = new Map<
+  number,
+  { gameKey?: string; appPath: string; cancel: () => void }
+>()
 
 export function registerPendingElevatedHandoff(
   handoffId: number,
-  entry: { gameKey?: string; cancel: () => void }
+  entry: { gameKey?: string; appPath: string; cancel: () => void }
 ): void {
   pendingElevatedHandoffs.set(handoffId, entry)
 }
@@ -95,14 +98,38 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
  * Cancel every still-pending elevated handoff for `gameKey`, or all of them when
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.
+ *
+ * `appPaths` narrows it further to specific apps. Without it the scope is the
+ * whole game, which is right for "close everything I started here" but wrong for
+ * anything that stops a SUBSET: a profile switch that happens to stop one app
+ * would otherwise also kill the host of an app both profiles enable and that the
+ * switch never intended to touch, costing the user a permission prompt they were
+ * about to approve (#782). Callers that know which paths they are acting on
+ * should pass them.
  */
-export function cancelPendingElevatedHandoffs(gameKey?: string): void {
+export function cancelPendingElevatedHandoffs(gameKey?: string, appPaths?: string[]): void {
+  const targetPaths =
+    appPaths && new Set(appPaths.map((appPath) => normalizePathForComparison(appPath)))
+
   pendingElevatedHandoffs.forEach((entry, handoffId) => {
     if (gameKey !== undefined && entry.gameKey !== gameKey) {
       return
     }
+    if (targetPaths && !targetPaths.has(normalizePathForComparison(entry.appPath))) {
+      return
+    }
     pendingElevatedHandoffs.delete(handoffId)
-    entry.cancel()
+    // `cancel` is a callback owned by spawn.ts and it runs synchronously inside
+    // this loop, so a throw would abandon every entry after it AND propagate
+    // into whichever caller is running. That matters now that one of them is
+    // `save-profile` (#782): the same shape took down four config tests when the
+    // untracked reconcile went synchronous on #834. Deleted before the call, so
+    // a throwing entry cannot be retried forever either.
+    try {
+      entry.cancel()
+    } catch (err) {
+      console.error('Failed to cancel a pending elevated handoff:', err)
+    }
   })
 }
 

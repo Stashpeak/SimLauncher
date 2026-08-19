@@ -26,7 +26,10 @@ async function loadConfigModule() {
   const { clearIpcHandlers } = await import('electron')
   ;(clearIpcHandlers as () => void)()
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
-  vi.doMock('../../src/main/profiles', () => ({ isStoredProfileSet: vi.fn() }))
+  vi.doMock('../../src/main/profiles', () => ({
+    isStoredProfileSet: vi.fn(),
+    getProfileSwitchLeavingPaths: vi.fn(() => [])
+  }))
   const storeModuleMock = {
     CONFIG_FILE_NAME: 'simlauncher-config.json',
     KNOWN_GAME_KEYS: new Set(['ac', 'acc']),
