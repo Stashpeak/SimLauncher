@@ -4,7 +4,11 @@ import fs from 'fs'
 
 import { getHighestReferencedCustomSlot } from '../../shared/domain/slots'
 import { migrateProfilesToNamedSets } from '../migrator'
-import { getProfileSwitchLeavingPaths, isStoredProfileSet } from '../profiles'
+import {
+  getProfileLaunchEntryId,
+  getProfileSwitchLeavingEntries,
+  isStoredProfileSet
+} from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
@@ -510,7 +514,7 @@ export function registerConfigHandlers(): void {
     if (!sanitizedProfileSet) return
     // Computed BEFORE the write, because the outgoing side only exists on disk
     // until the next line replaces it.
-    const leavingPaths = getProfileSwitchLeavingPaths(gameKey, sanitizedProfileSet)
+    const leavingEntries = getProfileSwitchLeavingEntries(gameKey, sanitizedProfileSet)
     const storedProfiles = store.get('profiles')
     const profiles = isRecord(storedProfiles) ? storedProfiles : {}
     profiles[gameKey] = sanitizedProfileSet
@@ -530,8 +534,17 @@ export function registerConfigHandlers(): void {
     // `activeProfileId`) cancels nothing, and a switch never touches a prompt
     // for an app the incoming profile also enables.
     let strandedConsentPrompts = 0
-    if (leavingPaths.length > 0) {
-      cancelPendingElevatedHandoffs(gameKey, leavingPaths)
+    if (leavingEntries.length > 0) {
+      // Matched by SLOT, not by path. Two slots can point at one exe (#357), so
+      // a path match here would cancel the retained slot's prompt alongside the
+      // leaving one, which is the same over-cancel this fix exists to remove
+      // (CodeRabbit on #782).
+      const leavingIds = new Set(leavingEntries.map(getProfileLaunchEntryId))
+      cancelPendingElevatedHandoffs(gameKey, (handoff) =>
+        leavingIds.has(
+          getProfileLaunchEntryId({ key: handoff.appKey ?? '', path: handoff.appPath })
+        )
+      )
       // Killing the host does NOT remove the consent prompt, so every cancel
       // above leaves a dialog on screen that now does nothing (#809). The count
       // is a single module-level scalar drained by whoever reports it, so this

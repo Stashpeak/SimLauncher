@@ -712,7 +712,8 @@ function launchElevated(
   args: string[] = [],
   gameKey?: string,
   signal?: AbortSignal,
-  tracked = true
+  tracked = true,
+  appKey?: string
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
     // Two sentences because the second one is a promise, and it is only true
@@ -828,8 +829,12 @@ function launchElevated(
           gameKey,
           // Recorded so cancellation can target the app rather than the whole
           // game (#782). A pending handoff has never started, so it has no
-          // image name in any tasklist snapshot: this path is the only handle
-          // anything downstream gets on which app it belongs to.
+          // image name in any tasklist snapshot: these two are the only handle
+          // anything downstream gets on which app it belongs to. The slot key
+          // is needed as well as the path because two slots can point at one
+          // exe with different args (#357), and cancelling the wrong one costs
+          // the user a prompt they were about to approve.
+          appKey,
           appPath,
           cancel: () => {
             cancelledByKill = true
@@ -1060,7 +1065,9 @@ export async function spawnDetachedApp(
           // in which case launchElevated starts nothing and reports the attempt
           // as cancelled — its own start is guarded (#715). Nothing is running
           // here either way: this spawn failed.
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked))
+          resolveOnce(
+            await launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked, appKey)
+          )
           return
         }
 
@@ -1142,7 +1149,9 @@ export async function spawnDetachedApp(
 
       // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked, appKey).then(
+          resolveOnce
+        )
         return
       }
 

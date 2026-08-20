@@ -632,6 +632,7 @@ async function loadProcessModules() {
     unregisterActiveLaunch: stateModule.unregisterActiveLaunch,
     abortActiveLaunches: stateModule.abortActiveLaunches,
     processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
+    cancelPendingElevatedHandoffs: stateModule.cancelPendingElevatedHandoffs,
     suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
     unclosedProcesses: stateModule.unclosedProcesses,
@@ -2550,6 +2551,36 @@ test('a profile switch that cancels a pending handoff explains the stranded prom
 
     expect(elevatedHostKills).toHaveLength(1)
     expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Pins that the registration itself records the slot. Everything else about slot
+// scoping is asserted against synthetic registry entries, so dropping `appKey`
+// at the one place it is written left all of it green (CodeRabbit on #782).
+test('a pending handoff records which slot it belongs to (#782)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, cancelPendingElevatedHandoffs } = await loadProcessModulesWithStore({
+      appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // A predicate that only the right slot satisfies. If the key were not
+    // recorded this matches nothing and no host is killed.
+    cancelPendingElevatedHandoffs('ac', (handoff) => handoff.appKey === 'customapp1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
   } finally {
     vi.useRealTimers()
   }

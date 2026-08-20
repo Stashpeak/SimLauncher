@@ -80,6 +80,20 @@ async function saveProfile(gameKey: string, profileSet: unknown): Promise<unknow
 
 const utility = (id: string) => ({ id, enabled: true })
 
+/**
+ * The predicate `save-profile` handed to `cancelPendingElevatedHandoffs`, applied
+ * to a synthetic registry entry. Asserting on the predicate rather than on an
+ * argument list is what lets these tests tell two slots apart when they share an
+ * executable, which is the whole reason cancellation matches by slot
+ * (CodeRabbit on #782).
+ */
+function cancelsHandoffFor(appKey: string, appPath: string): boolean {
+  const matches = cancelPendingElevatedHandoffs.mock.calls[0]?.[1] as
+    ((entry: { appKey?: string; appPath: string }) => boolean) | undefined
+  expect(matches).toBeDefined()
+  return matches!({ appKey, appPath })
+}
+
 function profileSet(activeProfileId: string, profiles: Record<string, string[]>) {
   return {
     activeProfileId,
@@ -121,7 +135,9 @@ test('a switch cancels a handoff for an app only the outgoing profile enabled (#
   )
 
   expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
-  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledWith('ac', ['C:/Tools/Admin Tool.exe'])
+  expect(cancelPendingElevatedHandoffs.mock.calls[0][0]).toBe('ac')
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  expect(cancelsHandoffFor('simhub', 'C:/Tools/SimHub.exe')).toBe(false)
   // Killing the host leaves the consent dialog on screen, so the count has to
   // come back out to the renderer or the user is never told it is dead (#809).
   expect(result).toEqual({ strandedConsentPrompts: 1 })
@@ -197,7 +213,12 @@ test('a slot move to the same exe still counts as leaving (#782)', async () => {
 
   await saveProfile('ac', sets('loud'))
 
-  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledWith('ac', ['C:/Tools/Shared Utility.exe'])
+  // The leaving slot is cancelled...
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Shared Utility.exe')).toBe(true)
+  // ...and the slot the incoming profile keeps is NOT, even though it is the
+  // same binary. Matching on path alone cancels both, which loses a prompt the
+  // user was about to approve for an app that is staying.
+  expect(cancelsHandoffFor('customapp2', 'C:/Tools/Shared Utility.exe')).toBe(false)
 })
 
 // Editing the profile you are already on is not a switch, whatever moved inside

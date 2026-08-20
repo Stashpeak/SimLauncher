@@ -78,14 +78,23 @@ export function registerActiveLaunch(gameKey: string): AbortController {
  * Lives here, next to activeLaunchControllers, for the same reason: kill.ts must
  * reach it without importing spawn.ts.
  */
-const pendingElevatedHandoffs = new Map<
-  number,
-  { gameKey?: string; appPath: string; cancel: () => void }
->()
+export interface PendingElevatedHandoff {
+  gameKey?: string
+  /**
+   * The profile SLOT this handoff belongs to. Two slots can point at one exe
+   * with different `appArgs` (#357), so the path alone does not identify it and
+   * a caller matching on path would cancel both (CodeRabbit on #782).
+   */
+  appKey?: string
+  appPath: string
+  cancel: () => void
+}
+
+const pendingElevatedHandoffs = new Map<number, PendingElevatedHandoff>()
 
 export function registerPendingElevatedHandoff(
   handoffId: number,
-  entry: { gameKey?: string; appPath: string; cancel: () => void }
+  entry: PendingElevatedHandoff
 ): void {
   pendingElevatedHandoffs.set(handoffId, entry)
 }
@@ -99,23 +108,28 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.
  *
- * `appPaths` narrows it further to specific apps. Without it the scope is the
- * whole game, which is right for "close everything I started here" but wrong for
- * anything that stops a SUBSET: a profile switch that happens to stop one app
- * would otherwise also kill the host of an app both profiles enable and that the
- * switch never intended to touch, costing the user a permission prompt they were
- * about to approve (#782). Callers that know which paths they are acting on
- * should pass them.
+ * `matches` narrows it further. Without it the scope is the whole game, which is
+ * right for "close everything I started here" but wrong for anything that stops
+ * a SUBSET: a profile switch that happens to stop one app would otherwise also
+ * kill the host of an app both profiles enable and that the switch never
+ * intended to touch, costing the user a permission prompt they were about to
+ * approve (#782).
+ *
+ * A predicate rather than a path list, because the two narrowing callers do not
+ * hold the same identity. `killProfileApps` is given paths and nothing else, so
+ * a path is all it can match on. A profile switch knows the SLOT, and has to use
+ * it: with two slots on one exe, matching by path there cancels the retained
+ * slot's prompt along with the leaving one (CodeRabbit on #782).
  */
-export function cancelPendingElevatedHandoffs(gameKey?: string, appPaths?: string[]): void {
-  const targetPaths =
-    appPaths && new Set(appPaths.map((appPath) => normalizePathForComparison(appPath)))
-
+export function cancelPendingElevatedHandoffs(
+  gameKey?: string,
+  matches?: (entry: PendingElevatedHandoff) => boolean
+): void {
   pendingElevatedHandoffs.forEach((entry, handoffId) => {
     if (gameKey !== undefined && entry.gameKey !== gameKey) {
       return
     }
-    if (targetPaths && !targetPaths.has(normalizePathForComparison(entry.appPath))) {
+    if (matches && !matches(entry)) {
       return
     }
     pendingElevatedHandoffs.delete(handoffId)

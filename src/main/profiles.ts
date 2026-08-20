@@ -168,9 +168,13 @@ export function getProfileLaunchEntryId(entry: ProfileLaunchEntry): string {
 }
 
 /**
- * The app paths a profile switch leaves behind: enabled in the OUTGOING profile
- * and not in the incoming one, with the game excluded the same way the switch
- * diff excludes it.
+ * The launch entries a profile switch leaves behind: enabled in the OUTGOING
+ * profile and not in the incoming one, with the game excluded the same way the
+ * switch diff excludes it.
+ *
+ * Entries and not paths, because the caller has to cancel by SLOT. Two slots can
+ * share an exe, so handing on only the path lets a switch that drops one of them
+ * cancel the retained one's consent prompt too (CodeRabbit on #782).
  *
  * Takes the incoming set as an argument rather than reading it back, because the
  * one caller runs BEFORE the store is written and the outgoing side has to come
@@ -180,10 +184,10 @@ export function getProfileLaunchEntryId(entry: ProfileLaunchEntry): string {
  * you are already on is not a switch, however much its contents moved, and
  * treating it as one would let a profile edit cancel a permission prompt (#782).
  */
-export function getProfileSwitchLeavingPaths(
+export function getProfileSwitchLeavingEntries(
   gameKey: string,
   nextEntry: StoredProfileEntry | undefined
-): string[] {
+): ProfileLaunchEntry[] {
   const storedEntry = getStoredProfiles()[gameKey]
   const fromProfileId = isStoredProfileSet(storedEntry) ? storedEntry.activeProfileId : undefined
   const toProfileId = isStoredProfileSet(nextEntry) ? nextEntry.activeProfileId : undefined
@@ -208,9 +212,9 @@ export function getProfileSwitchLeavingPaths(
   // exe with the OUTGOING slot's arguments (Codex P1 on #782).
   const incoming = new Set(utilityEntries(nextEntry, toProfileId).map(getProfileLaunchEntryId))
 
-  return utilityEntries(storedEntry, fromProfileId)
-    .filter((launchEntry) => !incoming.has(getProfileLaunchEntryId(launchEntry)))
-    .map((launchEntry) => launchEntry.path)
+  return utilityEntries(storedEntry, fromProfileId).filter(
+    (launchEntry) => !incoming.has(getProfileLaunchEntryId(launchEntry))
+  )
 }
 
 export function buildNamedProfileLaunchEntries(

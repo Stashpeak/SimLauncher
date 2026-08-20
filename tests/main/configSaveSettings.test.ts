@@ -60,7 +60,9 @@ async function loadConfigModule() {
     // Stubbed to "nothing is leaving": these tests are about the store write and
     // the republish, not about #782's cancellation. The real behaviour is pinned
     // in configProfileSwitchHandoff.test.ts against the real module.
-    getProfileSwitchLeavingPaths: vi.fn(() => [])
+    getProfileSwitchLeavingEntries: vi.fn(() => []),
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase()}`
   }))
   vi.doMock('../../src/main/processes', () => ({
     publishRunningApps: vi.fn(async () => {}),

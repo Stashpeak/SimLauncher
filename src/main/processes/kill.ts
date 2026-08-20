@@ -834,7 +834,14 @@ export async function killProfileApps(
   // profile switch stopping one app was cancelling every pending handoff for
   // the game, including one for an app both profiles enable and that the switch
   // was never going to touch (#782).
-  cancelPendingElevatedHandoffs(gameKey, validAppPathsToKill)
+  //
+  // By path and not by slot, because paths are all this function is given. That
+  // is a real limit, not an oversight: two slots on one exe are one target here,
+  // and stopping the exe stops it for both.
+  const pathsBeingKilled = new Set(validAppPathsToKill.map(normalizePathForComparison))
+  cancelPendingElevatedHandoffs(gameKey, (handoff) =>
+    pathsBeingKilled.has(normalizePathForComparison(handoff.appPath))
+  )
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
