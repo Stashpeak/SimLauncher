@@ -20,8 +20,9 @@ type MockIpcHandler = (...args: unknown[]) => unknown
 const cancelPendingElevatedHandoffs = vi.fn()
 // Defaults to 1 so the handler's report path is exercised. The real counter is a
 // module-level scalar incremented by the cancel callback; what matters here is
-// that the handler DRAINS it and hands the count back (#782 Codex P2).
+// that the handler DRAINS it and reports the count (#782 Codex P2).
 const drainStrandedConsentPrompts = vi.fn(() => 1)
+const sendToRenderer = vi.fn()
 
 interface StoredState {
   profiles?: Record<string, unknown>
@@ -66,7 +67,7 @@ async function loadConfigModule(initial: StoredState) {
   vi.doMock('../../src/main/window', () => ({
     applyRuntimeConfigSettings: vi.fn(),
     getMainWindow: vi.fn(),
-    sendToRenderer: vi.fn()
+    sendToRenderer
   }))
 
   const mod = await import('../../src/main/ipc/config')
@@ -114,10 +115,23 @@ const APP_PATHS = {
   crewchief: 'C:/Tools/Other.exe'
 }
 
+/**
+ * The stranded-prompt counts this save pushed to the renderer. Asserting on the
+ * push rather than on the handler's return value is the point: three of the four
+ * callers that change the active profile never read a return value, and because
+ * the drain is destructive that silently destroyed the count (Codex P2 on #782).
+ */
+function pushedStrandedCounts(): number[] {
+  return sendToRenderer.mock.calls
+    .filter(([channel]) => channel === 'stranded-consent-prompts')
+    .map(([, count]) => count as number)
+}
+
 beforeEach(() => {
   vi.resetModules()
   cancelPendingElevatedHandoffs.mockClear()
   drainStrandedConsentPrompts.mockClear()
+  sendToRenderer.mockClear()
 })
 
 // The acceptance criterion from the issue, on the path the renderer actually
@@ -129,18 +143,15 @@ test('a switch cancels a handoff for an app only the outgoing profile enabled (#
     profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
   })
 
-  const result = await saveProfile(
-    'ac',
-    profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] })
-  )
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
 
   expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
   expect(cancelPendingElevatedHandoffs.mock.calls[0][0]).toBe('ac')
   expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
   expect(cancelsHandoffFor('simhub', 'C:/Tools/SimHub.exe')).toBe(false)
   // Killing the host leaves the consent dialog on screen, so the count has to
-  // come back out to the renderer or the user is never told it is dead (#809).
-  expect(result).toEqual({ strandedConsentPrompts: 1 })
+  // reach the renderer or the user is never told it is dead (#809).
+  expect(pushedStrandedCounts()).toEqual([1])
 })
 
 // The half that bites a different game entirely. The counter is one module-level
@@ -166,13 +177,30 @@ test('a save that cancels nothing does not touch the stranded count (#782)', asy
     profiles: { ac: profileSet('quiet', { quiet: ['customapp1', 'simhub'], loud: ['simhub'] }) }
   })
 
-  const result = await saveProfile(
-    'ac',
-    profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] })
-  )
+  await saveProfile('ac', profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] }))
 
   expect(drainStrandedConsentPrompts).not.toHaveBeenCalled()
-  expect(result).toBeUndefined()
+  expect(pushedStrandedCounts()).toEqual([])
+})
+
+// The caller Codex found on top of the row dropdown: deleting the ACTIVE profile
+// moves `activeProfileId` to whatever survives, which is a switch by every
+// definition this handler uses, and its leaving set is the whole deleted
+// profile. `confirmDeleteProfile` reports "Profile deleted" and nothing else, so
+// while the count was a return value it was drained and thrown away and the user
+// kept a dead consent dialog with no explanation anywhere (Codex P2 on #782).
+// Written as a shrinking profiles array rather than a reordering one so it also
+// fails if leaving-set computation is ever gated on the profile count holding.
+test('deleting the active profile cancels its handoff and reports it (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { loud: ['simhub'] }))
+
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  expect(pushedStrandedCounts()).toEqual([1])
 })
 
 // The over-cancel half. An app both profiles enable is not leaving, so its

@@ -11,7 +11,12 @@ import {
 import { createPortal } from 'react-dom'
 import { getPathDisplayName } from '../../../shared/path'
 import { isRecord } from '../lib/config'
-import { onAppLaunchError, onProcessNameMismatchWarning } from '../lib/electron'
+import {
+  onAppLaunchError,
+  onProcessNameMismatchWarning,
+  onStrandedConsentPrompts
+} from '../lib/electron'
+import { formatStrandedConsentPrompts } from '../../../shared/strandedConsentPrompts'
 import { CheckIcon, WarningTriangleIcon, ErrorIcon } from './icons'
 
 type ToastType = 'success' | 'warn' | 'error'
@@ -264,6 +269,21 @@ export function NotifyProvider({ children }: { children: ReactNode }): ReactNode
   useEffect(() => {
     return onProcessNameMismatchWarning((data: unknown) => {
       notify(formatProcessNameMismatchToast(data), 'warn', 5000)
+    })
+  }, [notify])
+
+  // Here rather than at the profile-switching callers because cancelling a
+  // pending elevated launch is a side effect of switching, not the thing the
+  // user asked for, and the four callers that can trigger it have no reason to
+  // suspect they owe the user a message (#782). Main pushes the count; this is
+  // the surface that composes the wording, like the tray's native dialog does
+  // for the same count on the Close Apps path.
+  useEffect(() => {
+    return onStrandedConsentPrompts((count: number) => {
+      const message = formatStrandedConsentPrompts(count)
+      if (message) {
+        notify(message, 'warn', 5000)
+      }
     })
   }, [notify])
 

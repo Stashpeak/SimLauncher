@@ -255,6 +255,7 @@ export interface ElectronAPI {
   onProcessNameMismatchWarning: (
     cb: (data: ProcessNameMismatchWarningPayload) => void
   ) => Unsubscribe
+  onStrandedConsentPrompts: (cb: (count: number) => void) => Unsubscribe
   minimize: () => Promise<void>
   maximize: () => Promise<void>
   close: () => Promise<void>

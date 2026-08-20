@@ -38,6 +38,7 @@ import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../wi
 // Channel name is a contract shared with preload/index.ts. Renaming either
 // side without updating the other silently breaks store-change notifications.
 const STORE_CONFIG_CHANGED_CHANNEL = 'store-config-changed'
+const STRANDED_CONSENT_PROMPTS_CHANNEL = 'stranded-consent-prompts'
 // 24 bytes → 32-character base64url token, which is unguessable for a
 // single-session nonce and fits comfortably in an IPC argument.
 const IMPORT_PREVIEW_TOKEN_BYTES = 24
@@ -554,6 +555,23 @@ export function registerConfigHandlers(): void {
       // the warning to an operation that stranded nothing (Codex P2 on #782).
       strandedConsentPrompts = drainStrandedConsentPrompts()
     }
+    // PUSHED, not returned, and this is the one place in the codebase where that
+    // distinction is load-bearing. The kill results hand their count back to the
+    // caller because the caller ASKED to close things and is therefore certain
+    // to read the answer. Nobody asks `save-profile` to cancel anything: it is a
+    // side effect of the active profile changing, so returning the count means
+    // every switching caller has to know a contract it has no reason to suspect.
+    // Four of them exist (the row dropdown, the editor's save, its delete, its
+    // discard-pending restore) and an earlier version of this handler returned
+    // the count to all four while only the dropdown read it. Because the drain
+    // is destructive, the three that ignored it did not merely stay quiet, they
+    // consumed the count and destroyed it, leaving the user with a dead consent
+    // dialog and no explanation anywhere (Codex P2 on #782). A push cannot be
+    // dropped by forgetting to read it, and the sentence is written to stand on
+    // its own, so it needs no host toast to be understood.
+    if (strandedConsentPrompts > 0) {
+      sendToRenderer(STRANDED_CONSENT_PROMPTS_CHANNEL, strandedConsentPrompts)
+    }
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
     // Republish so a tracking toggle takes effect on save rather than on the
     // next poll (#591). Saving a profile changes which processes are surfaced
@@ -563,10 +581,6 @@ export function registerConfigHandlers(): void {
     publishRunningApps('config').catch((err) => {
       console.error('Failed to publish running apps after a profile change:', err)
     })
-    // Same shape as the kill results (`withStrandedConsentPrompts`): the field
-    // only appears when there is something to report, so the renderer's existing
-    // formatter can be pointed straight at it.
-    return strandedConsentPrompts > 0 ? { strandedConsentPrompts } : undefined
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {

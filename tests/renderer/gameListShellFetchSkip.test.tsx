@@ -25,7 +25,8 @@ vi.mock('../../src/renderer/src/lib/electron', () => ({
   getFileIcon: (...args: unknown[]) => getFileIconMock(...args),
   // Consumed by NotifyProvider; inert subscriptions are enough here.
   onAppLaunchError: () => () => {},
-  onProcessNameMismatchWarning: () => () => {}
+  onProcessNameMismatchWarning: () => () => {},
+  onStrandedConsentPrompts: () => () => {}
 }))
 
 // GameList only consumes { runningApps, runningStatus, refreshRunningState }.

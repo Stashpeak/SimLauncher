@@ -35,17 +35,7 @@ export interface UseGameProfileResult {
   profileState: ProfileState
   loadProfileSet: () => Promise<GameProfileSet>
   getProfileRuntimeConfig: () => Promise<GameProfileSet>
-  saveProfileSet: (nextProfileSet: GameProfileSet) => Promise<SaveProfileSetResult>
-}
-
-/**
- * A profile switch can cancel a pending UAC handoff belonging to the outgoing
- * profile (#782). Killing its host does not remove the consent prompt, so the
- * caller has to tell the user the dialog on screen is now dead, exactly as the
- * kill results do. Absent when there is nothing to report.
- */
-export interface SaveProfileSetResult {
-  strandedConsentPrompts?: number
+  saveProfileSet: (nextProfileSet: GameProfileSet) => Promise<void>
 }
 
 export function useGameProfile(
@@ -113,12 +103,13 @@ export function useGameProfile(
     [readProfileSet]
   )
 
+  // Returns nothing on purpose. A switch that strands a consent prompt reports
+  // it by a push from main straight to the toast layer, so no caller of this
+  // has to know that cancelling a UAC handoff is even possible (#782).
   const saveProfileSet = useCallback(
-    async (nextProfileSet: GameProfileSet): Promise<SaveProfileSetResult> => {
-      const result = (await saveProfile(gameKey, nextProfileSet)) as
-        SaveProfileSetResult | undefined
+    async (nextProfileSet: GameProfileSet): Promise<void> => {
+      await saveProfile(gameKey, nextProfileSet)
       applyProfileSet(nextProfileSet)
-      return result ?? {}
     },
     [applyProfileSet, gameKey]
   )

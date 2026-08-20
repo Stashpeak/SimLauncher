@@ -337,13 +337,10 @@ export function GameRow({
       // The save is what cancels a pending UAC handoff the outgoing profile
       // leaves behind, and it is reached on every switch, including the ones
       // that skip `switchProfileApps` entirely because the diff is empty
-      // (#782). That is precisely the case with no other chance to speak, so
-      // the note has to be folded in here rather than only above.
-      const saveResult = await saveProfileSet(updatedProfileSet)
-      const saveStrandedNote = formatStrandedConsentPrompts(saveResult.strandedConsentPrompts)
-      if (saveStrandedNote) {
-        switchWarning = [switchWarning, saveStrandedNote].filter(Boolean).join(' ')
-      }
+      // (#782). Nothing is read back from it: main pushes that note to the toast
+      // layer itself, because three other callers change the active profile the
+      // same way and none of them would think to look for it here.
+      await saveProfileSet(updatedProfileSet)
       // Switching to another profile keeps the pending "+" profile on purpose,
       // so it's no longer a discard-on-close candidate (#453).
       pendingNewProfileRef.current = null
