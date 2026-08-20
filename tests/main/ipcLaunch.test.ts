@@ -67,7 +67,14 @@ async function loadLaunchHandlers() {
   vi.doMock('../../src/main/processes', () => processesMock)
   vi.doMock('../../src/main/processes.ts', () => processesMock)
 
-  const profilesMock = { buildActiveProfileLaunchEntries, buildNamedProfileLaunchEntries }
+  // Copy of the real identity function, because this suite mocks the module that
+  // owns it. The rule is pinned against the real one in profiles.test.ts.
+  const profilesMock = {
+    buildActiveProfileLaunchEntries,
+    buildNamedProfileLaunchEntries,
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`
+  }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
   vi.doMock('../../src/main/profiles', () => profilesMock)

@@ -18,6 +18,10 @@ import { expect, test, vi, beforeEach } from 'vitest'
 type MockIpcHandler = (...args: unknown[]) => unknown
 
 const cancelPendingElevatedHandoffs = vi.fn()
+// Defaults to 1 so the handler's report path is exercised. The real counter is a
+// module-level scalar incremented by the cancel callback; what matters here is
+// that the handler DRAINS it and hands the count back (#782 Codex P2).
+const drainStrandedConsentPrompts = vi.fn(() => 1)
 
 interface StoredState {
   profiles?: Record<string, unknown>
@@ -55,7 +59,8 @@ async function loadConfigModule(initial: StoredState) {
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
   vi.doMock('../../src/main/processes', () => ({
     publishRunningApps: vi.fn(async () => {}),
-    cancelPendingElevatedHandoffs
+    cancelPendingElevatedHandoffs,
+    drainStrandedConsentPrompts
   }))
   vi.doMock('../../src/main/tray', () => ({ applyTrayVisibility: vi.fn() }))
   vi.doMock('../../src/main/window', () => ({
@@ -68,9 +73,9 @@ async function loadConfigModule(initial: StoredState) {
   mod.registerConfigHandlers()
 }
 
-async function saveProfile(gameKey: string, profileSet: unknown): Promise<void> {
+async function saveProfile(gameKey: string, profileSet: unknown): Promise<unknown> {
   const { __ipcHandlers } = await import('electron')
-  await (__ipcHandlers as Record<string, MockIpcHandler>)['save-profile']({}, gameKey, profileSet)
+  return (__ipcHandlers as Record<string, MockIpcHandler>)['save-profile']({}, gameKey, profileSet)
 }
 
 const utility = (id: string) => ({ id, enabled: true })
@@ -98,6 +103,7 @@ const APP_PATHS = {
 beforeEach(() => {
   vi.resetModules()
   cancelPendingElevatedHandoffs.mockClear()
+  drainStrandedConsentPrompts.mockClear()
 })
 
 // The acceptance criterion from the issue, on the path the renderer actually
@@ -109,10 +115,48 @@ test('a switch cancels a handoff for an app only the outgoing profile enabled (#
     profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
   })
 
-  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+  const result = await saveProfile(
+    'ac',
+    profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] })
+  )
 
   expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
   expect(cancelPendingElevatedHandoffs).toHaveBeenCalledWith('ac', ['C:/Tools/Admin Tool.exe'])
+  // Killing the host leaves the consent dialog on screen, so the count has to
+  // come back out to the renderer or the user is never told it is dead (#809).
+  expect(result).toEqual({ strandedConsentPrompts: 1 })
+})
+
+// The half that bites a different game entirely. The counter is one module-level
+// scalar drained by whoever reports it, so a save that cancels something and
+// does NOT drain leaves the count sitting there for the next kill to pick up and
+// attribute to an operation that stranded nothing (Codex P2 on #782).
+test('a switch that cancels drains the stranded count rather than leaving it (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(drainStrandedConsentPrompts).toHaveBeenCalledTimes(1)
+})
+
+// And the mirror: a save that cancels nothing must not drain either, or it would
+// swallow a count belonging to an operation still waiting to report it.
+test('a save that cancels nothing does not touch the stranded count (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1', 'simhub'], loud: ['simhub'] }) }
+  })
+
+  const result = await saveProfile(
+    'ac',
+    profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] })
+  )
+
+  expect(drainStrandedConsentPrompts).not.toHaveBeenCalled()
+  expect(result).toBeUndefined()
 })
 
 // The over-cancel half. An app both profiles enable is not leaving, so its
@@ -129,6 +173,31 @@ test('a switch leaves a handoff alone when the incoming profile enables it too (
   )
 
   expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
+})
+
+// Two slots, one exe, different `appArgs` (#357). Comparing paths alone calls
+// the outgoing slot retained because the incoming profile happens to run the
+// same binary, so the old prompt survives and approving it launches that exe
+// with the OUTGOING slot's arguments (Codex P1 on #782). Identity is the slot
+// plus the path, and it has to be the same function the switch diff uses.
+test('a slot move to the same exe still counts as leaving (#782)', async () => {
+  const twoSlots = {
+    customapp1: 'C:/Tools/Shared Utility.exe',
+    customapp2: 'C:/Tools/Shared Utility.exe'
+  }
+  const sets = (activeProfileId: string) => ({
+    activeProfileId,
+    profiles: [
+      { id: 'quiet', name: 'quiet', utilities: [utility('customapp1')] },
+      { id: 'loud', name: 'loud', utilities: [utility('customapp2')] }
+    ]
+  })
+
+  await loadConfigModule({ appPaths: twoSlots, customSlots: 2, profiles: { ac: sets('quiet') } })
+
+  await saveProfile('ac', sets('loud'))
+
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledWith('ac', ['C:/Tools/Shared Utility.exe'])
 })
 
 // Editing the profile you are already on is not a switch, whatever moved inside

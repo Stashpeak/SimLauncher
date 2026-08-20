@@ -23,7 +23,11 @@ import {
   store
 } from '../store'
 import { isRecord } from '../utils'
-import { cancelPendingElevatedHandoffs, publishRunningApps } from '../processes'
+import {
+  cancelPendingElevatedHandoffs,
+  drainStrandedConsentPrompts,
+  publishRunningApps
+} from '../processes'
 import { applyTrayVisibility } from '../tray'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
@@ -525,8 +529,17 @@ export function registerConfigHandlers(): void {
     // anything. Scoped to the leaving paths, so a plain profile edit (same
     // `activeProfileId`) cancels nothing, and a switch never touches a prompt
     // for an app the incoming profile also enables.
+    let strandedConsentPrompts = 0
     if (leavingPaths.length > 0) {
       cancelPendingElevatedHandoffs(gameKey, leavingPaths)
+      // Killing the host does NOT remove the consent prompt, so every cancel
+      // above leaves a dialog on screen that now does nothing (#809). The count
+      // is a single module-level scalar drained by whoever reports it, so this
+      // has to drain it here for two separate reasons: the user is never told
+      // otherwise, AND the stale count would be picked up by the next kill,
+      // including one for a completely different game, which would attribute
+      // the warning to an operation that stranded nothing (Codex P2 on #782).
+      strandedConsentPrompts = drainStrandedConsentPrompts()
     }
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
     // Republish so a tracking toggle takes effect on save rather than on the
@@ -537,6 +550,10 @@ export function registerConfigHandlers(): void {
     publishRunningApps('config').catch((err) => {
       console.error('Failed to publish running apps after a profile change:', err)
     })
+    // Same shape as the kill results (`withStrandedConsentPrompts`): the field
+    // only appears when there is something to report, so the renderer's existing
+    // formatter can be pointed straight at it.
+    return strandedConsentPrompts > 0 ? { strandedConsentPrompts } : undefined
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {

@@ -9,6 +9,7 @@ export {
 export {
   cancelPendingElevatedHandoffs,
   dismissAppIcon,
+  drainStrandedConsentPrompts,
   hasOtherActiveLaunchControllers,
   registerActiveLaunch,
   unregisterActiveLaunch

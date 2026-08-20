@@ -1,9 +1,12 @@
 import { ipcMain } from 'electron'
 
-import { buildActiveProfileLaunchEntries, buildNamedProfileLaunchEntries } from '../profiles'
+import {
+  buildActiveProfileLaunchEntries,
+  buildNamedProfileLaunchEntries,
+  getProfileLaunchEntryId
+} from '../profiles'
 import {
   type KillResult,
-  type ProfileLaunchEntry,
   getRunningApps,
   hasOtherActiveLaunchControllers,
   isAnyLaunchActive,
@@ -18,19 +21,7 @@ import {
   unsubscribeRunningApps
 } from '../processes'
 import { KNOWN_GAME_KEYS, getStoredStringRecord } from '../store'
-import { getExeName, normalizePathForComparison, pathsEqual } from '../utils'
-
-/**
- * Identifier used to diff profile-switch targets. Two entries match only when
- * they share BOTH the utility/game key AND the executable path. Comparing on
- * path alone would treat e.g. `customapp1` and `customapp2` pointing at the
- * same exe as equal, which is wrong after the #357 key-based arg refactor:
- * the slots may carry different `appArgs`, so a slot move must still trigger
- * a stop + relaunch with the new args.
- */
-export function getProfileLaunchEntryId(entry: ProfileLaunchEntry): string {
-  return `${entry.key} ${normalizePathForComparison(entry.path)}`
-}
+import { getExeName, pathsEqual } from '../utils'
 
 /**
  * Returns an error payload when `gameKey` is not a recognised game identifier,

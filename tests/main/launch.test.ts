@@ -61,7 +61,13 @@ vi.mock('../../src/main/store', () => ({
   })
 }))
 
+// `getProfileLaunchEntryId` is re-implemented here because this suite mocks the
+// module that owns it. That makes it a COPY: these tests prove `ipc/launch.ts`
+// is wired to an identity function, not that the identity rule is right. The
+// rule itself is pinned against the real module in profiles.test.ts.
 vi.mock('../../src/main/profiles', () => ({
+  getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+    `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`,
   buildActiveProfileLaunchEntries: (gameKey: string) =>
     mocks.buildActiveProfileLaunchEntries(gameKey),
   buildNamedProfileLaunchEntries: (gameKey: string, profileId: string) =>
@@ -218,28 +224,6 @@ test('validateProfileIds accepts string profile ids', async () => {
   const { validateProfileIds } = await import('../../src/main/ipc/launch')
 
   expect(validateProfileIds('base', 'race')).toBeUndefined()
-})
-
-test('getProfileLaunchEntryId distinguishes utility slots that share an executable path', async () => {
-  // Two custom-app slots configured with the same .exe but different keys
-  // (e.g. one carries `--mode debug` args, the other `--mode silent`). The
-  // diff helper that powers `switch-profile-apps` must consider these as
-  // different entries so a slot swap triggers a stop + relaunch with the
-  // new args (regression for #397, follow-up to #357).
-  const { getProfileLaunchEntryId } = await import('../../src/main/ipc/launch')
-
-  const slot1 = { key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }
-  const slot2 = { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
-
-  expect(getProfileLaunchEntryId(slot1)).not.toBe(getProfileLaunchEntryId(slot2))
-})
-
-test('getProfileLaunchEntryId is case-insensitive for the executable path', async () => {
-  const { getProfileLaunchEntryId } = await import('../../src/main/ipc/launch')
-
-  expect(getProfileLaunchEntryId({ key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' })).toBe(
-    getProfileLaunchEntryId({ key: 'customapp1', path: 'c:/Tools/shared utility.exe' })
-  )
 })
 
 test('switch-profile-apps stops and relaunches when a slot moves to a new key but keeps the same exe', async () => {

@@ -60,7 +60,10 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
     getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
-    saveProfileSet: vi.fn().mockResolvedValue(undefined)
+    // Resolves to an object, not undefined: the real hook always returns a
+    // SaveProfileSetResult and GameRow reads the stranded-prompt count off it
+    // (#782). A mock resolving to undefined would make every switch throw.
+    saveProfileSet: vi.fn().mockResolvedValue({})
   })
 }))
 

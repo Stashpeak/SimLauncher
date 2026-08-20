@@ -154,6 +154,20 @@ export function buildActiveProfileLaunchEntries(gameKey: string): ProfileLaunchE
 }
 
 /**
+ * Identity of a launch entry: the SLOT plus the path, never the path alone.
+ * After the #357 key-based arg refactor `customapp1` and `customapp2` can point
+ * at the same exe while carrying different `appArgs`, so two entries sharing a
+ * path are still two different things to launch.
+ *
+ * Lives here rather than in `ipc/launch.ts` because more than one caller has to
+ * agree on it, and agreeing by having copied the same expression is how they
+ * stop agreeing (Codex P1 on #782).
+ */
+export function getProfileLaunchEntryId(entry: ProfileLaunchEntry): string {
+  return `${entry.key} ${normalizePathForComparison(entry.path)}`
+}
+
+/**
  * The app paths a profile switch leaves behind: enabled in the OUTGOING profile
  * and not in the incoming one, with the game excluded the same way the switch
  * diff excludes it.
@@ -179,18 +193,24 @@ export function getProfileSwitchLeavingPaths(
   }
 
   const gamePath = getStoredStringRecord('gamePaths')[gameKey]
-  const utilityPaths = (entry: StoredProfileEntry | undefined, profileId: string): string[] =>
-    buildProfileLaunchEntries(gameKey, resolveNamedProfile(entry, profileId))
-      .filter((launchEntry) => !gamePath || !pathsEqual(launchEntry.path, gamePath))
-      .map((launchEntry) => launchEntry.path)
+  const utilityEntries = (
+    entry: StoredProfileEntry | undefined,
+    profileId: string
+  ): ProfileLaunchEntry[] =>
+    buildProfileLaunchEntries(gameKey, resolveNamedProfile(entry, profileId)).filter(
+      (launchEntry) => !gamePath || !pathsEqual(launchEntry.path, gamePath)
+    )
 
-  const incoming = new Set(
-    utilityPaths(nextEntry, toProfileId).map((appPath) => normalizePathForComparison(appPath))
-  )
+  // Compared by SLOT identity, not by path, and by the same function the switch
+  // flow uses. Two slots can point at one exe with different `appArgs` (#357),
+  // so a path-only comparison calls `customapp1` retained when only
+  // `customapp2` came in: the old prompt survives and approving it launches the
+  // exe with the OUTGOING slot's arguments (Codex P1 on #782).
+  const incoming = new Set(utilityEntries(nextEntry, toProfileId).map(getProfileLaunchEntryId))
 
-  return utilityPaths(storedEntry, fromProfileId).filter(
-    (appPath) => !incoming.has(normalizePathForComparison(appPath))
-  )
+  return utilityEntries(storedEntry, fromProfileId)
+    .filter((launchEntry) => !incoming.has(getProfileLaunchEntryId(launchEntry)))
+    .map((launchEntry) => launchEntry.path)
 }
 
 export function buildNamedProfileLaunchEntries(

@@ -22,6 +22,7 @@ const notifyMock = vi.fn()
 const killLaunchedAppsMock = vi.fn()
 const switchProfileAppsMock = vi.fn()
 const getProfileSwitchDiffMock = vi.fn()
+const saveProfileSetMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: vi.fn(),
@@ -72,7 +73,11 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
     getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
-    saveProfileSet: vi.fn().mockResolvedValue(undefined)
+    // Hoisted so a test can control what the save reports back. The real hook
+    // always resolves to a SaveProfileSetResult and GameRow reads the
+    // stranded-prompt count off it (#782), so resolving to undefined here would
+    // make every switch throw.
+    saveProfileSet: saveProfileSetMock
   })
 }))
 
@@ -180,6 +185,28 @@ async function switchToProfile(name: string): Promise<void> {
   })
 }
 
+/**
+ * The same first step without the confirmation, for the switch that has nothing
+ * to stop or start. GameRow only stages a confirm dialog when the diff is
+ * non-empty, so waiting for one here would fail on the very path being tested.
+ */
+async function switchToProfileWithoutConfirm(name: string): Promise<void> {
+  const option = Array.from(container.querySelectorAll('button[role="menuitemradio"]')).find(
+    (button) => button.textContent?.includes(name)
+  ) as HTMLButtonElement | undefined
+  expect(option).toBeDefined()
+  await act(async () => {
+    option!.click()
+  })
+
+  // Pins the precondition rather than assuming it: if a dialog DID appear, the
+  // test below would be asserting on a switch that never ran.
+  const confirm = Array.from(document.body.querySelectorAll('button')).find(
+    (button) => button.textContent?.trim() === 'Switch Profile'
+  )
+  expect(confirm).toBeUndefined()
+}
+
 /** Everything the toast said, across however many notify() calls. */
 function allToastText(): string {
   return notifyMock.mock.calls.map((call) => String(call[0])).join(' | ')
@@ -191,6 +218,8 @@ beforeEach(() => {
   killLaunchedAppsMock.mockReset()
   switchProfileAppsMock.mockReset()
   getProfileSwitchDiffMock.mockReset()
+  saveProfileSetMock.mockReset()
+  saveProfileSetMock.mockResolvedValue({})
   // Non-zero counts are what make the switch prompt for confirmation rather
   // than silently doing nothing.
   getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 1 })
@@ -365,6 +394,44 @@ describe('profile switch stranded consent prompt toast (#809)', () => {
     expect(allToastText()).not.toContain('Switched to Race')
     // Warned switches are shown as a warning, not as a success.
     expect(notifyMock.mock.calls.some((call) => call[1] === 'warn')).toBe(true)
+  })
+
+  // The case with no other chance to speak, and the reason #782 puts the cancel
+  // on the save rather than on `switch-profile-apps`. A pending handoff adds
+  // nothing to the switch diff, so the renderer skips that IPC entirely and the
+  // save is the only thing that runs. Without the note folded in here, the user
+  // gets a plain "Switched to Race" while a dead consent dialog sits on screen.
+  test('a switch that never reaches switchProfileApps still explains the prompt', async () => {
+    getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 0, toStartCount: 0 })
+    saveProfileSetMock.mockResolvedValue({ strandedConsentPrompts: 1 })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+    await switchToProfileWithoutConfirm('Race')
+
+    expect(switchProfileAppsMock).not.toHaveBeenCalled()
+    expect(allToastText()).toContain(SINGULAR)
+    expect(notifyMock.mock.calls.some((call) => call[1] === 'warn')).toBe(true)
+  })
+
+  // Both halves can report on one switch: the kill strands prompts for what it
+  // stopped, the save strands one for a leaving app that was never running. The
+  // notes must accumulate rather than one replacing the other.
+  test('a switch reports prompts stranded by the kill AND by the save', async () => {
+    switchProfileAppsMock.mockResolvedValue({
+      success: true,
+      launchedCount: 1,
+      skippedCount: 0,
+      strandedConsentPrompts: 2
+    })
+    saveProfileSetMock.mockResolvedValue({ strandedConsentPrompts: 1 })
+
+    profileMenuOpen = true
+    await renderRunningRow()
+    await switchToProfile('Race')
+
+    expect(allToastText()).toContain(PLURAL)
+    expect(allToastText()).toContain(SINGULAR)
   })
 
   test('an ordinary switch says nothing about a prompt', async () => {
