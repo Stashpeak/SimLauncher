@@ -308,20 +308,23 @@ test('editing the active profile cancels nothing, even when it drops an app (#78
   expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
 })
 
-// The game is excluded the same way the switch diff excludes it: a switch never
-// stops the game, so it must never cancel the game's own handoff either. Getting
-// this wrong means a companion-only operation silently cancels a game launch the
-// user is still being prompted for, and the game is not in the incoming
-// profile's start list to recover it.
+// A switch never stops the game, so it must never cancel the game's own handoff
+// either: that would silently kill a game launch the user is still being
+// prompted for, and the game is not in the incoming profile's start list to
+// recover it.
+//
+// The previous version of this test gave the outgoing profile no utilities at
+// all and asserted nothing was cancelled. That passed for the wrong reason and
+// would have kept passing with any game exclusion removed, because leaving keys
+// come from utility SLOTS and an empty profile has none (CodeRabbit on #842). So
+// the outgoing profile now has a real leaving utility, and the assertion is that
+// the predicate accepts that utility while rejecting the game.
 test('a switch never cancels the handoff for the game itself (#782)', async () => {
-  // The incoming profile must NOT launch the game, or the game appears on both
-  // sides of the diff and subtracts itself. That made this test pass with the
-  // exclusion deleted, i.e. prove nothing.
   const sets = (activeProfileId: string) => ({
     activeProfileId,
     profiles: [
-      { id: 'quiet', name: 'quiet', utilities: [] },
-      { id: 'loud', name: 'loud', launchAutomatically: false, utilities: [utility('simhub')] }
+      { id: 'quiet', name: 'quiet', utilities: [utility('customapp1')] },
+      { id: 'loud', name: 'loud', utilities: [utility('simhub')] }
     ]
   })
 
@@ -333,9 +336,37 @@ test('a switch never cancels the handoff for the game itself (#782)', async () =
 
   await saveProfile('ac', sets('loud'))
 
-  // The outgoing profile launches the game and nothing else, so once the game is
-  // excluded there is nothing leaving at all.
-  expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
+  // There IS something leaving, so this is a real switch and the predicate ran.
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  // Both profiles launch the game, and the game is not a utility slot either
+  // way, so its own handoff must survive.
+  expect(cancelsHandoffFor('ac', 'C:/Games/AssettoCorsa.exe')).toBe(false)
+})
+
+// The `appKey === undefined` branch of the predicate. Requested by CodeRabbit on
+// #842 and worth keeping, but labelled honestly: this pins a DEFENSIVE guard, not
+// a behavioural difference. No current input distinguishes it, because leaving
+// keys are validated slot keys and never include the empty string, so the
+// obvious `appKey ?? ''` rewrite passes this test too (verified by mutation).
+//
+// It earns its place as a tripwire rather than as coverage. The guard is what
+// stops "unknown slot" from ever collapsing into "some key" if the key source is
+// later loosened, which is exactly what `getEnabledUtilityKeys` (the older,
+// unvalidated sibling in profiles.ts) would do.
+test('a handoff with no recorded slot is never cancelled (#842)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  const matches = cancelPendingElevatedHandoffs.mock.calls[0]?.[1] as
+    ((entry: { appKey?: string; appPath: string }) => boolean) | undefined
+  expect(matches).toBeDefined()
+  // Same path as the leaving slot, so only the missing key can be what rejects it.
+  expect(matches!({ appPath: 'C:/Tools/Admin Tool.exe' })).toBe(false)
 })
 
 // Ownership is decided by SLOT MEMBERSHIP, not by what the profile can launch

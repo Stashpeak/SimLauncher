@@ -251,10 +251,24 @@ export interface ElectronAPI {
     toProfileId: string
   ) => Promise<LaunchResult>
   browsePath: (inputId: string) => Promise<BrowsePathResult>
+  // The three main-to-renderer push subscriptions. Each registers `cb` for the
+  // lifetime of the returned `Unsubscribe` and is consumed by NotifyProvider,
+  // which turns the payload into a toast. Documented as a group because what is
+  // worth knowing is shared: main pushes these because nobody asked for them, so
+  // there is no invoke whose result a caller could read instead.
+  /** A launch failed. Payload is validated in the renderer, hence `unknown`. */
   onAppLaunchError: (cb: (data: unknown) => void) => Unsubscribe
+  /** A launched app is running under a name SimLauncher cannot match (#402). */
   onProcessNameMismatchWarning: (
     cb: (data: ProcessNameMismatchWarningPayload) => void
   ) => Unsubscribe
+  /**
+   * How many Windows consent prompts a config change left on screen (#809). The
+   * count only; the wording is composed at the surface that shows it, since the
+   * tray reports the same number through a native dialog. Only ever pushed above
+   * zero, and pushed rather than returned so that no caller of `saveProfile` can
+   * drop it by not reading it (#782).
+   */
   onStrandedConsentPrompts: (cb: (count: number) => void) => Unsubscribe
   minimize: () => Promise<void>
   maximize: () => Promise<void>

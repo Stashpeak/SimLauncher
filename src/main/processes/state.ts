@@ -122,11 +122,18 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
  * intended to touch, costing the user a permission prompt they were about to
  * approve (#782).
  *
- * A predicate rather than a path list, because the two narrowing callers do not
- * hold the same identity. `killProfileApps` is given paths and nothing else, so
- * a path is all it can match on. A profile switch knows the SLOT, and has to use
- * it: with two slots on one exe, matching by path there cancels the retained
- * slot's prompt along with the leaving one (CodeRabbit on #782).
+ * A predicate rather than a path list, for two reasons that pull the same way.
+ *
+ * Identity here is the SLOT, never the path. Two slots can share one exe (#357),
+ * so a path list cancels the retained slot's prompt along with the leaving one
+ * (CodeRabbit on #782), and the path recorded on an entry is a launch-time
+ * snapshot that the caller's current `appPaths` may no longer agree with (Codex
+ * on #842). Both narrowing callers, `killProfileApps` and the profile switch,
+ * therefore match on `appKey`.
+ *
+ * And a predicate does not have to narrow by identity at all: `killLaunchedApps`
+ * uses one to keep the whole-game scope while excluding handoffs whose profile
+ * currently has tracking off (#591).
  */
 export function cancelPendingElevatedHandoffs(
   gameKey?: string,

@@ -193,7 +193,9 @@ beforeEach(() => {
   switchProfileAppsMock.mockReset()
   getProfileSwitchDiffMock.mockReset()
   saveProfileSetMock.mockReset()
-  saveProfileSetMock.mockResolvedValue({})
+  // `Promise<void>`, matching the hook. The stranded-prompt count is pushed from
+  // main now, not returned from here (#782).
+  saveProfileSetMock.mockResolvedValue(undefined)
   // Non-zero counts are what make the switch prompt for confirmation rather
   // than silently doing nothing.
   getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 1 })
