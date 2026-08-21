@@ -16,7 +16,7 @@ import { execFile, type ChildProcess } from 'child_process'
 import path from 'path'
 
 import { writeAppErrorLog } from '../errorLog'
-import { getErrorMessage, getExeName, isValidExePath } from '../utils'
+import { getErrorMessage, getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
 import type { KillAttemptResult } from './types'
 
@@ -426,4 +426,187 @@ export async function killProcessByImageName(
     // failure is ambiguous, so it does not count as evidence.
     targetConfirmed: result.success || result.accessDenied === true
   }
+}
+
+/**
+ * One running instance of an image name, as seen by a name-scoped WMI
+ * enumeration.
+ *
+ * `executablePath` is null when WMI would not disclose it. That is not an
+ * error: a non-elevated SimLauncher cannot read the path of a process running
+ * at higher integrity, and on a real machine that is roughly 38% of all
+ * processes. Callers must treat null as "unknown", never as "different".
+ */
+export interface NamedProcessInstance {
+  /** Lowercased image name, matching how `tasklist` results are keyed. */
+  name: string
+  processId: number
+  executablePath: string | null
+  /**
+   * Windows session. 0 is the non-interactive services session, which cannot
+   * host a companion the user launched, so it is the one case where an
+   * unreadable path is still decidable (#674).
+   */
+  sessionId: number
+}
+
+/**
+ * Enumerate every running process whose image name is one of `processNames`.
+ *
+ * The discriminator `tasklist` cannot provide. `tasklist` returns image names
+ * with no path, so every "is my configured app already running?" answer built
+ * on it is name-only, and a same-named process from an unrelated path passes
+ * for the configured one (#674).
+ *
+ * ONE spawn regardless of how many names are asked about. Every caller batches
+ * its whole question into a single call, because the cost here is dominated by
+ * starting PowerShell, not by the enumeration.
+ *
+ * Names are injected as JSON through the environment rather than interpolated
+ * into the script, for the same reason `findProcessIdsByExecutablePath`
+ * documents: WQL string-literal escaping is ambiguous and version-dependent,
+ * and an exe name containing a quote would otherwise break the lookup or worse
+ * (#531). Comparison happens in the host language, which handles any character.
+ */
+export function findProcessesByName(processNames: string[]): Promise<{
+  instances: NamedProcessInstance[]
+  succeeded: boolean
+}> {
+  return new Promise((resolve) => {
+    const wanted = Array.from(new Set(processNames.map((name) => name.toLowerCase()))).filter(
+      (name) => name.length > 0
+    )
+
+    if (wanted.length === 0) {
+      // Not a failure: nothing was asked. `succeeded: true` matters, because
+      // callers treat a failed read as "no observation" and fall back to the
+      // conservative branch.
+      resolve({ instances: [], succeeded: true })
+      return
+    }
+
+    const script = [
+      '$names = $env:SIMLAUNCHER_TARGET_PROCESS_NAMES | ConvertFrom-Json',
+      // Force an array: a single-element JSON array deserializes to a scalar,
+      // and `-contains` against a scalar silently matches nothing.
+      '$wanted = @($names) | ForEach-Object { $_.ToLowerInvariant() }',
+      'Get-CimInstance Win32_Process |',
+      '  Where-Object { $wanted -contains $_.Name.ToLowerInvariant() } |',
+      '  Select-Object @{N="name";E={$_.Name.ToLowerInvariant()}},',
+      '    @{N="processId";E={[int]$_.ProcessId}},',
+      '    @{N="executablePath";E={$_.ExecutablePath}},',
+      '    @{N="sessionId";E={[int]$_.SessionId}} |',
+      // -AsArray so a single match is still a JSON array, matching the parse
+      // below. Without it PowerShell emits a bare object and the parse drops it.
+      '  ConvertTo-Json -Compress -AsArray'
+    ].join('\n')
+
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      {
+        windowsHide: true,
+        timeout: WMI_LOOKUP_TIMEOUT_MS,
+        env: {
+          ...process.env,
+          SIMLAUNCHER_TARGET_PROCESS_NAMES: JSON.stringify(wanted)
+        }
+      },
+      (error, stdout) => {
+        if (error) {
+          console.error('Failed to enumerate processes by name:', getErrorMessage(error))
+          resolve({ instances: [], succeeded: false })
+          return
+        }
+
+        try {
+          const parsed: unknown = JSON.parse(stdout.trim() || '[]')
+          if (!Array.isArray(parsed)) {
+            resolve({ instances: [], succeeded: false })
+            return
+          }
+          const instances = parsed.flatMap((entry): NamedProcessInstance[] => {
+            if (typeof entry !== 'object' || entry === null) return []
+            const record = entry as Record<string, unknown>
+            if (typeof record.name !== 'string' || typeof record.processId !== 'number') return []
+            return [
+              {
+                name: record.name.toLowerCase(),
+                processId: record.processId,
+                executablePath:
+                  typeof record.executablePath === 'string' && record.executablePath.length > 0
+                    ? record.executablePath
+                    : null,
+                sessionId: typeof record.sessionId === 'number' ? record.sessionId : 0
+              }
+            ]
+          })
+          resolve({ instances, succeeded: true })
+        } catch (err) {
+          console.error('Failed to parse the process enumeration:', getErrorMessage(err))
+          resolve({ instances: [], succeeded: false })
+        }
+      }
+    )
+  })
+}
+
+/**
+ * What a name-scoped enumeration can say about ONE configured path.
+ *
+ * `unknown` is not a failure and must not be collapsed into either answer. It
+ * means the evidence is genuinely ambiguous, and every caller answers it the
+ * way it answered before #674, which is what keeps #390 (a genuinely elevated
+ * process invisible to a non-elevated SimLauncher) reporting as elevated.
+ */
+export type ConfiguredPathState = 'running' | 'not-running' | 'unknown'
+
+/**
+ * Decide whether the exe at `configuredPath` is among `instances`.
+ *
+ * The single decision rule behind every "is this app already running?" answer
+ * in the app (#674). It lives here, next to the enumeration that feeds it,
+ * because five call sites depend on agreeing, and agreeing by having copied the
+ * same expression is how they stop agreeing.
+ *
+ * Order matters and each step earns its place:
+ *
+ *   1. A path match wins outright, INCLUDING in session 0. Session is only ever
+ *      used to dismiss an instance, never to deny one that positively matches:
+ *      a service-hosted copy of the configured exe is still the configured exe.
+ *   2. An instance is dismissible when it has a readable path that differs, or
+ *      when it is in session 0. Session 0 is the non-interactive services
+ *      session, so it cannot be the companion the user launched, and that is
+ *      what makes an UNREADABLE path decidable there. On a real machine that
+ *      resolves 170 of the 187 processes whose path WMI will not disclose.
+ *   3. Anything left is an instance with an unreadable path in an interactive
+ *      session. That is exactly the shape of #390, so the answer is `unknown`
+ *      and the caller keeps its pre-#674 behaviour.
+ */
+export function resolveConfiguredPathState(
+  instances: NamedProcessInstance[],
+  configuredPath: string
+): ConfiguredPathState {
+  const targetName = getExeName(configuredPath)
+  const relevant = instances.filter((instance) => instance.name === targetName)
+
+  if (relevant.length === 0) {
+    return 'not-running'
+  }
+
+  const target = normalizePathForComparison(configuredPath)
+  if (
+    relevant.some(
+      (instance) =>
+        instance.executablePath && normalizePathForComparison(instance.executablePath) === target
+    )
+  ) {
+    return 'running'
+  }
+
+  const undecidable = relevant.filter(
+    (instance) => !instance.executablePath && instance.sessionId !== 0
+  )
+
+  return undecidable.length === 0 ? 'not-running' : 'unknown'
 }
