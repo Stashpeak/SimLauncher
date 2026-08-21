@@ -263,11 +263,12 @@ export function registerLaunchHandlers(): void {
           // cancel the switch's OWN registration above — the switch would
           // then always report itself as cancelled, even with no Close Apps
           // click involved.
-          killResult = await killProfileApps(
-            gameKey,
-            entriesToStop.map((entry) => entry.path),
-            { except: launchController }
-          )
+          // Whole entries, not `.map((entry) => entry.path)`. Flattening here is
+          // what let the kill's handoff cancellation match by path and take out
+          // a retained slot's consent prompt (Codex P2 on #842).
+          killResult = await killProfileApps(gameKey, entriesToStop, {
+            except: launchController
+          })
         }
 
         const { processNames: processNamesAfterStop } = await readRunningProcessNames()

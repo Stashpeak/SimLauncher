@@ -93,8 +93,11 @@ vi.mock('../../src/main/processes', async () => {
       entries: ProfileLaunchInput[],
       options?: { controller?: AbortController }
     ) => mocks.launchProfileApps(sender, gameKey, entries, options),
-    killProfileApps: (gameKey: string, paths: string[], options?: { except?: AbortController }) =>
-      mocks.killProfileApps(gameKey, paths, options),
+    killProfileApps: (
+      gameKey: string,
+      entries: { key: string; path: string }[],
+      options?: { except?: AbortController }
+    ) => mocks.killProfileApps(gameKey, entries, options),
     killLaunchedApps: vi.fn(),
     getRunningApps: vi.fn(),
     isRunningExePath: (processNames: Set<string>, appPath: string) =>
@@ -254,9 +257,13 @@ test('switch-profile-apps stops and relaunches when a slot moves to a new key bu
   const sender = { isDestroyed: () => false, send: vi.fn() } as unknown as WebContents
   await handler({ sender } as never, 'ac', 'from', 'to')
 
+  // The whole ENTRY, not the bare path. This test is the same-exe slot move, so
+  // it is exactly the case where flattening to a path loses the only thing that
+  // tells the leaving slot from the retained one, and the kill's handoff
+  // cancellation then takes out both (Codex P2 on #842).
   expect(mocks.killProfileApps).toHaveBeenCalledWith(
     'ac',
-    ['C:/Tools/Shared Utility.exe'],
+    [{ key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }],
     expect.objectContaining({ except: expect.any(AbortController) })
   )
   expect(mocks.launchProfileApps).toHaveBeenCalledWith(

@@ -437,7 +437,7 @@ test('switch-profile-apps never kills or relaunches the game executable', async 
   expect(registerActiveLaunch).toHaveBeenCalledWith('iracing')
   const controller = registerActiveLaunch.mock.results[0]!.value as AbortController
   expect(controller.signal.aborted).toBe(false)
-  expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA.path], { except: controller })
+  expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA], { except: controller })
   expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [utilB], {
     controller,
     profileId: 'p-to'

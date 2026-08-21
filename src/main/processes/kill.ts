@@ -3,6 +3,7 @@ import path from 'path'
 
 import {
   getActiveStoredProfile,
+  getProfileLaunchEntryId,
   getProfileTrackablePaths,
   getStoredProfiles,
   isProcessTrackingEnabled,
@@ -28,7 +29,8 @@ import type {
   KillFailure,
   KillFailureReason,
   KillProfileAppsOptions,
-  KillResult
+  KillResult,
+  ProfileLaunchEntry
 } from './types'
 import {
   GRACEFUL_CLOSE_WINDOW_MS,
@@ -779,11 +781,28 @@ export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean
   return false
 }
 
+/**
+ * Stops the apps a profile switch is leaving behind.
+ *
+ * Takes ENTRIES rather than paths, and that is load-bearing rather than
+ * cosmetic. The kill itself only ever needs paths: two slots pointing at one exe
+ * (#357) are a single target to a process killer, and stopping the exe stops it
+ * for both. But this call also cancels pending elevated handoffs, and a pending
+ * handoff has never started, so it is not a process at all -- it is a registry
+ * entry that knows exactly which slot it belongs to. Narrowing that by path
+ * cancels the retained slot's consent prompt alongside the leaving one, which is
+ * the same over-cancel #782 exists to remove (Codex P2 on #842).
+ *
+ * The caller is the only party that knows which SLOTS are stopping, so the
+ * signature takes what it has instead of letting it flatten the identity away
+ * and leaving this function to guess.
+ */
 export async function killProfileApps(
   gameKey: string,
-  appPathsToKill: string[],
+  entriesToKill: ProfileLaunchEntry[],
   options?: KillProfileAppsOptions
 ): Promise<KillResult> {
+  const appPathsToKill = entriesToKill.map((entry) => entry.path)
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
   const storedAppPathTargets = getStoredAppPathTargets()
@@ -829,18 +848,28 @@ export async function killProfileApps(
   // through the abort signal once its sequence ended (#779 Codex P1). And the
   // same consequence: each one killed leaves its consent prompt behind (#809).
   //
-  // Scoped to the paths this call is actually stopping, unlike killLaunchedApps
-  // which really does mean the whole game. This one is a SUBSET operation: a
-  // profile switch stopping one app was cancelling every pending handoff for
-  // the game, including one for an app both profiles enable and that the switch
-  // was never going to touch (#782).
+  // Scoped to what this call is actually stopping, unlike killLaunchedApps which
+  // really does mean the whole game. This one is a SUBSET operation: a profile
+  // switch stopping one app was cancelling every pending handoff for the game,
+  // including one for an app both profiles enable and that the switch was never
+  // going to touch (#782).
   //
-  // By path and not by slot, because paths are all this function is given. That
-  // is a real limit, not an oversight: two slots on one exe are one target here,
-  // and stopping the exe stops it for both.
-  const pathsBeingKilled = new Set(validAppPathsToKill.map(normalizePathForComparison))
+  // Matched by SLOT, not by path, and only entries that survived validation are
+  // eligible: a path this call refused to kill has no business cancelling
+  // anything. Two slots can share an exe with different args (#357), so if the
+  // switch stops the running instance of the leaving slot while the retained
+  // slot has an unanswered prompt, a path match kills the prompt for the app
+  // that is staying (Codex P2 on #842).
+  const validPaths = new Set(validAppPathsToKill.map(normalizePathForComparison))
+  const idsBeingKilled = new Set(
+    entriesToKill
+      .filter((entry) => validPaths.has(normalizePathForComparison(entry.path)))
+      .map(getProfileLaunchEntryId)
+  )
   cancelPendingElevatedHandoffs(gameKey, (handoff) =>
-    pathsBeingKilled.has(normalizePathForComparison(handoff.appPath))
+    idsBeingKilled.has(
+      getProfileLaunchEntryId({ key: handoff.appKey ?? '', path: handoff.appPath })
+    )
   )
   const strandedPromptCount = drainStrandedConsentPrompts()
 

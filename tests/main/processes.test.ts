@@ -185,6 +185,27 @@ function makeAccessDeniedError() {
   return error
 }
 
+/**
+ * Turns the paths a test wants stopped into the `{key, path}` entries
+ * `killProfileApps` now takes (#842).
+ *
+ * The key is looked up in the SAME `appPaths` fixture the harness serves to the
+ * code under test, rather than invented per call site. That matters: the kill's
+ * handoff cancellation matches by slot, so a made-up key would make every
+ * slot-scoping assertion pass without proving anything. A path with no
+ * configured slot (an unknown exe, the game itself) keeps the empty key, which
+ * is what production would carry for something that is not a utility slot.
+ */
+function killEntries(...appPaths: string[]): { key: string; path: string }[] {
+  const configured = Object.entries(storeData.appPaths ?? {})
+  return appPaths.map((appPath) => {
+    const match = configured.find(
+      ([, configuredPath]) => configuredPath.toLowerCase() === appPath.toLowerCase()
+    )
+    return { key: match?.[0] ?? '', path: appPath }
+  })
+}
+
 async function loadProcessModules() {
   vi.resetModules()
 
@@ -546,6 +567,12 @@ async function loadProcessModules() {
   vi.doMock('../../src/main/store.js', () => storeModuleMock)
 
   const profilesMock = {
+    // Re-implemented because this suite mocks the module that owns it, which
+    // makes it a COPY: the tests below prove `kill.ts` is wired to an identity
+    // function, not that the identity rule is right. The rule itself is pinned
+    // against the real module in profiles.test.ts.
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`,
     getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
       p.profiles.find((i) => i.id === p.activeProfileId)
     ),
@@ -2515,7 +2542,7 @@ test('a profile switch never runs the graceful phase, toggle or not (#659)', asy
     appPaths: { customapp2: 'C:/Tools/App2.exe' }
   })
 
-  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+  const result = await killProfileApps('ac', killEntries('C:/Tools/App2.exe'))
 
   expect(gracefulRequests()).toHaveLength(0)
   expect(result.closedCount).toBe(1)
@@ -2546,11 +2573,58 @@ test('a profile switch that cancels a pending handoff explains the stranded prom
     // The elevated app is among the paths this kill is stopping, which is what
     // brings its handoff into scope (#782). It is not running, and that is the
     // point: a pending handoff never is.
-    const result = await killProfileApps('ac', ['C:/Tools/Admin Tool.exe', 'C:/Tools/App2.exe'])
+    const result = await killProfileApps(
+      'ac',
+      killEntries('C:/Tools/Admin Tool.exe', 'C:/Tools/App2.exe')
+    )
     await vi.advanceTimersByTimeAsync(0)
 
     expect(elevatedHostKills).toHaveLength(1)
     expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The kill-side mirror of the over-cancel #782 removes from the save side. Two
+// slots on one exe (#357): the switch stops the LEAVING slot, whose instance is
+// running, while the RETAINED slot has an unanswered prompt. Matching the
+// handoff registry by path cannot tell them apart, so it kills the prompt for
+// the app that is staying, and approving it then starts nothing (Codex P2 on
+// #842). Both directions are asserted here because a predicate that cancels
+// nothing at all would satisfy the first half on its own.
+test('a kill stops a shared exe without cancelling the retained slot prompt (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    const shared = 'C:/Tools/Shared Utility.exe'
+    markExistingPath(shared)
+    spawnErrors.set(shared, makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { customapp1: shared, customapp2: shared }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // The prompt belongs to customapp1, the slot the incoming profile keeps.
+    const launchPromise = launchProfileApps(sender, 'ac', [{ key: 'customapp1', path: shared }])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Stopping customapp2, the slot that is leaving. Same executable.
+    const leaving = await killProfileApps('ac', [{ key: 'customapp2', path: shared }])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(0)
+    expect(leaving.strandedConsentPrompts).toBeUndefined()
+
+    // ...and the prompt is still cancellable by the slot that actually owns it,
+    // so the predicate discriminates rather than simply never matching.
+    const retained = await killProfileApps('ac', [{ key: 'customapp1', path: shared }])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(retained.strandedConsentPrompts).toBe(1)
   } finally {
     vi.useRealTimers()
   }
@@ -2609,7 +2683,7 @@ test('a kill does not cancel a handoff for an app it is not stopping (#782)', as
     await launchPromise
 
     // Same game, and deliberately NOT the elevated app's path.
-    const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+    const result = await killProfileApps('ac', killEntries('C:/Tools/App2.exe'))
     await vi.advanceTimersByTimeAsync(0)
 
     expect(elevatedHostKills).toHaveLength(0)
@@ -2630,7 +2704,7 @@ test('an ordinary profile switch with no pending handoff says nothing about a pr
     appPaths: { customapp2: 'C:/Tools/App2.exe' }
   })
 
-  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+  const result = await killProfileApps('ac', killEntries('C:/Tools/App2.exe'))
 
   expect(result.strandedConsentPrompts).toBeUndefined()
 })
@@ -2918,7 +2992,7 @@ test('killProfileApps rejects paths that are not configured app paths', async ()
   markExistingPath('C:/Tools/Unknown.exe')
   storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
 
-  await expect(killProfileApps('ac', ['C:/Tools/Unknown.exe'])).resolves.toEqual({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/Unknown.exe'))).resolves.toEqual({
     success: false,
     error: 'Kill request includes an app path that is not configured.',
     closedCount: 0,
@@ -2935,7 +3009,7 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -2973,7 +3047,7 @@ test('PID lookup injects the name via env and matches it in PowerShell, not WQL 
     appPaths: { simhub: quotedPath }
   })
 
-  await killProfileApps('ac', [quotedPath])
+  await killProfileApps('ac', killEntries(quotedPath))
 
   const psCall = execFileCalls.find(
     (call) =>
@@ -3011,7 +3085,7 @@ test('killProfileApps only kills the PID matching the requested executable path 
     appPaths: { simhub: 'C:/Tools/SimHub.exe', other: 'D:/Other/SimHub.exe' }
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -3044,7 +3118,7 @@ test('killProfileApps excludes processes with null executable paths when resolvi
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -3092,7 +3166,7 @@ test('killProfileApps publishes promptly when untracked app remains elevated aft
   await subscribeRunningApps(asWebContents(webContents))
   webContents.send.mockClear()
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: false,
     closedCount: 0,
     failedCount: 1,
@@ -3988,7 +4062,9 @@ test('killProfileApps skips game executable paths without issuing kill commands'
   })
   processNames.add('assettocorsa.exe')
 
-  await expect(killProfileApps('ac', ['C:/Games/AssettoCorsa.exe'])).resolves.toMatchObject({
+  await expect(
+    killProfileApps('ac', killEntries('C:/Games/AssettoCorsa.exe'))
+  ).resolves.toMatchObject({
     success: true,
     closedCount: 0,
     failedCount: 0
@@ -4025,7 +4101,7 @@ test('killProfileApps clears previous unclosed and running state after successfu
     elevated: true
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -4067,7 +4143,7 @@ test('killProfileApps suppresses wrapper warnings for SimLauncher-initiated prof
   childHandlers.get('spawn')?.()
   await launchPromise
 
-  const killPromise = killProfileApps('ac', ['C:/Tools/Cheat Engine.exe'])
+  const killPromise = killProfileApps('ac', killEntries('C:/Tools/Cheat Engine.exe'))
   processNames.delete('cheat engine.exe')
   childHandlers.get('exit')?.()
 
@@ -4336,7 +4412,7 @@ test('killProfileApps mid-sequence also cancels the launch loop before remaining
   const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
   await flushMicrotasks()
 
-  await killProfileApps('ac', ['C:/Tools/App1.exe'])
+  await killProfileApps('ac', killEntries('C:/Tools/App1.exe'))
   const launchResult = await launchPromise
 
   expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
@@ -4433,7 +4509,7 @@ test('killProfileApps aborts the launch before waiting on its tasklist scan (#67
   let releaseTasklistRead: () => void = () => {}
   tasklistReadBlocker = new Promise((resolve) => (releaseTasklistRead = resolve))
 
-  const killPromise = killProfileApps('ac', ['C:/Tools/App1.exe'])
+  const killPromise = killProfileApps('ac', killEntries('C:/Tools/App1.exe'))
   // The abort fired in killProfileApps' synchronous prefix, so the launch
   // resolves cancelled even though the kill is still stuck in its scan.
   await expect(launchPromise).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
