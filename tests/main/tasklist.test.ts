@@ -41,6 +41,75 @@ test('readRunningProcessNames parses tasklist CSV output into lowercase process 
   expect(tasklistCallCount).toBe(1)
 })
 
+// #674: the poll now decides what to draw from PID and Session#, so the columns
+// this used to parse away are load-bearing. A shape the parser mishandles does
+// not throw, it just yields fewer instances, and fewer instances resolve to
+// `not-running` — an app the user IS running vanishes from the strip. These run
+// everywhere, unlike the real-tasklist assertions in processEnumeration.win.
+test('the same rows also yield PID and Session# instances (#674)', async () => {
+  const { readRunningProcessNames } = await loadTasklistModule()
+
+  const result = await readRunningProcessNames()
+
+  expect(result.processes).toEqual([
+    { name: 'simhub.exe', processId: 1234, sessionId: 1 },
+    { name: 'crewchief.exe', processId: 5678, sessionId: 1 }
+  ])
+})
+
+test('Session# is read, not the localized Session Name beside it (#674)', async () => {
+  // Column 3 reads "Console" or "Services" on an English install and is
+  // translated everywhere else. Reading it instead of the number would break
+  // the session-0 dismissal on every non-English Windows, silently.
+  tasklistOutput = '"svchost.exe","900","Dienste","0","5,000 K"'
+  const { readRunningProcessNames } = await loadTasklistModule()
+
+  const result = await readRunningProcessNames()
+
+  expect(result.processes).toEqual([{ name: 'svchost.exe', processId: 900, sessionId: 0 }])
+})
+
+test('a row that will not parse still counts as a running name (#674)', async () => {
+  // The safe direction, and the reason the two outputs are not derived from one
+  // another. Losing the NAME would say an app is not running when it is; losing
+  // only the instance leaves the answer ambiguous, which every caller already
+  // handles conservatively. Inventing a session for it would be the dangerous
+  // one: session 0 is what lets an unreadable path be dismissed.
+  tasklistOutput = [
+    '"broken.exe","not-a-pid","Console","1","10 K"',
+    '"nosession.exe","4321","Console","x","10 K"',
+    '"truncated.exe","4322"',
+    '"","4323","Console","1","10 K"',
+    '"good.exe","4324","Console","1","10 K"'
+  ].join('\r\n')
+  const { readRunningProcessNames } = await loadTasklistModule()
+
+  const result = await readRunningProcessNames()
+
+  // Every one of these keeps its name, including the truncated row: the name
+  // comes from field 0 alone, exactly as it did before the other columns were
+  // read. Writing this test is what caught the first version dropping a
+  // truncated row's name entirely, which the old parser never did.
+  expect(result.processNames.has('broken.exe')).toBe(true)
+  expect(result.processNames.has('nosession.exe')).toBe(true)
+  expect(result.processNames.has('truncated.exe')).toBe(true)
+  // ...and only the well-formed row becomes an instance. The empty name is not
+  // a name at all, so it contributes neither.
+  expect(result.processNames.has('')).toBe(false)
+  expect(result.processes).toEqual([{ name: 'good.exe', processId: 4324, sessionId: 1 }])
+})
+
+test('a failed read reports no instances rather than an empty machine (#399)', async () => {
+  tasklistError = new Error('tasklist unavailable')
+  const { readRunningProcessNames } = await loadTasklistModule()
+
+  const result = await readRunningProcessNames()
+
+  expect(result.succeeded).toBe(false)
+  expect(result.processes).toEqual([])
+  expect(result.processNames.size).toBe(0)
+})
+
 test('concurrent calls coalesce into a single tasklist invocation', async () => {
   const { readRunningProcessNames } = await loadTasklistModule()
 

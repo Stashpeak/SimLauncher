@@ -67,18 +67,29 @@ function spawnTasklist(): Promise<RunningProcessNamesResult> {
         // CSV escaping rules. Verified against a real 537-row snapshot, where
         // all five columns parsed on every line.
         const fields = line.match(/"([^"]*)"/g)
-        if (!fields || fields.length < 4 || fields[0].length <= 2) {
+        if (!fields || fields.length === 0) {
           return
         }
         const unquote = (field: string) => field.slice(1, -1)
         const name = unquote(fields[0]).toLowerCase()
+        if (!name) {
+          return
+        }
+
+        // The name is recorded from the FIRST field alone, exactly as it was
+        // before the other columns were read, so no row can lose its name by
+        // failing to yield an instance. That asymmetry is the safe direction:
+        // losing a name says an app is not running when it is, while losing an
+        // instance only leaves the answer ambiguous, which every caller already
+        // handles conservatively.
         names.add(name)
 
-        // A row whose PID or session will not parse still counts as a running
-        // NAME (added above) but yields no instance. Dropping it from
-        // `processes` costs a caller its path resolution and leaves the answer
-        // ambiguous, which is the safe direction; inventing a session for it
-        // would let the row be dismissed on a number nobody read.
+        // The instance needs all four. Inventing a value for a field that would
+        // not parse is the one genuinely dangerous option here, because session
+        // 0 is what lets an unreadable path be dismissed.
+        if (fields.length < 4) {
+          return
+        }
         const processId = Number(unquote(fields[1]))
         const sessionId = Number(unquote(fields[3]))
         if (!Number.isInteger(processId) || !Number.isInteger(sessionId)) {

@@ -10,9 +10,12 @@
  * Three things make the cheap version possible, in order of how much they buy:
  *
  *   1. **The tasklist already carries PID and session.** Both were being parsed
- *      and discarded. Session 0 is the non-interactive services session, so
- *      every process there is dismissible without asking anything further. On a
- *      real machine that is 170 of 537 processes, for free.
+ *      and discarded. Session 0 is the non-interactive services session, so an
+ *      instance there whose path Windows will not disclose is still decidable,
+ *      which on a real machine covers 170 of 537 processes. That dismissal
+ *      belongs to the decision rule, not to this module: a session-0 instance AT
+ *      the configured path is genuinely running, so session is only ever grounds
+ *      to discard an instance, never grounds to skip looking at one.
  *   2. **A path, once learned for a PID, stays true for that PID's lifetime.**
  *      Windows does not move a running image, so the only invalidation needed
  *      is the PID leaving the tasklist. No TTL, and no revalidation.
@@ -125,12 +128,28 @@ function buildInstances(processes: TasklistProcess[]): NamedProcessInstance[] {
 }
 
 /**
- * Image names that still hold an instance nothing can decide, and that are off
- * cooldown, i.e. the names worth spending one enumeration on.
+ * Image names holding a pid we have never resolved, and that are off cooldown,
+ * i.e. the names worth spending one enumeration on.
  *
- * Session 0 instances are excluded because the rule can already dismiss them,
- * and pids with a stored `null` are excluded because asking again would get the
- * same refusal. What is left is genuinely unfamiliar.
+ * A pid with a stored path is excluded, and so is one with a stored `null`,
+ * because asking again would get the same refusal. What is left is genuinely
+ * unfamiliar.
+ *
+ * Session 0 is deliberately NOT a reason to skip, though it looks like an easy
+ * saving and was one until the review bot on #846 took it apart. Dismissing a
+ * session-0 instance is the RULE's job, and the rule only dismisses one whose
+ * path it could not read: a session-0 instance AT the configured path is
+ * `running`, because a service-hosted copy of the configured exe is still the
+ * configured exe. Skipping it here meant its path was never learned, so that
+ * branch could not fire and the answer collapsed to `not-running` — while the
+ * launch and kill paths, which enumerate unconditionally, said `running`. This
+ * module's whole claim is that it feeds the SAME rule from a cheaper source, and
+ * a cheaper source that changes the answer is not that.
+ *
+ * The saving it appeared to buy was mostly illusory anyway. It only applied to a
+ * configured app whose name collides with a service, and a resolved pid stays
+ * resolved for its lifetime — services being long-lived, that is one enumeration
+ * ever, not one per tick. The steady-state guarantee is untouched.
  */
 function collectNamesWorthResolving(
   processes: TasklistProcess[],
@@ -140,7 +159,7 @@ function collectNamesWorthResolving(
   const names = new Set<string>()
 
   processes.forEach((entry) => {
-    if (!wantedNames.has(entry.name) || entry.sessionId === 0) {
+    if (!wantedNames.has(entry.name)) {
       return
     }
     if (resolvedPidPaths.has(entry.processId)) {

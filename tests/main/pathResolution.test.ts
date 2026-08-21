@@ -79,17 +79,42 @@ describe('what the tasklist alone can decide (#674)', () => {
     expect(findProcessesByName).not.toHaveBeenCalled()
   })
 
-  test('a same-named process in session 0 is dismissed for free', async () => {
-    // The half of the discriminator that pays for itself. Session 0 is the
-    // non-interactive services session, so it cannot be hosting a companion the
-    // user launched, and the tasklist already carries the number. On a real
-    // machine this covers 170 of 537 processes without asking anything.
+  test('a session-0 process whose path is unreadable is dismissed, then never re-asked', async () => {
+    // Session 0 is what makes an UNREADABLE path decidable, and that dismissal
+    // is the rule's, applied to what the enumeration came back with. It is not
+    // grounds to skip the enumeration: see the test below for why.
+    findProcessesByName.mockResolvedValue({
+      instances: [{ name: 'overlay.exe', processId: 400, executablePath: null, sessionId: 0 }],
+      succeeded: true
+    })
+    const live = snapshot([{ processId: 400, sessionId: 0 }])
+
+    expect((await resolveTrackedPathStates(live, [CONFIGURED])).get(CONFIGURED)).toBe('not-running')
+    expect((await resolveTrackedPathStates(live, [CONFIGURED])).get(CONFIGURED)).toBe('not-running')
+
+    // Bounded: the null is cached like any other answer, so a service costs one
+    // enumeration ever rather than one per tick.
+    expect(findProcessesByName).toHaveBeenCalledTimes(1)
+  })
+
+  test('a configured app hosted as a service in session 0 resolves to running (#846)', async () => {
+    // The poll must not disagree with the launch and kill paths, which enumerate
+    // unconditionally. Skipping session-0 pids looked like a free saving and was
+    // not: their paths were then never learned, the rule's "a path match wins
+    // outright, INCLUDING in session 0" branch could never fire, and a genuine
+    // service-hosted match collapsed to `not-running` on the poll alone.
+    findProcessesByName.mockResolvedValue({
+      instances: [
+        { name: 'overlay.exe', processId: 400, executablePath: CONFIGURED, sessionId: 0 }
+      ],
+      succeeded: true
+    })
+
     const states = await resolveTrackedPathStates(snapshot([{ processId: 400, sessionId: 0 }]), [
       CONFIGURED
     ])
 
-    expect(states.get(CONFIGURED)).toBe('not-running')
-    expect(findProcessesByName).not.toHaveBeenCalled()
+    expect(states.get(CONFIGURED)).toBe('running')
   })
 
   test('a failed snapshot answers nothing rather than answering wrongly', async () => {
