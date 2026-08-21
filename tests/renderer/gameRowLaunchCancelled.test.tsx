@@ -7,7 +7,7 @@
  *
  * Pinned here: when `launchProfile`/`relaunchMissingProfile` resolves with
  * `cancelled: true`, the row's toast must read as a neutral cancellation
- * ("Launch cancelled — closed apps instead.") — never the success toast, and
+ * ("Launch cancelled: closed apps instead.") — never the success toast, and
  * never the plain error toast either.
  */
 
@@ -157,13 +157,13 @@ describe('GameRow launch cancellation toast (#670)', () => {
       success: false,
       cancelled: true,
       launchedCount: 1,
-      message: 'Launch cancelled — closed apps instead.'
+      message: 'Launch cancelled: closed apps instead.'
     })
 
     await renderRow()
     await clickPlayButton()
 
-    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
+    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled: closed apps instead.', 'warn')
     // Arg-shape-independent: a cancellation must not produce ANY success
     // toast, however many args the call carries.
     expect(notifyMock.mock.calls.some((call) => call[1] === 'success')).toBe(false)
@@ -179,7 +179,7 @@ describe('GameRow launch cancellation toast (#670)', () => {
     await renderRow()
     await clickPlayButton()
 
-    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
+    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled: closed apps instead.', 'warn')
   })
 
   // cancelled must be checked before the plain failure branch — otherwise a
@@ -189,7 +189,7 @@ describe('GameRow launch cancellation toast (#670)', () => {
       success: false,
       cancelled: true,
       launchedCount: 1,
-      message: 'Launch cancelled — closed apps instead.'
+      message: 'Launch cancelled: closed apps instead.'
     })
 
     await renderRow()

@@ -286,7 +286,7 @@ export function GameRow({
           // an error; the switch is not saved and can simply be retried.
           if (result.cancelled) {
             notify(
-              [result.message || 'Launch cancelled — closed apps instead.', strandedNote]
+              [result.message || 'Launch cancelled: closed apps instead.', strandedNote]
                 .filter(Boolean)
                 .join(' '),
               'warn'
@@ -420,7 +420,7 @@ export function GameRow({
       // everything (#670) — this is neither a success nor a failure, so it
       // gets its own toast rather than falling into either branch below.
       if (result.cancelled) {
-        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        notify(result.message || 'Launch cancelled: closed apps instead.', 'warn')
         return
       }
 
@@ -510,7 +510,7 @@ export function GameRow({
 
       // Same cancellation case as handleLaunch above (#670).
       if (result.cancelled) {
-        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        notify(result.message || 'Launch cancelled: closed apps instead.', 'warn')
         return
       }
 

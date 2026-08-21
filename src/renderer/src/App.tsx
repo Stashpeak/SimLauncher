@@ -142,7 +142,7 @@ function AppContent() {
   // two views were otherwise indistinguishable.
   const viewLabel = view === 'settings' ? 'Settings' : 'Games'
   useEffect(() => {
-    document.title = `SimLauncher — ${viewLabel}`
+    document.title = `SimLauncher: ${viewLabel}`
   }, [viewLabel])
 
   // Re-home keyboard focus into the now-visible view whenever the view changes
@@ -411,7 +411,7 @@ function AppContent() {
       className={`h-screen overflow-hidden relative transition-colors duration-500 ${accentBgTint ? 'bg-tinted' : ''}`}
     >
       <header className="absolute top-0 left-0 w-full z-20 header-glass">
-        <h1 className="sr-only">SimLauncher — {viewLabel}</h1>
+        <h1 className="sr-only">SimLauncher: {viewLabel}</h1>
         <WindowControls view={view} onNavigate={handleNavigate} updateInfo={updateInfo} />
       </header>
 

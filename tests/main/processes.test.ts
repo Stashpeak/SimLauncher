@@ -5395,7 +5395,7 @@ test('the cancellation message names elevated apps the kill cannot close (#670)'
     cancelled: true,
     elevatedCount: 1,
     message:
-      'Launch cancelled — closed apps instead. One app started with administrator permission and cannot be closed from here.'
+      'Launch cancelled: closed apps instead. One app started with administrator permission and cannot be closed from here.'
   })
 })
 
