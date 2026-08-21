@@ -821,6 +821,31 @@ button:focus-visible,
   outline: none;
 }
 
+/* The unknown-state status dot (#737): the game exited within 10s of launch, or
+   it handed off to a child process under a name nothing here can see, and
+   neither reading can be confirmed. It sits next to the confirmed-running dot,
+   which is a filled green disc of the same 12px.
+
+   A hollow RING rather than a filled amber disc, so the two differ in shape and
+   not only in hue. Colour alone fails WCAG 1.4.1, and green-versus-amber is the
+   specific pair that red-green colour vision deficiency compresses hardest —
+   roughly 8% of men, which for a sim-racing audience is not an edge case. At
+   12px the hue difference is a discrimination task; the hole is not.
+
+   The fill is `--bg-gradient`, the page's own background, so the ring reads as
+   the page showing through rather than a donut punched into the game artwork
+   the dot overlaps. On a 12px circle the gradient resolves to essentially a
+   solid, and it tracks the theme without a per-theme entry. This mirrors what
+   the forced-colors block below already does with `Canvas`, which needs its own
+   rule there because the OS overrides author colours in that mode.
+
+   The amber is still carried by the border and the glow, so nothing is lost:
+   the shape is added, not substituted. */
+.status-dot-unknown {
+  background: var(--bg-gradient);
+  border: 2px solid var(--status-warning);
+}
+
 /* Respect the OS "reduce motion" preference: neutralize transitions and stop
    the infinite loops (ping/pulse/spin, toast progress) for vestibular safety.
    Mirrors the marketing site's reduced-motion support. */
