@@ -24,6 +24,7 @@ import {
 } from './state'
 import { isTrackedPathRunning, resolveTrackedPathStates } from './pathResolution'
 import { readRunningProcessNames, type RunningProcessNamesResult } from './tasklist'
+import { isPathScopedExe } from './win32KillUtils'
 
 /**
  * A main-process consumer of one raw tasklist read.
@@ -274,11 +275,10 @@ function reconcileUntrackedGames(): void {
 
 export async function getRunningApps(): Promise<RunningApp[]> {
   const readResult = await readRunningProcessNames()
-  // `processNames` is deliberately not read here any more (#674). Every
-  // question this function asks is now about a PATH, and the snapshot reaches
-  // the resolver whole, so a name-only decision cannot creep back in by
-  // reaching for a set that happened to be in scope.
-  const { succeeded: tasklistReadSucceeded } = readResult
+  // `processNames` survives for exactly one job (see `isPathRunning`): a record
+  // whose "path" is a bare image name, which is not a path and must not be
+  // resolved as one. Every other question this function asks is about a PATH.
+  const { processNames, succeeded: tasklistReadSucceeded } = readResult
   // Observers run before any derivation below, on every read rather than only
   // on scan ticks, and never get to break the caller: a throwing observer must
   // not take the running-apps list down with it.
@@ -319,9 +319,16 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       candidatePaths.add(gamePath)
     }
   })
-  runningProcesses.forEach((entry) => candidatePaths.add(entry.path))
-  unclosedProcesses.forEach((entry) => candidatePaths.add(entry.path))
-  processNameMismatchWarnings.forEach((entry) => candidatePaths.add(entry.path))
+  // Bare image names are filtered out rather than resolved: they are not paths,
+  // and `isPathRunning` answers them from the name set instead.
+  const addCandidate = (appPath: string) => {
+    if (isPathScopedExe(appPath)) {
+      candidatePaths.add(appPath)
+    }
+  }
+  runningProcesses.forEach((entry) => addCandidate(entry.path))
+  unclosedProcesses.forEach((entry) => addCandidate(entry.path))
+  processNameMismatchWarnings.forEach((entry) => addCandidate(entry.path))
 
   const pathStates = await resolveTrackedPathStates(readResult, Array.from(candidatePaths))
   // Folds `unknown` and "not asked" into "running", the same conservative
@@ -335,8 +342,30 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   // instead would be a real behaviour change (the strip would freeze rather than
   // blank) and it is not this issue's to make. Pruning is unaffected either way,
   // being already gated on the same flag.
-  const isPathRunning = (appPath: string) =>
-    tasklistReadSucceeded && isTrackedPathRunning(pathStates.get(appPath))
+  const isPathRunning = (appPath: string) => {
+    if (!tasklistReadSucceeded) {
+      return false
+    }
+
+    // A bare image name is NOT a path, and answering it as one silently
+    // destroys a record (Codex P2 on #846). An unclosed entry for a name-scoped
+    // companion stores the image name where a path would go
+    // (`registerUnclosedProcess` falls back to `attempt.processName`), and
+    // `normalizePathForComparison` resolves a bare name against the CURRENT
+    // WORKING DIRECTORY. So the comparison is against a path under SimLauncher's
+    // own install, never matches any real process, and the record gets pruned
+    // while its app is still running: the Garage61 telemetry agent, which is
+    // closed by `/IM` precisely because it has no configured path.
+    //
+    // Judged by SHAPE, matching how the kill path scopes its own cleanup and
+    // for the same reason (#677): whether an exe currently exists on disk must
+    // not decide whether a record is name-scoped.
+    if (!isPathScopedExe(appPath)) {
+      return processNames.has(getExeName(appPath))
+    }
+
+    return isTrackedPathRunning(pathStates.get(appPath))
+  }
 
   // When the tasklist read failed, processNames is an empty Set with no
   // signal value — skip pruning so we don't silently clear running/unclosed

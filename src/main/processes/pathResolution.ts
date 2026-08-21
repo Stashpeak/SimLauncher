@@ -79,11 +79,22 @@ export function resetPathResolutionCache(): void {
 /**
  * Drop everything the latest snapshot says is gone.
  *
- * This is the entire invalidation strategy, and it is exact rather than
- * approximate: a PID that is no longer running cannot be running at a different
- * path, and Windows will not hand the number to a new process while the old one
- * is still listed. A TTL would be strictly worse, expiring answers that are
- * still true and keeping ones that are not.
+ * A PID that is no longer running cannot be running at a different path, so an
+ * entry the snapshot does not list is definitively dead. A TTL as the PRIMARY
+ * mechanism would be strictly worse, expiring answers that are still true and
+ * keeping ones that are not.
+ *
+ * KNOWN RESIDUAL, recorded on its own issue (Codex P2 on #846). This is exact
+ * only for a pid whose absence we OBSERVE, and the poll samples rather than
+ * watches: a cached process can exit and Windows can reuse its number before the
+ * next snapshot, in which case the pid never appears absent and keeps the old
+ * path. Three things have to line up for that to matter, because `buildInstances`
+ * takes the NAME from the live snapshot and only the path from here, so a
+ * reused pid under a different image name is filtered out by the rule and is
+ * harmless. It needs the same pid, reused inside one tick, by a process with the
+ * same image name. The fix is a stronger identity than the number alone
+ * (creation time, which `tasklist` does not carry) or a long revalidation
+ * window, and neither belongs in this issue.
  *
  * ONLY call this for a snapshot that actually succeeded. A failed read yields an
  * empty snapshot, and treating that as "every process ended" would flush the

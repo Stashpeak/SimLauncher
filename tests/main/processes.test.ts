@@ -1063,6 +1063,72 @@ test('a leftover recorded against a stranger is pruned by the next scan (#674)',
   expect(apps).toEqual([])
 })
 
+// A name-scoped companion has no configured path, so its unclosed record stores
+// the IMAGE NAME where a path would go. Resolving that as a path is destructive
+// rather than merely wrong: `normalizePathForComparison` resolves a bare name
+// against the CURRENT WORKING DIRECTORY, so it compares against a path under
+// SimLauncher's own install, never matches, and prunes a record whose app is
+// still running (Codex P2 on #846). Garage61's telemetry agent is the shipped
+// case: it is closed by `/IM` precisely because it has no path.
+test('a bare-name leftover is judged by name, not resolved as a path (#846)', async () => {
+  const { getRunningApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    },
+    appPaths: {}
+  })
+
+  unclosedProcesses.set('ac:garage61 telemetry agent.exe', {
+    path: 'Garage61 telemetry agent.exe',
+    name: 'Garage61 telemetry agent.exe',
+    gameKey: 'ac',
+    error: 'Windows denied SimLauncher permission to close this app.',
+    reason: 'access_denied',
+    elevated: true
+  })
+  // The agent IS running, at a path that has nothing to do with the CWD.
+  registerProcess(
+    'C:/Program Files/Garage61/Garage61 telemetry agent.exe',
+    'garage61 telemetry agent.exe',
+    '3000'
+  )
+  processNames.add('garage61 telemetry agent.exe')
+
+  const apps = await getRunningApps()
+
+  expect(unclosedProcesses.size).toBe(1)
+  expect(apps.map((app) => app.path)).toContain('Garage61 telemetry agent.exe')
+})
+
+// ...and it still goes away once the image really is gone, so the name-scoped
+// branch is not simply a record that can never be cleared.
+test('a bare-name leftover is pruned once its image leaves the tasklist (#846)', async () => {
+  const { getRunningApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', garage61: true }]
+      }
+    },
+    appPaths: {}
+  })
+
+  unclosedProcesses.set('ac:garage61 telemetry agent.exe', {
+    path: 'Garage61 telemetry agent.exe',
+    name: 'Garage61 telemetry agent.exe',
+    gameKey: 'ac',
+    error: 'Windows denied SimLauncher permission to close this app.',
+    reason: 'access_denied',
+    elevated: true
+  })
+
+  await expect(getRunningApps()).resolves.toEqual([])
+  expect(unclosedProcesses.size).toBe(0)
+})
+
 // The same record when the app really is still there: pruning must not become
 // eager just because it learned to read paths.
 test('a leftover whose app is genuinely running is kept (#674)', async () => {
