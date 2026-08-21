@@ -4,7 +4,7 @@ import fs from 'fs'
 
 import { getHighestReferencedCustomSlot } from '../../shared/domain/slots'
 import { migrateProfilesToNamedSets } from '../migrator'
-import { getProfileSwitchLeavingEntries, isStoredProfileSet } from '../profiles'
+import { getProfileSwitchLeavingKeys, isStoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
@@ -562,7 +562,7 @@ export function registerConfigHandlers(): void {
     if (!sanitizedProfileSet) return
     // Computed BEFORE the write, because the outgoing side only exists on disk
     // until the next line replaces it.
-    const leavingEntries = getProfileSwitchLeavingEntries(gameKey, sanitizedProfileSet)
+    const leavingKeys = getProfileSwitchLeavingKeys(gameKey, sanitizedProfileSet)
     const storedProfiles = store.get('profiles')
     const profiles = isRecord(storedProfiles) ? storedProfiles : {}
     profiles[gameKey] = sanitizedProfileSet
@@ -582,7 +582,7 @@ export function registerConfigHandlers(): void {
     // `activeProfileId`) cancels nothing, and a switch never touches a prompt
     // for an app the incoming profile also enables.
     let strandedConsentPrompts = 0
-    if (leavingEntries.length > 0) {
+    if (leavingKeys.length > 0) {
       // A pending handoff is reachable through TWO different mechanisms
       // depending on its age, and this switch has to use both.
       //
@@ -615,10 +615,10 @@ export function registerConfigHandlers(): void {
       // `appPaths`, so changing that slot's exe in Settings while its prompt is
       // unanswered makes the two disagree and the handoff outlives the switch
       // (Codex P2 on #842). The slot key is the only part that does not move.
-      const leavingKeys = new Set(leavingEntries.map((entry) => entry.key))
+      const leaving = new Set(leavingKeys)
       cancelPendingElevatedHandoffs(
         gameKey,
-        (handoff) => handoff.appKey !== undefined && leavingKeys.has(handoff.appKey)
+        (handoff) => handoff.appKey !== undefined && leaving.has(handoff.appKey)
       )
       // Killing the host does NOT remove the consent prompt, so every cancel
       // above leaves a dialog on screen that now does nothing (#809). The count

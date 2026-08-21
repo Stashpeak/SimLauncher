@@ -819,7 +819,9 @@ function launchElevated(
       // consumers, the profile switch and the config import, and those want the
       // opposite: leaving a profile should cancel its pending prompt whether or
       // not its apps were going to be tracked (Codex P2 on #842). The exclusion
-      // now lives in `killLaunchedApps`, the only consumer that needs it.
+      // now lives in `killLaunchedApps`, the only consumer that needs it, and it
+      // reads the CURRENT profile rather than anything recorded here: tracking
+      // can be toggled either way while a prompt sits unanswered.
       registerPendingElevatedHandoff(handoffId, {
         gameKey,
         // A pending handoff has never started, so it has no image name in any
@@ -829,7 +831,6 @@ function launchElevated(
         // snapshot the caller's current `appPaths` may no longer agree with.
         appKey,
         appPath,
-        tracked,
         cancel: () => {
           cancelledByKill = true
           noteHandoffCancelled()

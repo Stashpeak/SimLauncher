@@ -338,6 +338,30 @@ test('a switch never cancels the handoff for the game itself (#782)', async () =
   expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
 })
 
+// Ownership is decided by SLOT MEMBERSHIP, not by what the profile can launch
+// right now. A handoff is created while the slot has an exe; clearing that exe
+// in Settings before switching used to make the slot vanish from the outgoing
+// profile entirely, because leaving entries were built from launchable entries
+// and an entry needs something to launch. The switch then found nothing leaving,
+// skipped the whole block (abort included), and approving the old prompt still
+// started the executable recorded at launch time (Codex P2 on #842).
+test('a slot whose path was cleared is still leaving (#842)', async () => {
+  await loadConfigModule({
+    // customapp1 has NO configured path, and is the slot with the pending prompt.
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
+  // The registry still holds the path the handoff was launched with.
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  // And the abort half runs too, which is what the empty-leaving-set bug also
+  // silently skipped.
+  expect(abortActiveLaunches).toHaveBeenCalledWith('ac')
+})
+
 // A save for a game that has never been switched (flat legacy profile, no
 // `activeProfileId` on either side) must not throw or cancel.
 test('a legacy flat profile save cancels nothing (#782)', async () => {

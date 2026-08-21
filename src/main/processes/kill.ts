@@ -112,6 +112,21 @@ function getStoredAppPathTargets() {
   )
 }
 
+/**
+ * Whether the game a pending elevated handoff belongs to is currently managed
+ * (#591). Answered from the store on every call, never cached on the handoff:
+ * the prompt can outlive any number of tracking toggles in both directions.
+ *
+ * A handoff with no `gameKey` counts as tracked. It cannot be attributed to a
+ * profile that opted out, and the safe default for Close Apps is to close.
+ */
+function isHandoffProfileTracked(handoffGameKey?: string): boolean {
+  if (handoffGameKey === undefined) {
+    return true
+  }
+  return isProcessTrackingEnabled(getActiveStoredProfile(getStoredProfiles()[handoffGameKey]))
+}
+
 function hasProcessNameMismatchWarning(gameKey?: string) {
   return Array.from(processNameMismatchWarnings.values()).some(
     (warning) => gameKey === undefined || warning.gameKey === gameKey
@@ -666,7 +681,15 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // those are profile-departure events, and fire-and-forget protects a running
   // app from being closed, not a departed profile from being finished with
   // (Codex P2 on #842).
-  cancelPendingElevatedHandoffs(gameKey, (handoff) => handoff.tracked)
+  //
+  // Read LIVE from the active profile, not from anything stored on the handoff.
+  // A prompt can sit unanswered across any number of toggles in both directions,
+  // and a recorded flag only gets refreshed by whatever pass thinks to refresh
+  // it -- the version that stored it was updated by the untracked reconcile,
+  // which only ever sees the untracked set, so turning tracking back ON never
+  // restored it and Close Apps ignored the handoff forever. The current profile
+  // is the answer to "does the user manage this?" by definition.
+  cancelPendingElevatedHandoffs(gameKey, (handoff) => isHandoffProfileTracked(handoff.gameKey))
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()

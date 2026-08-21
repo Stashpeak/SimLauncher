@@ -108,7 +108,7 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
   const profilesMock = {
     isStoredProfileSet: vi.fn(() => false),
     getProfileLaunchEntryId: vi.fn(),
-    getProfileSwitchLeavingEntries: vi.fn(() => [])
+    getProfileSwitchLeavingKeys: vi.fn(() => [])
   }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)

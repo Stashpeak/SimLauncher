@@ -28,7 +28,7 @@ async function loadConfigModule() {
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
   vi.doMock('../../src/main/profiles', () => ({
     isStoredProfileSet: vi.fn(),
-    getProfileSwitchLeavingEntries: vi.fn(() => []),
+    getProfileSwitchLeavingKeys: vi.fn(() => []),
     getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
       `${entry.key} ${entry.path.toLowerCase()}`
   }))

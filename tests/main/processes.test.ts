@@ -573,8 +573,15 @@ async function loadProcessModules() {
     // against the real module in profiles.test.ts.
     getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
       `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`,
-    getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
-      p.profiles.find((i) => i.id === p.activeProfileId)
+    // The undefined branch mirrors the real function, which returns undefined
+    // for a game with no stored profile. The mock used to omit it and threw
+    // instead, which stayed invisible until a caller looked up a handoff's game
+    // key rather than iterating stored profiles (#842). A mock that is stricter
+    // than the module it stands in for turns "no profile configured" into a
+    // crash that production would never have.
+    getActiveStoredProfile: vi.fn(
+      (p: { activeProfileId: string; profiles: { id: string }[] } | undefined) =>
+        p?.profiles.find((i) => i.id === p.activeProfileId)
     ),
     // Resolves through the same storeData the rest of this harness writes, so a
     // test can turn tracking off for one game by editing its profile fixture
@@ -6444,12 +6451,61 @@ test('turning tracking off puts a handoff registered while it was on out of Clos
   }
 })
 
-// The other half of that reconcile, and the reason it MARKS the handoff rather
-// than deleting it. Deleting was right while the kill paths were this registry's
-// only consumers; #782 added the profile switch, which wants the opposite. A
-// forgotten handoff is out of the switch's reach too, so leaving the profile
-// could no longer cancel a prompt whose approval starts an app for a profile the
-// user is no longer on (Codex P2 on #842).
+// Tracking is read LIVE at cancellation, so it works in both directions. Two
+// earlier attempts to keep it as stored state on the handoff failed the other
+// way round: deleting the entry hid it from the profile-switch consumer, and
+// marking `tracked = false` was a one-way door, because the untracked reconcile
+// only ever receives the untracked set and so never restored the flag when the
+// user turned tracking back on (Codex P2 on #842). Close Apps then ignored the
+// handoff for the rest of its life even though the profile was managed again.
+test('turning tracking back on brings a handoff into Close Apps reach again (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+      id: 'default',
+      name: 'Default'
+    }
+    const { launchProfileApps, killLaunchedApps, getRunningApps } =
+      await loadProcessModulesWithStore({
+        appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' },
+        gamePaths: { ac: 'C:/Games/Race.exe' },
+        profiles: { ac: { activeProfileId: 'default', profiles: [profile] } }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Off, reconciled, then back on and reconciled again, all while the consent
+    // prompt is still unanswered.
+    profile.trackingEnabled = false
+    await getRunningApps()
+    profile.trackingEnabled = true
+    await getRunningApps()
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    // Managed again, so Close Apps closes it and says the prompt is dead.
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The switch consumer is unaffected by any of that: it cancels a handoff for a
+// profile the user is leaving whether or not that profile is managed (Codex P2
+// on #842).
 test('a handoff hidden from Close Apps is still cancellable by a profile switch (#842)', async () => {
   vi.useFakeTimers()
   try {

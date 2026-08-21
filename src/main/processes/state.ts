@@ -94,24 +94,6 @@ export interface PendingElevatedHandoff {
    */
   appKey?: string
   appPath: string
-  /**
-   * Whether the launching profile has process tracking on (#591).
-   *
-   * Recorded rather than used as a registration filter. Registration used to be
-   * skipped outright for a fire-and-forget profile, on the reasoning that this
-   * registry had exactly one consumer -- the kill paths -- and letting a global
-   * Close Apps kill the host of an app the user opted out of managing would
-   * break the #591 promise. That premise stopped being true when #782 added
-   * profile-switch and config-import consumers, which want the opposite: leaving
-   * a profile should cancel its pending prompt whether or not the apps were
-   * going to be tracked, because approving it starts an app for a profile that
-   * no longer exists (Codex P2 on #842).
-   *
-   * So the exclusion moved to the one consumer that needs it. Fire-and-forget
-   * protects a running app from being CLOSED; it was never a promise to keep
-   * launching apps for profiles the user has left.
-   */
-  tracked: boolean
   cancel: () => void
 }
 
@@ -349,29 +331,22 @@ export function pruneUntrackedGames(untrackedGameKeys: Set<string>): void {
       processNameMismatchWarnings.delete(key)
     }
   })
-  // The fourth map, and the one that is easy to miss because it holds a
-  // callback rather than a record (Codex on #834). A launch that started while
-  // tracked and timed out into this registry predates the toggle, so only this
-  // pass can reach it. Untouched, a later Close Apps would kill its PowerShell
-  // host and strand the consent prompt of a profile that is now
-  // fire-and-forget.
+  // `pendingElevatedHandoffs` is deliberately NOT touched here, and it used to
+  // be (Codex on #834). A handoff belonging to a now-untracked game has to be
+  // hidden from Close Apps, and this pass was how that happened: the entry was
+  // deleted outright.
   //
-  // MARKED, not deleted, and never cancelled. Deleting it used to be right when
-  // the kill paths were this registry's only consumers, but #782 added the
-  // profile switch and the config import, and forgetting the handoff would put
-  // it back out of THEIR reach too: switching away from the profile could then
-  // no longer cancel a prompt whose approval starts an app for a profile that no
-  // longer exists (Codex P2 on #842). Marking keeps it reachable by the
-  // consumers that should have it and hidden from the one that should not.
+  // Both attempts to express it as stored state were wrong. Deleting put the
+  // handoff out of reach of the profile-switch and config-import consumers #782
+  // added, which need it precisely because the user is leaving that profile.
+  // Marking `tracked = false` instead fixed that and introduced a one-way door:
+  // this pass only ever receives the UNTRACKED set, so turning tracking back on
+  // while the prompt is still pending never restored the flag and Close Apps
+  // ignored the handoff forever (Codex P2 on #842).
   //
-  // `cancel` is deliberately not called either way. That callback is what kills
-  // the host, and killing it is precisely what this is preventing: turning
-  // tracking off has to leave the prompt answerable.
-  pendingElevatedHandoffs.forEach((entry) => {
-    if (entry.gameKey !== undefined && untrackedGameKeys.has(entry.gameKey)) {
-      entry.tracked = false
-    }
-  })
+  // So tracking is not stored on the handoff at all. `killLaunchedApps` reads it
+  // live from the active profile at cancellation time, which is always current
+  // by construction and has no direction to get wrong.
 }
 
 export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()): void {
