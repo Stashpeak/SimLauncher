@@ -95,7 +95,7 @@ export function useUpdateStatus({
       if (
         window.confirm(
           `Update${versionSuffix} is ready to install. Restart now to apply it? ` +
-            'Your unsaved changes will be lost. Choose Cancel to keep working — ' +
+            'Your unsaved changes will be lost. Choose Cancel to keep working, ' +
             'you can install later from Settings.'
         )
       ) {

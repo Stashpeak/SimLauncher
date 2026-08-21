@@ -321,7 +321,7 @@ export function registerLaunchHandlers(): void {
             return {
               success: false,
               cancelled: true,
-              message: 'Launch cancelled — closed apps instead.',
+              message: 'Launch cancelled: closed apps instead.',
               launchedCount: 0,
               skippedCount: 0,
               failedCount: killResult?.failedCount,
