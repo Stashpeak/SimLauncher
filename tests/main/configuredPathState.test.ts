@@ -1,9 +1,13 @@
-import { describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import {
+  findProcessesByName,
   resolveConfiguredPathState,
   type NamedProcessInstance
 } from '../../src/main/processes/win32KillUtils'
+
+const execFileMock = vi.hoisted(() => vi.fn())
+vi.mock('child_process', () => ({ execFile: execFileMock }))
 
 /**
  * #674: `tasklist` returns image NAMES with no path, so every "is my configured
@@ -140,5 +144,60 @@ describe('resolveConfiguredPathState (#674)', () => {
       })
     )
     expect(resolveConfiguredPathState(ambient, 'D:/ReproA/cmd.exe')).toBe('not-running')
+  })
+})
+
+/**
+ * The boundary where PowerShell output becomes a decision. The rule above is
+ * only as good as the instances handed to it, and two of the defaults in that
+ * parse are the kind that fail silently in the unsafe direction.
+ */
+describe('findProcessesByName parsing (#674)', () => {
+  beforeEach(() => {
+    execFileMock.mockReset()
+  })
+
+  function respondWith(error: Error | null, stdout: string) {
+    execFileMock.mockImplementation(
+      (
+        _command: string,
+        _args: string[],
+        _options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void
+      ) => callback(error, stdout, '')
+    )
+  }
+
+  test('a record with no session is left undecidable, not dismissed as a service', async () => {
+    // Session 0 is the ONE value that lets an unreadable path be dismissed, so
+    // defaulting a malformed record to it would license a double launch on the
+    // strength of a field that was not there. The assertion is on the verdict
+    // rather than the number, because the verdict is what a caller acts on.
+    respondWith(null, JSON.stringify([{ name: 'overlay.exe', processId: 1000 }]))
+
+    const { instances, succeeded } = await findProcessesByName(['overlay.exe'])
+
+    expect(succeeded).toBe(true)
+    expect(resolveConfiguredPathState(instances, CONFIGURED)).toBe('unknown')
+  })
+
+  test('a failed enumeration is a failure, never an empty result', async () => {
+    // `succeeded: false` is what makes every candidate resolve `unknown`
+    // upstream. Reporting an empty instance list as a success would read as
+    // "nothing is running under that name" and un-skip a running app.
+    respondWith(new Error('The RPC server is unavailable.'), '')
+
+    await expect(findProcessesByName(['overlay.exe'])).resolves.toMatchObject({
+      instances: [],
+      succeeded: false
+    })
+  })
+
+  test('asking about nothing is a success with no spawn', async () => {
+    await expect(findProcessesByName([])).resolves.toMatchObject({
+      instances: [],
+      succeeded: true
+    })
+    expect(execFileMock).not.toHaveBeenCalled()
   })
 })

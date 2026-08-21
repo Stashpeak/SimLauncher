@@ -5439,6 +5439,132 @@ test('WMI returning 0 PIDs after taskkill is treated as closed (genuine exit) (#
   )
 })
 
+// #674, the kill half: the false "it must be running as administrator".
+//
+// A path-scoped kill correctly finds nothing at the configured path, but the
+// post-kill tasklist still shows the IMAGE, because something unrelated on the
+// system runs an exe with the same name. The pre-#674 code could not tell that
+// from #390's elevated-invisible process and blamed elevation, leaving a
+// leftover the user could not clear. In the field repro the "leftover SimHub"
+// was 20 ambient `cmd.exe` processes.
+test('a surviving same-named process at another path is not reported as elevated (#674)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  // The collider: same image name, readable, somewhere else entirely. It is
+  // still in the tasklist after the kill, which is what created the ambiguity.
+  registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '4321')
+  processNames.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0,
+    failures: []
+  })
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
+})
+
+// #390 MUST NOT REGRESS, and this is the test that decides whether the fix
+// above widened the query or just inverted a predicate. The setup is identical
+// except that the survivor's path is unreadable in an interactive session,
+// which is exactly what a process running at higher integrity looks like. That
+// is genuinely undecidable, so the elevated leftover has to stay.
+test('a surviving same-named process with no readable path still reports elevated (#390)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerHiddenProcess('simhub.exe', '4321')
+  processNames.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: false,
+    failedCount: 1
+  })
+  expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
+    reason: 'access_denied',
+    elevated: true
+  })
+})
+
+// The free half of the discriminator, on the kill path. Session 0 is the
+// non-interactive services session, so it cannot be the companion the user
+// launched — an unreadable path is still decidable there, and on a real machine
+// that covers 170 of the 187 processes WMI will not disclose a path for.
+test('a surviving same-named service in session 0 is not reported as elevated (#674)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerHiddenProcess('simhub.exe', '4321', 0)
+  processNames.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
+})
+
+// The cost rule, mirrored from the launch half: a close where everything asked
+// for actually died leaves no image in the post-kill tasklist, so no path needs
+// discriminating and no enumeration runs. Without this the fix would add a
+// PowerShell spawn to every Close Apps click.
+test('a close with nothing surviving runs no enumeration at all (#674)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+  processNamesGoneAfterKill.add('simhub.exe')
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await killLaunchedApps('ac')
+
+  const enumerations = execFileCalls.filter(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      typeof (call.options.env as Record<string, string> | undefined)
+        ?.SIMLAUNCHER_TARGET_PROCESS_NAMES === 'string'
+  )
+  expect(enumerations).toHaveLength(0)
+})
+
+// hasClosableLaunchedApps answers "would Close Apps do anything?", so a
+// same-named stranger must not make it say yes — that would offer the user an
+// action that closes nothing (#674, pre-wiring for #673). Deliberately MORE
+// precise than killLaunchedApps' own scheduling, which stays name-gated
+// because attempting a doomed path-scoped kill is harmless.
+test('hasClosableLaunchedApps is false when only a same-named stranger runs (#674)', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '4321')
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+})
+
 test('killProfileApps falls back to /IM for non-full-path utility companions (#352)', async () => {
   // When the configured app path is an image-name only (e.g. a utility
   // companion that has no installed location), killProfileApps cannot use

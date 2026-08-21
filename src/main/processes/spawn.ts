@@ -13,7 +13,6 @@ import { getStoredStringRecord, store } from '../store'
 import {
   getErrorCode,
   getErrorMessage,
-  getExeName,
   isValidExePath,
   normalizePathForComparison,
   pathsEqual,
@@ -34,7 +33,7 @@ import {
 } from './state'
 import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
-import { isConfiguredPathRunning, resolveConfiguredPathStates } from './win32KillUtils'
+import { resolveRunningConfiguredPaths } from './win32KillUtils'
 import type {
   AppLaunchResult,
   LateElevatedOutcome,
@@ -297,20 +296,18 @@ export async function launchProfileApps(
     // (#674). The collider need not be related to anything the user configured;
     // on a real machine it was ambient `cmd.exe` instances.
     //
-    // Costs nothing when nothing collides. `resolveConfiguredPathStates` answers
-    // every path whose name is absent from `processNames` for free, so a launch
-    // with no name collisions never reaches the enumeration.
+    // Costs nothing when nothing collides. `resolveRunningConfiguredPaths`
+    // answers every path whose name is absent from `processNames` for free, so a
+    // launch with no name collisions never reaches the enumeration.
     //
     // `unknown` still skips, which keeps #390: a process running at higher
     // integrity than SimLauncher hides its path, and starting a second copy of
     // an app that IS running is worse than the skip this is fixing.
-    const pathStates = await resolveConfiguredPathStates(
+    const runningPaths = await resolveRunningConfiguredPaths(
       processNames,
       validApps.map((entry) => entry.path)
     )
-    const appsToLaunch = validApps.filter(
-      (entry) => !isConfiguredPathRunning(pathStates.get(entry.path))
-    )
+    const appsToLaunch = validApps.filter((entry) => !runningPaths.has(entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
 
     if (appsToLaunch.length === 0) {
@@ -549,10 +546,6 @@ export function getLaunchDelayMs(): number {
   }
 
   return Math.min(Math.max(Math.round(value), 0), 30000)
-}
-
-export function isRunningExePath(processNames: Set<string>, appPath: string): boolean {
-  return processNames.has(getExeName(appPath))
 }
 
 /**

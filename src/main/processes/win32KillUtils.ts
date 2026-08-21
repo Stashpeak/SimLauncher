@@ -537,7 +537,13 @@ export function findProcessesByName(processNames: string[]): Promise<{
                   typeof record.executablePath === 'string' && record.executablePath.length > 0
                     ? record.executablePath
                     : null,
-                sessionId: typeof record.sessionId === 'number' ? record.sessionId : 0
+                // -1, not 0. Session 0 is the one value that DISMISSES an
+                // instance with an unreadable path, so defaulting a malformed
+                // record to it would silently license a double launch. A
+                // sentinel that is not a real session leaves such a record
+                // undecidable, which is the direction a missing field should
+                // fail in.
+                sessionId: typeof record.sessionId === 'number' ? record.sessionId : -1
               }
             ]
           })
@@ -674,4 +680,28 @@ export async function resolveConfiguredPathStates(
  */
 export function isConfiguredPathRunning(state: ConfiguredPathState | undefined): boolean {
   return state !== 'not-running'
+}
+
+/**
+ * Which of `configuredPaths` count as running, folding `unknown` into "yes".
+ *
+ * The form every caller outside this module wants, and the reason it exists
+ * here rather than as an expression repeated at each of them: "is this configured
+ * app running?" is asked at five places that decide launches, kills, and the
+ * counts a confirmation dialog shows the user, and those answers have to agree.
+ * Before #674 they agreed because they all called the same name-only helper.
+ * They must keep agreeing now that the answer is harder to compute.
+ *
+ * Keyed by the path STRING as supplied, not a normalized form, so a caller can
+ * look its own entries back up without restating the normalization rule.
+ */
+export async function resolveRunningConfiguredPaths(
+  processNames: Set<string>,
+  configuredPaths: string[]
+): Promise<Set<string>> {
+  const states = await resolveConfiguredPathStates(processNames, configuredPaths)
+
+  return new Set(
+    configuredPaths.filter((configuredPath) => isConfiguredPathRunning(states.get(configuredPath)))
+  )
 }

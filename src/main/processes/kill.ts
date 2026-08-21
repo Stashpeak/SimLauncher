@@ -33,13 +33,16 @@ import type {
 } from './types'
 import {
   GRACEFUL_CLOSE_WINDOW_MS,
+  type ConfiguredPathState,
   findProcessIdsByExecutablePath,
   hasChildExited,
   isFullExePath,
   isPathScopedExe,
   killProcessByImageName,
   killProcessTree,
-  requestGracefulClose
+  requestGracefulClose,
+  resolveConfiguredPathStates,
+  resolveRunningConfiguredPaths
 } from './win32KillUtils'
 
 // Hardcoded list of companion process names for utilities that spawn background
@@ -177,14 +180,19 @@ export async function finalizeKillAttempts(
   //     PIDs are found and taskkill then reports them already gone
   //
   // Deliberately narrow. With no such sibling the ambiguity is real and stays
-  // unresolved; discriminating name from path in general is #674.
+  // unresolved.
   //
-  // KNOWN RESIDUAL, recorded on #674: a sibling that located its target and
-  // closed it successfully still counts, even though an image surviving in the
-  // tasklist afterwards can only be something else, possibly a genuinely
-  // elevated-invisible process at this very path. Telling those apart needs each
-  // sibling's POST-kill state, which is what #674 builds. The trade is
-  // deliberate: the false positive suppressed here is far likelier than the
+  // #674 has since built the direct answer (`postKillPathStates` below), which
+  // needs no sibling at all. This stays as the fallback rather than being
+  // replaced, because the enumeration can fail, and a failed enumeration is
+  // reported as `unknown` -- indistinguishable here from an enumeration that ran
+  // and could not decide. Dropping this would hand those cases back to #818.
+  //
+  // KNOWN RESIDUAL, unchanged and now confined to this fallback: a sibling that
+  // located its target and closed it successfully still counts, even though an
+  // image surviving in the tasklist afterwards can only be something else,
+  // possibly a genuinely elevated-invisible process at this very path. The trade
+  // is deliberate: the false positive suppressed here is far likelier than the
   // false negative left behind.
   // Image names a bare-name `/IM` attempt actually closed. That kill is not
   // path-scoped, so it takes down whatever was running under the name, including
@@ -199,6 +207,37 @@ export async function finalizeKillAttempts(
       .filter((attempt) => !isPathScopedExe(attempt.appPath) && attempt.success)
       .map((attempt) => attempt.processName)
   )
+
+  // What the sibling heuristic above approximates, asked directly (#674).
+  //
+  // The whole ambiguity is that `processNamesAfterKill` knows names and not
+  // paths, so an image surviving the kill cannot say whether it survived at OUR
+  // path. A name-scoped enumeration can: it returns each surviving instance with
+  // its path and session, and a path with no instance of its own is empty no
+  // matter how many strangers share its name. On the field repro that is the
+  // difference between "SimHub could not be closed, it may be running as
+  // administrator" and the truth, which was 20 unrelated `cmd.exe` processes.
+  //
+  // Gated on `tasklistReadSucceeded`, and that gate is load-bearing rather than
+  // defensive: a failed read yields an EMPTY name set, which this function would
+  // otherwise read as "no path can be running" and answer every attempt
+  // `not-running` for free — turning a read failure into confident absence, the
+  // exact inversion #399 exists to prevent.
+  //
+  // The cost follows the same rule as the launch filter. A path whose image is
+  // absent from the post-kill tasklist is answered without enumerating, so the
+  // ordinary close (everything asked for actually died) pays nothing, and a
+  // batch that leaves survivors pays one spawn for all of them.
+  const fullPathAttemptPaths: string[] = []
+  attempts.forEach((attempt) => {
+    const appPath = attempt.appPath
+    if (isFullExePath(appPath)) {
+      fullPathAttemptPaths.push(appPath)
+    }
+  })
+  const postKillPathStates = tasklistReadSucceeded
+    ? await resolveConfiguredPathStates(processNamesAfterKill, fullPathAttemptPaths)
+    : new Map<string, ConfiguredPathState>()
 
   const confirmedPathsByImage = new Map<string, Set<string>>()
   attempts.forEach((attempt) => {
@@ -278,12 +317,33 @@ export async function finalizeKillAttempts(
         // or hides a leftover. `closedNothing` only decides whether to count the
         // attempt, and an attempt that found nothing closed nothing no matter
         // what else was running.
+        //
+        // The enumeration answers the same question outright and without needing
+        // a sibling, so it is tried first: `not-running` means no instance of
+        // this image is at this path, whoever else is holding the name (#674).
+        // The sibling heuristic below stays reachable when it cannot decide,
+        // which covers both an undecidable instance (#390's shape: an unreadable
+        // path in an interactive session) and an enumeration that failed
+        // outright. Its known residual comes along with it, documented above.
+        //
+        // ONLY `not-running` counts. `unknown` and a missing entry both mean the
+        // enumeration could not decide, and neither may weaken a verdict.
+        //
+        // `!imageGoneFromTasklist` is not redundant with it, and dropping it
+        // inverts a whole class of result. An image absent from the post-kill
+        // tasklist is `not-running` for free, but that is the SUCCESS case: this
+        // attempt closed the last instance. Only a path found empty while its
+        // image SURVIVES is the #674 shape, where the survivor is somebody
+        // else's process and the attempt was aimed at nothing.
+        const pathVerifiedEmpty =
+          !imageGoneFromTasklist && postKillPathStates.get(appPath) === 'not-running'
         const ownPath = normalizePathForComparison(appPath)
         const confirmedPaths = confirmedPathsByImage.get(attempt.processName)
         isEmptySameNameTarget =
           verifiablyEmpty &&
-          !!confirmedPaths &&
-          Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)
+          (pathVerifiedEmpty ||
+            (!!confirmedPaths &&
+              Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)))
 
         // Either kind of sibling is enough to say this attempt closed nothing.
         // Without one, a lone empty attempt keeps its long-standing treatment
@@ -309,6 +369,14 @@ export async function finalizeKillAttempts(
             isElevatedInconclusive ||
             (attempt.accessDenied === true &&
               !attempt.notFound &&
+              // The same name-only reasoning one branch down (#674). Here
+              // taskkill was refused on PIDs found AT this path, so the image
+              // surviving is normally the refused process itself -- but if the
+              // enumeration can see the whole name and none of it is at this
+              // path, the refusal outlived the process and the survivor is
+              // somebody else. An elevated holdout cannot be dismissed this way:
+              // its path is unreadable, which resolves to `unknown`.
+              !pathVerifiedEmpty &&
               (processNamesAfterKill.has(attempt.processName) || !tasklistReadSucceeded)))
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)
@@ -785,11 +853,25 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
  * getRunningApps(): that list gates companions on the owning game being launched
  * or adopted, while killLaunchedApps closes configured companions regardless, so
  * the surfaced list would under-report closable targets.
+ *
+ * One deliberate asymmetry with killLaunchedApps, and it is not drift: this
+ * verifies a candidate against its PATH (#674) where the scheduling there stays
+ * name-gated. The two answer different questions. Scheduling a kill for a path
+ * nothing is running at costs a lookup and nothing else, because the kill is
+ * path-scoped and finalizeKillAttempts now judges the empty result correctly.
+ * Telling the user there is something to close when there is not is the defect
+ * this function would otherwise ship to #673, so it pays for the enumeration and
+ * the scheduling does not.
+ *
+ * On-demand only. This is one PowerShell spawn in the collision case, which is
+ * fine for a click and is not fine on the running-apps poll — do not call it
+ * from a timer.
  */
 export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean> {
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
 
+  const candidatePaths: string[] = []
   for (const appProcess of runningProcesses.values()) {
     if (gameKey && appProcess.gameKey !== gameKey) {
       continue
@@ -797,19 +879,32 @@ export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean
     if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
       continue
     }
-    if (processNames.has(getExeName(appProcess.path))) {
-      return true
-    }
+    candidatePaths.push(appProcess.path)
   }
 
   const companionTargets = getProfileCompanionTargets(gameKey)
   for (const target of companionTargets.values()) {
-    if (processNames.has(target.processName)) {
-      return true
+    // A curated name-scoped target has no path to verify against, so it keeps
+    // the name-only answer. That is not a gap being tolerated: `/IM` is how such
+    // a target would be closed too, so name membership is exactly the condition
+    // under which closing it would do something.
+    if (target.scope === 'name') {
+      if (processNames.has(target.processName)) {
+        return true
+      }
+      continue
     }
+    candidatePaths.push(target.appPath)
   }
 
-  return false
+  if (candidatePaths.length === 0) {
+    return false
+  }
+
+  // One enumeration for both branches, and none at all unless some candidate's
+  // image is actually in the tasklist.
+  const runningPaths = await resolveRunningConfiguredPaths(processNames, candidatePaths)
+  return candidatePaths.some((candidatePath) => runningPaths.has(candidatePath))
 }
 
 /**

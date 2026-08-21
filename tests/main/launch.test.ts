@@ -104,8 +104,18 @@ vi.mock('../../src/main/processes', async () => {
     ) => mocks.killProfileApps(gameKey, entries, options),
     killLaunchedApps: vi.fn(),
     getRunningApps: vi.fn(),
-    isRunningExePath: (processNames: Set<string>, appPath: string) =>
-      processNames.has(appPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''),
+    // A COPY of the name-only half of the real helper. These tests are about
+    // the same-exe key swap (#357), which turns on entry IDENTITY and not on
+    // where the exe lives, so they model the tasklist the way it really is: a
+    // set of names. The #674 path rule is pinned against the real
+    // implementation in configuredPathState.test.ts, and its wiring into these
+    // handlers in ipcLaunch.test.ts.
+    resolveRunningConfiguredPaths: async (processNames: Set<string>, appPaths: string[]) =>
+      new Set(
+        appPaths.filter((appPath) =>
+          processNames.has(appPath.split(/[\\/]/).pop()?.toLowerCase() ?? '')
+        )
+      ),
     subscribeRunningApps: vi.fn(),
     unsubscribeRunningApps: vi.fn(),
     registerActiveLaunch: state.registerActiveLaunch,
