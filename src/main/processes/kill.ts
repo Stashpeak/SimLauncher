@@ -28,7 +28,8 @@ import type {
   KillFailure,
   KillFailureReason,
   KillProfileAppsOptions,
-  KillResult
+  KillResult,
+  ProfileLaunchEntry
 } from './types'
 import {
   GRACEFUL_CLOSE_WINDOW_MS,
@@ -109,6 +110,21 @@ function getStoredAppPathTargets() {
       )
       .map(normalizePathForComparison)
   )
+}
+
+/**
+ * Whether the game a pending elevated handoff belongs to is currently managed
+ * (#591). Answered from the store on every call, never cached on the handoff:
+ * the prompt can outlive any number of tracking toggles in both directions.
+ *
+ * A handoff with no `gameKey` counts as tracked. It cannot be attributed to a
+ * profile that opted out, and the safe default for Close Apps is to close.
+ */
+function isHandoffProfileTracked(handoffGameKey?: string): boolean {
+  if (handoffGameKey === undefined) {
+    return true
+  }
+  return isProcessTrackingEnabled(getActiveStoredProfile(getStoredProfiles()[handoffGameKey]))
 }
 
 function hasProcessNameMismatchWarning(gameKey?: string) {
@@ -656,7 +672,24 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // (#675), so aborting is not enough: kill the still-live PowerShell host too,
   // or approving the prompt afterwards starts an app the user just closed
   // (Codex P1 on #779).
-  cancelPendingElevatedHandoffs(gameKey)
+  //
+  // Tracked handoffs only. This is the "close everything I manage" action, and a
+  // fire-and-forget profile (#591) has opted its apps out of being managed, so
+  // killing the host would strand a prompt the user was still entitled to
+  // answer. The exclusion is HERE rather than at registration because the other
+  // consumers, the profile switch and the config import, want the opposite:
+  // those are profile-departure events, and fire-and-forget protects a running
+  // app from being closed, not a departed profile from being finished with
+  // (Codex P2 on #842).
+  //
+  // Read LIVE from the active profile, not from anything stored on the handoff.
+  // A prompt can sit unanswered across any number of toggles in both directions,
+  // and a recorded flag only gets refreshed by whatever pass thinks to refresh
+  // it -- the version that stored it was updated by the untracked reconcile,
+  // which only ever sees the untracked set, so turning tracking back ON never
+  // restored it and Close Apps ignored the handoff forever. The current profile
+  // is the answer to "does the user manage this?" by definition.
+  cancelPendingElevatedHandoffs(gameKey, (handoff) => isHandoffProfileTracked(handoff.gameKey))
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
@@ -779,11 +812,28 @@ export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean
   return false
 }
 
+/**
+ * Stops the apps a profile switch is leaving behind.
+ *
+ * Takes ENTRIES rather than paths, and that is load-bearing rather than
+ * cosmetic. The kill itself only ever needs paths: two slots pointing at one exe
+ * (#357) are a single target to a process killer, and stopping the exe stops it
+ * for both. But this call also cancels pending elevated handoffs, and a pending
+ * handoff has never started, so it is not a process at all -- it is a registry
+ * entry that knows exactly which slot it belongs to. Narrowing that by path
+ * cancels the retained slot's consent prompt alongside the leaving one, which is
+ * the same over-cancel #782 exists to remove (Codex P2 on #842).
+ *
+ * The caller is the only party that knows which SLOTS are stopping, so the
+ * signature takes what it has instead of letting it flatten the identity away
+ * and leaving this function to guess.
+ */
 export async function killProfileApps(
   gameKey: string,
-  appPathsToKill: string[],
+  entriesToKill: ProfileLaunchEntry[],
   options?: KillProfileAppsOptions
 ): Promise<KillResult> {
+  const appPathsToKill = entriesToKill.map((entry) => entry.path)
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
   const storedAppPathTargets = getStoredAppPathTargets()
@@ -828,7 +878,34 @@ export async function killProfileApps(
   // Same reason as killLaunchedApps: a timed-out handoff is not reachable
   // through the abort signal once its sequence ended (#779 Codex P1). And the
   // same consequence: each one killed leaves its consent prompt behind (#809).
-  cancelPendingElevatedHandoffs(gameKey)
+  //
+  // Scoped to what this call is actually stopping, unlike killLaunchedApps which
+  // really does mean the whole game. This one is a SUBSET operation: a profile
+  // switch stopping one app was cancelling every pending handoff for the game,
+  // including one for an app both profiles enable and that the switch was never
+  // going to touch (#782).
+  //
+  // Matched by SLOT KEY, and only entries that survived validation are eligible:
+  // a path this call refused to kill has no business cancelling anything.
+  //
+  // The key alone, not key plus path. Two slots can share an exe with different
+  // args (#357), so a path match kills the retained slot's prompt alongside the
+  // leaving one, and the key is what tells them apart. Adding the path on top
+  // then breaks it the other way: the registry's path is a launch-time snapshot
+  // while these entries carry the CURRENT `appPaths`, so editing that slot's exe
+  // in Settings while a prompt is unanswered makes the two disagree and the
+  // handoff survives the switch away from it (Codex P2 on #842). The key does
+  // not move.
+  const validPaths = new Set(validAppPathsToKill.map(normalizePathForComparison))
+  const keysBeingKilled = new Set(
+    entriesToKill
+      .filter((entry) => validPaths.has(normalizePathForComparison(entry.path)))
+      .map((entry) => entry.key)
+  )
+  cancelPendingElevatedHandoffs(
+    gameKey,
+    (handoff) => handoff.appKey !== undefined && keysBeingKilled.has(handoff.appKey)
+  )
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()

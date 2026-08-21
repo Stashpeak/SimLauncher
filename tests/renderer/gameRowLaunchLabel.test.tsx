@@ -58,6 +58,11 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(activeProfileSet),
     getProfileRuntimeConfig: vi.fn().mockResolvedValue(activeProfileSet),
+    // `Promise<void>`, matching the hook. It briefly returned a stranded-prompt
+    // count for GameRow to read, until that count moved to a push from main so
+    // that no caller could drop it by not reading it (#782). Resolving to
+    // anything else here would let a future GameRow start depending on a value
+    // the real hook does not produce.
     saveProfileSet: vi.fn().mockResolvedValue(undefined)
   })
 }))

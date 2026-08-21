@@ -712,7 +712,8 @@ function launchElevated(
   args: string[] = [],
   gameKey?: string,
   signal?: AbortSignal,
-  tracked = true
+  tracked = true,
+  appKey?: string
 ) {
   return new Promise<AppLaunchResult>((resolve) => {
     // Two sentences because the second one is a promise, and it is only true
@@ -811,31 +812,34 @@ function launchElevated(
       // P1), otherwise approving the prompt afterwards would start the app the
       // user just asked to close.
       //
-      // Not for a fire-and-forget profile though (#591). This registry has
-      // exactly one consumer, `cancelPendingElevatedHandoffs`, called from both
-      // kill entry points BEFORE they filter profile targets, so registering
-      // here would let a global Close Apps kill the host of an app the user
-      // opted out of us managing: the late approval would then start nothing
-      // and they would be told a consent prompt was stranded. Not registering
-      // is what leaves the prompt answerable.
-      //
-      // Only the post-grace-window registry is skipped. The abort signal above
-      // still cancels this handoff while the sequence is in flight, because
-      // cancelling a launch in progress is a different thing from managing the
-      // apps it already started.
-      if (tracked) {
-        registerPendingElevatedHandoff(handoffId, {
-          gameKey,
-          cancel: () => {
-            cancelledByKill = true
-            noteHandoffCancelled()
-            // Same reason as onAbort (#809), and the same guard: mid-sequence
-            // both this and the abort fire for this one handoff.
-            noteStrandedPromptOnce()
-            child?.kill()
-          }
-        })
-      }
+      // A fire-and-forget profile (#591) is registered too, and used NOT to be.
+      // The old reasoning was that this registry had exactly one consumer, the
+      // kill paths, so registering here would let a global Close Apps kill the
+      // host of an app the user opted out of us managing. #782 gave it two more
+      // consumers, the profile switch and the config import, and those want the
+      // opposite: leaving a profile should cancel its pending prompt whether or
+      // not its apps were going to be tracked (Codex P2 on #842). The exclusion
+      // now lives in `killLaunchedApps`, the only consumer that needs it, and it
+      // reads the CURRENT profile rather than anything recorded here: tracking
+      // can be toggled either way while a prompt sits unanswered.
+      registerPendingElevatedHandoff(handoffId, {
+        gameKey,
+        // A pending handoff has never started, so it has no image name in any
+        // tasklist snapshot: this is the only handle anything downstream gets on
+        // which app it belongs to (#782). The SLOT key, because two slots can
+        // share an exe (#357) and because the path recorded here is a launch-time
+        // snapshot the caller's current `appPaths` may no longer agree with.
+        appKey,
+        appPath,
+        cancel: () => {
+          cancelledByKill = true
+          noteHandoffCancelled()
+          // Same reason as onAbort (#809), and the same guard: mid-sequence
+          // both this and the abort fire for this one handoff.
+          noteStrandedPromptOnce()
+          child?.kill()
+        }
+      })
       resolve({
         status: 'elevated',
         appPath,
@@ -1055,7 +1059,9 @@ export async function spawnDetachedApp(
           // in which case launchElevated starts nothing and reports the attempt
           // as cancelled — its own start is guarded (#715). Nothing is running
           // here either way: this spawn failed.
-          resolveOnce(await launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked))
+          resolveOnce(
+            await launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked, appKey)
+          )
           return
         }
 
@@ -1137,7 +1143,9 @@ export async function spawnDetachedApp(
 
       // Same handoff-vs-failure distinction as the 'error' handler above.
       if (isElevatedLaunchError(err)) {
-        launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked).then(resolveOnce)
+        launchElevated(appPath, getAppArgs(appKey), gameKey, signal, isTracked, appKey).then(
+          resolveOnce
+        )
         return
       }
 

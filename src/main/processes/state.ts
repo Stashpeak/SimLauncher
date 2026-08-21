@@ -78,11 +78,30 @@ export function registerActiveLaunch(gameKey: string): AbortController {
  * Lives here, next to activeLaunchControllers, for the same reason: kill.ts must
  * reach it without importing spawn.ts.
  */
-const pendingElevatedHandoffs = new Map<number, { gameKey?: string; cancel: () => void }>()
+export interface PendingElevatedHandoff {
+  gameKey?: string
+  /**
+   * The profile SLOT this handoff belongs to, and the ONLY stable way to decide
+   * whether it is leaving.
+   *
+   * Two slots can point at one exe with different `appArgs` (#357), so the path
+   * alone does not identify it and a caller matching on path cancels both
+   * (CodeRabbit on #782). The path is not a usable tie-breaker either: it is a
+   * launch-time snapshot, while a caller's entries are rebuilt from the CURRENT
+   * `appPaths`, so editing that slot's exe in Settings while a prompt is
+   * unanswered makes the two disagree and a `key + path` match miss the handoff
+   * entirely (Codex P2 on #842). The key does not move.
+   */
+  appKey?: string
+  appPath: string
+  cancel: () => void
+}
+
+const pendingElevatedHandoffs = new Map<number, PendingElevatedHandoff>()
 
 export function registerPendingElevatedHandoff(
   handoffId: number,
-  entry: { gameKey?: string; cancel: () => void }
+  entry: PendingElevatedHandoff
 ): void {
   pendingElevatedHandoffs.set(handoffId, entry)
 }
@@ -95,14 +114,50 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
  * Cancel every still-pending elevated handoff for `gameKey`, or all of them when
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.
+ *
+ * `matches` narrows it further. Without it the scope is the whole game, which is
+ * right for "close everything I started here" but wrong for anything that stops
+ * a SUBSET: a profile switch that happens to stop one app would otherwise also
+ * kill the host of an app both profiles enable and that the switch never
+ * intended to touch, costing the user a permission prompt they were about to
+ * approve (#782).
+ *
+ * A predicate rather than a path list, for two reasons that pull the same way.
+ *
+ * Identity here is the SLOT, never the path. Two slots can share one exe (#357),
+ * so a path list cancels the retained slot's prompt along with the leaving one
+ * (CodeRabbit on #782), and the path recorded on an entry is a launch-time
+ * snapshot that the caller's current `appPaths` may no longer agree with (Codex
+ * on #842). Both narrowing callers, `killProfileApps` and the profile switch,
+ * therefore match on `appKey`.
+ *
+ * And a predicate does not have to narrow by identity at all: `killLaunchedApps`
+ * uses one to keep the whole-game scope while excluding handoffs whose profile
+ * currently has tracking off (#591).
  */
-export function cancelPendingElevatedHandoffs(gameKey?: string): void {
+export function cancelPendingElevatedHandoffs(
+  gameKey?: string,
+  matches?: (entry: PendingElevatedHandoff) => boolean
+): void {
   pendingElevatedHandoffs.forEach((entry, handoffId) => {
     if (gameKey !== undefined && entry.gameKey !== gameKey) {
       return
     }
+    if (matches && !matches(entry)) {
+      return
+    }
     pendingElevatedHandoffs.delete(handoffId)
-    entry.cancel()
+    // `cancel` is a callback owned by spawn.ts and it runs synchronously inside
+    // this loop, so a throw would abandon every entry after it AND propagate
+    // into whichever caller is running. That matters now that one of them is
+    // `save-profile` (#782): the same shape took down four config tests when the
+    // untracked reconcile went synchronous on #834. Deleted before the call, so
+    // a throwing entry cannot be retried forever either.
+    try {
+      entry.cancel()
+    } catch (err) {
+      console.error('Failed to cancel a pending elevated handoff:', err)
+    }
   })
 }
 
@@ -283,22 +338,22 @@ export function pruneUntrackedGames(untrackedGameKeys: Set<string>): void {
       processNameMismatchWarnings.delete(key)
     }
   })
-  // The fourth map, and the one that is easy to miss because it holds a
-  // callback rather than a record (Codex on #834). `launchElevated` already
-  // refuses to register a handoff for a profile that was untracked AT LAUNCH,
-  // but a launch that started while tracked and timed out into this registry
-  // predates the toggle, so only this pass can reach it. Left behind, a later
-  // Close Apps would still kill its PowerShell host and strand the consent
-  // prompt of a profile that is now fire-and-forget.
+  // `pendingElevatedHandoffs` is deliberately NOT touched here, and it used to
+  // be (Codex on #834). A handoff belonging to a now-untracked game has to be
+  // hidden from Close Apps, and this pass was how that happened: the entry was
+  // deleted outright.
   //
-  // Deleted WITHOUT calling `cancel`. That callback is what kills the host, and
-  // killing it is precisely what this is preventing: forgetting the handoff has
-  // to leave the prompt answerable.
-  pendingElevatedHandoffs.forEach((entry, handoffId) => {
-    if (entry.gameKey !== undefined && untrackedGameKeys.has(entry.gameKey)) {
-      pendingElevatedHandoffs.delete(handoffId)
-    }
-  })
+  // Both attempts to express it as stored state were wrong. Deleting put the
+  // handoff out of reach of the profile-switch and config-import consumers #782
+  // added, which need it precisely because the user is leaving that profile.
+  // Marking `tracked = false` instead fixed that and introduced a one-way door:
+  // this pass only ever receives the UNTRACKED set, so turning tracking back on
+  // while the prompt is still pending never restored the flag and Close Apps
+  // ignored the handoff forever (Codex P2 on #842).
+  //
+  // So tracking is not stored on the handoff at all. `killLaunchedApps` reads it
+  // live from the active profile at cancellation time, which is always current
+  // by construction and has no direction to get wrong.
 }
 
 export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()): void {

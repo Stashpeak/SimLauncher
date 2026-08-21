@@ -56,9 +56,25 @@ async function loadConfigModule() {
     isStoredProfileSet: (value: unknown) =>
       !!value &&
       typeof value === 'object' &&
-      Array.isArray((value as { profiles?: unknown }).profiles)
+      Array.isArray((value as { profiles?: unknown }).profiles),
+    // Stubbed to "nothing is leaving": these tests are about the store write and
+    // the republish, not about #782's cancellation. The real behaviour is pinned
+    // in configProfileSwitchHandoff.test.ts against the real module.
+    getProfileSwitchLeavingKeys: vi.fn(() => []),
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase()}`
   }))
-  vi.doMock('../../src/main/processes', () => ({ publishRunningApps: vi.fn(async () => {}) }))
+  // All four exports `ipc/config.ts` imports, not just the two these tests
+  // happen to reach. `getProfileSwitchLeavingKeys` is stubbed to `[]` here, so
+  // the cancellation block never runs and the gap is currently invisible; the
+  // day it does run, a missing export is a TypeError rather than a readable
+  // assertion failure (CodeRabbit on #842).
+  vi.doMock('../../src/main/processes', () => ({
+    publishRunningApps: vi.fn(async () => {}),
+    abortActiveLaunches: vi.fn(),
+    cancelPendingElevatedHandoffs: vi.fn(),
+    drainStrandedConsentPrompts: vi.fn(() => 0)
+  }))
   vi.doMock('../../src/main/tray', () => ({ applyTrayVisibility: vi.fn() }))
   vi.doMock('../../src/main/window', () => ({
     applyRuntimeConfigSettings: vi.fn(),

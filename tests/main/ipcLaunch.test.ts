@@ -67,7 +67,14 @@ async function loadLaunchHandlers() {
   vi.doMock('../../src/main/processes', () => processesMock)
   vi.doMock('../../src/main/processes.ts', () => processesMock)
 
-  const profilesMock = { buildActiveProfileLaunchEntries, buildNamedProfileLaunchEntries }
+  // Copy of the real identity function, because this suite mocks the module that
+  // owns it. The rule is pinned against the real one in profiles.test.ts.
+  const profilesMock = {
+    buildActiveProfileLaunchEntries,
+    buildNamedProfileLaunchEntries,
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`
+  }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
   vi.doMock('../../src/main/profiles', () => profilesMock)
@@ -430,7 +437,7 @@ test('switch-profile-apps never kills or relaunches the game executable', async 
   expect(registerActiveLaunch).toHaveBeenCalledWith('iracing')
   const controller = registerActiveLaunch.mock.results[0]!.value as AbortController
   expect(controller.signal.aborted).toBe(false)
-  expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA.path], { except: controller })
+  expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA], { except: controller })
   expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [utilB], {
     controller,
     profileId: 'p-to'

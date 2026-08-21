@@ -185,6 +185,27 @@ function makeAccessDeniedError() {
   return error
 }
 
+/**
+ * Turns the paths a test wants stopped into the `{key, path}` entries
+ * `killProfileApps` now takes (#842).
+ *
+ * The key is looked up in the SAME `appPaths` fixture the harness serves to the
+ * code under test, rather than invented per call site. That matters: the kill's
+ * handoff cancellation matches by slot, so a made-up key would make every
+ * slot-scoping assertion pass without proving anything. A path with no
+ * configured slot (an unknown exe, the game itself) keeps the empty key, which
+ * is what production would carry for something that is not a utility slot.
+ */
+function killEntries(...appPaths: string[]): { key: string; path: string }[] {
+  const configured = Object.entries(storeData.appPaths ?? {})
+  return appPaths.map((appPath) => {
+    const match = configured.find(
+      ([, configuredPath]) => configuredPath.toLowerCase() === appPath.toLowerCase()
+    )
+    return { key: match?.[0] ?? '', path: appPath }
+  })
+}
+
 async function loadProcessModules() {
   vi.resetModules()
 
@@ -546,8 +567,21 @@ async function loadProcessModules() {
   vi.doMock('../../src/main/store.js', () => storeModuleMock)
 
   const profilesMock = {
-    getActiveStoredProfile: vi.fn((p: { activeProfileId: string; profiles: { id: string }[] }) =>
-      p.profiles.find((i) => i.id === p.activeProfileId)
+    // Re-implemented because this suite mocks the module that owns it, which
+    // makes it a COPY: the tests below prove `kill.ts` is wired to an identity
+    // function, not that the identity rule is right. The rule itself is pinned
+    // against the real module in profiles.test.ts.
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`,
+    // The undefined branch mirrors the real function, which returns undefined
+    // for a game with no stored profile. The mock used to omit it and threw
+    // instead, which stayed invisible until a caller looked up a handoff's game
+    // key rather than iterating stored profiles (#842). A mock that is stricter
+    // than the module it stands in for turns "no profile configured" into a
+    // crash that production would never have.
+    getActiveStoredProfile: vi.fn(
+      (p: { activeProfileId: string; profiles: { id: string }[] } | undefined) =>
+        p?.profiles.find((i) => i.id === p.activeProfileId)
     ),
     // Resolves through the same storeData the rest of this harness writes, so a
     // test can turn tracking off for one game by editing its profile fixture
@@ -632,6 +666,7 @@ async function loadProcessModules() {
     unregisterActiveLaunch: stateModule.unregisterActiveLaunch,
     abortActiveLaunches: stateModule.abortActiveLaunches,
     processNameMismatchWarnings: stateModule.processNameMismatchWarnings,
+    cancelPendingElevatedHandoffs: stateModule.cancelPendingElevatedHandoffs,
     suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
     unclosedProcesses: stateModule.unclosedProcesses,
@@ -2514,7 +2549,7 @@ test('a profile switch never runs the graceful phase, toggle or not (#659)', asy
     appPaths: { customapp2: 'C:/Tools/App2.exe' }
   })
 
-  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+  const result = await killProfileApps('ac', killEntries('C:/Tools/App2.exe'))
 
   expect(gracefulRequests()).toHaveLength(0)
   expect(result.closedCount).toBe(1)
@@ -2542,14 +2577,126 @@ test('a profile switch that cancels a pending handoff explains the stranded prom
     await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
     await launchPromise
 
-    // The switch stops the outgoing profile's apps, not the elevated one whose
-    // prompt is still up. The handoff is cancelled by gameKey either way, so
-    // the count must survive a kill that targets something else entirely.
-    const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+    // The elevated app is among the paths this kill is stopping, which is what
+    // brings its handoff into scope (#782). It is not running, and that is the
+    // point: a pending handoff never is.
+    const result = await killProfileApps(
+      'ac',
+      killEntries('C:/Tools/Admin Tool.exe', 'C:/Tools/App2.exe')
+    )
     await vi.advanceTimersByTimeAsync(0)
 
     expect(elevatedHostKills).toHaveLength(1)
     expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The kill-side mirror of the over-cancel #782 removes from the save side. Two
+// slots on one exe (#357): the switch stops the LEAVING slot, whose instance is
+// running, while the RETAINED slot has an unanswered prompt. Matching the
+// handoff registry by path cannot tell them apart, so it kills the prompt for
+// the app that is staying, and approving it then starts nothing (Codex P2 on
+// #842). Both directions are asserted here because a predicate that cancels
+// nothing at all would satisfy the first half on its own.
+test('a kill stops a shared exe without cancelling the retained slot prompt (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    const shared = 'C:/Tools/Shared Utility.exe'
+    markExistingPath(shared)
+    spawnErrors.set(shared, makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { customapp1: shared, customapp2: shared }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // The prompt belongs to customapp1, the slot the incoming profile keeps.
+    const launchPromise = launchProfileApps(sender, 'ac', [{ key: 'customapp1', path: shared }])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Stopping customapp2, the slot that is leaving. Same executable.
+    const leaving = await killProfileApps('ac', [{ key: 'customapp2', path: shared }])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(0)
+    expect(leaving.strandedConsentPrompts).toBeUndefined()
+
+    // ...and the prompt is still cancellable by the slot that actually owns it,
+    // so the predicate discriminates rather than simply never matching.
+    const retained = await killProfileApps('ac', [{ key: 'customapp1', path: shared }])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(retained.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Pins that the registration itself records the slot. Everything else about slot
+// scoping is asserted against synthetic registry entries, so dropping `appKey`
+// at the one place it is written left all of it green (CodeRabbit on #782).
+test('a pending handoff records which slot it belongs to (#782)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, cancelPendingElevatedHandoffs } = await loadProcessModulesWithStore({
+      appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // A predicate that only the right slot satisfies. If the key were not
+    // recorded this matches nothing and no host is killed.
+    cancelPendingElevatedHandoffs('ac', (handoff) => handoff.appKey === 'customapp1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The other half of #782, and the half nothing had ever asserted. The scope used
+// to be the whole game, so ANY switch that stopped ANYTHING took every pending
+// handoff with it, including one for an app the incoming profile also enables.
+// The user loses a permission prompt they were about to approve, and it is
+// counted against them as a stranded prompt on top.
+test('a kill does not cancel a handoff for an app it is not stopping (#782)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Same game, and deliberately NOT the elevated app's path.
+    const result = await killProfileApps('ac', killEntries('C:/Tools/App2.exe'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(0)
+    // Nothing was stranded, because nothing was killed. Reporting a prompt here
+    // would tell the user to dismiss a dialog that is still doing its job.
+    expect(result.strandedConsentPrompts).toBeUndefined()
   } finally {
     vi.useRealTimers()
   }
@@ -2564,7 +2711,7 @@ test('an ordinary profile switch with no pending handoff says nothing about a pr
     appPaths: { customapp2: 'C:/Tools/App2.exe' }
   })
 
-  const result = await killProfileApps('ac', ['C:/Tools/App2.exe'])
+  const result = await killProfileApps('ac', killEntries('C:/Tools/App2.exe'))
 
   expect(result.strandedConsentPrompts).toBeUndefined()
 })
@@ -2852,7 +2999,7 @@ test('killProfileApps rejects paths that are not configured app paths', async ()
   markExistingPath('C:/Tools/Unknown.exe')
   storeData.appPaths = { simhub: 'C:/Tools/SimHub.exe' }
 
-  await expect(killProfileApps('ac', ['C:/Tools/Unknown.exe'])).resolves.toEqual({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/Unknown.exe'))).resolves.toEqual({
     success: false,
     error: 'Kill request includes an app path that is not configured.',
     closedCount: 0,
@@ -2869,7 +3016,7 @@ test('killProfileApps targets configured untracked Windows apps by resolved PID 
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -2907,7 +3054,7 @@ test('PID lookup injects the name via env and matches it in PowerShell, not WQL 
     appPaths: { simhub: quotedPath }
   })
 
-  await killProfileApps('ac', [quotedPath])
+  await killProfileApps('ac', killEntries(quotedPath))
 
   const psCall = execFileCalls.find(
     (call) =>
@@ -2945,7 +3092,7 @@ test('killProfileApps only kills the PID matching the requested executable path 
     appPaths: { simhub: 'C:/Tools/SimHub.exe', other: 'D:/Other/SimHub.exe' }
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -2978,7 +3125,7 @@ test('killProfileApps excludes processes with null executable paths when resolvi
     appPaths: { simhub: 'C:/Tools/SimHub.exe' }
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -3026,7 +3173,7 @@ test('killProfileApps publishes promptly when untracked app remains elevated aft
   await subscribeRunningApps(asWebContents(webContents))
   webContents.send.mockClear()
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: false,
     closedCount: 0,
     failedCount: 1,
@@ -3922,7 +4069,9 @@ test('killProfileApps skips game executable paths without issuing kill commands'
   })
   processNames.add('assettocorsa.exe')
 
-  await expect(killProfileApps('ac', ['C:/Games/AssettoCorsa.exe'])).resolves.toMatchObject({
+  await expect(
+    killProfileApps('ac', killEntries('C:/Games/AssettoCorsa.exe'))
+  ).resolves.toMatchObject({
     success: true,
     closedCount: 0,
     failedCount: 0
@@ -3959,7 +4108,7 @@ test('killProfileApps clears previous unclosed and running state after successfu
     elevated: true
   })
 
-  await expect(killProfileApps('ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+  await expect(killProfileApps('ac', killEntries('C:/Tools/SimHub.exe'))).resolves.toMatchObject({
     success: true,
     closedCount: 1,
     failedCount: 0
@@ -4001,7 +4150,7 @@ test('killProfileApps suppresses wrapper warnings for SimLauncher-initiated prof
   childHandlers.get('spawn')?.()
   await launchPromise
 
-  const killPromise = killProfileApps('ac', ['C:/Tools/Cheat Engine.exe'])
+  const killPromise = killProfileApps('ac', killEntries('C:/Tools/Cheat Engine.exe'))
   processNames.delete('cheat engine.exe')
   childHandlers.get('exit')?.()
 
@@ -4270,7 +4419,7 @@ test('killProfileApps mid-sequence also cancels the launch loop before remaining
   const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/App1.exe', 'C:/Tools/App2.exe'])
   await flushMicrotasks()
 
-  await killProfileApps('ac', ['C:/Tools/App1.exe'])
+  await killProfileApps('ac', killEntries('C:/Tools/App1.exe'))
   const launchResult = await launchPromise
 
   expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/App1.exe'])
@@ -4367,7 +4516,7 @@ test('killProfileApps aborts the launch before waiting on its tasklist scan (#67
   let releaseTasklistRead: () => void = () => {}
   tasklistReadBlocker = new Promise((resolve) => (releaseTasklistRead = resolve))
 
-  const killPromise = killProfileApps('ac', ['C:/Tools/App1.exe'])
+  const killPromise = killProfileApps('ac', killEntries('C:/Tools/App1.exe'))
   // The abort fired in killProfileApps' synchronous prefix, so the launch
   // resolves cancelled even though the kill is still stuck in its scan.
   await expect(launchPromise).resolves.toMatchObject({ cancelled: true, launchedCount: 1 })
@@ -6086,7 +6235,7 @@ test('turning tracking off forgets apps already recorded under it (#591)', async
 // PowerShell host of an app the user opted out of us managing. The late
 // approval would then start nothing, and they would be told a consent prompt
 // was stranded by a profile SimLauncher promised not to touch.
-test('a tracking-off profile does not register its elevated handoff for Close Apps (#591)', async () => {
+test('a tracking-off profile keeps its elevated handoff answerable through Close Apps (#591)', async () => {
   vi.useFakeTimers()
   try {
     markExistingPath('C:/Tools/Admin Tool.exe')
@@ -6132,7 +6281,7 @@ test('a tracking-off profile does not register its elevated handoff for Close Ap
 
 // The same fixture with tracking left ON, so the test above cannot pass because
 // the handoff never reached the grace window in the first place.
-test('a tracked profile still registers its elevated handoff for Close Apps (#591)', async () => {
+test('a tracked profile has its elevated handoff cancelled by Close Apps (#591)', async () => {
   vi.useFakeTimers()
   try {
     markExistingPath('C:/Tools/Admin Tool.exe')
@@ -6215,7 +6364,7 @@ test('the same holds when spawn throws elevation synchronously (#591)', async ()
 
 // And the positive control for that branch, which also pins that the throw
 // fixture reaches the elevation path at all rather than failing the launch.
-test('a tracked profile registers it on the synchronous-throw branch too (#591)', async () => {
+test('a tracked profile is cancelled on the synchronous-throw branch too (#591)', async () => {
   vi.useFakeTimers()
   try {
     markExistingPath('C:/Tools/Admin Tool.exe')
@@ -6256,7 +6405,7 @@ test('a tracked profile registers it on the synchronous-throw branch too (#591)'
 // registry predates the toggle entirely, so only the reconcile pass can reach
 // it (Codex on #834). Left behind, a later Close Apps still kills its host and
 // strands the prompt of a profile that is now fire-and-forget.
-test('turning tracking off forgets a handoff registered while it was on (#591)', async () => {
+test('turning tracking off puts a handoff registered while it was on out of Close Apps reach (#591)', async () => {
   vi.useFakeTimers()
   try {
     markExistingPath('C:/Tools/Admin Tool.exe')
@@ -6293,10 +6442,191 @@ test('turning tracking off forgets a handoff registered while it was on (#591)',
     await vi.advanceTimersByTimeAsync(0)
     const result = await killPromise
 
-    // Forgotten, not cancelled: the host is alive, so the prompt is still
+    // Out of reach, not cancelled: the host is alive, so the prompt is still
     // answerable, and nothing is reported as stranded.
     expect(elevatedHostKills).toHaveLength(0)
     expect(result.strandedConsentPrompts).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Tracking is read LIVE at cancellation, so it works in both directions. Two
+// earlier attempts to keep it as stored state on the handoff failed the other
+// way round: deleting the entry hid it from the profile-switch consumer, and
+// marking `tracked = false` was a one-way door, because the untracked reconcile
+// only ever receives the untracked set and so never restored the flag when the
+// user turned tracking back on (Codex P2 on #842). Close Apps then ignored the
+// handoff for the rest of its life even though the profile was managed again.
+test('turning tracking back on brings a handoff into Close Apps reach again (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+      id: 'default',
+      name: 'Default'
+    }
+    const { launchProfileApps, killLaunchedApps, getRunningApps } =
+      await loadProcessModulesWithStore({
+        appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' },
+        gamePaths: { ac: 'C:/Games/Race.exe' },
+        profiles: { ac: { activeProfileId: 'default', profiles: [profile] } }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Off, reconciled, then back on and reconciled again, all while the consent
+    // prompt is still unanswered.
+    profile.trackingEnabled = false
+    await getRunningApps()
+    profile.trackingEnabled = true
+    await getRunningApps()
+
+    const killPromise = killLaunchedApps()
+    await vi.advanceTimersByTimeAsync(0)
+    const result = await killPromise
+
+    // Managed again, so Close Apps closes it and says the prompt is dead.
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The switch consumer is unaffected by any of that: it cancels a handoff for a
+// profile the user is leaving whether or not that profile is managed (Codex P2
+// on #842).
+test('a handoff hidden from Close Apps is still cancellable by a profile switch (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const profile: { id: string; name: string; trackingEnabled?: boolean } = {
+      id: 'default',
+      name: 'Default'
+    }
+    const { launchProfileApps, killProfileApps, getRunningApps } =
+      await loadProcessModulesWithStore({
+        appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' },
+        gamePaths: { ac: 'C:/Games/Race.exe' },
+        profiles: { ac: { activeProfileId: 'default', profiles: [profile] } }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Tracking goes off, and the publish reconciles against it. Under the old
+    // delete-based reconcile the handoff would be gone from here on.
+    profile.trackingEnabled = false
+    await getRunningApps()
+
+    const result = await killProfileApps('ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// A profile that was fire-and-forget from the START, which used never to be
+// registered at all. Leaving the profile has to cancel it for the same reason:
+// approving the prompt afterwards starts an app for a profile the user left.
+// Fire-and-forget is a promise not to CLOSE running apps, not a promise to keep
+// launching them for profiles that are gone (Codex P2 on #842).
+test('a switch cancels a fire-and-forget profile pending handoff (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { customapp1: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' },
+      profiles: {
+        ac: {
+          activeProfileId: 'quiet',
+          profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+        }
+      }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    const result = await killProfileApps('ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Fix 2: the registry records the path AS LAUNCHED, while a caller's entries are
+// rebuilt from the CURRENT `appPaths`. Editing that slot's exe in Settings while
+// its prompt is unanswered makes the two disagree, and a `key + path` match then
+// misses the handoff entirely, so approving it starts the FORMER executable for
+// a profile the user has left (Codex P2 on #842). The slot key does not move.
+test('a slot whose exe changed after launch is still cancelled by its key (#842)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/Replacement.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const appPaths: Record<string, string> = { customapp1: 'C:/Tools/Admin Tool.exe' }
+    const { launchProfileApps, killProfileApps } = await loadProcessModulesWithStore({ appPaths })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'customapp1', path: 'C:/Tools/Admin Tool.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // What editing the slot's path in Settings does to the store. The registry
+    // still holds 'Admin Tool.exe'; every entry built from here on says
+    // 'Replacement.exe'.
+    appPaths.customapp1 = 'C:/Tools/Replacement.exe'
+
+    const result = await killProfileApps('ac', [
+      { key: 'customapp1', path: 'C:/Tools/Replacement.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(elevatedHostKills).toHaveLength(1)
+    expect(result.strandedConsentPrompts).toBe(1)
   } finally {
     vi.useRealTimers()
   }

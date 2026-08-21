@@ -42,6 +42,14 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('process-name-mismatch-warning', handler)
     return () => ipcRenderer.removeListener('process-name-mismatch-warning', handler)
   },
+  // A profile switch that cancels a pending elevated launch leaves its Windows
+  // consent prompt on screen (#809). Pushed rather than returned from
+  // `saveProfile` so no switching caller can silently drop it (#782).
+  onStrandedConsentPrompts: (cb: (count: number) => void) => {
+    const handler = (_: unknown, count: number) => cb(count)
+    ipcRenderer.on('stranded-consent-prompts', handler)
+    return () => ipcRenderer.removeListener('stranded-consent-prompts', handler)
+  },
 
   // window controls
   minimize: () => ipcRenderer.invoke('window-minimize'),

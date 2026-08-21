@@ -1,0 +1,407 @@
+import { expect, test, vi, beforeEach } from 'vitest'
+
+/**
+ * #782: a profile switch has to cancel a pending elevated (UAC) handoff left
+ * behind by the outgoing profile.
+ *
+ * The reason this lives on `save-profile` and not on `switch-profile-apps` is
+ * that the renderer frequently never calls the latter. It gates the whole IPC on
+ * a diff built from a tasklist snapshot, and a pending handoff has never
+ * started, so it contributes zero to both halves of that diff and the renderer
+ * falls through to this save instead.
+ *
+ * The REAL `../../src/main/profiles` is used deliberately. The leaving-path
+ * calculation is the entire fix, so a mocked version would prove nothing beyond
+ * "the handler calls a function".
+ */
+
+type MockIpcHandler = (...args: unknown[]) => unknown
+
+const cancelPendingElevatedHandoffs = vi.fn()
+const abortActiveLaunches = vi.fn()
+// Defaults to 1 so the handler's report path is exercised. The real counter is a
+// module-level scalar incremented by the cancel callback; what matters here is
+// that the handler DRAINS it and reports the count (#782 Codex P2).
+const drainStrandedConsentPrompts = vi.fn(() => 1)
+const sendToRenderer = vi.fn()
+
+interface StoredState {
+  profiles?: Record<string, unknown>
+  appPaths?: Record<string, string>
+  gamePaths?: Record<string, string>
+  customSlots?: number
+}
+
+let storedState: StoredState = {}
+
+async function loadConfigModule(initial: StoredState) {
+  const { clearIpcHandlers } = await import('electron')
+  ;(clearIpcHandlers as () => void)()
+  storedState = { customSlots: 1, ...initial }
+
+  vi.doMock('electron-store', () => ({
+    default: class MockStore {
+      get store() {
+        return storedState as Record<string, unknown>
+      }
+
+      get(key: string) {
+        return (storedState as Record<string, unknown>)[key]
+      }
+
+      set(key: string, value: unknown) {
+        ;(storedState as Record<string, unknown>)[key] = value
+      }
+
+      clear() {
+        storedState = {}
+      }
+    }
+  }))
+  vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
+  vi.doMock('../../src/main/processes', () => ({
+    publishRunningApps: vi.fn(async () => {}),
+    abortActiveLaunches,
+    cancelPendingElevatedHandoffs,
+    drainStrandedConsentPrompts
+  }))
+  vi.doMock('../../src/main/tray', () => ({ applyTrayVisibility: vi.fn() }))
+  vi.doMock('../../src/main/window', () => ({
+    applyRuntimeConfigSettings: vi.fn(),
+    getMainWindow: vi.fn(),
+    sendToRenderer
+  }))
+
+  const mod = await import('../../src/main/ipc/config')
+  mod.registerConfigHandlers()
+}
+
+async function saveProfile(gameKey: string, profileSet: unknown): Promise<unknown> {
+  const { __ipcHandlers } = await import('electron')
+  return (__ipcHandlers as Record<string, MockIpcHandler>)['save-profile']({}, gameKey, profileSet)
+}
+
+const utility = (id: string) => ({ id, enabled: true })
+
+/**
+ * The predicate `save-profile` handed to `cancelPendingElevatedHandoffs`, applied
+ * to a synthetic registry entry. Asserting on the predicate rather than on an
+ * argument list is what lets these tests tell two slots apart when they share an
+ * executable, which is the whole reason cancellation matches by slot
+ * (CodeRabbit on #782).
+ */
+function cancelsHandoffFor(appKey: string, appPath: string): boolean {
+  const matches = cancelPendingElevatedHandoffs.mock.calls[0]?.[1] as
+    ((entry: { appKey?: string; appPath: string }) => boolean) | undefined
+  expect(matches).toBeDefined()
+  return matches!({ appKey, appPath })
+}
+
+function profileSet(activeProfileId: string, profiles: Record<string, string[]>) {
+  return {
+    activeProfileId,
+    profiles: Object.entries(profiles).map(([id, utilityIds]) => ({
+      id,
+      name: id,
+      utilities: utilityIds.map(utility)
+    }))
+  }
+}
+
+// Real slot keys. `getEnabledUtilityEntries` drops anything that is not a
+// built-in utility or a configured custom slot, so an invented key would make
+// every profile below resolve to zero entries and every assertion here vacuous.
+const APP_PATHS = {
+  customapp1: 'C:/Tools/Admin Tool.exe',
+  simhub: 'C:/Tools/SimHub.exe',
+  crewchief: 'C:/Tools/Other.exe'
+}
+
+/**
+ * The stranded-prompt counts this save pushed to the renderer. Asserting on the
+ * push rather than on the handler's return value is the point: three of the four
+ * callers that change the active profile never read a return value, and because
+ * the drain is destructive that silently destroyed the count (Codex P2 on #782).
+ */
+function pushedStrandedCounts(): number[] {
+  return sendToRenderer.mock.calls
+    .filter(([channel]) => channel === 'stranded-consent-prompts')
+    .map(([, count]) => count as number)
+}
+
+beforeEach(() => {
+  vi.resetModules()
+  cancelPendingElevatedHandoffs.mockClear()
+  abortActiveLaunches.mockClear()
+  drainStrandedConsentPrompts.mockClear()
+  sendToRenderer.mockClear()
+})
+
+// The pre-grace half of the same bug. For the first ELEVATED_HANDOFF_MAX_WAIT_MS
+// of an unanswered prompt the handoff is not in the registry at all -- spawn.ts
+// registers it when the grace timer fires -- so the predicate-based cancellation
+// above cannot reach it and the abort signal is the only handle. `killProfileApps`
+// aborts on the way in, but this save is precisely the path that skips the kill,
+// so without this the outgoing launch stayed live and approving the old prompt
+// still started its app (Codex P1 on #842).
+test('a switch aborts the outgoing launch, not just the registered handoffs (#842)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(abortActiveLaunches).toHaveBeenCalledTimes(1)
+  // Whole-game, matching `killProfileApps`: the sequence in flight belongs to
+  // the profile being left. Scoping it to this game is what keeps a switch on
+  // one game from aborting another game's launch.
+  expect(abortActiveLaunches).toHaveBeenCalledWith('ac')
+})
+
+// The guard that makes the abort safe to add. `save-profile` is also the
+// editor's Save, and aborting a live launch because the user edited the profile
+// they are already on would break a launch they never asked to stop.
+test('editing the active profile does not abort a launch in flight (#842)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1', 'simhub'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] }))
+
+  expect(abortActiveLaunches).not.toHaveBeenCalled()
+})
+
+// The acceptance criterion from the issue, on the path the renderer actually
+// takes. Profile "quiet" holds the app with the unanswered prompt and profile
+// "loud" does not, so the switch leaves it behind.
+test('a switch cancels a handoff for an app only the outgoing profile enabled (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
+  expect(cancelPendingElevatedHandoffs.mock.calls[0][0]).toBe('ac')
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  expect(cancelsHandoffFor('simhub', 'C:/Tools/SimHub.exe')).toBe(false)
+  // Killing the host leaves the consent dialog on screen, so the count has to
+  // reach the renderer or the user is never told it is dead (#809).
+  expect(pushedStrandedCounts()).toEqual([1])
+})
+
+// The half that bites a different game entirely. The counter is one module-level
+// scalar drained by whoever reports it, so a save that cancels something and
+// does NOT drain leaves the count sitting there for the next kill to pick up and
+// attribute to an operation that stranded nothing (Codex P2 on #782).
+test('a switch that cancels drains the stranded count rather than leaving it (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(drainStrandedConsentPrompts).toHaveBeenCalledTimes(1)
+})
+
+// And the mirror: a save that cancels nothing must not drain either, or it would
+// swallow a count belonging to an operation still waiting to report it.
+test('a save that cancels nothing does not touch the stranded count (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1', 'simhub'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] }))
+
+  expect(drainStrandedConsentPrompts).not.toHaveBeenCalled()
+  expect(pushedStrandedCounts()).toEqual([])
+})
+
+// The caller Codex found on top of the row dropdown: deleting the ACTIVE profile
+// moves `activeProfileId` to whatever survives, which is a switch by every
+// definition this handler uses, and its leaving set is the whole deleted
+// profile. `confirmDeleteProfile` reports "Profile deleted" and nothing else, so
+// while the count was a return value it was drained and thrown away and the user
+// kept a dead consent dialog with no explanation anywhere (Codex P2 on #782).
+// Written as a shrinking profiles array rather than a reordering one so it also
+// fails if leaving-set computation is ever gated on the profile count holding.
+test('deleting the active profile cancels its handoff and reports it (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { loud: ['simhub'] }))
+
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  expect(pushedStrandedCounts()).toEqual([1])
+})
+
+// The over-cancel half. An app both profiles enable is not leaving, so its
+// prompt is still worth answering and must survive the switch.
+test('a switch leaves a handoff alone when the incoming profile enables it too (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['customapp1', 'simhub'] }) }
+  })
+
+  await saveProfile(
+    'ac',
+    profileSet('loud', { quiet: ['customapp1'], loud: ['customapp1', 'simhub'] })
+  )
+
+  expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
+})
+
+// Two slots, one exe, different `appArgs` (#357). Comparing paths alone calls
+// the outgoing slot retained because the incoming profile happens to run the
+// same binary, so the old prompt survives and approving it launches that exe
+// with the OUTGOING slot's arguments (Codex P1 on #782). Identity is the slot
+// plus the path, and it has to be the same function the switch diff uses.
+test('a slot move to the same exe still counts as leaving (#782)', async () => {
+  const twoSlots = {
+    customapp1: 'C:/Tools/Shared Utility.exe',
+    customapp2: 'C:/Tools/Shared Utility.exe'
+  }
+  const sets = (activeProfileId: string) => ({
+    activeProfileId,
+    profiles: [
+      { id: 'quiet', name: 'quiet', utilities: [utility('customapp1')] },
+      { id: 'loud', name: 'loud', utilities: [utility('customapp2')] }
+    ]
+  })
+
+  await loadConfigModule({ appPaths: twoSlots, customSlots: 2, profiles: { ac: sets('quiet') } })
+
+  await saveProfile('ac', sets('loud'))
+
+  // The leaving slot is cancelled...
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Shared Utility.exe')).toBe(true)
+  // ...and the slot the incoming profile keeps is NOT, even though it is the
+  // same binary. Matching on path alone cancels both, which loses a prompt the
+  // user was about to approve for an app that is staying.
+  expect(cancelsHandoffFor('customapp2', 'C:/Tools/Shared Utility.exe')).toBe(false)
+
+  // The key is doing that work on its own. The registry stores the path AS
+  // LAUNCHED while `leavingEntries` is rebuilt from the current `appPaths`, so
+  // requiring the path to match as well makes a slot whose exe was edited in
+  // Settings mid-prompt escape cancellation entirely (Codex P2 on #842).
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Some Older Binary.exe')).toBe(true)
+})
+
+// Editing the profile you are already on is not a switch, whatever moved inside
+// it. Without the `activeProfileId` guard, disabling an app in the profile editor
+// would kill a consent prompt the user is mid-way through answering.
+test('editing the active profile cancels nothing, even when it drops an app (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1', 'simhub'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] }))
+
+  expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
+})
+
+// A switch never stops the game, so it must never cancel the game's own handoff
+// either: that would silently kill a game launch the user is still being
+// prompted for, and the game is not in the incoming profile's start list to
+// recover it.
+//
+// The previous version of this test gave the outgoing profile no utilities at
+// all and asserted nothing was cancelled. That passed for the wrong reason and
+// would have kept passing with any game exclusion removed, because leaving keys
+// come from utility SLOTS and an empty profile has none (CodeRabbit on #842). So
+// the outgoing profile now has a real leaving utility, and the assertion is that
+// the predicate accepts that utility while rejecting the game.
+test('a switch never cancels the handoff for the game itself (#782)', async () => {
+  const sets = (activeProfileId: string) => ({
+    activeProfileId,
+    profiles: [
+      { id: 'quiet', name: 'quiet', utilities: [utility('customapp1')] },
+      { id: 'loud', name: 'loud', utilities: [utility('simhub')] }
+    ]
+  })
+
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    profiles: { ac: sets('quiet') }
+  })
+
+  await saveProfile('ac', sets('loud'))
+
+  // There IS something leaving, so this is a real switch and the predicate ran.
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  // Both profiles launch the game, and the game is not a utility slot either
+  // way, so its own handoff must survive.
+  expect(cancelsHandoffFor('ac', 'C:/Games/AssettoCorsa.exe')).toBe(false)
+})
+
+// The `appKey === undefined` branch of the predicate. Requested by CodeRabbit on
+// #842 and worth keeping, but labelled honestly: this pins a DEFENSIVE guard, not
+// a behavioural difference. No current input distinguishes it, because leaving
+// keys are validated slot keys and never include the empty string, so the
+// obvious `appKey ?? ''` rewrite passes this test too (verified by mutation).
+//
+// It earns its place as a tripwire rather than as coverage. The guard is what
+// stops "unknown slot" from ever collapsing into "some key" if the key source is
+// later loosened, which is exactly what `getEnabledUtilityKeys` (the older,
+// unvalidated sibling in profiles.ts) would do.
+test('a handoff with no recorded slot is never cancelled (#842)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  const matches = cancelPendingElevatedHandoffs.mock.calls[0]?.[1] as
+    ((entry: { appKey?: string; appPath: string }) => boolean) | undefined
+  expect(matches).toBeDefined()
+  // Same path as the leaving slot, so only the missing key can be what rejects it.
+  expect(matches!({ appPath: 'C:/Tools/Admin Tool.exe' })).toBe(false)
+})
+
+// Ownership is decided by SLOT MEMBERSHIP, not by what the profile can launch
+// right now. A handoff is created while the slot has an exe; clearing that exe
+// in Settings before switching used to make the slot vanish from the outgoing
+// profile entirely, because leaving entries were built from launchable entries
+// and an entry needs something to launch. The switch then found nothing leaving,
+// skipped the whole block (abort included), and approving the old prompt still
+// started the executable recorded at launch time (Codex P2 on #842).
+test('a slot whose path was cleared is still leaving (#842)', async () => {
+  await loadConfigModule({
+    // customapp1 has NO configured path, and is the slot with the pending prompt.
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
+  // The registry still holds the path the handoff was launched with.
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Admin Tool.exe')).toBe(true)
+  // And the abort half runs too, which is what the empty-leaving-set bug also
+  // silently skipped.
+  expect(abortActiveLaunches).toHaveBeenCalledWith('ac')
+})
+
+// A save for a game that has never been switched (flat legacy profile, no
+// `activeProfileId` on either side) must not throw or cancel.
+test('a legacy flat profile save cancels nothing (#782)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: { simhub: true } }
+  })
+
+  await saveProfile('ac', profileSet('loud', { loud: ['simhub'] }))
+
+  expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
+})

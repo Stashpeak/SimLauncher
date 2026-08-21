@@ -29,6 +29,7 @@ import {
   buildActiveProfileLaunchEntries,
   buildNamedProfileLaunchEntries,
   getActiveStoredProfile,
+  getProfileLaunchEntryId,
   getProfileTrackablePaths,
   resolveActiveProfile,
   type StoredProfileEntry
@@ -236,4 +237,25 @@ test('getActiveProfileForGame resolves the active member of a profile set (#591)
 
   expect(getActiveProfileForGame('ac')).toMatchObject({ id: 'race', trackingEnabled: true })
   expect(getActiveProfileForGame('unknown')).toBeUndefined()
+})
+
+// Moved here from launch.test.ts when the helper moved out of ipc/launch.ts
+// (#782). That suite mocks this module, so its copy was answering: these have to
+// run against the real implementation to mean anything.
+test('getProfileLaunchEntryId distinguishes utility slots that share an executable path', () => {
+  // Two custom-app slots configured with the same .exe but different keys (e.g.
+  // one carries `--mode debug`, the other `--mode silent`). Everything that
+  // diffs two profiles has to treat these as different entries, or a slot swap
+  // neither stops nor relaunches, and a leaving slot's pending UAC handoff is
+  // read as retained (regression for #397, follow-up to #357, reused by #782).
+  const slot1 = { key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }
+  const slot2 = { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
+
+  expect(getProfileLaunchEntryId(slot1)).not.toBe(getProfileLaunchEntryId(slot2))
+})
+
+test('getProfileLaunchEntryId is case-insensitive for the executable path', () => {
+  expect(getProfileLaunchEntryId({ key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' })).toBe(
+    getProfileLaunchEntryId({ key: 'customapp1', path: 'c:/Tools/shared utility.exe' })
+  )
 })
