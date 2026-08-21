@@ -610,3 +610,68 @@ export function resolveConfiguredPathState(
 
   return undecidable.length === 0 ? 'not-running' : 'unknown'
 }
+
+/**
+ * Decide, for a batch of configured paths, which of them are actually running.
+ *
+ * The shared entry point for every "is my configured app already running?"
+ * question in the app (#674). Callers pass the `tasklist` name set they already
+ * hold plus the paths they care about, and get one verdict per path.
+ *
+ * **It only pays when there is something to pay for.** A path whose image name
+ * is absent from `processNames` cannot be running, so it is answered for free
+ * and never reaches the enumeration. A launch with no collisions at all — the
+ * overwhelmingly common case — therefore costs ZERO extra spawns, and the cost
+ * of the rest is proportional to collisions, not to how often this is called.
+ *
+ * When the enumeration fails, its candidates come back `unknown` rather than
+ * either answer. That is the same no-observation discipline the running-apps
+ * poll documents for pruning (#399): a failed read is not evidence of absence,
+ * and inventing one here would silently un-skip apps mid-launch.
+ */
+export async function resolveConfiguredPathStates(
+  processNames: Set<string>,
+  configuredPaths: string[]
+): Promise<Map<string, ConfiguredPathState>> {
+  const states = new Map<string, ConfiguredPathState>()
+  const candidates: string[] = []
+
+  configuredPaths.forEach((configuredPath) => {
+    if (processNames.has(getExeName(configuredPath))) {
+      candidates.push(configuredPath)
+    } else {
+      states.set(configuredPath, 'not-running')
+    }
+  })
+
+  if (candidates.length === 0) {
+    return states
+  }
+
+  const { instances, succeeded } = await findProcessesByName(
+    candidates.map((configuredPath) => getExeName(configuredPath))
+  )
+
+  candidates.forEach((configuredPath) => {
+    states.set(
+      configuredPath,
+      succeeded ? resolveConfiguredPathState(instances, configuredPath) : 'unknown'
+    )
+  })
+
+  return states
+}
+
+/**
+ * Whether a configured path should be treated as running, folding `unknown`
+ * into "yes".
+ *
+ * The conservative reading, and the one every caller wants when it is deciding
+ * whether to SKIP something: an app that might be running must not be started
+ * twice, and #390's elevated-invisible process must keep being treated as
+ * present. Callers that need to distinguish ambiguity from certainty read the
+ * state directly instead.
+ */
+export function isConfiguredPathRunning(state: ConfiguredPathState | undefined): boolean {
+  return state !== 'not-running'
+}

@@ -34,6 +34,7 @@ import {
 } from './state'
 import { isConsoleExecutable } from './subsystem'
 import { invalidateProcessNameCache, readRunningProcessNames } from './tasklist'
+import { isConfiguredPathRunning, resolveConfiguredPathStates } from './win32KillUtils'
 import type {
   AppLaunchResult,
   LateElevatedOutcome,
@@ -288,7 +289,28 @@ export async function launchProfileApps(
       return { success: false, error: 'No valid executable paths configured.', skipped }
     }
 
-    const appsToLaunch = validApps.filter((entry) => !isRunningExePath(processNames, entry.path))
+    // Verified against the PATH, not just the image name. `processNames` comes
+    // from `tasklist`, which reports names with no path, so a same-named process
+    // from anywhere on the system used to make this filter drop a configured app
+    // that was not running at all: it never started, was counted as "already
+    // running", and later got blamed on elevation when it could not be closed
+    // (#674). The collider need not be related to anything the user configured;
+    // on a real machine it was ambient `cmd.exe` instances.
+    //
+    // Costs nothing when nothing collides. `resolveConfiguredPathStates` answers
+    // every path whose name is absent from `processNames` for free, so a launch
+    // with no name collisions never reaches the enumeration.
+    //
+    // `unknown` still skips, which keeps #390: a process running at higher
+    // integrity than SimLauncher hides its path, and starting a second copy of
+    // an app that IS running is worse than the skip this is fixing.
+    const pathStates = await resolveConfiguredPathStates(
+      processNames,
+      validApps.map((entry) => entry.path)
+    )
+    const appsToLaunch = validApps.filter(
+      (entry) => !isConfiguredPathRunning(pathStates.get(entry.path))
+    )
     const skippedCount = validApps.length - appsToLaunch.length
 
     if (appsToLaunch.length === 0) {
