@@ -181,7 +181,11 @@ describe('GameIcon dismiss menu (#737)', () => {
         dismissPath={GAME_PATH}
       />
     )
-    expect(dotClass()).toContain('bg-(--status-warning)')
+    // The unknown state is carried by `status-dot-unknown`, whose ring and amber
+    // border live in App.css. It deliberately has NO `bg-` utility: the ring's
+    // fill is a gradient (the page showing through), which `background-color`
+    // cannot take, and a utility would race the stylesheet on equal specificity.
+    expect(dotClass()).toContain('status-dot-unknown')
     expect(dotClass()).not.toContain('bg-(--status-running)')
   })
 
@@ -199,13 +203,51 @@ describe('GameIcon dismiss menu (#737)', () => {
       />
     )
     expect(dotClass()).toContain('bg-(--status-running)')
-    expect(dotClass()).not.toContain('bg-(--status-warning)')
+    expect(dotClass()).not.toContain('status-dot-unknown')
   })
 
   test('a plain running game keeps the running dot (#737)', async () => {
     await render(<GameIcon game={GAME} isRunning={true} iconUrl={ICON} />)
     expect(dotClass()).toContain('bg-(--status-running)')
-    expect(dotClass()).not.toContain('bg-(--status-warning)')
+    expect(dotClass()).not.toContain('status-dot-unknown')
+  })
+
+  // The general case, and the reason the dot is not amber-only: colour alone
+  // fails WCAG 1.4.1, and green-versus-amber is the pair red-green colour vision
+  // deficiency compresses hardest, so at 12px the hue difference was a
+  // discrimination task rather than a glance (David's call on #737).
+  //
+  // Pinned the same way as the forced-colors rule below and for the same reason:
+  // jsdom applies no stylesheet, so no rendering assertion can see a ring. A
+  // class name in a component and a selector in a stylesheet drift apart
+  // silently, and this asserts both ends plus the two declarations that make it
+  // a ring rather than a disc.
+  test('the unknown dot is a ring in every theme, not only in forced-colors (#737)', async () => {
+    await render(
+      <GameIcon
+        game={GAME}
+        isRunning={true}
+        iconUrl={ICON}
+        warning={WARNING}
+        dismissPath={GAME_PATH}
+      />
+    )
+    expect(dotClass()).toContain('status-dot-unknown')
+
+    const css = readFileSync(path.join(process.cwd(), 'src/renderer/src/App.css'), 'utf8')
+    const forcedColorsAt = css.indexOf('@media (forced-colors: active)')
+    const generalAt = css.indexOf('.status-dot-unknown {')
+
+    // BEFORE the media query, i.e. not inside it. A rule that only exists in
+    // forced-colors is what this test exists to rule out.
+    expect(generalAt).toBeGreaterThan(-1)
+    expect(generalAt).toBeLessThan(forcedColorsAt)
+
+    const rule = css.slice(generalAt, css.indexOf('}', generalAt))
+    // The border is what makes it a shape; the gradient fill is what keeps the
+    // hole reading as the page rather than a hole punched in the game artwork.
+    expect(rule).toContain('border: 2px solid var(--status-warning)')
+    expect(rule).toContain('background: var(--bg-gradient)')
   })
 
   // Windows High Contrast strips every `.status-dot` to a single system colour,
