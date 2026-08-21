@@ -5565,6 +5565,24 @@ test('hasClosableLaunchedApps is false when only a same-named stranger runs (#67
   await expect(hasClosableLaunchedApps()).resolves.toBe(false)
 })
 
+// The other direction, and the one that keeps the action reachable (CodeRabbit
+// on #845): pinning only the `false` answer would let a change that always
+// returns `false` hide Close Apps entirely and still pass.
+test('hasClosableLaunchedApps is true when the candidate runs at its own path (#674)', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+})
+
 test('killProfileApps falls back to /IM for non-full-path utility companions (#352)', async () => {
   // When the configured app path is an image-name only (e.g. a utility
   // companion that has no installed location), killProfileApps cannot use

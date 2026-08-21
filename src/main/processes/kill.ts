@@ -367,16 +367,17 @@ export async function finalizeKillAttempts(
           !imageGoneFromTasklist &&
           (processIds.length > 0 ||
             isElevatedInconclusive ||
+            // Deliberately NOT path-verified, unlike the two branches above
+            // (#674, review bot on #845 asked why it has no test). Every
+            // producer of `accessDenied` sets it only alongside `success: false`,
+            // and `hasFailedToClose` below independently fails any attempt that
+            // is unsuccessful, not-notFound and whose image survives -- exactly
+            // this branch's own conditions. So a discriminator here could not
+            // change a single outcome; it would be a line that reads as
+            // load-bearing while doing nothing. If that coupling is ever broken,
+            // this is the branch to revisit.
             (attempt.accessDenied === true &&
               !attempt.notFound &&
-              // The same name-only reasoning one branch down (#674). Here
-              // taskkill was refused on PIDs found AT this path, so the image
-              // surviving is normally the refused process itself -- but if the
-              // enumeration can see the whole name and none of it is at this
-              // path, the refusal outlived the process and the survivor is
-              // somebody else. An elevated holdout cannot be dismissed this way:
-              // its path is unreadable, which resolves to `unknown`.
-              !pathVerifiedEmpty &&
               (processNamesAfterKill.has(attempt.processName) || !tasklistReadSucceeded)))
       } else {
         stillRunning = processNamesAfterKill.has(attempt.processName)

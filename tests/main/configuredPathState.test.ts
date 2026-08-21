@@ -181,6 +181,28 @@ describe('findProcessesByName parsing (#674)', () => {
     expect(resolveConfiguredPathState(instances, CONFIGURED)).toBe('unknown')
   })
 
+  test('a bare object is read as a one-element result, not a parse failure', async () => {
+    // The script forces an array, so this shape should not reach here. It is
+    // accepted anyway because the parse must not DEPEND on that: when the array
+    // guarantee broke, the symptom was not a parse error but every candidate
+    // resolving `unknown`, i.e. the whole discriminator silently off.
+    respondWith(
+      null,
+      JSON.stringify({
+        name: 'overlay.exe',
+        processId: 1000,
+        executablePath: 'C:/Tools/Overlay.exe',
+        sessionId: 1
+      })
+    )
+
+    const { instances, succeeded } = await findProcessesByName(['overlay.exe'])
+
+    expect(succeeded).toBe(true)
+    expect(instances).toHaveLength(1)
+    expect(resolveConfiguredPathState(instances, CONFIGURED)).toBe('running')
+  })
+
   test('a failed enumeration is a failure, never an empty result', async () => {
     // `succeeded: false` is what makes every candidate resolve `unknown`
     // upstream. Reporting an empty instance list as a success would read as

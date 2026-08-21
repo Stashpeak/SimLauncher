@@ -485,20 +485,34 @@ export function findProcessesByName(processNames: string[]): Promise<{
       return
     }
 
+    // ⚠️ Windows PowerShell 5.1 ONLY. `powershell.exe` is always 5.1 on Windows;
+    // `pwsh` is a separate binary this never invokes. Anything added after 5.1
+    // is unavailable here and fails at RUNTIME with a parameter-binding error,
+    // which this function reports as `succeeded: false` — so every candidate
+    // resolves `unknown` and the whole discriminator silently degrades to the
+    // name-only behaviour it exists to replace. `-AsArray` (PowerShell 6+) did
+    // exactly that and no mocked test could see it (CodeRabbit on #845).
+    // `tests/main/processEnumeration.win.test.ts` runs this against the real
+    // host so the next such parameter fails loudly instead.
     const script = [
       '$names = $env:SIMLAUNCHER_TARGET_PROCESS_NAMES | ConvertFrom-Json',
       // Force an array: a single-element JSON array deserializes to a scalar,
       // and `-contains` against a scalar silently matches nothing.
       '$wanted = @($names) | ForEach-Object { $_.ToLowerInvariant() }',
-      'Get-CimInstance Win32_Process |',
+      // `@(...)` around the whole pipeline, then `-InputObject`, is the 5.1 way
+      // to guarantee a JSON array. Piping into ConvertTo-Json unrolls a
+      // single-element collection back to a scalar; `-InputObject` takes the
+      // array as one value. Verified on 5.1 for zero, one and many matches.
+      '$found = @(Get-CimInstance Win32_Process |',
       '  Where-Object { $wanted -contains $_.Name.ToLowerInvariant() } |',
       '  Select-Object @{N="name";E={$_.Name.ToLowerInvariant()}},',
       '    @{N="processId";E={[int]$_.ProcessId}},',
       '    @{N="executablePath";E={$_.ExecutablePath}},',
-      '    @{N="sessionId";E={[int]$_.SessionId}} |',
-      // -AsArray so a single match is still a JSON array, matching the parse
-      // below. Without it PowerShell emits a bare object and the parse drops it.
-      '  ConvertTo-Json -Compress -AsArray'
+      '    @{N="sessionId";E={[int]$_.SessionId}})',
+      // Explicit depth: 5.1 defaults to 2 and truncates deeper structures
+      // SILENTLY. These records are flat, so 3 is slack rather than a fix, but
+      // the silence is what makes leaving it implicit a bad trade.
+      'ConvertTo-Json -Compress -Depth 3 -InputObject $found'
     ].join('\n')
 
     execFile(
@@ -512,20 +526,43 @@ export function findProcessesByName(processNames: string[]): Promise<{
           SIMLAUNCHER_TARGET_PROCESS_NAMES: JSON.stringify(wanted)
         }
       },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         if (error) {
-          console.error('Failed to enumerate processes by name:', getErrorMessage(error))
+          // Written to the on-disk log, not just the console, and that is the
+          // point rather than symmetry with the sibling lookup. A failure here
+          // is INVISIBLE in the product: every candidate resolves `unknown`,
+          // which folds to the conservative answer, so the app behaves exactly
+          // as it did before #674 and reports nothing wrong. The log entry is
+          // the only way anyone finds out the discriminator stopped working.
+          //
+          // `killed` is how execFile reports that IT terminated the child, which
+          // with a plain timeout option means the deadline elapsed.
+          const detail = error.killed
+            ? `Process enumeration timed out after ${WMI_LOOKUP_TIMEOUT_MS / 1000} seconds.`
+            : stderr.trim() || getErrorMessage(error)
+          console.error('Failed to enumerate processes by name:', detail)
+          writeAppErrorLog('kill', `Failed to enumerate processes by name: ${detail}`)
           resolve({ instances: [], succeeded: false })
           return
         }
 
         try {
           const parsed: unknown = JSON.parse(stdout.trim() || '[]')
-          if (!Array.isArray(parsed)) {
+          // A bare object is accepted as a one-element result. The script above
+          // guarantees an array, so this is not reachable through it — the point
+          // is that the parse must not depend on that guarantee holding. When it
+          // stopped holding, the failure was not a parse error but a silent
+          // total no-op, which is the worst shape a failure here can take.
+          const records = Array.isArray(parsed)
+            ? parsed
+            : typeof parsed === 'object' && parsed !== null
+              ? [parsed]
+              : null
+          if (!records) {
             resolve({ instances: [], succeeded: false })
             return
           }
-          const instances = parsed.flatMap((entry): NamedProcessInstance[] => {
+          const instances = records.flatMap((entry): NamedProcessInstance[] => {
             if (typeof entry !== 'object' || entry === null) return []
             const record = entry as Record<string, unknown>
             if (typeof record.name !== 'string' || typeof record.processId !== 'number') return []
