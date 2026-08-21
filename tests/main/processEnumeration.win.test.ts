@@ -29,8 +29,14 @@ import {
 const describeWindows = process.platform === 'win32' ? describe : describe.skip
 
 describeWindows('findProcessesByName against the real PowerShell host (#674)', () => {
-  // PowerShell startup dominates; the production timeout is 3s per call and
-  // this makes several, so the ceiling is generous relative to that.
+  // PowerShell startup dominates, so the budget is per CALL, not per test. The
+  // production budget is PROCESS_ENUMERATION_TIMEOUT_MS (10s), and the longest
+  // test below makes two calls, so the worst case a passing run can reach is
+  // 20s. The ceiling sits above that without being so high it hides a hang.
+  //
+  // Not the 3s WMI_LOOKUP_TIMEOUT_MS: that belongs to the path-scoped lookup,
+  // and this comment cited it until the enumeration was given its own budget
+  // (CodeRabbit on #845).
   const TIMEOUT_MS = 30_000
 
   test(
