@@ -10,12 +10,12 @@ import {
   getRunningApps,
   hasOtherActiveLaunchControllers,
   isAnyLaunchActive,
-  isRunningExePath,
   killLaunchedApps,
   killProfileApps,
   launchProfileApps,
   readRunningProcessNames,
   registerActiveLaunch,
+  resolveRunningConfiguredPaths,
   subscribeRunningApps,
   unregisterActiveLaunch,
   unsubscribeRunningApps
@@ -119,9 +119,16 @@ export function registerLaunchHandlers(): void {
     const launchController = registerActiveLaunch(gameKey)
     try {
       const { processNames } = await readRunningProcessNames()
-      const missingEntries = allEntries.filter(
-        (entry) => !isRunningExePath(processNames, entry.path)
+      // Verified against the path, not the image name (#674). "Missing" is the
+      // whole point of this handler, and a name-only reading of it made an app
+      // that had crashed look present because something unrelated on the system
+      // happened to share its exe name -- the exact situation the user reaches
+      // for this action in.
+      const runningPaths = await resolveRunningConfiguredPaths(
+        processNames,
+        allEntries.map((entry) => entry.path)
       )
+      const missingEntries = allEntries.filter((entry) => !runningPaths.has(entry.path))
 
       if (missingEntries.length === 0) {
         return {
@@ -174,25 +181,31 @@ export function registerLaunchHandlers(): void {
       const toEntries = utilityEntries(toProfileId)
       const toEntryIds = new Set(toEntries.map(getProfileLaunchEntryId))
       const fromEntryIds = new Set(fromEntries.map(getProfileLaunchEntryId))
-      // Slots that leave the profile and whose image is currently running
-      // need to be stopped. Match on `{key, path}` so a slot whose key
-      // changes (different args) still counts as a stop even when the
-      // exe path is unchanged.
+      // Both counts below are shown to the user in a confirmation dialog, so a
+      // name-only reading of "running" put numbers in front of them that no
+      // configured app backed: "stop 2 app(s)" for slots nothing was running,
+      // and "start 0" for slots that were not running at all (#674). One
+      // enumeration answers for both sides of the diff.
+      const runningPaths = await resolveRunningConfiguredPaths(
+        processNames,
+        [...fromEntries, ...toEntries].map((entry) => entry.path)
+      )
+      // Slots that leave the profile and are currently running need to be
+      // stopped. Match on `{key, path}` so a slot whose key changes (different
+      // args) still counts as a stop even when the exe path is unchanged.
       const stopping = fromEntries.filter(
-        (entry) =>
-          !toEntryIds.has(getProfileLaunchEntryId(entry)) &&
-          processNames.has(getExeName(entry.path))
+        (entry) => !toEntryIds.has(getProfileLaunchEntryId(entry)) && runningPaths.has(entry.path)
       )
       const stoppedExeNames = new Set(stopping.map((entry) => getExeName(entry.path)))
       const toStopCount = stopping.length
-      // A slot that newly enters the profile needs a start when either its
-      // image isn't running, or its image is about to be stopped above
-      // (same exe, different key — the incoming slot still needs its own
-      // args, so the running process must be replaced).
+      // A slot that newly enters the profile needs a start when either it isn't
+      // running, or its image is about to be stopped above (same exe, different
+      // key — the incoming slot still needs its own args, so the running process
+      // must be replaced).
       const toStartCount = toEntries.filter(
         (entry) =>
           !fromEntryIds.has(getProfileLaunchEntryId(entry)) &&
-          (stoppedExeNames.has(getExeName(entry.path)) || !processNames.has(getExeName(entry.path)))
+          (stoppedExeNames.has(getExeName(entry.path)) || !runningPaths.has(entry.path))
       ).length
 
       return { toStopCount, toStartCount }
@@ -250,10 +263,17 @@ export function registerLaunchHandlers(): void {
       try {
         const { processNames: processNamesBeforeSwitch } = await readRunningProcessNames()
 
+        // Path-verified, and it has to be, or this action and the dialog that
+        // announced it disagree: `get-profile-switch-diff` counts the same slots
+        // the same way (#674).
+        const runningPathsBeforeSwitch = await resolveRunningConfiguredPaths(
+          processNamesBeforeSwitch,
+          fromEntries.map((entry) => entry.path)
+        )
         const entriesToStop = fromEntries.filter(
           (entry) =>
             !toEntryIds.has(getProfileLaunchEntryId(entry)) &&
-            processNamesBeforeSwitch.has(getExeName(entry.path))
+            runningPathsBeforeSwitch.has(entry.path)
         )
         let killResult: KillResult | undefined
 
@@ -272,16 +292,21 @@ export function registerLaunchHandlers(): void {
         }
 
         const { processNames: processNamesAfterStop } = await readRunningProcessNames()
+        // Re-verified rather than reusing the pre-switch answer: the kill phase
+        // is exactly what this is measuring the effect of.
+        const runningPathsAfterStop = await resolveRunningConfiguredPaths(
+          processNamesAfterStop,
+          toEntries.map((entry) => entry.path)
+        )
         // If we just stopped a slot pointing at the same exe (different key
         // and args), the incoming slot still needs to start with its own
         // args — treat that exe as "needs to launch" regardless of post-kill
-        // tasklist state. Without this, a same-exe key swap would skip the
-        // relaunch and leave the old args active.
+        // state. Without this, a same-exe key swap would skip the relaunch and
+        // leave the old args active.
         const stoppedExeNames = new Set(entriesToStop.map((entry) => getExeName(entry.path)))
         const entriesToStart = toEntries.filter(
           (entry) =>
-            stoppedExeNames.has(getExeName(entry.path)) ||
-            !processNamesAfterStop.has(getExeName(entry.path))
+            stoppedExeNames.has(getExeName(entry.path)) || !runningPathsAfterStop.has(entry.path)
         )
 
         if (entriesToStart.length === 0) {

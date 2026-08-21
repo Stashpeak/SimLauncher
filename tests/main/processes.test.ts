@@ -145,6 +145,25 @@ type ProcessRegistryEntry = {
   pid: string
   processName: string
   executablePath: string
+  /**
+   * Windows session, 1 (interactive) unless a test says otherwise. Only the
+   * name-scoped enumeration reads it: session 0 is what makes an unreadable
+   * path decidable (#674).
+   */
+  sessionId: number
+}
+
+/**
+ * Processes whose path WMI will not disclose — a non-elevated SimLauncher
+ * looking at something running at higher integrity (#390). Registered
+ * separately because the path-keyed registry above cannot express "running,
+ * location unknown", and that shape is the one the #674 discriminator must
+ * NOT resolve.
+ */
+const hiddenProcesses: { processName: string; pid: string; sessionId: number }[] = []
+
+function registerHiddenProcess(processName: string, pid: string, sessionId = 1) {
+  hiddenProcesses.push({ processName: processName.toLowerCase(), pid, sessionId })
 }
 
 // Path-keyed registry that mirrors what WMI/Get-CimInstance would return for a
@@ -156,11 +175,12 @@ function normalizeRegistryKey(filePath: string) {
   return path.resolve(filePath).toLowerCase()
 }
 
-function registerProcess(executablePath: string, processName: string, pid: string) {
+function registerProcess(executablePath: string, processName: string, pid: string, sessionId = 1) {
   processRegistry.set(normalizeRegistryKey(executablePath), {
     pid,
     processName: processName.toLowerCase(),
-    executablePath
+    executablePath,
+    sessionId
   })
 }
 
@@ -295,6 +315,64 @@ async function loadProcessModules() {
           (options.env?.SIMLAUNCHER_TARGET_PROCESS_NAME as string | undefined) ??
           script.match(/\$name = '([^']+)'/)?.[1]
         )?.toLowerCase()
+
+        // The name-scoped enumeration behind the #674 discriminator. It asks
+        // about several names at once and gets no target path, so it has to be
+        // answered before the path-scoped branch below.
+        //
+        // Three sources, and the third is the load-bearing default. The path
+        // registry is authoritative when a test said WHERE a process runs.
+        // `hiddenProcesses` models the #390 shape, running with an unreadable
+        // path. And a bare `processNames.add(name)` — which most tests use,
+        // meaning only "something with this name is running" — yields an
+        // instance with a NULL path in an interactive session, i.e. `unknown`.
+        //
+        // That default is deliberate: an unmodelled location must not be
+        // silently read as "at the configured path", or every collision
+        // assertion in this file would pass without the discriminator existing.
+        // It also keeps those tests honest about what they pin, since `unknown`
+        // resolves to the same conservative answer they asserted before #674.
+        const namesEnv = options.env?.SIMLAUNCHER_TARGET_PROCESS_NAMES
+        if (typeof namesEnv === 'string' && namesEnv.length > 0) {
+          const wanted = new Set((JSON.parse(namesEnv) as string[]).map((n) => n.toLowerCase()))
+          const instances: {
+            name: string
+            processId: number
+            executablePath: string | null
+            sessionId: number
+          }[] = []
+          const modelled = new Set<string>()
+
+          processRegistry.forEach((entry) => {
+            if (!wanted.has(entry.processName)) return
+            modelled.add(entry.processName)
+            instances.push({
+              name: entry.processName,
+              processId: Number(entry.pid) || 0,
+              executablePath: entry.executablePath,
+              sessionId: entry.sessionId
+            })
+          })
+
+          hiddenProcesses.forEach((entry) => {
+            if (!wanted.has(entry.processName)) return
+            modelled.add(entry.processName)
+            instances.push({
+              name: entry.processName,
+              processId: Number(entry.pid) || 0,
+              executablePath: null,
+              sessionId: entry.sessionId
+            })
+          })
+
+          wanted.forEach((name) => {
+            if (modelled.has(name) || !processNames.has(name)) return
+            instances.push({ name, processId: 9000, executablePath: null, sessionId: 1 })
+          })
+
+          callback(null, JSON.stringify(instances), '')
+          return
+        }
 
         const targetPathEnv = options.env?.SIMLAUNCHER_TARGET_PROCESS_PATH
         if (typeof targetPathEnv !== 'string' || targetPathEnv.length === 0) {
@@ -742,6 +820,7 @@ beforeEach(async () => {
   tasklistReadFailArmed = false
   wmiLookupCounts.clear()
   processRegistry.clear()
+  hiddenProcesses.length = 0
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
@@ -1252,6 +1331,134 @@ test('launchProfileApps skips profile apps that are already running', async () =
     skippedCount: 1,
     message: 'All profile applications are already running.'
   })
+})
+
+// #674, the launch half. `tasklist` reports image NAMES with no path, so a
+// same-named process from anywhere on the system used to make this filter drop
+// a configured app that was not running at all. The user's companion silently
+// never started, was counted as "already running", and was later blamed on
+// elevation when Close Apps could not find it.
+//
+// The collider does not have to be related to anything the user configured: in
+// the field repro it was ambient `cmd.exe` instances belonging to a build tool.
+test('a same-named process at another path no longer blocks the launch (#674)', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Overlay.exe')
+  // The collider: same image name, entirely different path, readable.
+  registerProcess('C:/UserApps/Overlay.exe', 'overlay.exe', '4321')
+  processNames.add('overlay.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1,
+    skippedCount: 0
+  })
+  expect(spawnCalls.map((call) => call.appPath)).toContain('C:/Tools/Overlay.exe')
+})
+
+// The other direction, and the one that must not regress: a process genuinely
+// running AT the configured path is still skipped. Getting this wrong would
+// start a second copy of every companion on every launch.
+test('a process at the configured path is still skipped (#674)', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Overlay.exe')
+  registerProcess('C:/Tools/Overlay.exe', 'overlay.exe', '4321')
+  processNames.add('overlay.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 0,
+    skippedCount: 1
+  })
+})
+
+// #390 MUST NOT REGRESS. A process running at higher integrity than a
+// non-elevated SimLauncher hides its path, which is byte-identical to the
+// collision signal from a path-scoped query. That is the whole reason the fix
+// had to widen the query instead of inverting a predicate: here the answer is
+// genuinely unknown, so the app keeps its pre-#674 behaviour and skips.
+test('an elevated same-named process with no readable path is still skipped (#390)', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Overlay.exe')
+  registerHiddenProcess('overlay.exe', '4321')
+  processNames.add('overlay.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 0,
+    skippedCount: 1
+  })
+})
+
+// The free half of the discriminator. Session 0 is the non-interactive services
+// session, so it cannot be hosting the companion the user launched, and that is
+// what makes an unreadable path decidable there. On a real machine this covers
+// 170 of the 187 processes whose path WMI will not disclose, at the cost of an
+// integer that is already in the tasklist output.
+test('a same-named service in session 0 does not block the launch (#674)', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Overlay.exe')
+  registerHiddenProcess('overlay.exe', '4321', 0)
+  processNames.add('overlay.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1,
+    skippedCount: 0
+  })
+})
+
+// The cost guarantee, and the reason this fix does not fight the footprint
+// milestone. Verification is only reached for a path whose image name is
+// actually in the tasklist, so an ordinary launch with nothing colliding pays
+// for no enumeration at all. Without this the fix would add a PowerShell spawn
+// to every launch, which is the cost profile it was scoped to avoid.
+test('a launch with no name collision runs no enumeration at all (#674)', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Overlay.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe'])).resolves.toMatchObject({
+    success: true,
+    launchedCount: 1
+  })
+
+  const enumerations = execFileCalls.filter(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      typeof (call.options.env as Record<string, string> | undefined)
+        ?.SIMLAUNCHER_TARGET_PROCESS_NAMES === 'string'
+  )
+  expect(enumerations).toHaveLength(0)
+})
+
+// ...and when it does collide, it is ONE spawn for the whole batch rather than
+// one per app. The cost is proportional to collisions, not to profile size.
+test('several colliding apps are verified in a single enumeration (#674)', async () => {
+  const { launchProfileApps } = await loadProcessModules()
+
+  markExistingPath('C:/Tools/Overlay.exe')
+  markExistingPath('C:/Tools/Launcher.exe')
+  registerProcess('C:/UserApps/Overlay.exe', 'overlay.exe', '1')
+  registerProcess('C:/UserApps/Launcher.exe', 'launcher.exe', '2')
+  processNames.add('overlay.exe')
+  processNames.add('launcher.exe')
+
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Tools/Overlay.exe', 'C:/Tools/Launcher.exe'])
+  ).resolves.toMatchObject({ success: true, launchedCount: 2, skippedCount: 0 })
+
+  const enumerations = execFileCalls.filter(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      typeof (call.options.env as Record<string, string> | undefined)
+        ?.SIMLAUNCHER_TARGET_PROCESS_NAMES === 'string'
+  )
+  expect(enumerations).toHaveLength(1)
 })
 
 // #739: the renderer concatenates the skip warning onto `message`, so a summary
@@ -5230,6 +5437,150 @@ test('WMI returning 0 PIDs after taskkill is treated as closed (genuine exit) (#
       expect.objectContaining({ command: 'taskkill', args: expect.arrayContaining(['/PID']) })
     ])
   )
+})
+
+// #674, the kill half: the false "it must be running as administrator".
+//
+// A path-scoped kill correctly finds nothing at the configured path, but the
+// post-kill tasklist still shows the IMAGE, because something unrelated on the
+// system runs an exe with the same name. The pre-#674 code could not tell that
+// from #390's elevated-invisible process and blamed elevation, leaving a
+// leftover the user could not clear. In the field repro the "leftover SimHub"
+// was 20 ambient `cmd.exe` processes.
+test('a surviving same-named process at another path is not reported as elevated (#674)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  // The collider: same image name, readable, somewhere else entirely. It is
+  // still in the tasklist after the kill, which is what created the ambiguity.
+  registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '4321')
+  processNames.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0,
+    failures: []
+  })
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
+})
+
+// #390 MUST NOT REGRESS, and this is the test that decides whether the fix
+// above widened the query or just inverted a predicate. The setup is identical
+// except that the survivor's path is unreadable in an interactive session,
+// which is exactly what a process running at higher integrity looks like. That
+// is genuinely undecidable, so the elevated leftover has to stay.
+test('a surviving same-named process with no readable path still reports elevated (#390)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerHiddenProcess('simhub.exe', '4321')
+  processNames.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: false,
+    failedCount: 1
+  })
+  expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
+    reason: 'access_denied',
+    elevated: true
+  })
+})
+
+// The free half of the discriminator, on the kill path. Session 0 is the
+// non-interactive services session, so it cannot be the companion the user
+// launched — an unreadable path is still decidable there, and on a real machine
+// that covers 170 of the 187 processes WMI will not disclose a path for.
+test('a surviving same-named service in session 0 is not reported as elevated (#674)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerHiddenProcess('simhub.exe', '4321', 0)
+  processNames.add('simhub.exe')
+  const { killLaunchedApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  expect(unclosedProcesses.has('ac:c:\\tools\\simhub.exe')).toBe(false)
+})
+
+// The cost rule, mirrored from the launch half: a close where everything asked
+// for actually died leaves no image in the post-kill tasklist, so no path needs
+// discriminating and no enumeration runs. Without this the fix would add a
+// PowerShell spawn to every Close Apps click.
+test('a close with nothing surviving runs no enumeration at all (#674)', async () => {
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+  processNamesGoneAfterKill.add('simhub.exe')
+  const { killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  await killLaunchedApps('ac')
+
+  const enumerations = execFileCalls.filter(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      typeof (call.options.env as Record<string, string> | undefined)
+        ?.SIMLAUNCHER_TARGET_PROCESS_NAMES === 'string'
+  )
+  expect(enumerations).toHaveLength(0)
+})
+
+// hasClosableLaunchedApps answers "would Close Apps do anything?", so a
+// same-named stranger must not make it say yes — that would offer the user an
+// action that closes nothing (#674, pre-wiring for #673). Deliberately MORE
+// precise than killLaunchedApps' own scheduling, which stays name-gated
+// because attempting a doomed path-scoped kill is harmless.
+test('hasClosableLaunchedApps is false when only a same-named stranger runs (#674)', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '4321')
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+})
+
+// The other direction, and the one that keeps the action reachable (CodeRabbit
+// on #845): pinning only the `false` answer would let a change that always
+// returns `false` hide Close Apps entirely and still pass.
+test('hasClosableLaunchedApps is true when the candidate runs at its own path (#674)', async () => {
+  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
 })
 
 test('killProfileApps falls back to /IM for non-full-path utility companions (#352)', async () => {

@@ -15,8 +15,9 @@ export {
   registerActiveLaunch,
   unregisterActiveLaunch
 } from './processes/state'
-export { launchProfileApps, isAnyLaunchActive, isRunningExePath } from './processes/spawn'
+export { launchProfileApps, isAnyLaunchActive } from './processes/spawn'
 export { readRunningProcessNames, invalidateProcessNameCache } from './processes/tasklist'
+export { resolveRunningConfiguredPaths } from './processes/win32KillUtils'
 export type { RunningAppsChangedPayload, RunningAppsChangeReason } from './processes/running'
 export type {
   KillFailure,
