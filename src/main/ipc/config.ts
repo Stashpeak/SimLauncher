@@ -271,6 +271,13 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
     // Deliberately AFTER the writes and the migrate: anything above throwing
     // restores the old config, and cancelling a prompt that is still valid for
     // the restored config would be the worse mistake.
+    //
+    // Both mechanisms, for the same reason the switch needs both: a handoff
+    // younger than the grace window is not in the registry yet, so the abort
+    // signal is the only thing that reaches it. Unscoped here, unlike the
+    // switch's per-game abort, because an import replaces every game's config at
+    // once (CodeRabbit on #842).
+    abortActiveLaunches()
     cancelPendingElevatedHandoffs()
     reportStrandedConsentPrompts(drainStrandedConsentPrompts())
     notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })

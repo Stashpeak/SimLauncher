@@ -34,7 +34,11 @@ const mocks = vi.hoisted(() => ({
     ) => Promise<unknown>
   >(async () => ({ success: true, launchedCount: 0, skippedCount: 0 })),
   killProfileApps: vi.fn<
-    (gameKey: string, paths: string[], options?: { except?: AbortController }) => Promise<unknown>
+    (
+      gameKey: string,
+      entries: ProfileLaunchEntry[],
+      options?: { except?: AbortController }
+    ) => Promise<unknown>
   >(async () => ({
     success: true,
     closedCount: 0,
@@ -95,7 +99,7 @@ vi.mock('../../src/main/processes', async () => {
     ) => mocks.launchProfileApps(sender, gameKey, entries, options),
     killProfileApps: (
       gameKey: string,
-      entries: { key: string; path: string }[],
+      entries: ProfileLaunchEntry[],
       options?: { except?: AbortController }
     ) => mocks.killProfileApps(gameKey, entries, options),
     killLaunchedApps: vi.fn(),

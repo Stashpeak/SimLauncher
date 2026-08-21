@@ -4,6 +4,7 @@ type MockIpcHandler = (...args: unknown[]) => Promise<unknown>
 
 const migrateProfilesToNamedSets = vi.fn()
 const cancelPendingElevatedHandoffs = vi.fn()
+const abortActiveLaunches = vi.fn()
 // Defaults to 1 so the report path is exercised. The real counter is a
 // module-level scalar the cancel callback increments; what matters here is that
 // the import DRAINS it and pushes the count (#842).
@@ -116,6 +117,7 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
 
   const processesMock = {
     publishRunningApps: vi.fn(async () => {}),
+    abortActiveLaunches,
     cancelPendingElevatedHandoffs,
     drainStrandedConsentPrompts
   }
@@ -206,6 +208,13 @@ test('applying an import cancels every pending elevated handoff (#842)', async (
 
   await expect(previewThenApply(handlers)).resolves.toMatchObject({ success: true })
 
+  // Both mechanisms. A handoff younger than the grace window is not in the
+  // registry yet, so the abort signal is the only thing that reaches it and
+  // cancelling the registry alone left the whole pre-grace window uncovered
+  // (CodeRabbit on #842). Unscoped, unlike the switch's per-game abort, because
+  // an import replaces every game's config at once.
+  expect(abortActiveLaunches).toHaveBeenCalledTimes(1)
+  expect(abortActiveLaunches.mock.calls[0]).toEqual([])
   expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
   // No game key and no predicate: unlike a profile switch there is no "profile
   // being left" to diff against, so this is deliberately unscoped.
@@ -229,6 +238,7 @@ test('a rolled-back import cancels nothing (#842)', async () => {
   await expect(previewThenApply(handlers)).resolves.toMatchObject({ success: false })
 
   expect(mockStore.data).toEqual(initial)
+  expect(abortActiveLaunches).not.toHaveBeenCalled()
   expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
   expect(drainStrandedConsentPrompts).not.toHaveBeenCalled()
   expect(pushedStrandedCounts()).toEqual([])
