@@ -176,6 +176,45 @@ function collectNamesWorthResolving(
 }
 
 /**
+ * Whether anything about this image name is still unaccounted for, in which
+ * case `not-running` is a claim the evidence does not support.
+ *
+ * The shared rule reasons about the instances it is GIVEN. This module builds
+ * those instances from a snapshot that can be incomplete in two ways the rule
+ * cannot see, and in both of them a missing instance is indistinguishable from
+ * an absent process (both CodeRabbit, on #846):
+ *
+ *   1. **A pid nobody has resolved.** `buildInstances` gives it a null path,
+ *      which for a SESSION 0 pid the rule dismisses outright — correctly, when
+ *      the null means "Windows refused", and wrongly when it only means "the
+ *      cooldown skipped it". A configured app starting as a service inside a
+ *      cooldown window would read as stopped, and be pruned.
+ *   2. **A row the parser could not turn into an instance.** The name is still
+ *      recorded as running, deliberately, but there is no instance to reason
+ *      about, so the rule sees nothing at all under that name.
+ *
+ * Both collapse to the same rule: not having looked is not the same as having
+ * looked and found nothing, and only the second may answer `not-running`.
+ */
+function hasUnaccountedEvidence(
+  processNames: Set<string>,
+  processes: TasklistProcess[],
+  targetName: string
+): boolean {
+  if (!processNames.has(targetName)) {
+    // Nothing is running under this name, which is a fact rather than a gap.
+    return false
+  }
+
+  const named = processes.filter((entry) => entry.name === targetName)
+  if (named.length === 0) {
+    return true
+  }
+
+  return named.some((entry) => !resolvedPidPaths.has(entry.processId))
+}
+
+/**
  * Decide, for each configured path, whether it is running, using the snapshot
  * the poll already paid for and resolving unfamiliar pids at most once.
  *
@@ -184,7 +223,7 @@ function collectNamesWorthResolving(
  * failed read changes nothing rather than emptying the strip.
  */
 export async function resolveTrackedPathStates(
-  snapshot: { processes: TasklistProcess[]; succeeded: boolean },
+  snapshot: { processNames: Set<string>; processes: TasklistProcess[]; succeeded: boolean },
   configuredPaths: string[]
 ): Promise<Map<string, ConfiguredPathState>> {
   const states = new Map<string, ConfiguredPathState>()
@@ -227,7 +266,13 @@ export async function resolveTrackedPathStates(
 
   const enriched = buildInstances(snapshot.processes)
   configuredPaths.forEach((configuredPath) => {
-    states.set(configuredPath, resolveConfiguredPathState(enriched, configuredPath))
+    const state = resolveConfiguredPathState(enriched, configuredPath)
+    // Only ever weakens `not-running`, never a positive answer: a path match is
+    // evidence in its own right and outranks anything still unaccounted for.
+    const downgrade =
+      state === 'not-running' &&
+      hasUnaccountedEvidence(snapshot.processNames, snapshot.processes, getExeName(configuredPath))
+    states.set(configuredPath, downgrade ? 'unknown' : state)
   })
 
   return states

@@ -39,14 +39,21 @@ const CONFIGURED = 'C:/Tools/Overlay.exe'
 
 function snapshot(
   processes: { name?: string; processId: number; sessionId?: number }[],
-  succeeded = true
+  succeeded = true,
+  // Defaults to exactly the names the rows carry, which is what the real parser
+  // produces. Passed explicitly only to model the one case where the two can
+  // legitimately disagree: a row whose name was recorded but whose PID or
+  // session would not parse, so it yields no instance.
+  extraNames: string[] = []
 ) {
+  const rows = processes.map((entry) => ({
+    name: entry.name ?? 'overlay.exe',
+    processId: entry.processId,
+    sessionId: entry.sessionId ?? 1
+  }))
   return {
-    processes: processes.map((entry) => ({
-      name: entry.name ?? 'overlay.exe',
-      processId: entry.processId,
-      sessionId: entry.sessionId ?? 1
-    })),
+    processNames: new Set([...rows.map((entry) => entry.name), ...extraNames]),
+    processes: rows,
     succeeded
   }
 }
@@ -115,6 +122,36 @@ describe('what the tasklist alone can decide (#674)', () => {
     ])
 
     expect(states.get(CONFIGURED)).toBe('running')
+  })
+
+  test('a session-0 pid the cooldown skipped is unknown, not dismissed (#846)', async () => {
+    // The dangerous half of the cooldown. Session 0 is the one case where the
+    // rule dismisses an instance whose path it does not have, and that is only
+    // sound when the null means "Windows refused" rather than "nobody looked".
+    // A configured app starting as a service inside a cooldown window would
+    // otherwise read as stopped for 45s, and be pruned.
+    answerWith([{ processId: 100, executablePath: 'C:/Elsewhere/Overlay.exe' }])
+    await resolveTrackedPathStates(snapshot([{ processId: 100 }]), [CONFIGURED])
+    expect(findProcessesByName).toHaveBeenCalledTimes(1)
+
+    // Same name, brand new session-0 pid, still inside the cooldown.
+    const states = await resolveTrackedPathStates(
+      snapshot([{ processId: 100 }, { processId: 500, sessionId: 0 }]),
+      [CONFIGURED]
+    )
+
+    expect(states.get(CONFIGURED)).toBe('unknown')
+    expect(findProcessesByName).toHaveBeenCalledTimes(1)
+  })
+
+  test('a name whose row would not parse is unknown, not not-running (#846)', async () => {
+    // The parser records the NAME from field 0 alone but yields no instance for
+    // a row whose PID or session is malformed. The rule then sees nothing under
+    // that name, which is indistinguishable from an absent process unless the
+    // gap is carried explicitly.
+    const states = await resolveTrackedPathStates(snapshot([], true, ['overlay.exe']), [CONFIGURED])
+
+    expect(states.get(CONFIGURED)).toBe('unknown')
   })
 
   test('a failed snapshot answers nothing rather than answering wrongly', async () => {
