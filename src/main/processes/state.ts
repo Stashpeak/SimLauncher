@@ -296,16 +296,25 @@ export function consumeProcessNameMismatchWarningSuppression(appPath: string): b
 /**
  * Reconcile `runningProcesses` against the live tasklist snapshot.
  *
- * Matching is done by exe name, not by the Map key (normalised path), because
- * some apps replace their process with a child of the same exe name — the
- * original PID is gone but the exe is still present, so the path key would
- * still match even without this exe-name check.  Conversely, if the exe name
- * disappears from the tasklist the ChildProcess handle is stale regardless of
- * what key it was filed under, so we drop it.
+ * Deliberately NOT matched on the Map key (a normalised path), because some
+ * apps replace their process with a child of the same exe name: the original
+ * PID is gone but the image is still there, and a key comparison would drop a
+ * record that is still live. The question is "is anything running at this
+ * path", which is what the predicate answers.
+ *
+ * Takes a PREDICATE rather than the name set it used to take (#674). Asking by
+ * name alone meant a same-named process anywhere on the system kept a dead
+ * record alive forever, and the caller is the only party that can answer the
+ * path question, so it passes in the answer rather than the raw snapshot. Same
+ * reasoning as `pruneUntrackedGames` taking keys: this module stays free of
+ * both profile and process-resolution knowledge.
+ *
+ * The predicate must answer "yes" when it does not know. A record is user
+ * visible, so an unobserved tick must not delete it.
  */
-export function pruneStoppedRunningProcesses(processNames: Set<string>): void {
+export function pruneStoppedRunningProcesses(isPathRunning: (appPath: string) => boolean): void {
   runningProcesses.forEach((appProcess, key) => {
-    if (!processNames.has(getExeName(appProcess.path))) {
+    if (!isPathRunning(appProcess.path)) {
       runningProcesses.delete(key)
     }
   })

@@ -184,6 +184,75 @@ function registerProcess(executablePath: string, processName: string, pid: strin
   })
 }
 
+/**
+ * Stable synthetic PID for a name a test modelled only as "running", with no
+ * location (a bare `processNames.add(name)`).
+ *
+ * Shared by the tasklist and enumeration mocks so both describe the same
+ * process. Distinct PER NAME rather than one constant, because the production
+ * path cache is keyed by PID: two unmodelled names sharing a pid would let one
+ * name's resolution answer for the other, which is a bug the harness would be
+ * inventing rather than exposing.
+ */
+const syntheticPids = new Map<string, number>()
+
+function syntheticPidFor(name: string): number {
+  const existing = syntheticPids.get(name)
+  if (existing !== undefined) {
+    return existing
+  }
+  const pid = 9000 + syntheticPids.size
+  syntheticPids.set(name, pid)
+  return pid
+}
+
+/**
+ * The tasklist snapshot as rows, from the three sources that describe what is
+ * running: the path registry, the unreadable-path processes, and a bare
+ * `processNames.add(name)` for a test that modelled only the name.
+ *
+ * One builder because this suite mocks BOTH the `tasklist` module and
+ * `execFile`, and the name-scoped enumeration answers from the same sources. If
+ * any of them disagreed about a pid, the production cache (keyed by pid) would
+ * be reconciling against a machine that cannot exist.
+ *
+ * The last source is the load-bearing default, exactly as it is for the
+ * enumeration: an unmodelled location yields a real pid in an interactive
+ * session whose PATH is never resolvable, i.e. `unknown`. That is the same
+ * conservative answer those tests pinned before #674, so they keep their
+ * meaning; reading it as "at the configured path" would make every collision
+ * assertion pass with the fix removed.
+ */
+function buildTasklistProcesses(): { name: string; processId: number; sessionId: number }[] {
+  const rows: { name: string; processId: number; sessionId: number }[] = []
+  const modelled = new Set<string>()
+
+  processRegistry.forEach((entry) => {
+    if (!processNames.has(entry.processName)) return
+    modelled.add(entry.processName)
+    rows.push({
+      name: entry.processName,
+      processId: Number(entry.pid),
+      sessionId: entry.sessionId
+    })
+  })
+  hiddenProcesses.forEach((entry) => {
+    if (!processNames.has(entry.processName)) return
+    modelled.add(entry.processName)
+    rows.push({
+      name: entry.processName,
+      processId: Number(entry.pid),
+      sessionId: entry.sessionId
+    })
+  })
+  processNames.forEach((name) => {
+    if (modelled.has(name)) return
+    rows.push({ name, processId: syntheticPidFor(name), sessionId: 1 })
+  })
+
+  return rows
+}
+
 function findRegistryEntryByPid(pid: string): ProcessRegistryEntry | undefined {
   for (const entry of processRegistry.values()) {
     if (entry.pid === pid) {
@@ -260,10 +329,19 @@ async function loadProcessModules() {
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })
       if (command === 'tasklist') {
+        // Five real columns, because the poll now reads PID and Session# from
+        // this same snapshot (#674). Built from the SAME three sources the
+        // name-scoped enumeration below answers from, so the two never describe
+        // different machines: a pid the tasklist reports has to be a pid the
+        // enumeration can resolve, or the pid-keyed path cache is modelling
+        // something impossible and the zero-spawn guarantee cannot be tested.
         callback(
           null,
-          Array.from(processNames)
-            .map((processName) => `"${processName}","1234","Console","1","1,024 K"`)
+          buildTasklistProcesses()
+            .map(
+              (entry) =>
+                `"${entry.name}","${entry.processId}","Console","${entry.sessionId}","1,024 K"`
+            )
             .join('\n'),
           ''
         )
@@ -367,7 +445,12 @@ async function loadProcessModules() {
 
           wanted.forEach((name) => {
             if (modelled.has(name) || !processNames.has(name)) return
-            instances.push({ name, processId: 9000, executablePath: null, sessionId: 1 })
+            instances.push({
+              name,
+              processId: syntheticPidFor(name),
+              executablePath: null,
+              sessionId: 1
+            })
           })
 
           callback(null, JSON.stringify(instances), '')
@@ -581,8 +664,12 @@ async function loadProcessModules() {
       // the empty-Set here is what lets the regression test distinguish
       // "image is gone" from "we don't know" (see #399).
       const result = shouldFailNow
-        ? { processNames: new Set<string>(), succeeded: false }
-        : { processNames: new Set(processNames), succeeded: true }
+        ? { processNames: new Set<string>(), processes: [], succeeded: false }
+        : {
+            processNames: new Set(processNames),
+            processes: buildTasklistProcesses(),
+            succeeded: true
+          }
       // A one-shot blocker models a slow tasklist scan (#670). Consumed here
       // so only the call it was armed for is delayed; the unarmed path keeps
       // its exact microtask timing (other tests depend on it).
@@ -821,6 +908,7 @@ beforeEach(async () => {
   wmiLookupCounts.clear()
   processRegistry.clear()
   hiddenProcesses.length = 0
+  syntheticPids.clear()
   execFileCalls.length = 0
   spawnCalls.length = 0
   spawnErrors.clear()
@@ -843,6 +931,164 @@ beforeEach(async () => {
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
   storeData.launchDelayMs = 0
+})
+
+// #674, the half the user actually looks at. These run the REAL tasklist
+// parser, the real pid cache and the real decision rule against a modelled
+// machine, so they pin the poll end to end rather than the wiring.
+test('the strip does not draw an icon for a configured app a stranger was masking (#674)', async () => {
+  const { getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    gamePaths: { ac: 'C:/Games/acs.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Games/acs.exe')
+  // The game IS running, so this profile is adopted and its companions are
+  // eligible to surface. That is what makes the next line the thing under test
+  // rather than an empty list.
+  registerProcess('C:/Games/acs.exe', 'acs.exe', '1000')
+  processNames.add('acs.exe')
+  // The collider: same image name as the configured companion, somewhere else.
+  registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '2000')
+  processNames.add('simhub.exe')
+
+  const apps = await getRunningApps()
+
+  expect(apps.map((app) => app.path)).toContain('C:/Games/acs.exe')
+  expect(apps.map((app) => app.path)).not.toContain('C:/Tools/SimHub.exe')
+})
+
+// The other direction, and the one that must not regress: a companion genuinely
+// running at its configured path is still surfaced.
+test('a companion running at its configured path is still surfaced (#674)', async () => {
+  const { getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    gamePaths: { ac: 'C:/Games/acs.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Games/acs.exe')
+  registerProcess('C:/Games/acs.exe', 'acs.exe', '1000')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '2000')
+  processNames.add('acs.exe')
+  processNames.add('simhub.exe')
+
+  const apps = await getRunningApps()
+
+  expect(apps.map((app) => app.path)).toContain('C:/Tools/SimHub.exe')
+})
+
+// Adoption is the widest blast radius the collision had: one stranger sharing
+// the GAME exe's name and a game the user never started looks like a live
+// session, dragging that profile's whole companion list onto the strip.
+test('a stranger sharing the game exe name does not adopt the profile (#674)', async () => {
+  const { getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    gamePaths: { ac: 'C:/Games/acs.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Games/acs.exe')
+  registerProcess('C:/SomewhereElse/acs.exe', 'acs.exe', '1000')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '2000')
+  processNames.add('acs.exe')
+  processNames.add('simhub.exe')
+
+  await expect(getRunningApps()).resolves.toEqual([])
+})
+
+// #390 MUST NOT REGRESS on the poll either. An elevated process hides its path,
+// which is indistinguishable from the collision when only the path is asked
+// about — so the answer is `unknown` and the icon stays.
+test('a companion whose path is unreadable is still surfaced (#390)', async () => {
+  const { getRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    gamePaths: { ac: 'C:/Games/acs.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  markExistingPath('C:/Games/acs.exe')
+  registerProcess('C:/Games/acs.exe', 'acs.exe', '1000')
+  registerHiddenProcess('simhub.exe', '2000')
+  processNames.add('acs.exe')
+  processNames.add('simhub.exe')
+
+  const apps = await getRunningApps()
+
+  expect(apps.map((app) => app.path)).toContain('C:/Tools/SimHub.exe')
+})
+
+// The leftover that could not be cleared, and the reason it also cost battery.
+// Pruning used to be by image NAME, so a leftover created against a stranger
+// was permanent: dismissing did nothing, closing the app did nothing, and
+// `computeRunningAppsScanDelayMs` holds the poll at 2s for as long as any
+// unclosed record exists — including in the tray, for the rest of the session.
+test('a leftover recorded against a stranger is pruned by the next scan (#674)', async () => {
+  const { getRunningApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  unclosedProcesses.set('ac:c:\\tools\\simhub.exe', {
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    error: 'Windows denied SimLauncher permission to close this app.',
+    reason: 'access_denied',
+    elevated: true
+  })
+  // The image name is in the tasklist and always will be, but at another path.
+  registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '2000')
+  processNames.add('simhub.exe')
+
+  const apps = await getRunningApps()
+
+  expect(unclosedProcesses.size).toBe(0)
+  expect(apps).toEqual([])
+})
+
+// The same record when the app really is still there: pruning must not become
+// eager just because it learned to read paths.
+test('a leftover whose app is genuinely running is kept (#674)', async () => {
+  const { getRunningApps, unclosedProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  unclosedProcesses.set('ac:c:\\tools\\simhub.exe', {
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    error: 'Windows denied SimLauncher permission to close this app.',
+    reason: 'access_denied',
+    elevated: true
+  })
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '2000')
+  processNames.add('simhub.exe')
+
+  const apps = await getRunningApps()
+
+  expect(unclosedProcesses.size).toBe(1)
+  expect(apps.map((app) => app.path)).toContain('C:/Tools/SimHub.exe')
 })
 
 test('getRunningApps surfaces a warning when a launched wrapper exits before its configured process is found', async () => {
@@ -4259,7 +4505,10 @@ test('pruneUnclosedProcesses removes stale entries and keeps running entries', a
     elevated: true
   })
 
-  pruneUnclosedProcesses(new Set(['simhub.exe']))
+  // Takes a PATH predicate now (#674), which is the whole point: a leftover
+  // used to be prunable only when its image NAME left the tasklist, so one
+  // same-named stranger made it permanent.
+  pruneUnclosedProcesses((appPath) => appPath === 'C:/Tools/SimHub.exe')
 
   expect(unclosedProcesses.has('ac:c:\\tools\\stale.exe')).toBe(false)
   expect(unclosedProcesses.get('ac:c:\\tools\\simhub.exe')).toMatchObject({
@@ -5651,7 +5900,7 @@ test('pruneUnclosedProcesses removes entries whose image is no longer active (#3
     elevated: true
   })
 
-  pruneUnclosedProcesses(new Set(['active.exe']))
+  pruneUnclosedProcesses((appPath) => appPath === 'C:/Tools/Active.exe')
 
   expect(unclosedProcesses.has('ac:c:\\tools\\active.exe')).toBe(true)
   expect(unclosedProcesses.has('ac:c:\\tools\\inactive.exe')).toBe(false)

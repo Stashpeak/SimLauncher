@@ -1,0 +1,227 @@
+/**
+ * Answering "is my configured app running?" on the 2s poll, without paying for
+ * a process enumeration on every tick (#674, second half).
+ *
+ * The launch and kill paths can afford `findProcessesByName` outright: they are
+ * user actions that already spawn PowerShell. The poll cannot. It runs forever,
+ * in the tray, and adding a spawn per tick would cut straight against the
+ * 1.3.0 footprint milestone.
+ *
+ * Three things make the cheap version possible, in order of how much they buy:
+ *
+ *   1. **The tasklist already carries PID and session.** Both were being parsed
+ *      and discarded. Session 0 is the non-interactive services session, so
+ *      every process there is dismissible without asking anything further. On a
+ *      real machine that is 170 of 537 processes, for free.
+ *   2. **A path, once learned for a PID, stays true for that PID's lifetime.**
+ *      Windows does not move a running image, so the only invalidation needed
+ *      is the PID leaving the tasklist. No TTL, and no revalidation.
+ *   3. **"Windows will not tell us" is itself an answer worth caching.** An
+ *      elevated process hides its path from a non-elevated SimLauncher and will
+ *      keep hiding it, so a null result is stored rather than retried. Without
+ *      this the pathological cases never converge.
+ *
+ * Together those give the property this design exists for: **in steady state
+ * the poll spawns nothing extra.** A resolution happens when an unfamiliar PID
+ * appears under a name we care about, which is a launch, not a tick.
+ *
+ * The DECISION is not re-implemented here. `resolveConfiguredPathState` in
+ * `win32KillUtils` is the one rule, and this module's whole job is to feed it
+ * the same `NamedProcessInstance` shape from a cheaper source. Two rules that
+ * agreed by convention is exactly what #149 was about.
+ */
+import { performance } from 'perf_hooks'
+
+import { getExeName } from '../utils'
+
+import type { TasklistProcess } from './tasklist'
+import {
+  type ConfiguredPathState,
+  type NamedProcessInstance,
+  findProcessesByName,
+  resolveConfiguredPathState
+} from './win32KillUtils'
+
+/**
+ * How long before the same image name may cost another enumeration.
+ *
+ * Point 3 above converges the ordinary case on its own, so this is not the
+ * mechanism that makes the poll cheap. It bounds the one case that cannot
+ * converge: a name that keeps producing NEW pids. On a developer machine
+ * `cmd.exe` reaches roughly 30 spawns a minute, and "resolve unfamiliar pids"
+ * would chase every one of them. With the cooldown that name costs at most one
+ * enumeration per window, and the pids it did not get to are simply still
+ * unknown, which the decision rule already handles conservatively.
+ */
+const NAME_RESOLUTION_COOLDOWN_MS = 45000
+
+/**
+ * PID to executable path.
+ *
+ * PRESENCE means resolved. A `null` VALUE is a resolved answer, "we asked and
+ * Windows would not say", and must not be retried; a missing key is "we have
+ * not asked". Collapsing those two is what would turn every elevated process
+ * into a permanent source of enumerations.
+ */
+const resolvedPidPaths = new Map<number, string | null>()
+/** Image name to the monotonic timestamp of its last enumeration. */
+const nameResolvedAt = new Map<string, number>()
+
+/** Test seam. Production never needs this: the maps self-prune from the poll. */
+export function resetPathResolutionCache(): void {
+  resolvedPidPaths.clear()
+  nameResolvedAt.clear()
+}
+
+/**
+ * Drop everything the latest snapshot says is gone.
+ *
+ * This is the entire invalidation strategy, and it is exact rather than
+ * approximate: a PID that is no longer running cannot be running at a different
+ * path, and Windows will not hand the number to a new process while the old one
+ * is still listed. A TTL would be strictly worse, expiring answers that are
+ * still true and keeping ones that are not.
+ *
+ * ONLY call this for a snapshot that actually succeeded. A failed read yields an
+ * empty snapshot, and treating that as "every process ended" would flush the
+ * whole cache and buy back all the enumerations at the worst moment (#399).
+ */
+function reconcileResolvedPaths(processes: TasklistProcess[]): void {
+  const livePids = new Set(processes.map((entry) => entry.processId))
+  resolvedPidPaths.forEach((_path, pid) => {
+    if (!livePids.has(pid)) {
+      resolvedPidPaths.delete(pid)
+    }
+  })
+
+  const liveNames = new Set(processes.map((entry) => entry.name))
+  nameResolvedAt.forEach((_at, name) => {
+    // A name with nothing running has no pids to resolve, so its cooldown is
+    // holding back an enumeration that would not happen anyway. Clearing it
+    // means the NEXT appearance of that name is answered promptly instead of
+    // inheriting a stale timer from a previous run of the app.
+    if (!liveNames.has(name)) {
+      nameResolvedAt.delete(name)
+    }
+  })
+}
+
+/**
+ * The tasklist snapshot expressed as the shape the decision rule consumes,
+ * enriched with whatever paths are already known.
+ *
+ * An unresolved PID becomes `executablePath: null`, which is the same thing the
+ * enumeration reports for a path Windows withholds. That is deliberate and it
+ * is what keeps the rule honest: both mean "this instance cannot be ruled out",
+ * so both land on `unknown` and the caller keeps its pre-#674 behaviour.
+ */
+function buildInstances(processes: TasklistProcess[]): NamedProcessInstance[] {
+  return processes.map((entry) => ({
+    name: entry.name,
+    processId: entry.processId,
+    executablePath: resolvedPidPaths.get(entry.processId) ?? null,
+    sessionId: entry.sessionId
+  }))
+}
+
+/**
+ * Image names that still hold an instance nothing can decide, and that are off
+ * cooldown, i.e. the names worth spending one enumeration on.
+ *
+ * Session 0 instances are excluded because the rule can already dismiss them,
+ * and pids with a stored `null` are excluded because asking again would get the
+ * same refusal. What is left is genuinely unfamiliar.
+ */
+function collectNamesWorthResolving(
+  processes: TasklistProcess[],
+  wantedNames: Set<string>,
+  now: number
+): string[] {
+  const names = new Set<string>()
+
+  processes.forEach((entry) => {
+    if (!wantedNames.has(entry.name) || entry.sessionId === 0) {
+      return
+    }
+    if (resolvedPidPaths.has(entry.processId)) {
+      return
+    }
+    const lastResolvedAt = nameResolvedAt.get(entry.name)
+    if (lastResolvedAt !== undefined && now - lastResolvedAt < NAME_RESOLUTION_COOLDOWN_MS) {
+      return
+    }
+    names.add(entry.name)
+  })
+
+  return Array.from(names)
+}
+
+/**
+ * Decide, for each configured path, whether it is running, using the snapshot
+ * the poll already paid for and resolving unfamiliar pids at most once.
+ *
+ * `succeeded === false` short-circuits to an empty map rather than an answer.
+ * Every caller reads a missing entry the way it read the pre-#674 world, so a
+ * failed read changes nothing rather than emptying the strip.
+ */
+export async function resolveTrackedPathStates(
+  snapshot: { processes: TasklistProcess[]; succeeded: boolean },
+  configuredPaths: string[]
+): Promise<Map<string, ConfiguredPathState>> {
+  const states = new Map<string, ConfiguredPathState>()
+
+  if (!snapshot.succeeded || configuredPaths.length === 0) {
+    return states
+  }
+
+  reconcileResolvedPaths(snapshot.processes)
+
+  const wantedNames = new Set(configuredPaths.map((configuredPath) => getExeName(configuredPath)))
+  const namesToResolve = collectNamesWorthResolving(
+    snapshot.processes,
+    wantedNames,
+    performance.now()
+  )
+
+  if (namesToResolve.length > 0) {
+    const { instances, succeeded } = await findProcessesByName(namesToResolve)
+
+    // The cooldown is stamped whether or not the enumeration worked, and the
+    // two halves are deliberately separate. A failure teaches nothing, so no
+    // path is cached and the ANSWER stays honestly `unknown`. But retrying a
+    // broken enumeration on every 2s tick is exactly the footprint regression
+    // this module exists to avoid: a persistent failure (PowerShell missing,
+    // WMI wedged) would spawn forever. Rate-limiting the retry and refusing to
+    // record a verdict are different concerns, and conflating them costs one or
+    // the other.
+    const now = performance.now()
+    namesToResolve.forEach((name) => nameResolvedAt.set(name, now))
+
+    if (succeeded) {
+      // Recorded for every pid the enumeration saw, including the ones whose
+      // path it would not disclose, so those stop being asked about at all.
+      instances.forEach((instance) => {
+        resolvedPidPaths.set(instance.processId, instance.executablePath)
+      })
+    }
+  }
+
+  const enriched = buildInstances(snapshot.processes)
+  configuredPaths.forEach((configuredPath) => {
+    states.set(configuredPath, resolveConfiguredPathState(enriched, configuredPath))
+  })
+
+  return states
+}
+
+/**
+ * Whether a configured path should be treated as running, folding `unknown` and
+ * "no answer" into "yes".
+ *
+ * Same conservative reading as the launch and kill paths, and for the same
+ * reason: a missing entry means the poll could not observe, and an absence of
+ * observation must never remove something the user can see.
+ */
+export function isTrackedPathRunning(state: ConfiguredPathState | undefined): boolean {
+  return state !== 'not-running'
+}
