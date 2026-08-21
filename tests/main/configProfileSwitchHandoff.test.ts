@@ -286,6 +286,12 @@ test('a slot move to the same exe still counts as leaving (#782)', async () => {
   // same binary. Matching on path alone cancels both, which loses a prompt the
   // user was about to approve for an app that is staying.
   expect(cancelsHandoffFor('customapp2', 'C:/Tools/Shared Utility.exe')).toBe(false)
+
+  // The key is doing that work on its own. The registry stores the path AS
+  // LAUNCHED while `leavingEntries` is rebuilt from the current `appPaths`, so
+  // requiring the path to match as well makes a slot whose exe was edited in
+  // Settings mid-prompt escape cancellation entirely (Codex P2 on #842).
+  expect(cancelsHandoffFor('customapp1', 'C:/Tools/Some Older Binary.exe')).toBe(true)
 })
 
 // Editing the profile you are already on is not a switch, whatever moved inside

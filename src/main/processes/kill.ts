@@ -3,7 +3,6 @@ import path from 'path'
 
 import {
   getActiveStoredProfile,
-  getProfileLaunchEntryId,
   getProfileTrackablePaths,
   getStoredProfiles,
   isProcessTrackingEnabled,
@@ -658,7 +657,16 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // (#675), so aborting is not enough: kill the still-live PowerShell host too,
   // or approving the prompt afterwards starts an app the user just closed
   // (Codex P1 on #779).
-  cancelPendingElevatedHandoffs(gameKey)
+  //
+  // Tracked handoffs only. This is the "close everything I manage" action, and a
+  // fire-and-forget profile (#591) has opted its apps out of being managed, so
+  // killing the host would strand a prompt the user was still entitled to
+  // answer. The exclusion is HERE rather than at registration because the other
+  // consumers, the profile switch and the config import, want the opposite:
+  // those are profile-departure events, and fire-and-forget protects a running
+  // app from being closed, not a departed profile from being finished with
+  // (Codex P2 on #842).
+  cancelPendingElevatedHandoffs(gameKey, (handoff) => handoff.tracked)
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
@@ -854,22 +862,26 @@ export async function killProfileApps(
   // including one for an app both profiles enable and that the switch was never
   // going to touch (#782).
   //
-  // Matched by SLOT, not by path, and only entries that survived validation are
-  // eligible: a path this call refused to kill has no business cancelling
-  // anything. Two slots can share an exe with different args (#357), so if the
-  // switch stops the running instance of the leaving slot while the retained
-  // slot has an unanswered prompt, a path match kills the prompt for the app
-  // that is staying (Codex P2 on #842).
+  // Matched by SLOT KEY, and only entries that survived validation are eligible:
+  // a path this call refused to kill has no business cancelling anything.
+  //
+  // The key alone, not key plus path. Two slots can share an exe with different
+  // args (#357), so a path match kills the retained slot's prompt alongside the
+  // leaving one, and the key is what tells them apart. Adding the path on top
+  // then breaks it the other way: the registry's path is a launch-time snapshot
+  // while these entries carry the CURRENT `appPaths`, so editing that slot's exe
+  // in Settings while a prompt is unanswered makes the two disagree and the
+  // handoff survives the switch away from it (Codex P2 on #842). The key does
+  // not move.
   const validPaths = new Set(validAppPathsToKill.map(normalizePathForComparison))
-  const idsBeingKilled = new Set(
+  const keysBeingKilled = new Set(
     entriesToKill
       .filter((entry) => validPaths.has(normalizePathForComparison(entry.path)))
-      .map(getProfileLaunchEntryId)
+      .map((entry) => entry.key)
   )
-  cancelPendingElevatedHandoffs(gameKey, (handoff) =>
-    idsBeingKilled.has(
-      getProfileLaunchEntryId({ key: handoff.appKey ?? '', path: handoff.appPath })
-    )
+  cancelPendingElevatedHandoffs(
+    gameKey,
+    (handoff) => handoff.appKey !== undefined && keysBeingKilled.has(handoff.appKey)
   )
   const strandedPromptCount = drainStrandedConsentPrompts()
 

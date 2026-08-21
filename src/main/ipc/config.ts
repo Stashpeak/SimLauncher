@@ -4,11 +4,7 @@ import fs from 'fs'
 
 import { getHighestReferencedCustomSlot } from '../../shared/domain/slots'
 import { migrateProfilesToNamedSets } from '../migrator'
-import {
-  getProfileLaunchEntryId,
-  getProfileSwitchLeavingEntries,
-  isStoredProfileSet
-} from '../profiles'
+import { getProfileSwitchLeavingEntries, isStoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
@@ -609,15 +605,20 @@ export function registerConfigHandlers(): void {
       // sequence in flight belongs to the profile being left, and the user has
       // left it.
       abortActiveLaunches(gameKey)
-      // And the post-grace half, from the registry. Matched by SLOT, not by
-      // path. Two slots can point at one exe (#357), so a path match here would
-      // cancel the retained slot's prompt alongside the leaving one, which is
-      // the same over-cancel this fix exists to remove (CodeRabbit on #782).
-      const leavingIds = new Set(leavingEntries.map(getProfileLaunchEntryId))
-      cancelPendingElevatedHandoffs(gameKey, (handoff) =>
-        leavingIds.has(
-          getProfileLaunchEntryId({ key: handoff.appKey ?? '', path: handoff.appPath })
-        )
+      // And the post-grace half, from the registry. Matched by SLOT KEY.
+      //
+      // Two slots can point at one exe (#357), so a path match would cancel the
+      // retained slot's prompt alongside the leaving one, which is the
+      // over-cancel this fix exists to remove (CodeRabbit on #782). Including
+      // the path as well then breaks it the other way: the registry stores the
+      // path as launched, while `leavingEntries` is rebuilt from the CURRENT
+      // `appPaths`, so changing that slot's exe in Settings while its prompt is
+      // unanswered makes the two disagree and the handoff outlives the switch
+      // (Codex P2 on #842). The slot key is the only part that does not move.
+      const leavingKeys = new Set(leavingEntries.map((entry) => entry.key))
+      cancelPendingElevatedHandoffs(
+        gameKey,
+        (handoff) => handoff.appKey !== undefined && leavingKeys.has(handoff.appKey)
       )
       // Killing the host does NOT remove the consent prompt, so every cancel
       // above leaves a dialog on screen that now does nothing (#809). The count

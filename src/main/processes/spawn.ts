@@ -812,40 +812,33 @@ function launchElevated(
       // P1), otherwise approving the prompt afterwards would start the app the
       // user just asked to close.
       //
-      // Not for a fire-and-forget profile though (#591). This registry has
-      // exactly one consumer, `cancelPendingElevatedHandoffs`, called from both
-      // kill entry points BEFORE they filter profile targets, so registering
-      // here would let a global Close Apps kill the host of an app the user
-      // opted out of us managing: the late approval would then start nothing
-      // and they would be told a consent prompt was stranded. Not registering
-      // is what leaves the prompt answerable.
-      //
-      // Only the post-grace-window registry is skipped. The abort signal above
-      // still cancels this handoff while the sequence is in flight, because
-      // cancelling a launch in progress is a different thing from managing the
-      // apps it already started.
-      if (tracked) {
-        registerPendingElevatedHandoff(handoffId, {
-          gameKey,
-          // Recorded so cancellation can target the app rather than the whole
-          // game (#782). A pending handoff has never started, so it has no
-          // image name in any tasklist snapshot: these two are the only handle
-          // anything downstream gets on which app it belongs to. The slot key
-          // is needed as well as the path because two slots can point at one
-          // exe with different args (#357), and cancelling the wrong one costs
-          // the user a prompt they were about to approve.
-          appKey,
-          appPath,
-          cancel: () => {
-            cancelledByKill = true
-            noteHandoffCancelled()
-            // Same reason as onAbort (#809), and the same guard: mid-sequence
-            // both this and the abort fire for this one handoff.
-            noteStrandedPromptOnce()
-            child?.kill()
-          }
-        })
-      }
+      // A fire-and-forget profile (#591) is registered too, and used NOT to be.
+      // The old reasoning was that this registry had exactly one consumer, the
+      // kill paths, so registering here would let a global Close Apps kill the
+      // host of an app the user opted out of us managing. #782 gave it two more
+      // consumers, the profile switch and the config import, and those want the
+      // opposite: leaving a profile should cancel its pending prompt whether or
+      // not its apps were going to be tracked (Codex P2 on #842). The exclusion
+      // now lives in `killLaunchedApps`, the only consumer that needs it.
+      registerPendingElevatedHandoff(handoffId, {
+        gameKey,
+        // A pending handoff has never started, so it has no image name in any
+        // tasklist snapshot: this is the only handle anything downstream gets on
+        // which app it belongs to (#782). The SLOT key, because two slots can
+        // share an exe (#357) and because the path recorded here is a launch-time
+        // snapshot the caller's current `appPaths` may no longer agree with.
+        appKey,
+        appPath,
+        tracked,
+        cancel: () => {
+          cancelledByKill = true
+          noteHandoffCancelled()
+          // Same reason as onAbort (#809), and the same guard: mid-sequence
+          // both this and the abort fire for this one handoff.
+          noteStrandedPromptOnce()
+          child?.kill()
+        }
+      })
       resolve({
         status: 'elevated',
         appPath,
