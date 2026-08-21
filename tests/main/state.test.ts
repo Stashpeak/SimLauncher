@@ -52,7 +52,9 @@ test('pruneStoppedRunningProcesses drops only entries whose exe is no longer run
   runningProcesses.set('a', runningEntry('C:/Tools/SimHub.exe'))
   runningProcesses.set('b', runningEntry('C:/Tools/CrewChief.exe'))
 
-  pruneStoppedRunningProcesses(new Set(['simhub.exe']))
+  // A PATH predicate now (#674). Asking by image name meant a same-named
+  // process anywhere on the system kept a dead record alive.
+  pruneStoppedRunningProcesses((appPath) => appPath === 'C:/Tools/SimHub.exe')
 
   expect(runningProcesses.has('a')).toBe(true)
   expect(runningProcesses.has('b')).toBe(false)

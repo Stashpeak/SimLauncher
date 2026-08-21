@@ -2,6 +2,7 @@ import path from 'path'
 
 import { describe, expect, test } from 'vitest'
 
+import { readRunningProcessNames } from '../../src/main/processes/tasklist'
 import {
   findProcessesByName,
   resolveConfiguredPathState
@@ -93,6 +94,57 @@ describeWindows('findProcessesByName against the real PowerShell host (#674)', (
       expect(resolveConfiguredPathState(instances, `C:/SimLauncher-No-Such-Dir/${self}`)).toBe(
         'not-running'
       )
+    },
+    TIMEOUT_MS
+  )
+})
+
+/**
+ * The same discipline for `tasklist` (#674, second half). The poll now reads
+ * PID and Session# out of this snapshot, so the parser is load-bearing in a way
+ * it never was while it kept one column: a shape it mishandles does not throw,
+ * it just yields fewer instances, and fewer instances resolve to `not-running`
+ * — an app the user IS running would disappear from the strip.
+ */
+describeWindows('readRunningProcessNames against the real tasklist (#674)', () => {
+  const TIMEOUT_MS = 30_000
+
+  test(
+    'the real snapshot parses into names AND instances, including this process',
+    async () => {
+      const { processNames, processes, succeeded } = await readRunningProcessNames()
+
+      expect(succeeded).toBe(true)
+      const self = path.basename(process.execPath).toLowerCase()
+      expect(processNames.has(self)).toBe(true)
+
+      // Every row that produced a NAME should also produce an instance. A gap
+      // between the two means the extra columns are being dropped somewhere,
+      // which is the silent half of this failure mode.
+      expect(new Set(processes.map((entry) => entry.name))).toEqual(processNames)
+
+      const mine = processes.filter((entry) => entry.name === self)
+      expect(mine.length).toBeGreaterThan(0)
+      expect(mine.some((entry) => entry.processId === process.pid)).toBe(true)
+      mine.forEach((entry) => {
+        expect(Number.isInteger(entry.sessionId)).toBe(true)
+      })
+    },
+    TIMEOUT_MS
+  )
+
+  test(
+    'session 0 is populated, which is the half of the discriminator that is free',
+    async () => {
+      // The services session is what lets an unreadable path be dismissed with
+      // no enumeration at all. If this came back empty, the column being read
+      // would be the wrong one (`Session Name` is localized text, `Session#` is
+      // the number) and the cheap path would silently stop applying.
+      const { processes, succeeded } = await readRunningProcessNames()
+
+      expect(succeeded).toBe(true)
+      expect(processes.some((entry) => entry.sessionId === 0)).toBe(true)
+      expect(processes.some((entry) => entry.sessionId !== 0)).toBe(true)
     },
     TIMEOUT_MS
   )

@@ -88,9 +88,24 @@ function registerUnclosedProcess(attempt: KillAttemptResult) {
   })
 }
 
-export function pruneUnclosedProcesses(processNames: Set<string>): void {
+/**
+ * Drop every leftover record whose app is no longer running.
+ *
+ * Takes a PREDICATE rather than the tasklist name set it used to take (#674),
+ * and that change is what makes a leftover clearable at all. Pruning by image
+ * name meant a record could only ever go away when the NAME left the tasklist,
+ * so a leftover created against a same-named stranger was permanent: the user
+ * could not dismiss it, closing the app did not clear it, and nothing else
+ * would. It also pinned the poll to its FAST cadence for the rest of the
+ * session, because `computeRunningAppsScanDelayMs` stays fast while any
+ * unclosed record exists.
+ *
+ * The predicate must answer "yes" when it does not know, so an unobserved tick
+ * cannot silently clear a real leftover.
+ */
+export function pruneUnclosedProcesses(isPathRunning: (appPath: string) => boolean): void {
   unclosedProcesses.forEach((entry, key) => {
-    if (!processNames.has(getExeName(entry.path))) {
+    if (!isPathRunning(entry.path)) {
       unclosedProcesses.delete(key)
     }
   })

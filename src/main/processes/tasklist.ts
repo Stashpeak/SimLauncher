@@ -5,8 +5,36 @@ import { execFile } from 'child_process'
 // multi-app launch sequence (spawn → kill verify → running-apps publish).
 const CACHE_TTL_MS = 500
 
+/**
+ * One row of the `tasklist` snapshot, beyond the image name.
+ *
+ * `tasklist /fo csv /nh` has always returned five columns and this module has
+ * always kept one of them. PID and session were being parsed away and thrown
+ * out on every tick, which is why the poll could only ever answer questions
+ * about NAMES (#674). Reading them costs nothing: same command, same spawn.
+ *
+ * `sessionId` is column 4, `Session#`, the NUMBER. Deliberately not column 3,
+ * `Session Name`, which reads "Services" or "Console" on an English install and
+ * is localized everywhere else.
+ */
+export interface TasklistProcess {
+  /** Lowercased image name, matching how `processNames` is keyed. */
+  name: string
+  processId: number
+  sessionId: number
+}
+
 export interface RunningProcessNamesResult {
   processNames: Set<string>
+  /**
+   * Every row of the same snapshot `processNames` was derived from, so the two
+   * can never disagree about what was running at that instant.
+   *
+   * Additive (#674): `processNames` keeps its exact meaning and every existing
+   * consumer is untouched. A failed read leaves this empty for the same reason
+   * `processNames` is empty, and carries the same no-observation warning.
+   */
+  processes: TasklistProcess[]
   succeeded: boolean
 }
 
@@ -26,18 +54,50 @@ function spawnTasklist(): Promise<RunningProcessNamesResult> {
     execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
       if (error) {
         console.error('Failed to read running processes:', error)
-        resolve({ processNames: new Set(), succeeded: false })
+        resolve({ processNames: new Set(), processes: [], succeeded: false })
         return
       }
 
       const names = new Set<string>()
+      const processes: TasklistProcess[] = []
       stdout.split(/\r?\n/).forEach((line) => {
-        const match = line.match(/^"([^"]+)"/)
-        if (match) {
-          names.add(match[1].toLowerCase())
+        // Every field is quoted and none can contain a quote of its own: a
+        // Windows image name cannot, and the other four are numbers or fixed
+        // words. So splitting on quoted groups is sufficient here and needs no
+        // CSV escaping rules. Verified against a real 537-row snapshot, where
+        // all five columns parsed on every line.
+        const fields = line.match(/"([^"]*)"/g)
+        if (!fields || fields.length === 0) {
+          return
         }
+        const unquote = (field: string) => field.slice(1, -1)
+        const name = unquote(fields[0]).toLowerCase()
+        if (!name) {
+          return
+        }
+
+        // The name is recorded from the FIRST field alone, exactly as it was
+        // before the other columns were read, so no row can lose its name by
+        // failing to yield an instance. That asymmetry is the safe direction:
+        // losing a name says an app is not running when it is, while losing an
+        // instance only leaves the answer ambiguous, which every caller already
+        // handles conservatively.
+        names.add(name)
+
+        // The instance needs all four. Inventing a value for a field that would
+        // not parse is the one genuinely dangerous option here, because session
+        // 0 is what lets an unreadable path be dismissed.
+        if (fields.length < 4) {
+          return
+        }
+        const processId = Number(unquote(fields[1]))
+        const sessionId = Number(unquote(fields[3]))
+        if (!Number.isInteger(processId) || !Number.isInteger(sessionId)) {
+          return
+        }
+        processes.push({ name, processId, sessionId })
       })
-      resolve({ processNames: names, succeeded: true })
+      resolve({ processNames: names, processes, succeeded: true })
     })
   })
 }

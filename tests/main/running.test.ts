@@ -3,6 +3,10 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const readRunningProcessNamesMock = vi.fn()
 const pruneUnclosedProcessesMock = vi.fn()
+// Configured paths whose image NAME is in the tasklist but which nothing is
+// actually running at — the #674 collision shape. Empty by default, so every
+// test written before it keeps its exact meaning.
+const collidingPaths = new Set<string>()
 
 async function loadRunningModule(opts?: {
   profiles?: Record<string, unknown>
@@ -26,6 +30,39 @@ async function loadRunningModule(opts?: {
   vi.doMock('/src/main/processes/tasklist.ts', () => tasklistMock)
   vi.doMock('../../src/main/processes/tasklist', () => tasklistMock)
   vi.doMock('../../src/main/processes/tasklist.ts', () => tasklistMock)
+
+  // A COPY of the name-only fold, plus `collidingPaths` as the path dimension.
+  // This suite mocks the module that owns the #674 decision rule, so it cannot
+  // pin the rule (configuredPathState.test.ts does, against the real one) and it
+  // cannot pin the pid cache (processes.test.ts does, with a real snapshot).
+  // What it pins is that the POLL asks a path question at all, which is
+  // observable precisely because `collidingPaths` can disagree with the names.
+  const pathResolutionMock = {
+    resolveTrackedPathStates: async (
+      snapshot: { processNames: Set<string>; succeeded: boolean },
+      configuredPaths: string[]
+    ) => {
+      const states = new Map<string, string>()
+      if (!snapshot.succeeded) {
+        return states
+      }
+      configuredPaths.forEach((configuredPath) => {
+        const name = configuredPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''
+        states.set(
+          configuredPath,
+          snapshot.processNames.has(name) && !collidingPaths.has(configuredPath)
+            ? 'running'
+            : 'not-running'
+        )
+      })
+      return states
+    },
+    isTrackedPathRunning: (state?: string) => state !== 'not-running'
+  }
+  vi.doMock('./pathResolution', () => pathResolutionMock)
+  vi.doMock('/src/main/processes/pathResolution.ts', () => pathResolutionMock)
+  vi.doMock('../../src/main/processes/pathResolution', () => pathResolutionMock)
+  vi.doMock('../../src/main/processes/pathResolution.ts', () => pathResolutionMock)
 
   const killMock = {
     pruneUnclosedProcesses: pruneUnclosedProcessesMock,
@@ -98,6 +135,7 @@ function seedState(stateModule: Awaited<ReturnType<typeof loadRunningModule>>['s
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  collidingPaths.clear()
 })
 
 afterEach(() => {
@@ -129,7 +167,9 @@ test('a successful tasklist read prunes processes that are gone', async () => {
   const apps = await runningModule.getRunningApps()
 
   expect(stateModule.runningProcesses.size).toBe(0)
-  expect(pruneUnclosedProcessesMock).toHaveBeenCalledWith(new Set())
+  // A predicate now, not the name set (#674). The wiring is what this asserts;
+  // what the predicate ANSWERS is pinned where the real resolver runs.
+  expect(pruneUnclosedProcessesMock).toHaveBeenCalledWith(expect.any(Function))
   expect(apps).toEqual([])
 })
 
