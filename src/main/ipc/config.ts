@@ -28,6 +28,7 @@ import {
 } from '../store'
 import { isRecord } from '../utils'
 import {
+  abortActiveLaunches,
   cancelPendingElevatedHandoffs,
   drainStrandedConsentPrompts,
   publishRunningApps
@@ -579,10 +580,32 @@ export function registerConfigHandlers(): void {
     // for an app the incoming profile also enables.
     let strandedConsentPrompts = 0
     if (leavingEntries.length > 0) {
-      // Matched by SLOT, not by path. Two slots can point at one exe (#357), so
-      // a path match here would cancel the retained slot's prompt alongside the
-      // leaving one, which is the same over-cancel this fix exists to remove
-      // (CodeRabbit on #782).
+      // A pending handoff is reachable through TWO different mechanisms
+      // depending on its age, and this switch has to use both.
+      //
+      // Before the grace window expires the handoff is not in the registry at
+      // all: `spawn.ts` only registers it when the timer fires, so until then
+      // the abort signal is the only handle on it. That is the whole first ten
+      // seconds of an unanswered prompt, and it is reachable because the row
+      // only blocks switching when `isRunning && isLaunchBlocked` and an app
+      // parked on a UAC prompt has started nothing, so `isRunning` is false
+      // (Codex P1 on #842).
+      //
+      // `killProfileApps` already aborts on the way in, which is why the switch
+      // was covered whenever it stopped something. This save is exactly the path
+      // that skips the kill: a handoff contributes nothing to the tasklist diff
+      // the renderer gates that IPC on. Without this line the save was doing
+      // half of what the kill does, and the surviving half of #782 was simply
+      // the faster user.
+      //
+      // Whole-game rather than per-entry, matching `killProfileApps`: the
+      // sequence in flight belongs to the profile being left, and the user has
+      // left it.
+      abortActiveLaunches(gameKey)
+      // And the post-grace half, from the registry. Matched by SLOT, not by
+      // path. Two slots can point at one exe (#357), so a path match here would
+      // cancel the retained slot's prompt alongside the leaving one, which is
+      // the same over-cancel this fix exists to remove (CodeRabbit on #782).
       const leavingIds = new Set(leavingEntries.map(getProfileLaunchEntryId))
       cancelPendingElevatedHandoffs(gameKey, (handoff) =>
         leavingIds.has(

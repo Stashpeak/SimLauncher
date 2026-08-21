@@ -18,6 +18,7 @@ import { expect, test, vi, beforeEach } from 'vitest'
 type MockIpcHandler = (...args: unknown[]) => unknown
 
 const cancelPendingElevatedHandoffs = vi.fn()
+const abortActiveLaunches = vi.fn()
 // Defaults to 1 so the handler's report path is exercised. The real counter is a
 // module-level scalar incremented by the cancel callback; what matters here is
 // that the handler DRAINS it and reports the count (#782 Codex P2).
@@ -60,6 +61,7 @@ async function loadConfigModule(initial: StoredState) {
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
   vi.doMock('../../src/main/processes', () => ({
     publishRunningApps: vi.fn(async () => {}),
+    abortActiveLaunches,
     cancelPendingElevatedHandoffs,
     drainStrandedConsentPrompts
   }))
@@ -130,8 +132,45 @@ function pushedStrandedCounts(): number[] {
 beforeEach(() => {
   vi.resetModules()
   cancelPendingElevatedHandoffs.mockClear()
+  abortActiveLaunches.mockClear()
   drainStrandedConsentPrompts.mockClear()
   sendToRenderer.mockClear()
+})
+
+// The pre-grace half of the same bug. For the first ELEVATED_HANDOFF_MAX_WAIT_MS
+// of an unanswered prompt the handoff is not in the registry at all -- spawn.ts
+// registers it when the grace timer fires -- so the predicate-based cancellation
+// above cannot reach it and the abort signal is the only handle. `killProfileApps`
+// aborts on the way in, but this save is precisely the path that skips the kill,
+// so without this the outgoing launch stayed live and approving the old prompt
+// still started its app (Codex P1 on #842).
+test('a switch aborts the outgoing launch, not just the registered handoffs (#842)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('loud', { quiet: ['customapp1'], loud: ['simhub'] }))
+
+  expect(abortActiveLaunches).toHaveBeenCalledTimes(1)
+  // Whole-game, matching `killProfileApps`: the sequence in flight belongs to
+  // the profile being left. Scoping it to this game is what keeps a switch on
+  // one game from aborting another game's launch.
+  expect(abortActiveLaunches).toHaveBeenCalledWith('ac')
+})
+
+// The guard that makes the abort safe to add. `save-profile` is also the
+// editor's Save, and aborting a live launch because the user edited the profile
+// they are already on would break a launch they never asked to stop.
+test('editing the active profile does not abort a launch in flight (#842)', async () => {
+  await loadConfigModule({
+    appPaths: APP_PATHS,
+    profiles: { ac: profileSet('quiet', { quiet: ['customapp1', 'simhub'], loud: ['simhub'] }) }
+  })
+
+  await saveProfile('ac', profileSet('quiet', { quiet: ['simhub'], loud: ['simhub'] }))
+
+  expect(abortActiveLaunches).not.toHaveBeenCalled()
 })
 
 // The acceptance criterion from the issue, on the path the renderer actually
