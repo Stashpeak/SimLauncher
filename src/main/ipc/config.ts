@@ -86,6 +86,31 @@ function notifyStoreConfigChanged(payload: StoreConfigChangePayload) {
   sendToRenderer(STORE_CONFIG_CHANGED_CHANNEL, payload)
 }
 
+/**
+ * Tells the user about consent prompts left on screen by elevated handoffs a
+ * config change cancelled (#809).
+ *
+ * PUSHED, not returned, and this is the one place in the codebase where that
+ * distinction is load-bearing. The kill results hand their count back to the
+ * caller because the caller ASKED to close things and is therefore certain to
+ * read the answer. Nobody asks a config write to cancel anything: it is a side
+ * effect of the active profile changing, so returning the count means every
+ * caller has to know a contract it has no reason to suspect. Four exist for
+ * `save-profile` alone (the row dropdown, the editor's save, its delete, its
+ * discard-pending restore) and an earlier version returned the count to all four
+ * while only the dropdown read it. Because the drain is destructive, the three
+ * that ignored it did not merely stay quiet, they consumed the count and
+ * destroyed it, leaving the user with a dead consent dialog and no explanation
+ * anywhere (Codex P2 on #782). A push cannot be dropped by forgetting to read
+ * it, and the sentence is written to stand on its own, so it needs no host toast
+ * to be understood.
+ */
+function reportStrandedConsentPrompts(count: number): void {
+  if (count > 0) {
+    sendToRenderer(STRANDED_CONSENT_PROMPTS_CHANNEL, count)
+  }
+}
+
 function clearPendingImport() {
   pendingImport = null
 }
@@ -229,6 +254,24 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
     migrateProfilesToNamedSets()
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
+    // An import is the user replacing their configuration wholesale, so any
+    // pending elevated handoff is now waiting on a profile that may not exist
+    // any more. Approving its prompt afterwards would start a companion from
+    // the config they just replaced (Codex P2 on #842).
+    //
+    // Cancels ALL of them rather than diffing, and that is a different rule from
+    // `save-profile` on purpose. There the outgoing and incoming profiles are
+    // two known sets, so a leaving diff is well defined; here every game's
+    // profiles changed at once and there is no "the profile being left". Same
+    // reasoning that keeps `killLaunchedApps` game-wide for "close everything".
+    // The cost of over-cancelling is a prompt the user must re-trigger; the cost
+    // of under-cancelling is an app from a config that no longer exists.
+    //
+    // Deliberately AFTER the writes and the migrate: anything above throwing
+    // restores the old config, and cancelling a prompt that is still valid for
+    // the restored config would be the worse mistake.
+    cancelPendingElevatedHandoffs()
+    reportStrandedConsentPrompts(drainStrandedConsentPrompts())
     notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
     // An import replaces every profile, so it can turn tracking on or off for
     // any of them (#591). Both branches publish, because a rollback restores a
@@ -555,23 +598,7 @@ export function registerConfigHandlers(): void {
       // the warning to an operation that stranded nothing (Codex P2 on #782).
       strandedConsentPrompts = drainStrandedConsentPrompts()
     }
-    // PUSHED, not returned, and this is the one place in the codebase where that
-    // distinction is load-bearing. The kill results hand their count back to the
-    // caller because the caller ASKED to close things and is therefore certain
-    // to read the answer. Nobody asks `save-profile` to cancel anything: it is a
-    // side effect of the active profile changing, so returning the count means
-    // every switching caller has to know a contract it has no reason to suspect.
-    // Four of them exist (the row dropdown, the editor's save, its delete, its
-    // discard-pending restore) and an earlier version of this handler returned
-    // the count to all four while only the dropdown read it. Because the drain
-    // is destructive, the three that ignored it did not merely stay quiet, they
-    // consumed the count and destroyed it, leaving the user with a dead consent
-    // dialog and no explanation anywhere (Codex P2 on #782). A push cannot be
-    // dropped by forgetting to read it, and the sentence is written to stand on
-    // its own, so it needs no host toast to be understood.
-    if (strandedConsentPrompts > 0) {
-      sendToRenderer(STRANDED_CONSENT_PROMPTS_CHANNEL, strandedConsentPrompts)
-    }
+    reportStrandedConsentPrompts(strandedConsentPrompts)
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
     // Republish so a tracking toggle takes effect on save rather than on the
     // next poll (#591). Saving a profile changes which processes are surfaced
