@@ -24,6 +24,24 @@ import type { KillAttemptResult } from './types'
 // bounded so a wedged WMI service cannot hang a kill request forever.
 const WMI_LOOKUP_TIMEOUT_MS = 3000
 
+/**
+ * Separate, larger budget for the name-scoped enumeration (#674), which is a
+ * different shape of query from the path-scoped lookup above: that one filters
+ * in WQL and returns a handful of PIDs, this one enumerates every process on the
+ * machine and filters in PowerShell.
+ *
+ * MEASURED, not guessed. On a warm developer machine the whole call is 300 to
+ * 400ms, but on a cold CI runner (windows-latest) the FIRST call took over 3s
+ * and blew the shared budget, while the two after it took 2523ms and 629ms. The
+ * cost is dominated by starting `powershell.exe`, not by the enumeration.
+ *
+ * Getting this wrong is not a slow path, it is a silently disabled feature: a
+ * timeout resolves `succeeded: false`, every candidate becomes `unknown`, and
+ * `unknown` folds to the pre-#674 answer. The first call after a boot is exactly
+ * when PowerShell is coldest and when a user is most likely to hit Launch.
+ */
+const PROCESS_ENUMERATION_TIMEOUT_MS = 10000
+
 function isAccessDeniedMessage(message: string) {
   return /(access is denied|permission denied|administrator|elevat)/i.test(message)
 }
@@ -503,7 +521,10 @@ export function findProcessesByName(processNames: string[]): Promise<{
       // to guarantee a JSON array. Piping into ConvertTo-Json unrolls a
       // single-element collection back to a scalar; `-InputObject` takes the
       // array as one value. Verified on 5.1 for zero, one and many matches.
-      '$found = @(Get-CimInstance Win32_Process |',
+      // `-Property` narrows what CIM marshals back. Worth ~15% on a fast
+      // machine and more where it matters, since the four fields below are all
+      // this needs and the default pulls every property of every process.
+      '$found = @(Get-CimInstance Win32_Process -Property Name,ProcessId,ExecutablePath,SessionId |',
       '  Where-Object { $wanted -contains $_.Name.ToLowerInvariant() } |',
       '  Select-Object @{N="name";E={$_.Name.ToLowerInvariant()}},',
       '    @{N="processId";E={[int]$_.ProcessId}},',
@@ -520,7 +541,7 @@ export function findProcessesByName(processNames: string[]): Promise<{
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
       {
         windowsHide: true,
-        timeout: WMI_LOOKUP_TIMEOUT_MS,
+        timeout: PROCESS_ENUMERATION_TIMEOUT_MS,
         env: {
           ...process.env,
           SIMLAUNCHER_TARGET_PROCESS_NAMES: JSON.stringify(wanted)
@@ -538,7 +559,7 @@ export function findProcessesByName(processNames: string[]): Promise<{
           // `killed` is how execFile reports that IT terminated the child, which
           // with a plain timeout option means the deadline elapsed.
           const detail = error.killed
-            ? `Process enumeration timed out after ${WMI_LOOKUP_TIMEOUT_MS / 1000} seconds.`
+            ? `Process enumeration timed out after ${PROCESS_ENUMERATION_TIMEOUT_MS / 1000} seconds.`
             : stderr.trim() || getErrorMessage(error)
           console.error('Failed to enumerate processes by name:', detail)
           writeAppErrorLog('kill', `Failed to enumerate processes by name: ${detail}`)
