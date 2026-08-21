@@ -561,7 +561,7 @@ test('switch-profile-apps with nothing to start reports cancelled when Close App
   await expect(resultPromise).resolves.toMatchObject({
     success: false,
     cancelled: true,
-    message: 'Launch cancelled — closed apps instead.',
+    message: 'Launch cancelled: closed apps instead.',
     launchedCount: 0
   })
   expect(launchProfileApps).not.toHaveBeenCalled()

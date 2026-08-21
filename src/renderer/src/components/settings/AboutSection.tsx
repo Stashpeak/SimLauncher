@@ -161,7 +161,7 @@ export function AboutSection({
         )}
         {updateStatus === 'offline' && (
           <p className="text-[10px] text-center text-(--text-muted) animate-fade-slide">
-            Can&apos;t reach the update server — check your connection.
+            Can&apos;t reach the update server. Check your connection.
           </p>
         )}
       </div>

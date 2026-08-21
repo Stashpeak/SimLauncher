@@ -454,7 +454,7 @@ export function useProfileEditor({
       // everything (#670) — neither a success nor a failure, so it gets its
       // own toast rather than the error/success branches below.
       if (result.cancelled) {
-        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        notify(result.message || 'Launch cancelled: closed apps instead.', 'warn')
       } else if (!result.success) {
         const failedSkippedDetail =
           result.skipped && result.skipped.length > 0

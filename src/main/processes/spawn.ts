@@ -278,7 +278,7 @@ export async function launchProfileApps(
       return {
         success: false,
         cancelled: true,
-        message: 'Launch cancelled — closed apps instead.',
+        message: 'Launch cancelled: closed apps instead.',
         launchedCount: 0,
         skipped
       }
@@ -457,7 +457,7 @@ export async function launchProfileApps(
       return {
         success: false,
         cancelled: true,
-        message: `Launch cancelled — closed apps instead.${survivedNote}${unknownNote}`,
+        message: `Launch cancelled: closed apps instead.${survivedNote}${unknownNote}`,
         launchedCount,
         skippedCount,
         elevatedCount: survivedCount + unknownCount,
@@ -1124,7 +1124,7 @@ export async function spawnDetachedApp(
         const stillTracked = isTracked && isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
 
         if (stillTracked && exitedDuringPostLaunchWindow && !wasClosedBySimLauncher) {
-          const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name — SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
+          const warning = `${path.basename(appPath)} exited shortly after launch. It likely spawned a child process under a different name. SimLauncher can no longer detect when you close it. To restore tracking, find the child process name in Task Manager and add it under "Secondary executables to watch" in the profile editor. Right-click the icon to dismiss this warning.`
 
           processNameMismatchWarnings.set(normalizePathForComparison(appPath), {
             path: appPath,

@@ -102,7 +102,7 @@ export function formatConfigRecoveryNotice(notice: ConfigRecoveryNotice): {
     return {
       type: 'warn',
       message:
-        "Your saved settings couldn't be opened — they may be locked by another program. SimLauncher started with defaults for now; your saved settings are untouched and will load next time."
+        "Your saved settings couldn't be opened. They may be locked by another program. SimLauncher started with defaults for now; your saved settings are untouched and will load next time."
     }
   }
 
