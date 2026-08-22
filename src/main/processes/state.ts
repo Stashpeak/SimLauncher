@@ -146,6 +146,21 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
 }
 
 /**
+ * Whether any handoff still waiting on a consent prompt targets this path.
+ *
+ * Two profile slots may point at one exe (#357), so one slot's denial says
+ * nothing about the other's prompt. Ownership of a companion is per PATH, so
+ * acting on the first slot to settle would throw away a claim the still-pending
+ * slot is about to need (#853).
+ */
+export function hasPendingElevatedHandoffForPath(appPath: string): boolean {
+  const wanted = normalizePathForComparison(appPath)
+  return Array.from(pendingElevatedHandoffs.values()).some(
+    (handoff) => normalizePathForComparison(handoff.appPath) === wanted
+  )
+}
+
+/**
  * Cancel every still-pending elevated handoff for `gameKey`, or all of them when
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.

@@ -3601,6 +3601,104 @@ test('a claim goes when the UAC prompt is denied after the grace window (#853)',
   }
 })
 
+// Codex on #853, the third route to the same invariant: a child that emitted
+// `spawn` was positively observed, so its claim is not pending. Left pending it
+// was unprunable, and an app that exited before the first successful scan left
+// a claim that outlived it, ready to attribute a later hand-started copy to
+// this profile and take the control from the ones that share it.
+test('a spawned companion that exits before the first scan takes its claim (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(adoptedCompanionOwners.get('c:\\tools\\simhub.exe')?.seenRunning).toBe(true)
+
+  // It dies immediately, before any tick ever polls for it.
+  processRegistry.clear()
+  processNames.clear()
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+
+  // A copy someone starts by hand later belongs to nobody, so both profiles
+  // that configure it keep their control.
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '9999')
+  processNames.add('simhub.exe')
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
+// The hazard #779 already paid for, reached one rung along by the withdrawal
+// added for #853. A host left alive by an earlier timed-out handoff keeps
+// waiting on its prompt and can settle DURING a later sequence. The recorder
+// ignores it on the run id; the withdrawal beside it must too, or a stale
+// denial deletes the claim the CURRENT run just made for the same exe.
+test('a stale denial from an abandoned run does not withdraw the current claim (#853)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    // Keeps run 2's loop alive past its own grace timer, so the stale callback
+    // lands while run 2 is still in flight. With a zero delay the sequence is
+    // already over and the test proves nothing.
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, runningProcesses, adoptedCompanionOwners } =
+      await loadProcessModulesWithStore({
+        profiles: {
+          ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+        },
+        appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // Run 1: the prompt goes unanswered, the grace timer fires, the sequence
+    // ends with the PowerShell host still alive and still waiting.
+    const firstPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS + 5000)
+    await firstPromise
+    const firstRunCallback = heldElevatedCallback
+    expect(firstRunCallback).not.toBeNull()
+
+    // Clear the cooldown, and forget what run 1 started so run 2 does not skip
+    // everything as already running.
+    await vi.advanceTimersByTimeAsync(11000)
+    processNames.clear()
+    runningProcesses.clear()
+
+    const secondPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    expect(adoptedCompanionOwners.has('c:\\tools\\admin tool.exe')).toBe(true)
+
+    // Run 1's abandoned prompt is finally DENIED, mid-run-2.
+    firstRunCallback?.(makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(adoptedCompanionOwners.has('c:\\tools\\admin tool.exe')).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await secondPromise
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 // A DELIBERATE overlap, and the one place this mechanism does not narrow.
 // CodeRabbit on #853 asked for the opposite: refuse the second claim, because
 // the first profile still holds the handle and two rows offering a close means

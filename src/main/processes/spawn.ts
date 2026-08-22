@@ -25,6 +25,7 @@ import {
   consumeProcessNameMismatchWarningSuppression,
   noteStrandedConsentPrompt,
   hasOtherActiveLaunchControllers,
+  hasPendingElevatedHandoffForPath,
   processNameMismatchWarnings,
   registerActiveLaunch,
   registerPendingElevatedHandoff,
@@ -108,6 +109,13 @@ function withdrawUnobservedClaim(appPath: string, gameKey: string | undefined): 
   if (!gameKey) {
     return
   }
+  // Another slot may still be waiting on its own prompt for the same exe
+  // (#357). Ownership is per path, so this one settling says nothing about
+  // that one, and withdrawing here would throw away the claim it is about to
+  // need.
+  if (hasPendingElevatedHandoffForPath(appPath)) {
+    return
+  }
   const claimKey = normalizePathForComparison(appPath)
   const claim = adoptedCompanionOwners.get(claimKey)
   if (claim?.gameKey === gameKey && !claim.seenRunning) {
@@ -119,11 +127,12 @@ function recordLateElevatedOutcome(
   runId: number,
   handoffId: number,
   outcome: LateElevatedOutcome
-): void {
+): boolean {
   if (runId !== launchRunId) {
-    return
+    return false
   }
   lateElevatedOutcomes.set(handoffId, outcome)
+  return true
 }
 
 /**
@@ -478,6 +487,24 @@ export async function launchProfileApps(
           return
         }
         withdrawUnobservedClaim(entry.path, gameKey)
+      })
+      // And the other side of the same invariant (Codex on #853): a child that
+      // emitted `spawn` was positively observed, by us, so its claim is not
+      // pending. Leaving it pending made it unprunable, and an app that then
+      // exited before the first successful scan left a claim that outlived it
+      // and would attribute a later hand-started copy to this profile.
+      //
+      // Deliberately not the elevated results: a handoff whose grace window
+      // expired is exactly the case where we do NOT know, and saying we looked
+      // would let the prune delete a claim for an app still behind a prompt.
+      launchResults.forEach((result) => {
+        if (result.status !== 'launched') {
+          return
+        }
+        const claim = adoptedCompanionOwners.get(normalizePathForComparison(result.appPath))
+        if (claim?.gameKey === gameKey) {
+          claim.seenRunning = true
+        }
       })
     }
 
@@ -916,11 +943,15 @@ function launchElevated(
      */
     const noteHandoffCancelled = (): void => {
       if (timedOut) {
-        recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
         // The sequence's own withdrawal pass has already run by now: it happens
         // when the summary is built, and `timedOut` means the promise settled
-        // before this truth arrived (#853).
-        withdrawUnobservedClaim(appPath, gameKey)
+        // before this truth arrived (#853). Gated on the outcome APPLYING: a
+        // callback from an abandoned earlier run is ignored by the recorder and
+        // must not withdraw the CURRENT run's claim for the same path either,
+        // which is the #779 cross-run hazard one rung along.
+        if (recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })) {
+          withdrawUnobservedClaim(appPath, gameKey)
+        }
       }
     }
     const handoffTimer = setTimeout(() => {
@@ -991,8 +1022,14 @@ function launchElevated(
           // after the sequence ended, when the abort signal is no longer wired.
           if (signal?.aborted || cancelledByKill) {
             if (timedOut) {
-              recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
-              withdrawUnobservedClaim(appPath, gameKey)
+              if (
+                recordLateElevatedOutcome(handoffRunId, handoffId, {
+                  appPath,
+                  outcome: 'cancelled'
+                })
+              ) {
+                withdrawUnobservedClaim(appPath, gameKey)
+              }
             }
             resolve({ status: 'cancelled', appPath })
             return
@@ -1008,12 +1045,15 @@ function launchElevated(
             `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
           if (timedOut) {
-            recordLateElevatedOutcome(handoffRunId, handoffId, {
-              appPath,
-              outcome: 'failed',
-              error: message
-            })
-            withdrawUnobservedClaim(appPath, gameKey)
+            if (
+              recordLateElevatedOutcome(handoffRunId, handoffId, {
+                appPath,
+                outcome: 'failed',
+                error: message
+              })
+            ) {
+              withdrawUnobservedClaim(appPath, gameKey)
+            }
           }
           resolve({ status: 'failed', appPath, error: message })
           return
