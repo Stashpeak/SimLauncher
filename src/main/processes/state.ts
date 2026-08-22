@@ -11,6 +11,23 @@ import type {
 
 export const runningProcesses = new Map<string, RunningProcessEntry>()
 export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
+
+/**
+ * Normalized companion path -> the game key whose launch claimed it, for
+ * companions that were ALREADY RUNNING when that launch reached them (#853).
+ *
+ * `runningProcesses` cannot hold these: it is keyed on a live `ChildProcess`
+ * handle, and a process we did not spawn has none. But the profile did ask for
+ * the app, it is up, and `killLaunchedApps` closes it by path, so the launch
+ * establishes ownership just as much as a spawn does. Without that, one already
+ * running companion put a Close Apps control on every OTHER row whose profile
+ * merely configures the same app.
+ *
+ * Attribution only, never a kill handle. In memory only, so a restart drops it
+ * and every configuring profile claims the app again, which is the state #851
+ * replaces with a persisted memory.
+ */
+export const adoptedCompanionOwners = new Map<string, string>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 

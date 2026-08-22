@@ -3425,6 +3425,31 @@ test('a launched companion is not claimed by the profiles that only configure it
   expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
+// The case a real config produced (#853): the companion was ALREADY RUNNING
+// when the launch reached it, so nothing spawned it and there is no child
+// handle to own it by — and every other profile that merely configures it lit
+// up a close control for an app it had not touched. The launch claims it too.
+test('a companion already running at launch is claimed by the launching profile (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    launchedCount: 0,
+    skippedCount: 1
+  })
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
 // The other half of the same rule: nobody launched this one, so no profile has
 // a better claim than any other and all of them keep it. Narrowing here would
 // be a guess, which is what #851 exists to replace with a memory.

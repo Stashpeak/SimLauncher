@@ -21,6 +21,7 @@ import {
 
 import { execFileUnlessAborted, spawnUnlessAborted } from './guardedStart'
 import {
+  adoptedCompanionOwners,
   consumeProcessNameMismatchWarningSuppression,
   noteStrandedConsentPrompt,
   hasOtherActiveLaunchControllers,
@@ -309,6 +310,20 @@ export async function launchProfileApps(
     )
     const appsToLaunch = validApps.filter((entry) => !runningPaths.has(entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
+
+    // A companion that was already up when this launch reached it is this
+    // profile's just as much as one we spawned: the profile asked for it, and
+    // Close Apps closes it by path either way. Recording that is what stops one
+    // such app putting a close control on every OTHER row that merely
+    // configures it (#853). Gated on tracking for the same reason the spawn
+    // recording is (#591): a profile that opted out is not claiming anything.
+    if (trackingEnabled) {
+      validApps.forEach((entry) => {
+        if (!runningPaths.has(entry.path)) return
+        if (gamePath && pathsEqual(entry.path, gamePath)) return
+        adoptedCompanionOwners.set(normalizePathForComparison(entry.path), gameKey)
+      })
+    }
 
     if (appsToLaunch.length === 0) {
       return {

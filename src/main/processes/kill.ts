@@ -13,6 +13,7 @@ import { getExeName, isValidExePath, normalizePathForComparison, pathsEqual, wai
 
 import {
   abortActiveLaunches,
+  adoptedCompanionOwners,
   cancelPendingElevatedHandoffs,
   drainStrandedConsentPrompts,
   processNameMismatchWarnings,
@@ -106,6 +107,16 @@ export function pruneUnclosedProcesses(isPathRunning: (appPath: string) => boole
   unclosedProcesses.forEach((entry, key) => {
     if (!isPathRunning(entry.path)) {
       unclosedProcesses.delete(key)
+    }
+  })
+
+  // Same predicate, same "yes when unsure" contract, so an unobserved tick
+  // cannot drop a live claim. Dropping the claim of an app that has exited is
+  // what stops a stale owner surviving until the next launch and swallowing a
+  // hand-started copy the other profiles should be able to close (#853).
+  adoptedCompanionOwners.forEach((_gameKey, ownedPath) => {
+    if (!isPathRunning(ownedPath)) {
+      adoptedCompanionOwners.delete(ownedPath)
     }
   })
 }
@@ -916,6 +927,24 @@ export function getClosableLaunchedAppGameKeys(
     launchOwnedPaths.add(normalizePathForComparison(appProcess.path))
     launchOwnedNames.add(appProcess.name.toLowerCase())
     closableGameKeys.add(appProcess.gameKey)
+  }
+
+  // The other way a launch establishes ownership: the app was already running
+  // when the launch reached it, so there is no child handle but the profile
+  // asked for it all the same (`adoptedCompanionOwners`). Tracking is rechecked
+  // at read time rather than trusted from record time, because #591 must be
+  // able to take the affordance away without deleting anything: a claim made
+  // while tracking was on is void while it is off, and live again after.
+  for (const [ownedPath, gameKey] of adoptedCompanionOwners) {
+    if (!isPathRunning(ownedPath)) {
+      continue
+    }
+    if (!isProcessTrackingEnabled(getActiveStoredProfile(getStoredProfiles()[gameKey]))) {
+      continue
+    }
+    launchOwnedPaths.add(ownedPath)
+    launchOwnedNames.add(getExeName(ownedPath).toLowerCase())
+    closableGameKeys.add(gameKey)
   }
 
   for (const target of getProfileCompanionTargets().values()) {
