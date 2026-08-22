@@ -13,12 +13,26 @@ async function loadRunningModule(opts?: {
   gamePaths?: Record<string, string>
   appPaths?: Record<string, string>
   trackablePaths?: string[]
+  // Paths that must answer "gone" to existsSync while everything else answers
+  // "there" — a game whose exe moved, was uninstalled, or sits on a share that
+  // dropped (#794). Compared case-insensitively, like every other path in this
+  // codebase.
+  missingPaths?: string[]
 }) {
   // utils.isValidExePath checks fs.existsSync; pretend every .exe exists so
   // adoption (which validates the configured game path) works host-independently.
+  // Slashes as well as case: `isValidExePath` runs `path.resolve` BEFORE
+  // `existsSync`, so what reaches this mock is backslashed regardless of how the
+  // fixture wrote it. Comparing raw strings made the missing set silently never
+  // match, which is a green test asserting nothing.
+  const normalizeForFixture = (value: string) => value.toLowerCase().replace(/\//g, '\\')
+  const missing = new Set((opts?.missingPaths ?? []).map(normalizeForFixture))
   vi.doMock('fs', () => ({
     default: {
-      existsSync: (filePath: unknown) => typeof filePath === 'string' && /\.exe$/i.test(filePath)
+      existsSync: (filePath: unknown) =>
+        typeof filePath === 'string' &&
+        /\.exe$/i.test(filePath) &&
+        !missing.has(normalizeForFixture(filePath))
     }
   }))
 
@@ -519,4 +533,69 @@ test('a throwing reconcile does not fail the caller (#591)', async () => {
   } finally {
     consoleError.mockRestore()
   }
+})
+
+// #794 acceptance, and it pins a DECISION rather than a fix: when the game's
+// configured exe no longer resolves, its companions stay unsurfaced. Adoption
+// runs `isValidExePath` on the game path (`running.ts` in
+// `getExternallyAdoptableGameKeys`), so a broken path keeps the key out of
+// `adoptedOrLaunchedGameKeys` and `getTrackedRunningApps` skips the whole
+// profile at its first gate.
+//
+// Surfacing them instead was considered and rejected on the issue: the
+// membership test would be intent-blind (a companion that autostarts with
+// Windows would light up every profile configuring it), and it would hold the
+// FAST poll open indefinitely, reversing #672. The row explains itself with a
+// badge instead. #851 is what gives these companions back, through remembered
+// ownership rather than inference, so this test exists to make sure that lands
+// deliberately rather than as a side effect.
+//
+// Reachable without any config edit: a game on a share or an external drive
+// that drops fails `existsSync` while its process is still very much alive.
+//
+// Mutation-checked, and the answer was not the obvious one: deleting the
+// `isValidExePath` guard in the ADOPTION loop leaves this green, because the
+// guard in the loop that builds `gameExeOwners` has already kept the key out of
+// the map, so `owners?.size === 1` is false anyway. Both have to go for this to
+// turn red. Worth knowing before anyone "simplifies" one of them away and reads
+// the still-green suite as permission.
+test('a game path that no longer resolves leaves its companions unsurfaced (#794)', async () => {
+  const { runningModule } = await loadRunningModule({
+    profiles: { iracing: {} },
+    gamePaths: { iracing: 'C:/Games/iRacingUI.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    trackablePaths: ['C:/Tools/SimHub.exe'],
+    missingPaths: ['C:/Games/iRacingUI.exe']
+  })
+  // The game AND the companion are both running. Only the config path is broken.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'simhub.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(apps).toEqual([])
+})
+
+// The control for the test above, and it is the whole reason that one means
+// anything: same fixture, same running processes, only the path resolves. If
+// this ever stops surfacing SimHub, the test above is passing because adoption
+// broke for some unrelated reason rather than because of the path check.
+test('the same fixture with a resolvable game path does surface them (#794)', async () => {
+  const { runningModule } = await loadRunningModule({
+    profiles: { iracing: {} },
+    gamePaths: { iracing: 'C:/Games/iRacingUI.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    trackablePaths: ['C:/Tools/SimHub.exe'],
+    missingPaths: []
+  })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'simhub.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(apps.map((app) => app.path)).toContain('C:/Tools/SimHub.exe')
 })

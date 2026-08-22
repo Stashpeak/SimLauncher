@@ -20,6 +20,7 @@ import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
 import { GameIcon } from './GameIcon'
+import { GamePathMissingBadge } from './GamePathMissingBadge'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
 import { GameRowActions } from './GameRowActions'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -40,6 +41,7 @@ export function GameRow({
   gameStatusTracked,
   runningAppIcons,
   hasClosableApps,
+  gamePathMissing,
   gameIconUrl,
   isDimmed,
   isLaunching,
@@ -75,6 +77,12 @@ export function GameRow({
   // than session state: after a restart, after the process-tracking toggle is
   // cycled, or whenever a companion autostarts with Windows.
   hasClosableApps: boolean
+  // This game's configured executable no longer resolves on disk (#794). Config
+  // state, not process state, which is why it is a badge next to the title and
+  // never the status dot: the dot's vocabulary is entirely about processes
+  // (green = running, amber ring = cannot tell, #737), so any dot on an idle row
+  // would read as "something is running".
+  gamePathMissing: boolean
   gameIconUrl?: string
   isDimmed: boolean
   isLaunching: boolean
@@ -621,6 +629,7 @@ export function GameRow({
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h2 className="game-title font-normal text-(--text-primary)">{game.name}</h2>
+              {gamePathMissing && <GamePathMissingBadge />}
             </div>
             <RunningAppsStrip
               runningAppIcons={runningAppIcons}
