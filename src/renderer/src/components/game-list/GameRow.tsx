@@ -617,7 +617,18 @@ export function GameRow({
       <div
         className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? 'isolation-auto! z-20' : 'z-0'}`}
       >
-        <div className="flex items-center gap-5">
+        {/* The `min-w-0` chain down to the title is what lets a long name give
+            way instead of pushing the row wider than it is. A flex item refuses
+            to shrink below its content by default, and this row is fixed height
+            with the action group on the other side of a `justify-between`, so
+            without it an overflowing title walks into Launch and Close Apps.
+            That is worst at the 175% zoom preset, where an 800px window is only
+            about 457 CSS pixels wide, and worst of all on a broken-path row:
+            the badge is `shrink-0` by design, so the name is what has to yield,
+            and the controls it would otherwise displace are the recovery path
+            (Codex on PR #858). Truncated text stays whole in the accessibility
+            tree, and the row's own `aria-label` carries the full name anyway. */}
+        <div className="flex min-w-0 items-center gap-5">
           <GameIcon
             game={game}
             isRunning={isGameRunning}
@@ -626,9 +637,9 @@ export function GameRow({
             dismissPath={gameStatusDismissPath}
             tracked={gameStatusTracked}
           />
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <h2 className="game-title font-normal text-(--text-primary)">{game.name}</h2>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="game-title truncate font-normal text-(--text-primary)">{game.name}</h2>
               {gamePathMissing && <GamePathMissingBadge />}
             </div>
             <RunningAppsStrip
