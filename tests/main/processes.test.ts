@@ -3496,6 +3496,38 @@ test('a claim survives the ticks before its app is up, and ends when it goes (#8
   expect(adoptedCompanionOwners.size).toBe(0)
 })
 
+// The inverse failure the claim can cause, found by an adversarial review pass
+// on #853: a claim is made for everything the launch INTENDS to handle, so an
+// app that then fails to start would still attach this profile to whatever is
+// running at that path. The other profiles that legitimately share it would
+// lose their control over somebody else's copy.
+test('a launch does not keep a claim on an app it failed to start (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  spawnErrors.set('C:/Tools/SimHub.exe', Object.assign(new Error('boom'), { code: 'ENOENT' }))
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(adoptedCompanionOwners.size).toBe(0)
+
+  // Somebody else's copy is running at that path. Both profiles configure it
+  // and neither started it, so both keep the control.
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '9999')
+  processNames.add('simhub.exe')
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
 // The case that survived the first fix (#853): the app WAS launched by us, but
 // elevated, so it runs under a PowerShell host we hold no handle to and
 // `runningProcesses` never records it. It is the same app the launch warns it

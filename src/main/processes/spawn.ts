@@ -412,6 +412,34 @@ export async function launchProfileApps(
         result.status === 'failed'
     )
 
+    // The claim above was made for everything this launch INTENDED to handle,
+    // because a claim has to exist before its app does. Now that the outcomes
+    // are known, take back the ones the launch did not earn: an app that failed
+    // to start, and one the loop never reached because a kill aborted it. Left
+    // standing, such a claim would attach this profile to a copy somebody else
+    // started, and silently take the close control away from the profiles that
+    // legitimately share it. Only a claim this launch made and that has never
+    // been seen running is withdrawn: one the poll has already confirmed is a
+    // fact about a live process, not a prediction that turned out wrong.
+    if (trackingEnabled) {
+      const reached = new Set(
+        launchResults.map((result) => normalizePathForComparison(result.appPath))
+      )
+      const failed = new Set(
+        spawnFailedResults.map((result) => normalizePathForComparison(result.appPath))
+      )
+      appsToLaunch.forEach((entry) => {
+        const claimKey = normalizePathForComparison(entry.path)
+        if (reached.has(claimKey) && !failed.has(claimKey)) {
+          return
+        }
+        const claim = adoptedCompanionOwners.get(claimKey)
+        if (claim?.gameKey === gameKey && !claim.seenRunning) {
+          adoptedCompanionOwners.delete(claimKey)
+        }
+      })
+    }
+
     // An elevated result is only trustworthy if the handoff was OBSERVED. When
     // the grace window expired first (#675) the promise said `elevated` on spec,
     // and the truth may have arrived afterwards through lateElevatedOutcomes
