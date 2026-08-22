@@ -92,6 +92,29 @@ function nextElevatedHandoffId(): number {
   return elevatedHandoffSeq
 }
 
+/**
+ * Drop this profile's claim on an app that turned out never to have started.
+ *
+ * Only an UNOBSERVED claim, and only this profile's: one the poll has already
+ * confirmed is a fact about a live process, not a prediction that turned out
+ * wrong, and another profile's is not ours to withdraw.
+ *
+ * A pending claim never expires by design (`adoptedCompanionOwners`), so every
+ * way a launch can end without starting something has to say so, or the claim
+ * outlives the attempt and attributes a later hand-started copy to this game
+ * while the profiles that share it lose their close control.
+ */
+function withdrawUnobservedClaim(appPath: string, gameKey: string | undefined): void {
+  if (!gameKey) {
+    return
+  }
+  const claimKey = normalizePathForComparison(appPath)
+  const claim = adoptedCompanionOwners.get(claimKey)
+  if (claim?.gameKey === gameKey && !claim.seenRunning) {
+    adoptedCompanionOwners.delete(claimKey)
+  }
+}
+
 function recordLateElevatedOutcome(
   runId: number,
   handoffId: number,
@@ -454,10 +477,7 @@ export async function launchProfileApps(
         if (reached.has(claimKey) && !failed.has(claimKey)) {
           return
         }
-        const claim = adoptedCompanionOwners.get(claimKey)
-        if (claim?.gameKey === gameKey && !claim.seenRunning) {
-          adoptedCompanionOwners.delete(claimKey)
-        }
+        withdrawUnobservedClaim(entry.path, gameKey)
       })
     }
 
@@ -897,6 +917,10 @@ function launchElevated(
     const noteHandoffCancelled = (): void => {
       if (timedOut) {
         recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+        // The sequence's own withdrawal pass has already run by now: it happens
+        // when the summary is built, and `timedOut` means the promise settled
+        // before this truth arrived (#853).
+        withdrawUnobservedClaim(appPath, gameKey)
       }
     }
     const handoffTimer = setTimeout(() => {
@@ -968,6 +992,7 @@ function launchElevated(
           if (signal?.aborted || cancelledByKill) {
             if (timedOut) {
               recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+              withdrawUnobservedClaim(appPath, gameKey)
             }
             resolve({ status: 'cancelled', appPath })
             return
@@ -988,6 +1013,7 @@ function launchElevated(
               outcome: 'failed',
               error: message
             })
+            withdrawUnobservedClaim(appPath, gameKey)
           }
           resolve({ status: 'failed', appPath, error: message })
           return

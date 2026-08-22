@@ -3561,6 +3561,46 @@ test('a claim survives the path being re-saved in another spelling (#853)', asyn
   expect(adoptedCompanionOwners.size).toBe(0)
 })
 
+// CodeRabbit on #853, the last way a launch can end without starting anything.
+// When the grace window expires the promise says `elevated` on spec (#675), so
+// the sequence's own withdrawal pass keeps the claim. If the user then DENIES
+// the prompt, the truth arrives long after that pass has run, and a pending
+// claim never expires, so it would sit there attributing a later hand-started
+// copy to this game.
+test('a claim goes when the UAC prompt is denied after the grace window (#853)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, adoptedCompanionOwners } = await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Still claimed: the prompt is unanswered, which is exactly the state a
+    // pending claim is for.
+    expect(adoptedCompanionOwners.size).toBe(1)
+
+    const heldCallback = heldElevatedCallback
+    expect(heldCallback).not.toBeNull()
+    heldCallback?.(makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(adoptedCompanionOwners.size).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 // A DELIBERATE overlap, and the one place this mechanism does not narrow.
 // CodeRabbit on #853 asked for the opposite: refuse the second claim, because
 // the first profile still holds the handle and two rows offering a close means
