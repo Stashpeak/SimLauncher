@@ -13,7 +13,7 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 import {
@@ -33,8 +33,14 @@ vi.mock('../../src/renderer/src/lib/store', () => ({
   }
 }))
 
+// Captured from an effect, not from render. Render has to stay pure, because
+// React is free to replay or discard it, so a prop callback invoked there can
+// fire for work that never commits (React Doctor, CodeRabbit on PR #858).
 function Probe({ onCapture }: { onCapture: (result: UseMissingGamePathsResult) => void }) {
-  onCapture(useMissingGamePaths())
+  const result = useMissingGamePaths()
+  useEffect(() => {
+    onCapture(result)
+  })
   return null
 }
 
@@ -158,6 +164,43 @@ describe('useMissingGamePaths cadence (#794)', () => {
       expect(Array.from(harness.getResult().missingGamePathKeys)).toEqual(['iracing'])
     } finally {
       consoleError.mockRestore()
+      harness.unmount()
+    }
+  })
+
+  // Focus and a launch attempt overlap in the ordinary flow: launching takes
+  // focus away and coming back brings it straight back. If the older read lands
+  // last it reinstates the answer the newer one just corrected, which is the
+  // badge describing a path that has already been fixed.
+  test('an older read resolving last does not overwrite the newer answer', async () => {
+    const harness = await mountProbe()
+    try {
+      let resolveFirst: ((keys: string[]) => void) | undefined
+      getMissingGamePathsMock.mockImplementationOnce(
+        () =>
+          new Promise<string[]>((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      getMissingGamePathsMock.mockResolvedValueOnce([])
+
+      // Both in flight; the second is the newer question.
+      const first = harness.getResult().refreshMissingGamePaths()
+      const second = harness.getResult().refreshMissingGamePaths()
+
+      await act(async () => {
+        await second
+      })
+      expect(harness.getResult().missingGamePathKeys.size).toBe(0)
+
+      // The older one lands afterwards, carrying the pre-repair answer.
+      await act(async () => {
+        resolveFirst?.(['iracing'])
+        await first
+      })
+
+      expect(harness.getResult().missingGamePathKeys.size).toBe(0)
+    } finally {
       harness.unmount()
     }
   })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getMissingGamePaths, onStoreConfigChanged } from '../lib/store'
 
 // Derived from the store binding rather than imported, matching GameList, so
@@ -59,9 +59,21 @@ export function useMissingGamePaths(): UseMissingGamePathsResult {
     })
   }, [])
 
+  // Every trigger below shares one refresh, so they share one generation
+  // counter. Focus and a launch attempt overlap in the ordinary flow (launching
+  // takes focus away, coming back brings it straight back), and without this an
+  // in-flight older read landing last would reinstate the answer the newer read
+  // had just corrected. The state it would corrupt is exactly the one this hook
+  // exists to keep honest: a badge describing a path that is already fixed.
+  const latestRequestRef = useRef(0)
+  const mountedRef = useRef(true)
+
   const refreshMissingGamePaths = useCallback(async () => {
+    const requestId = ++latestRequestRef.current
     try {
-      applyKeys(await getMissingGamePaths())
+      const keys = await getMissingGamePaths()
+      if (!mountedRef.current || requestId !== latestRequestRef.current) return
+      applyKeys(keys)
     } catch (err) {
       // Leave the last answer standing. Clearing here would retract a true
       // warning because one IPC round-trip failed.
@@ -70,43 +82,38 @@ export function useMissingGamePaths(): UseMissingGamePathsResult {
   }, [applyKeys])
 
   useEffect(() => {
-    const alive = { current: true }
+    // Set on entry, not just cleared on exit: an effect can re-run after a
+    // cleanup (StrictMode, a remount), and a ref left false would silently
+    // discard every answer from then on.
+    mountedRef.current = true
 
-    const refresh = async () => {
-      try {
-        const keys = await getMissingGamePaths()
-        if (!alive.current) return
-        applyKeys(keys)
-      } catch (err) {
-        console.error('Failed to read missing game paths', err)
-      }
-    }
+    const refresh = () => void refreshMissingGamePaths()
 
-    void refresh()
+    refresh()
 
     // Same gate as GameList's own settings reload: only 'import-config' (full
     // store replace) and 'save-settings' can carry gamePaths. Profile writes
     // and migration flags cannot, so they earn no round-trip.
     const unsubscribe = onStoreConfigChanged((payload: StoreConfigChangePayload) => {
       if (payload.reason !== 'import-config' && payload.reason !== 'save-settings') return
-      void refresh()
+      refresh()
     })
 
-    const handleFocus = () => void refresh()
+    const handleFocus = () => refresh()
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void refresh()
+      if (document.visibilityState === 'visible') refresh()
     }
 
     window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
-      alive.current = false
+      mountedRef.current = false
       unsubscribe()
       window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [applyKeys])
+  }, [refreshMissingGamePaths])
 
   return { missingGamePathKeys, refreshMissingGamePaths }
 }
