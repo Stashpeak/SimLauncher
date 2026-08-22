@@ -348,7 +348,16 @@ export async function launchProfileApps(
           // Pending until the poll sees it. The app may be seconds away (the
           // launch is sequential) or minutes away (an elevated one waits on a
           // consent prompt), and the tick runs throughout.
-          seenRunning: adoptedCompanionOwners.get(claimKey)?.seenRunning ?? false
+          //
+          // Except when this launch has just seen it itself: an app in
+          // `runningPaths` was observed running a moment ago, and recording
+          // that as still-pending would make the claim unprunable if the app
+          // exits before the next successful scan (Codex on #853). A pending
+          // claim never expires by design, so it must only ever mean "we have
+          // not looked yet".
+          seenRunning:
+            runningPaths.has(entry.path) ||
+            (adoptedCompanionOwners.get(claimKey)?.seenRunning ?? false)
         })
       })
     }

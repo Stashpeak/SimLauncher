@@ -951,15 +951,22 @@ export function getClosableLaunchedAppGameKeys(
   // profiles with tracking off, so a claim made while tracking was on goes
   // quiet while it is off and comes back after, with nothing deleted.
   for (const [ownedKey, owner] of adoptedCompanionOwners) {
-    const isStillConfigured = companionTargets.some(
+    const configuredTarget = companionTargets.find(
       (target) =>
         target.scope === 'path' &&
         normalizePathForComparison(target.appPath) === ownedKey &&
         target.gameKeys.includes(owner.gameKey)
     )
-    if (!isStillConfigured) {
+    if (!configuredTarget) {
       continue
     }
+    // Ask about the path AS CONFIGURED NOW, not as it was spelled when the
+    // claim was made (Codex on #853). The two match after normalization but the
+    // tick keys its answers by the raw string, so a re-saved path in a
+    // different case or slash style would go unanswered, and an unanswered path
+    // reads as running: the claim would outlive its process forever. Healing
+    // the record here also fixes the prune, which has no targets of its own.
+    owner.path = configuredTarget.appPath
     if (!isPathRunning(owner.path)) {
       continue
     }

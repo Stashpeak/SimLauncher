@@ -3496,6 +3496,71 @@ test('a claim survives the ticks before its app is up, and ends when it goes (#8
   expect(adoptedCompanionOwners.size).toBe(0)
 })
 
+// Codex on #853. A pending claim never expires, by design, so "pending" must
+// only ever mean "we have not looked yet". A companion the launch found ALREADY
+// RUNNING was observed by the launch itself, and recording that as pending made
+// the claim unprunable if the app exited before the next successful scan: a
+// hand-started copy would then be attributed to a stale owner and the other
+// profiles would lose their control over it.
+test('a companion the launch already saw running is claimed as observed (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    skippedCount: 1
+  })
+  expect(adoptedCompanionOwners.get('c:\\tools\\simhub.exe')?.seenRunning).toBe(true)
+
+  // It exits before any tick ever confirms it. The claim must go with it.
+  processRegistry.delete(normalizeRegistryKey('C:/Tools/SimHub.exe'))
+  processNames.delete('simhub.exe')
+
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+})
+
+// Codex on #853, the other half of the same record: the claim is asked about by
+// PATH, and the tick keys its answers by the path as configured. A path re-saved
+// in a different case or slash style would go unanswered, and an unanswered path
+// reads as running, so the claim would outlive its process forever.
+test('a claim survives the path being re-saved in another spelling (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  // Same file, spelled the other way, which is what a re-save can produce.
+  storeData.appPaths = { simhub: 'C:\\Tools\\SimHub.exe' }
+  markExistingPath('C:\\Tools\\SimHub.exe')
+  registerProcess('C:\\Tools\\SimHub.exe', 'simhub.exe', '1234')
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  processRegistry.clear()
+  processNames.delete('simhub.exe')
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+})
+
 // A DELIBERATE overlap, and the one place this mechanism does not narrow.
 // CodeRabbit on #853 asked for the opposite: refuse the second claim, because
 // the first profile still holds the handle and two rows offering a close means
