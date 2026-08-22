@@ -140,7 +140,7 @@ export function ColorPickerPopover({
                 onChange('#AD46FF')
               }
             }}
-            className="w-full rounded-lg bg-black/20 px-2 py-1.5 text-xs font-medium text-(--text-primary) outline-none transition-colors focus:bg-black/30"
+            className="w-full rounded-lg bg-black/20 px-2 py-1.5 text-xs font-medium text-(--text-primary) outline-none transition-colors focus:bg-black/30 focus-visible:ring-2 focus-visible:ring-(--accent)"
             spellCheck={false}
           />
         </div>
