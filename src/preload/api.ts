@@ -95,6 +95,12 @@ export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | '
 
 export interface RunningAppsChangedPayload {
   apps: RunningApp[]
+  /**
+   * Game keys whose companions a Close Apps click would currently close (#673).
+   * Not derivable from `apps`: a profile can have live companions and an empty
+   * strip, which is exactly the state this exists to report.
+   */
+  closableGameKeys: string[]
   reason: RunningAppsChangeReason
   updatedAt: number
 }

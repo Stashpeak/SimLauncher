@@ -111,6 +111,7 @@ async function renderGameList(
   runningAppsMock.mockReturnValue({
     runningApps,
     runningStatus: { iracing: runningApps.length > 0 },
+    closableGameKeys: new Set<string>(),
     refreshRunningState: vi.fn().mockResolvedValue(undefined)
   })
 

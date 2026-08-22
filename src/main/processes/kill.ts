@@ -41,8 +41,7 @@ import {
   killProcessByImageName,
   killProcessTree,
   requestGracefulClose,
-  resolveConfiguredPathStates,
-  resolveRunningConfiguredPaths
+  resolveConfiguredPathStates
 } from './win32KillUtils'
 
 // Hardcoded list of companion process names for utilities that spawn background
@@ -571,8 +570,10 @@ function getProfileCompanionTargets(gameKey?: string) {
     // enough on its own: this function rebuilds targets from the stored profile
     // rather than from what was launched, so without this guard the tray's
     // always-enabled Close Apps would still find and kill apps the user
-    // explicitly opted out of us touching. `hasClosableLaunchedApps` reads the
-    // same map, so this also stops the action being offered for that profile.
+    // explicitly opted out of us touching. `getClosableLaunchedAppGameKeys`
+    // reads the same map, so this also stops the action being OFFERED for that
+    // profile. Gating here rather than storing the toggle's effect is what lets
+    // turning tracking back on restore the affordance with no relaunch (#591).
     if (!isProcessTrackingEnabled(profile)) {
       return
     }
@@ -851,24 +852,27 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 }
 
 /**
- * Whether killLaunchedApps(gameKey) currently has at least one target it would
- * try to close: a tracked non-game process whose exe is running, or a configured
- * / hardcoded companion whose process is running.
+ * Which game keys killLaunchedApps(gameKey) currently has at least one target
+ * for: a tracked non-game process whose exe is running, or a configured /
+ * hardcoded companion whose process is running.
  *
- * NOT currently called from production. It was written for a tray "Close Apps"
- * item whose enabled state was cached and kept fresh by listeners; that design
- * was replaced by an always-enabled item, and the re-land in #519 does not use a
- * pre-check at all, because deciding "nothing to close" before reaching
- * killLaunchedApps skips the abort/cancel prologue and lets an in-flight launch
- * carry on (Codex P1 on #819). Kept because #673 plans to expose it over IPC for
- * the missing Close Apps affordance after a restart. If that changes, delete it
- * rather than leaving it to look load-bearing again.
+ * This drives the secondary Close Apps control (#673), the affordance that is
+ * otherwise lost when the in-memory maps do not survive a restart. Its
+ * predecessor answered one game key at a time and ran its own enumeration, and
+ * its JSDoc forbade calling it from a timer for that reason: one PowerShell
+ * spawn is fine for a click and is not fine once per poll, let alone once per
+ * ROW per poll. The affordance has to appear and clear on its own as processes
+ * come and go, so an on-demand shape could not drive it. Hence the inversion:
+ * answer every key at once, from a resolver the caller already paid for, which
+ * is zero extra spawns in the steady state (#846).
  *
  * KEEP IN SYNC with killLaunchedApps above — the two membership conditions here
  * mirror its two kill-task branches. Deliberately NOT derived from
  * getRunningApps(): that list gates companions on the owning game being launched
  * or adopted, while killLaunchedApps closes configured companions regardless, so
- * the surfaced list would under-report closable targets.
+ * the surfaced list would under-report closable targets. That difference is the
+ * whole point here, because the profile whose companions are invisible is
+ * exactly the one this control exists for.
  *
  * One deliberate asymmetry with killLaunchedApps, and it is not drift: this
  * verifies a candidate against its PATH (#674) where the scheduling there stays
@@ -876,51 +880,47 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
  * nothing is running at costs a lookup and nothing else, because the kill is
  * path-scoped and finalizeKillAttempts now judges the empty result correctly.
  * Telling the user there is something to close when there is not is the defect
- * this function would otherwise ship to #673, so it pays for the enumeration and
- * the scheduling does not.
+ * this would otherwise ship to #673.
  *
- * On-demand only. This is one PowerShell spawn in the collision case, which is
- * fine for a click and is not fine on the running-apps poll — do not call it
- * from a timer.
+ * A target owned by SEVERAL profiles marks all of them. That is honest rather
+ * than convenient: one SimHub configured in three profiles genuinely is closable
+ * from any of the three, and a click on any one of them closes the same process.
+ * The strip is what distinguishes "this profile's session" from "this profile
+ * could close it", and the strip is deliberately untouched here (#794 owns it).
  */
-export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean> {
-  const { processNames } = await readRunningProcessNames()
+export function getClosableLaunchedAppGameKeys(
+  processNames: Set<string>,
+  isPathRunning: (appPath: string) => boolean
+): Set<string> {
+  const closableGameKeys = new Set<string>()
   const gameExePaths = getConfiguredGameExePaths()
 
-  const candidatePaths: string[] = []
   for (const appProcess of runningProcesses.values()) {
-    if (gameKey && appProcess.gameKey !== gameKey) {
+    if (closableGameKeys.has(appProcess.gameKey)) {
       continue
     }
     if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
       continue
     }
-    candidatePaths.push(appProcess.path)
+    if (isPathRunning(appProcess.path)) {
+      closableGameKeys.add(appProcess.gameKey)
+    }
   }
 
-  const companionTargets = getProfileCompanionTargets(gameKey)
-  for (const target of companionTargets.values()) {
+  for (const target of getProfileCompanionTargets().values()) {
     // A curated name-scoped target has no path to verify against, so it keeps
     // the name-only answer. That is not a gap being tolerated: `/IM` is how such
     // a target would be closed too, so name membership is exactly the condition
     // under which closing it would do something.
-    if (target.scope === 'name') {
-      if (processNames.has(target.processName)) {
-        return true
-      }
-      continue
+    const isRunning =
+      target.scope === 'name' ? processNames.has(target.processName) : isPathRunning(target.appPath)
+
+    if (isRunning) {
+      target.gameKeys.forEach((owner) => closableGameKeys.add(owner))
     }
-    candidatePaths.push(target.appPath)
   }
 
-  if (candidatePaths.length === 0) {
-    return false
-  }
-
-  // One enumeration for both branches, and none at all unless some candidate's
-  // image is actually in the tasklist.
-  const runningPaths = await resolveRunningConfiguredPaths(processNames, candidatePaths)
-  return candidatePaths.some((candidatePath) => runningPaths.has(candidatePath))
+  return closableGameKeys
 }
 
 /**

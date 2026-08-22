@@ -9,6 +9,10 @@ export interface GameRowActionsProps {
   isLaunching: boolean
   isLaunchBlocked: boolean
   canKill: boolean
+  // Ambient closable state: this profile's companions are running but none of
+  // them is in the strip (#673). Renders a SECONDARY control and must never
+  // reach `primaryAction` — see the comment on it below.
+  canCloseLeftovers: boolean
   canRelaunch: boolean
   onPrimary: () => void
   onKill: () => void
@@ -28,6 +32,7 @@ export function GameRowActions({
   isLaunching,
   isLaunchBlocked,
   canKill,
+  canCloseLeftovers,
   canRelaunch,
   onPrimary,
   onKill,
@@ -38,6 +43,12 @@ export function GameRowActions({
   editorId,
   profileMenuProps
 }: GameRowActionsProps): ReactNode {
+  // `canKill` REPLACES the primary action, it does not add to it, which is why
+  // ambient closable state (#673) must not feed it: a user whose SimHub
+  // autostarts would get a red Close Apps here on every app start, on every row
+  // whose profile enables SimHub, and no way to launch the game from that row.
+  // Launch is the recovery path for that state, so it stays primary and the
+  // close goes in the secondary slot below.
   const primaryAction = canKill ? onKill : onPrimary
   const primaryButtonClass = canKill ? 'danger-action' : 'accent-surface-action'
   // What will actually start: the game AND its active profile — the profile
@@ -63,7 +74,11 @@ export function GameRowActions({
   return (
     <div className="flex items-center gap-3 no-drag">
       <div className="flex h-9 w-9 items-center justify-center">
-        {canRelaunch && (
+        {/* One slot, two mutually exclusive occupants, relaunch first. They
+            cannot both apply: relaunch needs a running profile, and a running
+            profile has strip icons, which makes this a `canKill` row instead.
+            Ordered explicitly anyway so the slot never has to render both. */}
+        {canRelaunch ? (
           <Tooltip label={isLaunchBlocked ? blockedReason : 'Relaunch missing apps'}>
             <button
               type="button"
@@ -90,6 +105,34 @@ export function GameRowActions({
               />
             </button>
           </Tooltip>
+        ) : (
+          canCloseLeftovers && (
+            // Says what is true and no more. It does NOT say "from a previous
+            // session": the same state is reached by cycling the process
+            // tracking toggle, and by a companion that autostarts with Windows
+            // and was never ours to begin with. What the predicate proves is
+            // only that this profile's companions are running and that clicking
+            // would close them.
+            <Tooltip label="Close companion apps that are still running">
+              <button
+                type="button"
+                onClick={onKill}
+                // `icon-action danger-action`: transparent at rest, danger on
+                // hover, matching the window close button. A destructive action
+                // should not look identical to the benign one that shares this
+                // slot, and this pair already exists rather than being invented
+                // here.
+                className="icon-action danger-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+                aria-label={`Close companion apps for ${gameName} that are still running`}
+              >
+                <KillIcon
+                  width={18}
+                  height={18}
+                  className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
+                />
+              </button>
+            </Tooltip>
+          )
         )}
       </div>
 

@@ -54,7 +54,8 @@ export function GameList({
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const { announce } = useNotify()
-  const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
+  const { runningApps, runningStatus, closableGameKeys, refreshRunningState } =
+    useRunningApps(configuredGames)
   // Announce "X is now running" once a launch cooldown settles — but only if the
   // game EXECUTABLE itself is detected running by then. The cooldown also runs on
   // partial failures (a companion app started while the game exe failed), and
@@ -315,6 +316,7 @@ export function GameList({
               gameStatusDismissPath={gameRunningApp?.path}
               gameStatusTracked={gameRunningApp?.tracked}
               runningAppIcons={runningAppIcons}
+              hasClosableApps={closableGameKeys.has(game.key)}
               isDimmed={hasActiveTitle && !runningStatus[game.key]}
               isLaunching={launchingGameKey === game.key}
               isLaunchBlocked={launchingGameKey !== null}

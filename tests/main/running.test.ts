@@ -66,6 +66,10 @@ async function loadRunningModule(opts?: {
 
   const killMock = {
     pruneUnclosedProcesses: pruneUnclosedProcessesMock,
+    // Its own behaviour is covered in processes.test.ts against the real store;
+    // here it only has to not be undefined, since every assertion in this file
+    // is about the app list or the poll cadence.
+    getClosableLaunchedAppGameKeys: vi.fn(() => new Set<string>()),
     killLaunchedApps: vi.fn(),
     killProfileApps: vi.fn()
   }

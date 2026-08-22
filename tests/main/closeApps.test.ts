@@ -43,7 +43,7 @@ beforeEach(() => {
 
 // Codex P1 on PR #819. The kill must run even when nothing looks closable,
 // because its prologue is what aborts an in-flight launch and cancels a pending
-// elevated handoff. An earlier version checked hasClosableLaunchedApps() first
+// elevated handoff. An earlier version checked a closable-targets predicate first
 // and returned, so a launch still in its pre-spawn scan, in an inter-app delay,
 // or parked on an unanswered UAC prompt carried on and started companions right
 // after the user had been told there were none.

@@ -1,5 +1,5 @@
 export { AUTO_CLOSE_GRACE_MS, initAutoClose } from './processes/autoClose'
-export { hasClosableLaunchedApps, killLaunchedApps, killProfileApps } from './processes/kill'
+export { killLaunchedApps, killProfileApps } from './processes/kill'
 export {
   getRunningApps,
   publishRunningApps,
