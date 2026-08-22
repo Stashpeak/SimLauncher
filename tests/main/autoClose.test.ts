@@ -64,7 +64,7 @@ async function loadAutoCloseModule(opts?: {
   const killMock = {
     killLaunchedApps: killLaunchedAppsMock,
     killProfileApps: vi.fn(),
-    hasClosableLaunchedApps: vi.fn(),
+    getClosableLaunchedAppGameKeys: vi.fn(() => new Set<string>()),
     pruneUnclosedProcesses: vi.fn()
   }
   vi.doMock('./kill', () => killMock)

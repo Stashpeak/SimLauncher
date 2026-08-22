@@ -39,6 +39,7 @@ export function GameRow({
   gameStatusDismissPath,
   gameStatusTracked,
   runningAppIcons,
+  hasClosableApps,
   gameIconUrl,
   isDimmed,
   isLaunching,
@@ -69,6 +70,11 @@ export function GameRow({
   gameStatusDismissPath?: string
   gameStatusTracked?: boolean
   runningAppIcons: RunningAppIcon[]
+  // This profile has companion apps a Close Apps click would close, even though
+  // none of them are in `runningAppIcons` (#673). Chronic and ambient rather
+  // than session state: after a restart, after the process-tracking toggle is
+  // cycled, or whenever a companion autostarts with Windows.
+  hasClosableApps: boolean
   gameIconUrl?: string
   isDimmed: boolean
   isLaunching: boolean
@@ -580,6 +586,13 @@ export function GameRow({
   }
 
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
+  // Deliberately NOT folded into `canKill`, which swaps the primary button
+  // rather than adding to it (`GameRowActions.tsx`): folding it in would hand a
+  // user with an autostarted SimHub a red Close Apps primary and NO way to
+  // launch the game from the row, removing the one in-app recovery this bug
+  // leaves intact. Close Apps displaces Launch only when there is visible
+  // session state; ambient closable state gets a secondary control instead.
+  const canCloseLeftovers = !canKill && hasClosableApps && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const activeProfile = getActiveGameProfile(profileSet)
 
@@ -621,6 +634,7 @@ export function GameRow({
           isLaunching={isLaunching}
           isLaunchBlocked={isLaunchBlocked}
           canKill={canKill}
+          canCloseLeftovers={canCloseLeftovers}
           canRelaunch={canRelaunch}
           onPrimary={handleLaunch}
           onKill={handleKill}

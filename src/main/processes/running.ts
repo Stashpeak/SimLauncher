@@ -12,7 +12,7 @@ import {
 import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
-import { pruneUnclosedProcesses } from './kill'
+import { getClosableLaunchedAppGameKeys, pruneUnclosedProcesses } from './kill'
 import {
   isLaunchActiveForGame,
   processNameMismatchWarnings,
@@ -50,6 +50,14 @@ export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | '
 
 export interface RunningAppsChangedPayload {
   apps: RunningApp[]
+  /**
+   * Game keys whose companions `killLaunchedApps` would currently close, which
+   * is NOT the same question as which apps are surfaced in `apps` (#673). A
+   * profile can have live, closable companions and an empty strip: after a
+   * restart, after the process-tracking toggle is cycled, or whenever its game
+   * is closed. Those are the rows that used to offer the user nothing at all.
+   */
+  closableGameKeys: string[]
   reason: RunningAppsChangeReason
   updatedAt: number
 }
@@ -273,7 +281,21 @@ function reconcileUntrackedGames(): void {
   )
 }
 
-export async function getRunningApps(): Promise<RunningApp[]> {
+/**
+ * One tick's worth of answers. `apps` is what the strip renders; the closable
+ * set is deliberately NOT derived from it, because the whole point of #673 is
+ * the profile whose companions are alive and absent from that list.
+ */
+interface RunningAppsSnapshot {
+  apps: RunningApp[]
+  closableGameKeys: Set<string>
+}
+
+// Exported for tests, which assert the closable set through the real tick
+// rather than against a hand-built resolver: the #674 precision this relies on
+// lives in how `isPathRunning` is assembled below, so a test that supplied its
+// own would be asserting against a copy of the logic under test.
+export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot> {
   const readResult = await readRunningProcessNames()
   // `processNames` survives for exactly one job (see `isPathRunning`): a record
   // whose "path" is a bare image name, which is not a path and must not be
@@ -447,7 +469,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(getExeName(appProcess.path))
   )
 
-  return [
+  const apps = [
     ...surfacedApps,
     ...mismatchWarnings.filter(
       (appProcess) =>
@@ -458,19 +480,38 @@ export async function getRunningApps(): Promise<RunningApp[]> {
         !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     )
   ]
+
+  // Answered from THIS tick's resolver, so it costs no spawn of its own (#673).
+  // A failed read makes `isPathRunning` answer false for everything, so the
+  // control blanks exactly as the strip does rather than freezing on a stale
+  // yes: same conservative reading, and it recovers on the next good tick.
+  return { apps, closableGameKeys: getClosableLaunchedAppGameKeys(processNames, isPathRunning) }
 }
 
-function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
-  return JSON.stringify(
-    apps.map((app) => ({
+export async function getRunningApps(): Promise<RunningApp[]> {
+  return (await collectRunningAppsSnapshot()).apps
+}
+
+// The change-gate below suppresses a 'scan' publish whose snapshot is identical
+// to the last one, so anything the renderer RENDERS has to be in here. The
+// closable set qualifies and the app list cannot stand in for it: the state
+// #673 is about is precisely one where companions are closable and the list is
+// empty, so a companion appearing or exiting moves the set while leaving `apps`
+// byte-identical. Sorted because set iteration order follows insertion, and an
+// unsorted join would publish a spurious change whenever a profile happened to
+// be visited in a different order.
+function normalizeRunningAppsSnapshot({ apps, closableGameKeys }: RunningAppsSnapshot) {
+  return JSON.stringify({
+    apps: apps.map((app) => ({
       elevated: app.elevated ?? false,
       gameKey: app.gameKey,
       name: app.name,
       path: app.path,
       tracked: app.tracked ?? false,
       warning: app.warning ?? ''
-    }))
-  )
+    })),
+    closableGameKeys: Array.from(closableGameKeys).sort()
+  })
 }
 
 function removeRunningAppsSubscriber(webContents: WebContents) {
@@ -503,18 +544,28 @@ async function publishRunningAppsInternal(
     return null
   }
 
-  const apps = await getRunningApps()
+  const { apps, closableGameKeys } = await collectRunningAppsSnapshot()
   // Refresh on every scan (before the change-gate below) so the cadence always
   // reflects what's actually surfaced, including adopted external apps.
+  //
+  // Deliberately still the SURFACED count, not widened by the closable set: a
+  // closable-but-unsurfaced companion is the chronic, ambient state this feature
+  // exists to report, and holding the FAST 2s tasklist poll open for it would
+  // reverse #672 for every profile that has SimHub enabled.
   lastPublishedRunningAppsCount = apps.length
-  const snapshot = normalizeRunningAppsSnapshot(apps)
+  const snapshot = normalizeRunningAppsSnapshot({ apps, closableGameKeys })
 
   if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
     return null
   }
 
   lastRunningAppsSnapshot = snapshot
-  const payload = { apps, reason, updatedAt: Date.now() }
+  const payload = {
+    apps,
+    closableGameKeys: Array.from(closableGameKeys),
+    reason,
+    updatedAt: Date.now()
+  }
   emitRunningAppsChanged(payload)
   return payload
 }
@@ -668,7 +719,7 @@ export async function subscribeRunningApps(
   runningAppsSubscribers.add(webContents)
   webContents.once('destroyed', () => removeRunningAppsSubscriber(webContents))
 
-  const apps = await getRunningApps()
+  const { apps, closableGameKeys } = await collectRunningAppsSnapshot()
   // Seed the cadence-gating count from this bootstrap read BEFORE starting the
   // monitor (#708). Previously the monitor started first and scheduled its
   // first scan off the pre-subscription (stale, often 0) count, so a
@@ -676,10 +727,18 @@ export async function subscribeRunningApps(
   // bootstrap on the SLOW cadence for one tick (<=12s) before the first scan
   // self-corrected it. One-time and self-healing, but avoidable.
   lastPublishedRunningAppsCount = apps.length
-  lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
+  lastRunningAppsSnapshot = normalizeRunningAppsSnapshot({ apps, closableGameKeys })
   startRunningAppsMonitor()
 
-  return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
+  // This bootstrap answer is the one that matters most for #673: after a
+  // restart it is the FIRST thing the row learns, and before this change it
+  // could only ever say "nothing here".
+  return {
+    apps,
+    closableGameKeys: Array.from(closableGameKeys),
+    reason: 'initial',
+    updatedAt: Date.now()
+  } satisfies RunningAppsChangedPayload
 }
 
 export function unsubscribeRunningApps(webContents: WebContents): void {

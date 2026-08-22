@@ -21,9 +21,11 @@ import {
 
 import { execFileUnlessAborted, spawnUnlessAborted } from './guardedStart'
 import {
+  adoptedCompanionOwners,
   consumeProcessNameMismatchWarningSuppression,
   noteStrandedConsentPrompt,
   hasOtherActiveLaunchControllers,
+  hasPendingElevatedHandoffForPath,
   processNameMismatchWarnings,
   registerActiveLaunch,
   registerPendingElevatedHandoff,
@@ -91,15 +93,46 @@ function nextElevatedHandoffId(): number {
   return elevatedHandoffSeq
 }
 
+/**
+ * Drop this profile's claim on an app that turned out never to have started.
+ *
+ * Only an UNOBSERVED claim, and only this profile's: one the poll has already
+ * confirmed is a fact about a live process, not a prediction that turned out
+ * wrong, and another profile's is not ours to withdraw.
+ *
+ * A pending claim never expires by design (`adoptedCompanionOwners`), so every
+ * way a launch can end without starting something has to say so, or the claim
+ * outlives the attempt and attributes a later hand-started copy to this game
+ * while the profiles that share it lose their close control.
+ */
+function withdrawUnobservedClaim(appPath: string, gameKey: string | undefined): void {
+  if (!gameKey) {
+    return
+  }
+  // Another slot may still be waiting on its own prompt for the same exe
+  // (#357). Ownership is per path, so this one settling says nothing about
+  // that one, and withdrawing here would throw away the claim it is about to
+  // need.
+  if (hasPendingElevatedHandoffForPath(appPath)) {
+    return
+  }
+  const claimKey = normalizePathForComparison(appPath)
+  const claim = adoptedCompanionOwners.get(claimKey)
+  if (claim?.gameKey === gameKey && !claim.seenRunning) {
+    adoptedCompanionOwners.delete(claimKey)
+  }
+}
+
 function recordLateElevatedOutcome(
   runId: number,
   handoffId: number,
   outcome: LateElevatedOutcome
-): void {
+): boolean {
   if (runId !== launchRunId) {
-    return
+    return false
   }
   lateElevatedOutcomes.set(handoffId, outcome)
+  return true
 }
 
 /**
@@ -310,6 +343,57 @@ export async function launchProfileApps(
     const appsToLaunch = validApps.filter((entry) => !runningPaths.has(entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
 
+    // Every companion this launch handles belongs to this profile, and the
+    // claim has to survive losing the child handle (#853). `runningProcesses`
+    // can only own what we still hold a handle for, which excludes three cases
+    // that all reach the same wrong end: an app that was already running (never
+    // spawned), an app handed off elevated (spawned by a PowerShell host we do
+    // not own, the case the "cannot close it from here" warning is about), and
+    // an app whose own process replaced the one we started. Each of those left
+    // one running companion unowned, and an unowned companion is claimed by
+    // EVERY profile that configures it, which is what put a close control on
+    // rows the user never touched.
+    //
+    // Attribution only: `runningProcesses` stays the authority for the strip
+    // and for killing, this map only answers "whose is it". Gated on tracking
+    // for the same reason the spawn recording is (#591): a profile that opted
+    // out is not claiming anything.
+    if (trackingEnabled) {
+      validApps.forEach((entry) => {
+        if (gamePath && pathsEqual(entry.path, gamePath)) return
+        const claimKey = normalizePathForComparison(entry.path)
+        // A launch claims what it handles even when another profile already
+        // owns the same running app, and the resulting overlap is deliberate
+        // (CodeRabbit on #853 argued the opposite; see the test).
+        //
+        // Refusing the claim looks safer and is worse for the sequence people
+        // actually perform: finish one sim, close the game, leave the
+        // companions up, start another. The first profile still holds the
+        // handle, so the close control would stay on the row of the game that
+        // is over and the game now being played would have none. The overlap
+        // costs a second control on a row that also legitimately configures the
+        // app; the alternative costs the control on the only row the user is
+        // looking at.
+        adoptedCompanionOwners.set(claimKey, {
+          path: entry.path,
+          gameKey,
+          // Pending until the poll sees it. The app may be seconds away (the
+          // launch is sequential) or minutes away (an elevated one waits on a
+          // consent prompt), and the tick runs throughout.
+          //
+          // Except when this launch has just seen it itself: an app in
+          // `runningPaths` was observed running a moment ago, and recording
+          // that as still-pending would make the claim unprunable if the app
+          // exits before the next successful scan (Codex on #853). A pending
+          // claim never expires by design, so it must only ever mean "we have
+          // not looked yet".
+          seenRunning:
+            runningPaths.has(entry.path) ||
+            (adoptedCompanionOwners.get(claimKey)?.seenRunning ?? false)
+        })
+      })
+    }
+
     if (appsToLaunch.length === 0) {
       return {
         success: true,
@@ -380,6 +464,49 @@ export async function launchProfileApps(
       (result): result is Extract<AppLaunchResult, { status: 'failed' }> =>
         result.status === 'failed'
     )
+
+    // The claim above was made for everything this launch INTENDED to handle,
+    // because a claim has to exist before its app does. Now that the outcomes
+    // are known, take back the ones the launch did not earn: an app that failed
+    // to start, and one the loop never reached because a kill aborted it. Left
+    // standing, such a claim would attach this profile to a copy somebody else
+    // started, and silently take the close control away from the profiles that
+    // legitimately share it. Only a claim this launch made and that has never
+    // been seen running is withdrawn: one the poll has already confirmed is a
+    // fact about a live process, not a prediction that turned out wrong.
+    if (trackingEnabled) {
+      const reached = new Set(
+        launchResults.map((result) => normalizePathForComparison(result.appPath))
+      )
+      const failed = new Set(
+        spawnFailedResults.map((result) => normalizePathForComparison(result.appPath))
+      )
+      appsToLaunch.forEach((entry) => {
+        const claimKey = normalizePathForComparison(entry.path)
+        if (reached.has(claimKey) && !failed.has(claimKey)) {
+          return
+        }
+        withdrawUnobservedClaim(entry.path, gameKey)
+      })
+      // And the other side of the same invariant (Codex on #853): a child that
+      // emitted `spawn` was positively observed, by us, so its claim is not
+      // pending. Leaving it pending made it unprunable, and an app that then
+      // exited before the first successful scan left a claim that outlived it
+      // and would attribute a later hand-started copy to this profile.
+      //
+      // Deliberately not the elevated results: a handoff whose grace window
+      // expired is exactly the case where we do NOT know, and saying we looked
+      // would let the prune delete a claim for an app still behind a prompt.
+      launchResults.forEach((result) => {
+        if (result.status !== 'launched') {
+          return
+        }
+        const claim = adoptedCompanionOwners.get(normalizePathForComparison(result.appPath))
+        if (claim?.gameKey === gameKey) {
+          claim.seenRunning = true
+        }
+      })
+    }
 
     // An elevated result is only trustworthy if the handoff was OBSERVED. When
     // the grace window expired first (#675) the promise said `elevated` on spec,
@@ -816,7 +943,15 @@ function launchElevated(
      */
     const noteHandoffCancelled = (): void => {
       if (timedOut) {
-        recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+        // The sequence's own withdrawal pass has already run by now: it happens
+        // when the summary is built, and `timedOut` means the promise settled
+        // before this truth arrived (#853). Gated on the outcome APPLYING: a
+        // callback from an abandoned earlier run is ignored by the recorder and
+        // must not withdraw the CURRENT run's claim for the same path either,
+        // which is the #779 cross-run hazard one rung along.
+        if (recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })) {
+          withdrawUnobservedClaim(appPath, gameKey)
+        }
       }
     }
     const handoffTimer = setTimeout(() => {
@@ -887,7 +1022,14 @@ function launchElevated(
           // after the sequence ended, when the abort signal is no longer wired.
           if (signal?.aborted || cancelledByKill) {
             if (timedOut) {
-              recordLateElevatedOutcome(handoffRunId, handoffId, { appPath, outcome: 'cancelled' })
+              if (
+                recordLateElevatedOutcome(handoffRunId, handoffId, {
+                  appPath,
+                  outcome: 'cancelled'
+                })
+              ) {
+                withdrawUnobservedClaim(appPath, gameKey)
+              }
             }
             resolve({ status: 'cancelled', appPath })
             return
@@ -903,11 +1045,15 @@ function launchElevated(
             `${gameKey ? `[${gameKey}] ` : ''}Error launching ${appPath} as administrator${code ? ` (${code})` : ''}`
           )
           if (timedOut) {
-            recordLateElevatedOutcome(handoffRunId, handoffId, {
-              appPath,
-              outcome: 'failed',
-              error: message
-            })
+            if (
+              recordLateElevatedOutcome(handoffRunId, handoffId, {
+                appPath,
+                outcome: 'failed',
+                error: message
+              })
+            ) {
+              withdrawUnobservedClaim(appPath, gameKey)
+            }
           }
           resolve({ status: 'failed', appPath, error: message })
           return

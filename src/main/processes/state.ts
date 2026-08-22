@@ -11,6 +11,41 @@ import type {
 
 export const runningProcesses = new Map<string, RunningProcessEntry>()
 export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
+
+/**
+ * Normalized companion path -> the game key whose launch claimed it, for
+ * companions that were ALREADY RUNNING when that launch reached them (#853).
+ *
+ * `runningProcesses` cannot hold these: it is keyed on a live `ChildProcess`
+ * handle, and a process we did not spawn has none. But the profile did ask for
+ * the app, it is up, and `killLaunchedApps` closes it by path, so the launch
+ * establishes ownership just as much as a spawn does. Without that, one already
+ * running companion put a Close Apps control on every OTHER row whose profile
+ * merely configures the same app.
+ *
+ * Attribution only, never a kill handle. In memory only, so a restart drops it
+ * and every configuring profile claims the app again, which is the state #851
+ * replaces with a persisted memory.
+ *
+ * Keyed by the normalized path so one app is claimed once, but it keeps the RAW
+ * path too, because that is the only form the running-apps tick can answer
+ * about: its path states are keyed by the path as configured, and an unresolved
+ * path reads as RUNNING by design. A normalized key handed to that resolver
+ * therefore never matches and the claim would outlive the process forever.
+ *
+ * `seenRunning` is what makes the claim survive its own launch. A claim is made
+ * when the launch decides the app is this profile's, which is BEFORE the app is
+ * up: companions start one at a time with delays between them, and an elevated
+ * one waits on a consent prompt that can sit on screen for two minutes. The
+ * scan ticks throughout. Pruning a claim for something not running yet deleted
+ * every claim within a tick or two of being made, which is why the mechanism
+ * measured as completely inert on a real machine. So a claim is pending until
+ * the poll has seen its app once, and only then does its exit end it.
+ */
+export const adoptedCompanionOwners = new Map<
+  string,
+  { path: string; gameKey: string; seenRunning: boolean }
+>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 
@@ -108,6 +143,21 @@ export function registerPendingElevatedHandoff(
 
 export function unregisterPendingElevatedHandoff(handoffId: number): void {
   pendingElevatedHandoffs.delete(handoffId)
+}
+
+/**
+ * Whether any handoff still waiting on a consent prompt targets this path.
+ *
+ * Two profile slots may point at one exe (#357), so one slot's denial says
+ * nothing about the other's prompt. Ownership of a companion is per PATH, so
+ * acting on the first slot to settle would throw away a claim the still-pending
+ * slot is about to need (#853).
+ */
+export function hasPendingElevatedHandoffForPath(appPath: string): boolean {
+  const wanted = normalizePathForComparison(appPath)
+  return Array.from(pendingElevatedHandoffs.values()).some(
+    (handoff) => normalizePathForComparison(handoff.appPath) === wanted
+  )
 }
 
 /**

@@ -822,7 +822,6 @@ async function loadProcessModules() {
     launchProfileApps: spawnModule.launchProfileApps,
     spawnDetachedApp: spawnModule.spawnDetachedApp,
     killLaunchedApps: killModule.killLaunchedApps,
-    hasClosableLaunchedApps: killModule.hasClosableLaunchedApps,
     killProfileApps: killModule.killProfileApps,
     finalizeKillAttempts: killModule.finalizeKillAttempts,
     pruneUnclosedProcesses: killModule.pruneUnclosedProcesses,
@@ -834,8 +833,11 @@ async function loadProcessModules() {
     cancelPendingElevatedHandoffs: stateModule.cancelPendingElevatedHandoffs,
     suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
+    adoptedCompanionOwners: stateModule.adoptedCompanionOwners,
     unclosedProcesses: stateModule.unclosedProcesses,
     getRunningApps: (await import('../../src/main/processes/running')).getRunningApps,
+    collectRunningAppsSnapshot: (await import('../../src/main/processes/running'))
+      .collectRunningAppsSnapshot,
     subscribeRunningApps: (await import('../../src/main/processes/running')).subscribeRunningApps,
     publishRunningApps: (await import('../../src/main/processes/running')).publishRunningApps
   }
@@ -874,6 +876,7 @@ const sender = {
 
 beforeEach(async () => {
   const {
+    adoptedCompanionOwners,
     processNameMismatchWarnings,
     runningProcesses,
     suppressedProcessNameMismatchWarnings,
@@ -927,6 +930,7 @@ beforeEach(async () => {
   invalidateProcessNameCacheMock.mockClear()
   processNameMismatchWarnings.clear()
   runningProcesses.clear()
+  adoptedCompanionOwners.clear()
   suppressedProcessNameMismatchWarnings.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
@@ -3372,15 +3376,18 @@ test('killLaunchedApps keeps generic no-op message for unrelated game wrapper wa
   })
 })
 
-// hasClosableLaunchedApps has no production caller today (see its JSDoc) and
-// must mirror killLaunchedApps' own target selection.
-test('hasClosableLaunchedApps is false when nothing is running', async () => {
-  const { hasClosableLaunchedApps } = await loadProcessModules()
-  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+// The closable set drives the secondary Close Apps control (#673), so it must
+// mirror killLaunchedApps' own target selection: offering the action when a
+// click would close nothing is the defect, and so is hiding it when it would.
+// Asserted through the real tick, which is where the path resolution these
+// answers depend on is actually assembled.
+test('the closable set is false when nothing is running', async () => {
+  const { collectRunningAppsSnapshot } = await loadProcessModules()
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
 })
 
-test('hasClosableLaunchedApps is true for a running non-game companion', async () => {
-  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+test('the closable set is true for a running non-game companion', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModules()
   runningProcesses.set('c:\\tools\\simhub.exe', {
     process: { pid: 1234 } as never,
     path: 'C:/Tools/SimHub.exe',
@@ -3390,11 +3397,537 @@ test('hasClosableLaunchedApps is true for a running non-game companion', async (
   })
   processNames.add('simhub.exe')
 
-  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+  // The set is per-profile and drives a per-row control, so a companion
+  // attributed to the wrong game key would still satisfy a size check while
+  // putting the button on the wrong row.
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
-test('hasClosableLaunchedApps ignores the game itself', async () => {
-  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+// Seen live on #853: launching one game put a close control on three untouched
+// rows, because every profile that merely CONFIGURES the same companion claimed
+// the one running instance. A companion we launched belongs to the profile we
+// launched it for, and those other clicks would have closed the running game's
+// own companion.
+test('a launched companion is not claimed by the profiles that only configure it (#853)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
+// The case a real config produced (#853): the companion was ALREADY RUNNING
+// when the launch reached it, so nothing spawned it and there is no child
+// handle to own it by — and every other profile that merely configures it lit
+// up a close control for an app it had not touched. The launch claims it too.
+test('a companion already running at launch is claimed by the launching profile (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    launchedCount: 0,
+    skippedCount: 1
+  })
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
+// The one that made the whole mechanism inert, caught only by logging the live
+// decision on a real machine (#853): a claim is made when the launch decides the
+// app is this profile's, which is BEFORE the app is up. Companions start one at
+// a time, and an elevated one waits on a consent prompt. The scan ticks in
+// between, and pruning a claim on the first "not running" deleted it seconds
+// after it was made. The measured result was a claim map that was empty on
+// every single tick while the leak it exists to stop happened anyway.
+test('a claim survives the ticks before its app is up, and ends when it goes (#853)', async () => {
+  const { collectRunningAppsSnapshot, adoptedCompanionOwners } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  const { normalizePathForComparison } = await import('../../src/main/utils')
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  adoptedCompanionOwners.set(normalizePathForComparison('C:/Tools/SimHub.exe'), {
+    path: 'C:/Tools/SimHub.exe',
+    gameKey: 'ac',
+    seenRunning: false
+  })
+
+  // The app has not started yet: it is behind a consent prompt, or simply later
+  // in a sequential launch. The poll ticks anyway, and this is where every
+  // claim used to be deleted seconds after it was made.
+  await collectRunningAppsSnapshot()
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(1)
+
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  // Seen once, so from here its exit is real and ends the claim rather than
+  // meaning "not yet".
+  processRegistry.delete(normalizeRegistryKey('C:/Tools/SimHub.exe'))
+  processNames.delete('simhub.exe')
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+})
+
+// Codex on #853. A pending claim never expires, by design, so "pending" must
+// only ever mean "we have not looked yet". A companion the launch found ALREADY
+// RUNNING was observed by the launch itself, and recording that as pending made
+// the claim unprunable if the app exited before the next successful scan: a
+// hand-started copy would then be attributed to a stale owner and the other
+// profiles would lose their control over it.
+test('a companion the launch already saw running is claimed as observed (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await expect(launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])).resolves.toMatchObject({
+    skippedCount: 1
+  })
+  expect(adoptedCompanionOwners.get('c:\\tools\\simhub.exe')?.seenRunning).toBe(true)
+
+  // It exits before any tick ever confirms it. The claim must go with it.
+  processRegistry.delete(normalizeRegistryKey('C:/Tools/SimHub.exe'))
+  processNames.delete('simhub.exe')
+
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+})
+
+// Codex on #853, the other half of the same record: the claim is asked about by
+// PATH, and the tick keys its answers by the path as configured. A path re-saved
+// in a different case or slash style would go unanswered, and an unanswered path
+// reads as running, so the claim would outlive its process forever.
+test('a claim survives the path being re-saved in another spelling (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  // Same file, spelled the other way, which is what a re-save can produce.
+  storeData.appPaths = { simhub: 'C:\\Tools\\SimHub.exe' }
+  markExistingPath('C:\\Tools\\SimHub.exe')
+  registerProcess('C:\\Tools\\SimHub.exe', 'simhub.exe', '1234')
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  processRegistry.clear()
+  processNames.delete('simhub.exe')
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+})
+
+// CodeRabbit on #853, the last way a launch can end without starting anything.
+// When the grace window expires the promise says `elevated` on spec (#675), so
+// the sequence's own withdrawal pass keeps the claim. If the user then DENIES
+// the prompt, the truth arrives long after that pass has run, and a pending
+// claim never expires, so it would sit there attributing a later hand-started
+// copy to this game.
+test('a claim goes when the UAC prompt is denied after the grace window (#853)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps, adoptedCompanionOwners } = await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Admin Tool.exe'])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    await launchPromise
+
+    // Still claimed: the prompt is unanswered, which is exactly the state a
+    // pending claim is for.
+    expect(adoptedCompanionOwners.size).toBe(1)
+
+    const heldCallback = heldElevatedCallback
+    expect(heldCallback).not.toBeNull()
+    heldCallback?.(makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(adoptedCompanionOwners.size).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// Codex on #853, the third route to the same invariant: a child that emitted
+// `spawn` was positively observed, so its claim is not pending. Left pending it
+// was unprunable, and an app that exited before the first successful scan left
+// a claim that outlived it, ready to attribute a later hand-started copy to
+// this profile and take the control from the ones that share it.
+test('a spawned companion that exits before the first scan takes its claim (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(adoptedCompanionOwners.get('c:\\tools\\simhub.exe')?.seenRunning).toBe(true)
+
+  // It dies immediately, before any tick ever polls for it.
+  processRegistry.clear()
+  processNames.clear()
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+
+  // A copy someone starts by hand later belongs to nobody, so both profiles
+  // that configure it keep their control.
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '9999')
+  processNames.add('simhub.exe')
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
+// The hazard #779 already paid for, reached one rung along by the withdrawal
+// added for #853. A host left alive by an earlier timed-out handoff keeps
+// waiting on its prompt and can settle DURING a later sequence. The recorder
+// ignores it on the run id; the withdrawal beside it must too, or a stale
+// denial deletes the claim the CURRENT run just made for the same exe.
+test('a stale denial from an abandoned run does not withdraw the current claim (#853)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App2.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    // Keeps run 2's loop alive past its own grace timer, so the stale callback
+    // lands while run 2 is still in flight. With a zero delay the sequence is
+    // already over and the test proves nothing.
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps, runningProcesses, adoptedCompanionOwners } =
+      await loadProcessModulesWithStore({
+        profiles: {
+          ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+        },
+        appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp2: 'C:/Tools/App2.exe' }
+      })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    // Run 1: the prompt goes unanswered, the grace timer fires, the sequence
+    // ends with the PowerShell host still alive and still waiting.
+    const firstPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS + 5000)
+    await firstPromise
+    const firstRunCallback = heldElevatedCallback
+    expect(firstRunCallback).not.toBeNull()
+
+    // Clear the cooldown, and forget what run 1 started so run 2 does not skip
+    // everything as already running.
+    await vi.advanceTimersByTimeAsync(11000)
+    processNames.clear()
+    runningProcesses.clear()
+
+    const secondPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Tools/App2.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    expect(adoptedCompanionOwners.has('c:\\tools\\admin tool.exe')).toBe(true)
+
+    // Run 1's abandoned prompt is finally DENIED, mid-run-2.
+    firstRunCallback?.(makeAccessDeniedError())
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(adoptedCompanionOwners.has('c:\\tools\\admin tool.exe')).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await secondPromise
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// A DELIBERATE overlap, and the one place this mechanism does not narrow.
+// CodeRabbit on #853 asked for the opposite: refuse the second claim, because
+// the first profile still holds the handle and two rows offering a close means
+// one game can close the other's companion. That is right about two games
+// running at once, which does not happen: sims are too heavy to run in pairs.
+//
+// It is wrong about the sequence people do perform. Finish one sim, close the
+// game, leave the companions up, start another. The first profile still holds
+// the handle, so refusing the claim leaves the control on the row of the game
+// that is OVER and gives none to the game now being played. Two controls beat
+// zero on the row the user is looking at.
+test('both profiles can close a companion each of them handled (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  vi.useFakeTimers()
+  try {
+    await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+    registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+    processNames.add('simhub.exe')
+
+    // Past the post-launch cooldown, or the second launch is refused outright
+    // and the test would pass without ever exercising the claim.
+    await vi.advanceTimersByTimeAsync(11000)
+
+    // iRacing's launch finds it already up and skips it. Asserted rather than
+    // assumed: a refused launch writes no claim, and the test would then pass
+    // for the wrong reason.
+    await expect(
+      launchProfileApps(sender, 'iracing', ['C:/Tools/SimHub.exe'])
+    ).resolves.toMatchObject({ success: true, launchedCount: 0, skippedCount: 1 })
+  } finally {
+    vi.useRealTimers()
+  }
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
+// The inverse failure the claim can cause, found by an adversarial review pass
+// on #853: a claim is made for everything the launch INTENDS to handle, so an
+// app that then fails to start would still attach this profile to whatever is
+// running at that path. The other profiles that legitimately share it would
+// lose their control over somebody else's copy.
+test('a launch does not keep a claim on an app it failed to start (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, adoptedCompanionOwners } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  spawnErrors.set('C:/Tools/SimHub.exe', Object.assign(new Error('boom'), { code: 'ENOENT' }))
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(adoptedCompanionOwners.size).toBe(0)
+
+  // Somebody else's copy is running at that path. Both profiles configure it
+  // and neither started it, so both keep the control.
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '9999')
+  processNames.add('simhub.exe')
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
+// The case that survived the first fix (#853): the app WAS launched by us, but
+// elevated, so it runs under a PowerShell host we hold no handle to and
+// `runningProcesses` never records it. It is the same app the launch warns it
+// "cannot close from here", and it was lighting a close control on every other
+// profile that configures it.
+test('an elevated companion still belongs to the profile that launched it (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  // EACCES on the direct spawn is what sends a launch down the elevated
+  // handoff, which is where the handle is lost.
+  spawnErrors.set('C:/Tools/SimHub.exe', makeAccessDeniedError())
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  expect(runningProcesses.size).toBe(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
+// The window the fix above still lost on a real machine (#853): the claim is
+// written before the launch loop starts, so between the write and the app
+// actually appearing there is a stretch where nothing is running at that path —
+// the whole time an unanswered UAC prompt sits on screen. A scan tick lands in
+// it (the poll is FAST during a launch, and every sibling's spawn publishes one
+// of its own), the liveness prune reads the path as not-running and deletes the
+// claim, and the elevated app has no handle to re-establish ownership from. It
+// then comes up unowned and every OTHER profile that merely configures it lights
+// a close control.
+test('an elevated companion keeps its claim while the consent prompt is open (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  spawnErrors.set('C:/Tools/SimHub.exe', makeAccessDeniedError())
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  // The consent prompt is still on screen: the direct spawn failed, so nothing
+  // is running at that path yet. (The spawn mock marks every attempted exe as
+  // running regardless of whether it errored, which is precisely why the test
+  // above never enters this window.)
+  processNames.delete('simhub.exe')
+  expect(runningProcesses.size).toBe(0)
+
+  // The tick that the launch itself fires, and that the 2s poll fires anyway.
+  // Nothing is closable yet — the point is what it does to the claim.
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+
+  // The user approves, and the elevated app comes up under a host we hold no
+  // handle to.
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  expect(runningProcesses.size).toBe(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
+// The claim has to end when the app does (#853, found on a real machine: close
+// the apps, close the game, and the control came BACK on the launching row with
+// nothing left running). An unresolved path reads as running by design, so a
+// claim the tick is never asked about is a claim that never expires.
+test('a claimed companion stops being closable once it exits (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  processRegistry.delete(normalizeRegistryKey('C:/Tools/SimHub.exe'))
+  processNames.delete('simhub.exe')
+
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+})
+
+// And it has to end when the app leaves the PROFILE too, which is the one case
+// the claim is not covered by the store-derived candidate list: nothing else
+// asks about a path the profile no longer configures, and an unasked path reads
+// as running (#853).
+test('a claimed companion stops being closable once the profile drops it (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['C:/Tools/SimHub.exe'] }]
+      }
+    }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  // The user removes it from the profile while it keeps running. Close Apps
+  // builds its targets from the store, so it would no longer touch this app.
+  storeData.profiles = {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  }
+
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+})
+
+// The other half of the same rule: nobody launched this one, so no profile has
+// a better claim than any other and all of them keep it. Narrowing here would
+// be a guess, which is what #851 exists to replace with a memory.
+test('a companion nobody launched stays closable from every profile that configures it (#853)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  processNames.add('simhub.exe')
+
+  expect(runningProcesses.size).toBe(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
+test('the closable set ignores the game itself', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModules()
   runningProcesses.set('c:\\games\\acs.exe', {
     process: { pid: 1234 } as never,
     path: 'C:/Games/acs.exe',
@@ -3404,14 +3937,14 @@ test('hasClosableLaunchedApps ignores the game itself', async () => {
   })
   processNames.add('acs.exe')
 
-  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
 })
 
 // Codex P2 on #536: a configured companion can be running while its game is NOT
 // launched/adopted. killLaunchedApps still closes it (via companion targets), so
 // the tray must be enabled — even though getRunningApps would not surface it.
-test('hasClosableLaunchedApps is true for a configured companion with no game launched (#519)', async () => {
-  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModulesWithStore({
+test('the closable set is true for a configured companion with no game launched (#519)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModulesWithStore({
     profiles: {
       ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
     },
@@ -3422,14 +3955,14 @@ test('hasClosableLaunchedApps is true for a configured companion with no game la
   // Nothing SimLauncher-launched is tracked; the companion is reachable only via
   // the configured-companion-targets branch.
   expect(runningProcesses.size).toBe(0)
-  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
 // Codex P2 on #536: the no-arg close scans all profiles. A game exe configured
 // as a companion under a DIFFERENT profile must never become a kill target — the
 // confirmation promises the game is untouched.
 test('the global close never targets a game exe configured as a companion elsewhere (#519)', async () => {
-  const { hasClosableLaunchedApps, killLaunchedApps, runningProcesses } =
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
     await loadProcessModulesWithStore({
       gamePaths: { ac: 'C:/Games/acs.exe' },
       // acs.exe (a game) is also configured as a tracked app, surfaced under a
@@ -3452,7 +3985,7 @@ test('the global close never targets a game exe configured as a companion elsewh
 
   // The only running process is the game → nothing closable, and a global close
   // must be a no-op rather than killing the game via the other profile's target.
-  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
   await expect(killLaunchedApps()).resolves.toMatchObject({
     success: true,
     closedCount: 0,
@@ -3464,7 +3997,7 @@ test('the global close never targets a game exe configured as a companion elsewh
 // companion whose basename collides with a DIFFERENT game's exe (different path)
 // must still be closable — otherwise the per-game close drops legitimate apps.
 test('a companion sharing a basename with another game is still closable (#519)', async () => {
-  const { hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+  const { collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
     gamePaths: { ac: 'C:/Games/acs.exe', other: 'C:/OtherGame/app.exe' },
     // The selected profile's companion is named app.exe but lives elsewhere than
     // the "other" game's app.exe.
@@ -3479,7 +4012,7 @@ test('a companion sharing a basename with another game is still closable (#519)'
 
   // app.exe is a real companion for profile ac (its path is not a game path), so
   // the per-game close must reach it despite the basename collision.
-  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.has('ac')).toBe(true)
 })
 
 // Codex P2 on #536 (Option B): a game exe launched under a NON-owning profile is
@@ -3487,7 +4020,7 @@ test('a companion sharing a basename with another game is still closable (#519)'
 // it via the runningProcesses branch despite the "game not affected" promise. The
 // configured-game-path guard must protect it regardless of the cached isGame flag.
 test('the global close never kills a game launched under another profile (#519)', async () => {
-  const { hasClosableLaunchedApps, killLaunchedApps, runningProcesses } =
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
     await loadProcessModulesWithStore({
       gamePaths: { ac: 'C:/Games/acs.exe' }
     })
@@ -3502,7 +4035,7 @@ test('the global close never kills a game launched under another profile (#519)'
   })
   processNames.add('acs.exe')
 
-  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
   await expect(killLaunchedApps()).resolves.toMatchObject({
     success: true,
     closedCount: 0,
@@ -4761,6 +5294,64 @@ test('publishRunningApps deduplicates emissions if snapshot is identical', async
   expect(webContents.send).not.toHaveBeenCalled()
 })
 
+// #673's state, end to end and from a cold start: no in-memory record of ever
+// having launched anything (exactly what a restart leaves behind), a configured
+// companion alive, and the game closed. The strip stays empty because
+// `getTrackedRunningApps` still gates on adoption, which is #794's call and not
+// this fix's; what changes is that the row is now told there is something to
+// close. Before this, `subscribeRunningApps` could only ever answer "nothing".
+test('the bootstrap snapshot reports closable companions with an empty strip (#673)', async () => {
+  const { subscribeRunningApps, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    gamePaths: { ac: 'C:/Games/acs.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  markExistingPath('C:/Games/acs.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
+  // The companion is running; the game is NOT, so nothing adopts the key.
+  processNames.add('simhub.exe')
+
+  const snapshot = await subscribeRunningApps(asWebContents(createMockWebContents()))
+
+  expect(runningProcesses.size).toBe(0)
+  expect(snapshot.apps).toEqual([])
+  expect(snapshot.closableGameKeys).toEqual(['ac'])
+})
+
+// The proving test for the refresh architecture: the control has to clear on
+// its own when the companion exits, with no click and no relaunch. A per-click
+// answer would pass every other test in this file and still leave a button that
+// lies until the user interacts with it.
+test('the closable set clears on its own once the companion exits (#673)', async () => {
+  const webContents = createMockWebContents()
+  const { subscribeRunningApps, publishRunningApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  markExistingPath('C:/Tools/SimHub.exe')
+  processNames.add('simhub.exe')
+
+  const snapshot = await subscribeRunningApps(asWebContents(webContents))
+  expect(snapshot.closableGameKeys).toEqual(['ac'])
+
+  webContents.send.mockClear()
+  processNames.delete('simhub.exe')
+  await publishRunningApps('scan')
+
+  // Both halves matter. The payload must SAY the set is empty, and it must have
+  // been sent at all: the app list was empty before and after, so the identical
+  // -snapshot gate is what would otherwise swallow this tick and freeze the
+  // control in its last state for the rest of the session.
+  expect(webContents.send).toHaveBeenCalledWith(
+    'running-apps-changed',
+    expect.objectContaining({ reason: 'scan', apps: [], closableGameKeys: [] })
+  )
+})
+
 test('concurrent launchProfileApps rejects with the active-launch message (#342)', async () => {
   const childHandlers = new Map<string, (...args: unknown[]) => void>()
   const child = {
@@ -5860,13 +6451,13 @@ test('a close with nothing surviving runs no enumeration at all (#674)', async (
   expect(enumerations).toHaveLength(0)
 })
 
-// hasClosableLaunchedApps answers "would Close Apps do anything?", so a
+// The closable set answers "would Close Apps do anything?", so a
 // same-named stranger must not make it say yes — that would offer the user an
 // action that closes nothing (#674, pre-wiring for #673). Deliberately MORE
 // precise than killLaunchedApps' own scheduling, which stays name-gated
 // because attempting a doomed path-scoped kill is harmless.
-test('hasClosableLaunchedApps is false when only a same-named stranger runs (#674)', async () => {
-  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+test('the closable set is false when only a same-named stranger runs (#674)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModules()
   registerProcess('C:/Other/SimHub.exe', 'simhub.exe', '4321')
   runningProcesses.set('c:\\tools\\simhub.exe', {
     process: { pid: 1234 } as never,
@@ -5877,14 +6468,14 @@ test('hasClosableLaunchedApps is false when only a same-named stranger runs (#67
   })
   processNames.add('simhub.exe')
 
-  await expect(hasClosableLaunchedApps()).resolves.toBe(false)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
 })
 
 // The other direction, and the one that keeps the action reachable (CodeRabbit
 // on #845): pinning only the `false` answer would let a change that always
 // returns `false` hide Close Apps entirely and still pass.
-test('hasClosableLaunchedApps is true when the candidate runs at its own path (#674)', async () => {
-  const { hasClosableLaunchedApps, runningProcesses } = await loadProcessModules()
+test('the closable set is true when the candidate runs at its own path (#674)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModules()
   registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
   runningProcesses.set('c:\\tools\\simhub.exe', {
     process: { pid: 1234 } as never,
@@ -5895,7 +6486,7 @@ test('hasClosableLaunchedApps is true when the candidate runs at its own path (#
   })
   processNames.add('simhub.exe')
 
-  await expect(hasClosableLaunchedApps()).resolves.toBe(true)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
 test('killProfileApps falls back to /IM for non-full-path utility companions (#352)', async () => {
@@ -6816,7 +7407,7 @@ test('close apps does not kill a tracking-off profile companion (#591)', async (
 test('close apps is not offered for a tracking-off profile (#591)', async () => {
   processNames.add('garage61 telemetry agent.exe')
 
-  const { hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+  const { collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
     profiles: {
       ac: {
         activeProfileId: 'quiet',
@@ -6825,7 +7416,7 @@ test('close apps is not offered for a tracking-off profile (#591)', async () => 
     }
   })
 
-  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(false)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.has('ac')).toBe(false)
 })
 
 // The same profile with tracking left ON, so the two tests above cannot pass by
@@ -6833,7 +7424,7 @@ test('close apps is not offered for a tracking-off profile (#591)', async () => 
 test('close apps still targets the same companion when tracking is on (#591)', async () => {
   processNames.add('garage61 telemetry agent.exe')
 
-  const { killLaunchedApps, hasClosableLaunchedApps } = await loadProcessModulesWithStore({
+  const { killLaunchedApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
     profiles: {
       ac: {
         activeProfileId: 'loud',
@@ -6842,7 +7433,7 @@ test('close apps still targets the same companion when tracking is on (#591)', a
     }
   })
 
-  await expect(hasClosableLaunchedApps('ac')).resolves.toBe(true)
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.has('ac')).toBe(true)
   await killLaunchedApps()
 
   const killCalls = execFileCalls.filter((call) => call.command === 'taskkill')
