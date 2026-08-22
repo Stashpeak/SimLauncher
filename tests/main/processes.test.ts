@@ -3479,6 +3479,61 @@ test('an elevated companion still belongs to the profile that launched it (#853)
   expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
+// The claim has to end when the app does (#853, found on a real machine: close
+// the apps, close the game, and the control came BACK on the launching row with
+// nothing left running). An unresolved path reads as running by design, so a
+// claim the tick is never asked about is a claim that never expires.
+test('a claimed companion stops being closable once it exits (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  processRegistry.delete(normalizeRegistryKey('C:/Tools/SimHub.exe'))
+  processNames.delete('simhub.exe')
+
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+})
+
+// And it has to end when the app leaves the PROFILE too, which is the one case
+// the claim is not covered by the store-derived candidate list: nothing else
+// asks about a path the profile no longer configures, and an unasked path reads
+// as running (#853).
+test('a claimed companion stops being closable once the profile drops it (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['C:/Tools/SimHub.exe'] }]
+      }
+    }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  // The user removes it from the profile while it keeps running. Close Apps
+  // builds its targets from the store, so it would no longer touch this app.
+  storeData.profiles = {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  }
+
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+})
+
 // The other half of the same rule: nobody launched this one, so no profile has
 // a better claim than any other and all of them keep it. Narrowing here would
 // be a guess, which is what #851 exists to replace with a memory.

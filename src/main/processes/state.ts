@@ -26,8 +26,14 @@ export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
  * Attribution only, never a kill handle. In memory only, so a restart drops it
  * and every configuring profile claims the app again, which is the state #851
  * replaces with a persisted memory.
+ *
+ * Keyed by the normalized path so one app is claimed once, but it keeps the RAW
+ * path too, because that is the only form the running-apps tick can answer
+ * about: its path states are keyed by the path as configured, and an unresolved
+ * path reads as RUNNING by design. A normalized key handed to that resolver
+ * therefore never matches and the claim would outlive the process forever.
  */
-export const adoptedCompanionOwners = new Map<string, string>()
+export const adoptedCompanionOwners = new Map<string, { path: string; gameKey: string }>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 

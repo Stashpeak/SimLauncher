@@ -114,9 +114,9 @@ export function pruneUnclosedProcesses(isPathRunning: (appPath: string) => boole
   // cannot drop a live claim. Dropping the claim of an app that has exited is
   // what stops a stale owner surviving until the next launch and swallowing a
   // hand-started copy the other profiles should be able to close (#853).
-  adoptedCompanionOwners.forEach((_gameKey, ownedPath) => {
-    if (!isPathRunning(ownedPath)) {
-      adoptedCompanionOwners.delete(ownedPath)
+  adoptedCompanionOwners.forEach((owner, ownedKey) => {
+    if (!isPathRunning(owner.path)) {
+      adoptedCompanionOwners.delete(ownedKey)
     }
   })
 }
@@ -916,6 +916,7 @@ export function getClosableLaunchedAppGameKeys(
   // the cohort #851 is about; those still fall through to every owner below.
   const launchOwnedPaths = new Set<string>()
   const launchOwnedNames = new Set<string>()
+  const companionTargets = Array.from(getProfileCompanionTargets().values())
 
   for (const appProcess of runningProcesses.values()) {
     if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
@@ -929,25 +930,36 @@ export function getClosableLaunchedAppGameKeys(
     closableGameKeys.add(appProcess.gameKey)
   }
 
-  // The other way a launch establishes ownership: the app was already running
-  // when the launch reached it, so there is no child handle but the profile
-  // asked for it all the same (`adoptedCompanionOwners`). Tracking is rechecked
-  // at read time rather than trusted from record time, because #591 must be
-  // able to take the affordance away without deleting anything: a claim made
-  // while tracking was on is void while it is off, and live again after.
-  for (const [ownedPath, gameKey] of adoptedCompanionOwners) {
-    if (!isPathRunning(ownedPath)) {
+  // The other way a launch establishes ownership: it handled the app but holds
+  // no child handle for it, because the app was already running, was handed off
+  // elevated, or replaced the process we started (`adoptedCompanionOwners`).
+  //
+  // Re-derived from the store on every read rather than trusted from record
+  // time, and the claim is worth nothing unless the profile STILL configures
+  // that path. Close Apps builds its targets from the store too, so a claim on
+  // an app the profile has since dropped would offer a close that targets
+  // nothing. That check also subsumes #591: `getProfileCompanionTargets` omits
+  // profiles with tracking off, so a claim made while tracking was on goes
+  // quiet while it is off and comes back after, with nothing deleted.
+  for (const [ownedKey, owner] of adoptedCompanionOwners) {
+    const isStillConfigured = companionTargets.some(
+      (target) =>
+        target.scope === 'path' &&
+        normalizePathForComparison(target.appPath) === ownedKey &&
+        target.gameKeys.includes(owner.gameKey)
+    )
+    if (!isStillConfigured) {
       continue
     }
-    if (!isProcessTrackingEnabled(getActiveStoredProfile(getStoredProfiles()[gameKey]))) {
+    if (!isPathRunning(owner.path)) {
       continue
     }
-    launchOwnedPaths.add(ownedPath)
-    launchOwnedNames.add(getExeName(ownedPath).toLowerCase())
-    closableGameKeys.add(gameKey)
+    launchOwnedPaths.add(ownedKey)
+    launchOwnedNames.add(getExeName(owner.path).toLowerCase())
+    closableGameKeys.add(owner.gameKey)
   }
 
-  for (const target of getProfileCompanionTargets().values()) {
+  for (const target of companionTargets) {
     // A curated name-scoped target has no path to verify against, so it keeps
     // the name-only answer. That is not a gap being tolerated: `/IM` is how such
     // a target would be closed too, so name membership is exactly the condition

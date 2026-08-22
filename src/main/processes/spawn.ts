@@ -329,7 +329,10 @@ export async function launchProfileApps(
     if (trackingEnabled) {
       validApps.forEach((entry) => {
         if (gamePath && pathsEqual(entry.path, gamePath)) return
-        adoptedCompanionOwners.set(normalizePathForComparison(entry.path), gameKey)
+        adoptedCompanionOwners.set(normalizePathForComparison(entry.path), {
+          path: entry.path,
+          gameKey
+        })
       })
     }
 
