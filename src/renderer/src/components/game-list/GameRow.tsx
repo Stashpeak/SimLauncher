@@ -249,7 +249,23 @@ export function GameRow({
       return
     }
 
-    if (isRunning && isLaunchBlocked) {
+    // Not gated on `isRunning`, and that is the fix rather than an oversight
+    // (#843). A row whose game is not running skips the diff branch below and
+    // falls through to a bare `saveProfileSet`, and that save is what calls
+    // `abortActiveLaunches(gameKey)` in main. Since `activeLaunchControllers`
+    // holds one controller per GAME, the abort takes down the entire in-flight
+    // sequence rather than the leaving entry, and the game never starts.
+    //
+    // Main already refuses this: `switch-profile-apps` bails on
+    // `isAnyLaunchActive() || hasOtherActiveLaunchControllers()`. Only the
+    // empty-diff fall-through was more permissive than the path beside it, so
+    // this makes the two agree rather than inventing a rule.
+    //
+    // `isLaunchBlocked` covers the whole dangerous span by construction: the
+    // abort only reaches controllers still in the registry, every one is
+    // unregistered in a `finally` when its sequence returns, and every launch
+    // initiator sets this flag synchronously before dispatching its IPC.
+    if (isLaunchBlocked) {
       notify('Launch is settling. Try again shortly.', 'warn')
       return
     }
