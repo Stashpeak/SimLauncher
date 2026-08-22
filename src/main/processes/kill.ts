@@ -894,17 +894,28 @@ export function getClosableLaunchedAppGameKeys(
 ): Set<string> {
   const closableGameKeys = new Set<string>()
   const gameExePaths = getConfiguredGameExePaths()
+  // What a launch of ours already accounts for. A companion SimLauncher started
+  // as part of one profile belongs to THAT profile, so the configured-target
+  // pass below must not hand it to every other profile that merely lists the
+  // same app: launching one game otherwise put a close control on every other
+  // row sharing a companion, and each of those clicks would have closed the
+  // running game's own companion (#853). This is not inventing attribution, it
+  // is keeping the attribution the launch already recorded. Ownership is
+  // genuinely unknown only for companions nobody started through us, which is
+  // the cohort #851 is about; those still fall through to every owner below.
+  const launchOwnedPaths = new Set<string>()
+  const launchOwnedNames = new Set<string>()
 
   for (const appProcess of runningProcesses.values()) {
-    if (closableGameKeys.has(appProcess.gameKey)) {
-      continue
-    }
     if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
       continue
     }
-    if (isPathRunning(appProcess.path)) {
-      closableGameKeys.add(appProcess.gameKey)
+    if (!isPathRunning(appProcess.path)) {
+      continue
     }
+    launchOwnedPaths.add(normalizePathForComparison(appProcess.path))
+    launchOwnedNames.add(appProcess.name.toLowerCase())
+    closableGameKeys.add(appProcess.gameKey)
   }
 
   for (const target of getProfileCompanionTargets().values()) {
@@ -915,9 +926,20 @@ export function getClosableLaunchedAppGameKeys(
     const isRunning =
       target.scope === 'name' ? processNames.has(target.processName) : isPathRunning(target.appPath)
 
-    if (isRunning) {
-      target.gameKeys.forEach((owner) => closableGameKeys.add(owner))
+    if (!isRunning) {
+      continue
     }
+    // Already owned by a launch of ours, so it is not up for adoption by the
+    // other profiles that configure it. See `launchOwnedPaths` above.
+    const isLaunchOwned =
+      target.scope === 'name'
+        ? launchOwnedNames.has(target.processName)
+        : launchOwnedPaths.has(normalizePathForComparison(target.appPath))
+    if (isLaunchOwned) {
+      continue
+    }
+
+    target.gameKeys.forEach((owner) => closableGameKeys.add(owner))
   }
 
   return closableGameKeys

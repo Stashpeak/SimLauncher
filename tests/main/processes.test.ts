@@ -3400,6 +3400,51 @@ test('the closable set is true for a running non-game companion', async () => {
   expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
+// Seen live on #853: launching one game put a close control on three untouched
+// rows, because every profile that merely CONFIGURES the same companion claimed
+// the one running instance. A companion we launched belongs to the profile we
+// launched it for, and those other clicks would have closed the running game's
+// own companion.
+test('a launched companion is not claimed by the profiles that only configure it (#853)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  runningProcesses.set('c:\\tools\\simhub.exe', {
+    process: { pid: 1234 } as never,
+    path: 'C:/Tools/SimHub.exe',
+    name: 'SimHub.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  processNames.add('simhub.exe')
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
+// The other half of the same rule: nobody launched this one, so no profile has
+// a better claim than any other and all of them keep it. Narrowing here would
+// be a guess, which is what #851 exists to replace with a memory.
+test('a companion nobody launched stays closable from every profile that configures it (#853)', async () => {
+  const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  processNames.add('simhub.exe')
+
+  expect(runningProcesses.size).toBe(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
+})
+
 test('the closable set ignores the game itself', async () => {
   const { collectRunningAppsSnapshot, runningProcesses } = await loadProcessModules()
   runningProcesses.set('c:\\games\\acs.exe', {
