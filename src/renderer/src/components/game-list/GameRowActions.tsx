@@ -71,69 +71,78 @@ export function GameRowActions({
       ? blockedReason
       : `Launch ${launchTarget}`
 
+  const relaunchButton = canRelaunch ? (
+    <Tooltip label={isLaunchBlocked ? blockedReason : 'Relaunch missing apps'}>
+      <button
+        type="button"
+        // aria-disabled rather than `disabled`, for both buttons here
+        // (#830). A `disabled` button is removed from the tab order AND
+        // is dispatched no mouse events, so the very tooltip that
+        // explains the block is the one thing a blocked user cannot
+        // reach, by hover or by keyboard. Dropping the handler is what
+        // makes the click inert; the attribute is what announces it.
+        onClick={isLaunchBlocked ? undefined : onRelaunchMissing}
+        aria-disabled={isLaunchBlocked || undefined}
+        className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+        aria-label={
+          isLaunchBlocked
+            ? `Relaunch missing apps for ${gameName}. ${blockedReason}`
+            : `Relaunch missing apps for ${gameName}`
+        }
+      >
+        <RefreshIcon
+          width={18}
+          height={18}
+          strokeWidth="2.2"
+          className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
+        />
+      </button>
+    </Tooltip>
+  ) : null
+
+  const closeLeftoversButton = canCloseLeftovers ? (
+    // Says what is true and no more. It does NOT say "from a previous
+    // session": the same state is reached by cycling the process tracking
+    // toggle, and by a companion that autostarts with Windows and was never
+    // ours to begin with. What the predicate proves is only that this
+    // profile's companions are running and that clicking would close them.
+    <Tooltip label="Close companion apps that are still running">
+      <button
+        type="button"
+        onClick={onKill}
+        // `icon-action danger-action`: transparent at rest, danger on
+        // hover, matching the window close button. A destructive action
+        // should not look identical to the benign one beside it, and this
+        // pair already exists rather than being invented here.
+        className="icon-action danger-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
+        aria-label={`Close companion apps for ${gameName} that are still running`}
+      >
+        <KillIcon
+          width={18}
+          height={18}
+          className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
+        />
+      </button>
+    </Tooltip>
+  ) : null
+
   return (
     <div className="flex items-center gap-3 no-drag">
+      {/* The two CAN both apply (Codex on #853), which an earlier reading of
+          this file denied: relaunch keys off the aggregate running state, which
+          the game's own exe satisfies on its own, while the strip behind
+          `canKill` deliberately excludes that exe. A profile whose companion
+          runs ambiently — never ours to launch, so never in the strip — while
+          the game is up therefore reaches both, and collapsing them into one
+          slot would put the close out of reach in exactly the state #673 is
+          about. So the close gets a slot of its own in that overlap, and the
+          reserved slot below keeps its existing occupant so row alignment does
+          not move for every other row. */}
+      {relaunchButton && closeLeftoversButton && (
+        <div className="flex h-9 w-9 items-center justify-center">{closeLeftoversButton}</div>
+      )}
       <div className="flex h-9 w-9 items-center justify-center">
-        {/* One slot, two mutually exclusive occupants, relaunch first. They
-            cannot both apply: relaunch needs a running profile, and a running
-            profile has strip icons, which makes this a `canKill` row instead.
-            Ordered explicitly anyway so the slot never has to render both. */}
-        {canRelaunch ? (
-          <Tooltip label={isLaunchBlocked ? blockedReason : 'Relaunch missing apps'}>
-            <button
-              type="button"
-              // aria-disabled rather than `disabled`, for both buttons here
-              // (#830). A `disabled` button is removed from the tab order AND
-              // is dispatched no mouse events, so the very tooltip that
-              // explains the block is the one thing a blocked user cannot
-              // reach, by hover or by keyboard. Dropping the handler is what
-              // makes the click inert; the attribute is what announces it.
-              onClick={isLaunchBlocked ? undefined : onRelaunchMissing}
-              aria-disabled={isLaunchBlocked || undefined}
-              className="icon-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
-              aria-label={
-                isLaunchBlocked
-                  ? `Relaunch missing apps for ${gameName}. ${blockedReason}`
-                  : `Relaunch missing apps for ${gameName}`
-              }
-            >
-              <RefreshIcon
-                width={18}
-                height={18}
-                strokeWidth="2.2"
-                className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-              />
-            </button>
-          </Tooltip>
-        ) : (
-          canCloseLeftovers && (
-            // Says what is true and no more. It does NOT say "from a previous
-            // session": the same state is reached by cycling the process
-            // tracking toggle, and by a companion that autostarts with Windows
-            // and was never ours to begin with. What the predicate proves is
-            // only that this profile's companions are running and that clicking
-            // would close them.
-            <Tooltip label="Close companion apps that are still running">
-              <button
-                type="button"
-                onClick={onKill}
-                // `icon-action danger-action`: transparent at rest, danger on
-                // hover, matching the window close button. A destructive action
-                // should not look identical to the benign one that shares this
-                // slot, and this pair already exists rather than being invented
-                // here.
-                className="icon-action danger-action flex h-9 w-9 cursor-pointer items-center justify-center rounded-full"
-                aria-label={`Close companion apps for ${gameName} that are still running`}
-              >
-                <KillIcon
-                  width={18}
-                  height={18}
-                  className="transition-transform group-hover/btn:scale-110 group-active/btn:scale-95"
-                />
-              </button>
-            </Tooltip>
-          )
-        )}
+        {relaunchButton || closeLeftoversButton}
       </div>
 
       <div className="no-drag glass-surface flex items-center rounded-full p-0.5">

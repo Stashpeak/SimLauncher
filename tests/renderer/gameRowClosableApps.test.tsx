@@ -141,15 +141,41 @@ test('a running profile keeps the primary Close Apps and adds nothing (#673)', a
   expect(buttonByLabel(LAUNCH_LABEL)).toBeNull()
 })
 
-// The slot the secondary control lives in is the relaunch slot. The two states
-// are mutually exclusive upstream (relaunch needs a running profile, which
-// makes the row a `canKill` row), but the slot renders one occupant regardless
-// so a future change upstream cannot produce two buttons in a 36px box.
-test('relaunch wins the shared slot if both are somehow true (#673)', async () => {
+// Codex on #853 disproved the assumption this file was built on: relaunch and
+// the secondary close are NOT mutually exclusive. `canRelaunch` reads the
+// aggregate running state, which the game's own exe satisfies alone, while the
+// strip behind `canKill` excludes that exe — so a game running alongside an
+// ambient companion (never ours to launch, so never in the strip) reaches both.
+// Hiding one behind the other there would put the close out of reach in exactly
+// the state #673 exists for, so both render.
+test('an ambient companion stays reachable while relaunch also applies (#853)', async () => {
   await renderActions({ canKill: false, canCloseLeftovers: true, canRelaunch: true })
 
   expect(buttonByLabel('Relaunch missing apps for Assetto Corsa')).not.toBeNull()
-  expect(buttonByLabel(SECONDARY_LABEL)).toBeNull()
+  expect(buttonByLabel(SECONDARY_LABEL)).not.toBeNull()
+  // Still exactly one close per row: the secondary must not have become a
+  // second primary on the way.
+  expect(buttonByLabel('Close companion apps for Assetto Corsa')).toBeNull()
+})
+
+// The overlap is the only state that widens the row. Every other row keeps one
+// reserved 36px slot, so the primary button stays on the same vertical line
+// down the list whether or not a row has anything in it.
+test('only the overlap adds a second icon slot (#853)', async () => {
+  // Direct children of the actions row only: the buttons carry the same sizing
+  // classes, and counting those would pass no matter how the slots are nested.
+  const slots = () => container.querySelectorAll('.gap-3.no-drag > div.h-9.w-9').length
+
+  await renderActions({ canKill: false, canCloseLeftovers: true })
+  expect(slots()).toBe(1)
+
+  await act(async () => {
+    root?.unmount()
+  })
+  container.remove()
+
+  await renderActions({ canKill: false, canCloseLeftovers: true, canRelaunch: true })
+  expect(slots()).toBe(2)
 })
 
 // It has to actually close: the control reaches the same handler the primary
