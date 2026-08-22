@@ -3496,12 +3496,18 @@ test('a claim survives the ticks before its app is up, and ends when it goes (#8
   expect(adoptedCompanionOwners.size).toBe(0)
 })
 
-// CodeRabbit on #853: a live handle outranks a claim. One profile launches a
-// shared companion, a second profile then finds it already running. Letting the
-// second one claim it would put the control on BOTH rows and let the second
-// close the first's companion, which is the exact bug this whole mechanism
-// exists to fix, reintroduced from the other direction.
-test('a second profile does not claim a companion the first one launched (#853)', async () => {
+// A DELIBERATE overlap, and the one place this mechanism does not narrow.
+// CodeRabbit on #853 asked for the opposite: refuse the second claim, because
+// the first profile still holds the handle and two rows offering a close means
+// one game can close the other's companion. That is right about two games
+// running at once, which does not happen: sims are too heavy to run in pairs.
+//
+// It is wrong about the sequence people do perform. Finish one sim, close the
+// game, leave the companions up, start another. The first profile still holds
+// the handle, so refusing the claim leaves the control on the row of the game
+// that is OVER and gives none to the game now being played. Two controls beat
+// zero on the row the user is looking at.
+test('both profiles can close a companion each of them handled (#853)', async () => {
   const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
     profiles: {
       ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
@@ -3521,15 +3527,20 @@ test('a second profile does not claim a companion the first one launched (#853)'
     // and the test would pass without ever exercising the claim.
     await vi.advanceTimersByTimeAsync(11000)
 
-    // iRacing's launch finds it already up and skips it.
+    // iRacing's launch finds it already up and skips it. Asserted rather than
+    // assumed: a refused launch writes no claim, and the test would then pass
+    // for the wrong reason.
     await expect(
       launchProfileApps(sender, 'iracing', ['C:/Tools/SimHub.exe'])
-    ).resolves.toMatchObject({ launchedCount: 0, skippedCount: 1 })
+    ).resolves.toMatchObject({ success: true, launchedCount: 0, skippedCount: 1 })
   } finally {
     vi.useRealTimers()
   }
 
-  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys).sort()).toEqual([
+    'ac',
+    'iracing'
+  ])
 })
 
 // The inverse failure the claim can cause, found by an adversarial review pass

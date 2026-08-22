@@ -330,12 +330,18 @@ export async function launchProfileApps(
       validApps.forEach((entry) => {
         if (gamePath && pathsEqual(entry.path, gamePath)) return
         const claimKey = normalizePathForComparison(entry.path)
-        // A live handle outranks a claim, and a second profile finding the app
-        // already running is exactly the case where it must (CodeRabbit on
-        // #853). Whoever started it holds the handle; claiming it here would
-        // give BOTH rows the control and let this profile close the other
-        // profile's companion, which is the bug the claim exists to fix.
-        if (runningProcesses.has(claimKey)) return
+        // A launch claims what it handles even when another profile already
+        // owns the same running app, and the resulting overlap is deliberate
+        // (CodeRabbit on #853 argued the opposite; see the test).
+        //
+        // Refusing the claim looks safer and is worse for the sequence people
+        // actually perform: finish one sim, close the game, leave the
+        // companions up, start another. The first profile still holds the
+        // handle, so the close control would stay on the row of the game that
+        // is over and the game now being played would have none. The overlap
+        // costs a second control on a row that also legitimately configures the
+        // app; the alternative costs the control on the only row the user is
+        // looking at.
         adoptedCompanionOwners.set(claimKey, {
           path: entry.path,
           gameKey,
