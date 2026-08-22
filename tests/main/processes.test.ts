@@ -3450,6 +3450,35 @@ test('a companion already running at launch is claimed by the launching profile 
   expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
+// The case that survived the first fix (#853): the app WAS launched by us, but
+// elevated, so it runs under a PowerShell host we hold no handle to and
+// `runningProcesses` never records it. It is the same app the launch warns it
+// "cannot close from here", and it was lighting a close control on every other
+// profile that configures it.
+test('an elevated companion still belongs to the profile that launched it (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  // EACCES on the direct spawn is what sends a launch down the elevated
+  // handoff, which is where the handle is lost.
+  spawnErrors.set('C:/Tools/SimHub.exe', makeAccessDeniedError())
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  expect(runningProcesses.size).toBe(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
 // The other half of the same rule: nobody launched this one, so no profile has
 // a better claim than any other and all of them keep it. Narrowing here would
 // be a guess, which is what #851 exists to replace with a memory.

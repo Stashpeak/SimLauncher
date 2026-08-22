@@ -311,15 +311,23 @@ export async function launchProfileApps(
     const appsToLaunch = validApps.filter((entry) => !runningPaths.has(entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
 
-    // A companion that was already up when this launch reached it is this
-    // profile's just as much as one we spawned: the profile asked for it, and
-    // Close Apps closes it by path either way. Recording that is what stops one
-    // such app putting a close control on every OTHER row that merely
-    // configures it (#853). Gated on tracking for the same reason the spawn
-    // recording is (#591): a profile that opted out is not claiming anything.
+    // Every companion this launch handles belongs to this profile, and the
+    // claim has to survive losing the child handle (#853). `runningProcesses`
+    // can only own what we still hold a handle for, which excludes three cases
+    // that all reach the same wrong end: an app that was already running (never
+    // spawned), an app handed off elevated (spawned by a PowerShell host we do
+    // not own, the case the "cannot close it from here" warning is about), and
+    // an app whose own process replaced the one we started. Each of those left
+    // one running companion unowned, and an unowned companion is claimed by
+    // EVERY profile that configures it, which is what put a close control on
+    // rows the user never touched.
+    //
+    // Attribution only: `runningProcesses` stays the authority for the strip
+    // and for killing, this map only answers "whose is it". Gated on tracking
+    // for the same reason the spawn recording is (#591): a profile that opted
+    // out is not claiming anything.
     if (trackingEnabled) {
       validApps.forEach((entry) => {
-        if (!runningPaths.has(entry.path)) return
         if (gamePath && pathsEqual(entry.path, gamePath)) return
         adoptedCompanionOwners.set(normalizePathForComparison(entry.path), gameKey)
       })
