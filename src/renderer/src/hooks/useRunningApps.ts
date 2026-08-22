@@ -63,18 +63,22 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
         newStatus[game.key] = nextApps.some((app) => app.gameKey === game.key)
       })
       setRunningStatus(newStatus)
-      // Absent rather than empty means the caller could not ask (the one-shot
-      // `getRunningApps` fallback below returns apps only), so the affordance
-      // stays hidden rather than being cleared on a guess. Both readings hide
-      // it; keeping them distinct is what stops a future caller reading the
-      // fallback's silence as a confirmed "nothing to close".
-      setClosableGameKeys((current) => {
-        const next = new Set(closable || [])
-        if (next.size === current.size && [...next].every((key) => current.has(key))) {
-          return current
-        }
-        return next
-      })
+      // Absent rather than empty means the caller could not ask: the one-shot
+      // `getRunningApps` fallback below returns apps only. Leave the last
+      // pushed answer alone rather than overwriting it with a guess, because
+      // `refreshRunningState` runs right after every kill and profile switch —
+      // and `killLaunchedApps` has already published the authoritative set by
+      // then, so clearing here would throw away the newer truth and hide the
+      // control until the next scan tick, even when targets are still closable.
+      if (closable !== undefined) {
+        setClosableGameKeys((current) => {
+          const next = new Set(closable)
+          if (next.size === current.size && [...next].every((key) => current.has(key))) {
+            return current
+          }
+          return next
+        })
+      }
     },
     [configuredGames]
   )

@@ -3394,7 +3394,10 @@ test('the closable set is true for a running non-game companion', async () => {
   })
   processNames.add('simhub.exe')
 
-  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBeGreaterThan(0)
+  // The set is per-profile and drives a per-row control, so a companion
+  // attributed to the wrong game key would still satisfy a size check while
+  // putting the button on the wrong row.
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
 test('the closable set ignores the game itself', async () => {
@@ -3426,7 +3429,7 @@ test('the closable set is true for a configured companion with no game launched 
   // Nothing SimLauncher-launched is tracked; the companion is reachable only via
   // the configured-companion-targets branch.
   expect(runningProcesses.size).toBe(0)
-  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBeGreaterThan(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
 // Codex P2 on #536: the no-arg close scans all profiles. A game exe configured
@@ -5957,7 +5960,7 @@ test('the closable set is true when the candidate runs at its own path (#674)', 
   })
   processNames.add('simhub.exe')
 
-  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBeGreaterThan(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
 test('killProfileApps falls back to /IM for non-full-path utility companions (#352)', async () => {

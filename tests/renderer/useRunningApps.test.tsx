@@ -46,9 +46,10 @@ const IRACING_APP = {
 
 function payload(
   apps: RunningAppsChangedPayload['apps'],
-  reason: RunningAppsChangedPayload['reason'] = 'scan'
+  reason: RunningAppsChangedPayload['reason'] = 'scan',
+  closableGameKeys: string[] = []
 ): RunningAppsChangedPayload {
-  return { apps, reason, updatedAt: 1 }
+  return { apps, reason, updatedAt: 1, closableGameKeys }
 }
 
 function Probe({
@@ -146,6 +147,47 @@ describe('useRunningApps push-subscription lifecycle', () => {
 
     expect(removeChangeListenerMock).toHaveBeenCalledTimes(1)
     expect(unsubscribeRunningAppsMock).toHaveBeenCalledTimes(1)
+  })
+
+  // The one-shot poll answers with apps only, and it is what runs immediately
+  // after every kill click and profile switch. Treating that silence as
+  // "nothing left to close" would hide the secondary Close Apps control the
+  // moment a partial kill failure makes it most needed (#673).
+  test('the one-shot refresh leaves the pushed closable set alone', async () => {
+    const harness = await mountProbe(GAMES)
+    try {
+      await act(async () => {
+        changeListener?.(payload([IRACING_APP], 'launch', ['iracing']))
+      })
+      expect(Array.from(harness.getResult().closableGameKeys)).toEqual(['iracing'])
+
+      getRunningAppsMock.mockResolvedValue([IRACING_APP])
+      await act(async () => {
+        await harness.getResult().refreshRunningState()
+      })
+
+      expect(Array.from(harness.getResult().closableGameKeys)).toEqual(['iracing'])
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('a push with an empty closable set still clears it', async () => {
+    const harness = await mountProbe(GAMES)
+    try {
+      await act(async () => {
+        changeListener?.(payload([IRACING_APP], 'launch', ['iracing']))
+      })
+      expect(harness.getResult().closableGameKeys.size).toBe(1)
+
+      await act(async () => {
+        changeListener?.(payload([IRACING_APP], 'kill', []))
+      })
+
+      expect(harness.getResult().closableGameKeys.size).toBe(0)
+    } finally {
+      harness.unmount()
+    }
   })
 
   test('with no configured games it never subscribes and reports empty state', async () => {
