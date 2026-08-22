@@ -22,6 +22,14 @@ export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | '
 
 export interface RunningAppsChangedPayload {
   apps: RunningApp[]
+  /**
+   * Game keys whose companions a Close Apps click would currently close (#673).
+   * Absent and empty are NOT the same answer: `[]` is a measured "nothing to
+   * close" and clears the state, while omitting the field means the caller had
+   * no way to ask (the one-shot `getRunningApps` returns apps only) and leaves
+   * the last pushed answer standing. A consumer that folds the two together
+   * hides the control on every refresh that follows a kill.
+   */
   closableGameKeys?: string[]
   reason: RunningAppsChangeReason
   updatedAt: number
