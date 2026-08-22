@@ -114,8 +114,17 @@ export function pruneUnclosedProcesses(isPathRunning: (appPath: string) => boole
   // cannot drop a live claim. Dropping the claim of an app that has exited is
   // what stops a stale owner surviving until the next launch and swallowing a
   // hand-started copy the other profiles should be able to close (#853).
+  //
+  // A claim is made before its app is up, so "not running" means "not yet"
+  // until the poll has seen it once. Pruning on the first answer instead
+  // deleted every claim seconds after it was made: measured on a real machine,
+  // the map was empty on every single tick.
   adoptedCompanionOwners.forEach((owner, ownedKey) => {
-    if (!isPathRunning(owner.path)) {
+    if (isPathRunning(owner.path)) {
+      owner.seenRunning = true
+      return
+    }
+    if (owner.seenRunning) {
       adoptedCompanionOwners.delete(ownedKey)
     }
   })

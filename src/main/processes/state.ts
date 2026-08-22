@@ -32,8 +32,20 @@ export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
  * about: its path states are keyed by the path as configured, and an unresolved
  * path reads as RUNNING by design. A normalized key handed to that resolver
  * therefore never matches and the claim would outlive the process forever.
+ *
+ * `seenRunning` is what makes the claim survive its own launch. A claim is made
+ * when the launch decides the app is this profile's, which is BEFORE the app is
+ * up: companions start one at a time with delays between them, and an elevated
+ * one waits on a consent prompt that can sit on screen for two minutes. The
+ * scan ticks throughout. Pruning a claim for something not running yet deleted
+ * every claim within a tick or two of being made, which is why the mechanism
+ * measured as completely inert on a real machine. So a claim is pending until
+ * the poll has seen its app once, and only then does its exit end it.
  */
-export const adoptedCompanionOwners = new Map<string, { path: string; gameKey: string }>()
+export const adoptedCompanionOwners = new Map<
+  string,
+  { path: string; gameKey: string; seenRunning: boolean }
+>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 

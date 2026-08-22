@@ -833,6 +833,7 @@ async function loadProcessModules() {
     cancelPendingElevatedHandoffs: stateModule.cancelPendingElevatedHandoffs,
     suppressedProcessNameMismatchWarnings: stateModule.suppressedProcessNameMismatchWarnings,
     runningProcesses: stateModule.runningProcesses,
+    adoptedCompanionOwners: stateModule.adoptedCompanionOwners,
     unclosedProcesses: stateModule.unclosedProcesses,
     getRunningApps: (await import('../../src/main/processes/running')).getRunningApps,
     collectRunningAppsSnapshot: (await import('../../src/main/processes/running'))
@@ -875,6 +876,7 @@ const sender = {
 
 beforeEach(async () => {
   const {
+    adoptedCompanionOwners,
     processNameMismatchWarnings,
     runningProcesses,
     suppressedProcessNameMismatchWarnings,
@@ -928,6 +930,7 @@ beforeEach(async () => {
   invalidateProcessNameCacheMock.mockClear()
   processNameMismatchWarnings.clear()
   runningProcesses.clear()
+  adoptedCompanionOwners.clear()
   suppressedProcessNameMismatchWarnings.clear()
   unclosedProcesses.clear()
   Object.keys(storeData).forEach((key) => delete storeData[key])
@@ -3450,6 +3453,49 @@ test('a companion already running at launch is claimed by the launching profile 
   expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
 })
 
+// The one that made the whole mechanism inert, caught only by logging the live
+// decision on a real machine (#853): a claim is made when the launch decides the
+// app is this profile's, which is BEFORE the app is up. Companions start one at
+// a time, and an elevated one waits on a consent prompt. The scan ticks in
+// between, and pruning a claim on the first "not running" deleted it seconds
+// after it was made. The measured result was a claim map that was empty on
+// every single tick while the leak it exists to stop happened anyway.
+test('a claim survives the ticks before its app is up, and ends when it goes (#853)', async () => {
+  const { collectRunningAppsSnapshot, adoptedCompanionOwners } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+  const { normalizePathForComparison } = await import('../../src/main/utils')
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  adoptedCompanionOwners.set(normalizePathForComparison('C:/Tools/SimHub.exe'), {
+    path: 'C:/Tools/SimHub.exe',
+    gameKey: 'ac',
+    seenRunning: false
+  })
+
+  // The app has not started yet: it is behind a consent prompt, or simply later
+  // in a sequential launch. The poll ticks anyway, and this is where every
+  // claim used to be deleted seconds after it was made.
+  await collectRunningAppsSnapshot()
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(1)
+
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+
+  // Seen once, so from here its exit is real and ends the claim rather than
+  // meaning "not yet".
+  processRegistry.delete(normalizeRegistryKey('C:/Tools/SimHub.exe'))
+  processNames.delete('simhub.exe')
+  await collectRunningAppsSnapshot()
+  expect(adoptedCompanionOwners.size).toBe(0)
+})
+
 // The case that survived the first fix (#853): the app WAS launched by us, but
 // elevated, so it runs under a PowerShell host we hold no handle to and
 // `runningProcesses` never records it. It is the same app the launch warns it
@@ -3472,6 +3518,50 @@ test('an elevated companion still belongs to the profile that launched it (#853)
 
   await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
 
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+  processNames.add('simhub.exe')
+
+  expect(runningProcesses.size).toBe(0)
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
+// The window the fix above still lost on a real machine (#853): the claim is
+// written before the launch loop starts, so between the write and the app
+// actually appearing there is a stretch where nothing is running at that path —
+// the whole time an unanswered UAC prompt sits on screen. A scan tick lands in
+// it (the poll is FAST during a launch, and every sibling's spawn publishes one
+// of its own), the liveness prune reads the path as not-running and deletes the
+// claim, and the elevated app has no handle to re-establish ownership from. It
+// then comes up unowned and every OTHER profile that merely configures it lights
+// a close control.
+test('an elevated companion keeps its claim while the consent prompt is open (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+        iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+      },
+      appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+    })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  spawnErrors.set('C:/Tools/SimHub.exe', makeAccessDeniedError())
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+
+  // The consent prompt is still on screen: the direct spawn failed, so nothing
+  // is running at that path yet. (The spawn mock marks every attempted exe as
+  // running regardless of whether it errored, which is precisely why the test
+  // above never enters this window.)
+  processNames.delete('simhub.exe')
+  expect(runningProcesses.size).toBe(0)
+
+  // The tick that the launch itself fires, and that the 2s poll fires anyway.
+  // Nothing is closable yet — the point is what it does to the claim.
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+
+  // The user approves, and the elevated app comes up under a host we hold no
+  // handle to.
   registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
   processNames.add('simhub.exe')
 

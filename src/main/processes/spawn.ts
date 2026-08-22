@@ -329,9 +329,14 @@ export async function launchProfileApps(
     if (trackingEnabled) {
       validApps.forEach((entry) => {
         if (gamePath && pathsEqual(entry.path, gamePath)) return
-        adoptedCompanionOwners.set(normalizePathForComparison(entry.path), {
+        const claimKey = normalizePathForComparison(entry.path)
+        adoptedCompanionOwners.set(claimKey, {
           path: entry.path,
-          gameKey
+          gameKey,
+          // Pending until the poll sees it. The app may be seconds away (the
+          // launch is sequential) or minutes away (an elevated one waits on a
+          // consent prompt), and the tick runs throughout.
+          seenRunning: adoptedCompanionOwners.get(claimKey)?.seenRunning ?? false
         })
       })
     }
