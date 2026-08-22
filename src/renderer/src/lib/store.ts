@@ -1,4 +1,5 @@
 export const getSettings = () => window.electronAPI.getSettings()
+export const getMissingGamePaths = () => window.electronAPI.getMissingGamePaths()
 export const saveSettings = window.electronAPI.saveSettings
 export const getProfiles = () => window.electronAPI.getProfiles()
 export const saveProfile = window.electronAPI.saveProfile

@@ -25,6 +25,9 @@ vi.mock('../../src/renderer/src/lib/store', () => ({
   getOnboardingSeen: vi.fn(async () => h.onboardingSeen),
   setOnboardingSeen: h.persistOnboardingSeen,
   getSettings: vi.fn(async () => ({ gamePaths: h.gamePaths, zoomFactor: 1 })),
+  // Reached through useMissingGamePaths on mount (#794); nothing here is about
+  // a broken path, so it answers "all resolve".
+  getMissingGamePaths: vi.fn(async () => []),
   saveSettings: h.saveSettings,
   onStoreConfigChanged: vi.fn(() => () => {})
 }))

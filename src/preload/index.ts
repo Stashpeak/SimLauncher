@@ -124,6 +124,7 @@ const electronAPI: ElectronAPI = {
 
   // typed store channels
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  getMissingGamePaths: () => ipcRenderer.invoke('get-missing-game-paths'),
   saveSettings: (patch: unknown) => ipcRenderer.invoke('save-settings', patch),
   getProfiles: () => ipcRenderer.invoke('get-profiles'),
   saveProfile: (gameKey: string, profileSet: unknown) =>
