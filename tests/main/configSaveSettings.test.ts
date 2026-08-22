@@ -270,3 +270,85 @@ test('a rejected profile save does not republish (#591)', async () => {
 
   expect(publishRunningApps).not.toHaveBeenCalled()
 })
+
+// #859: Windows 11's own "Copy as path" wraps the value in double quotes, so the
+// shortest route from an exe in Explorer to a configured app was also the one
+// route that failed. The closing quote defeated the `.exe` test, and the user
+// was told `not-an-exe` while looking at a path plainly ending in `.exe`.
+test('a path pasted from Windows "Copy as path" is accepted, unquoted (#859)', async () => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({
+    appPaths: { simhub: '"D:/Apps/SimHub/SimHub.exe"' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([])
+  // Stored WITHOUT the quotes. Accepting the value but persisting it verbatim
+  // would only move the failure to spawn time, further from its cause.
+  expect(result.settings.appPaths).toEqual({ simhub: 'D:/Apps/SimHub/SimHub.exe' })
+})
+
+test('the same holds for a game path (#859)', async () => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: '"A:/Games/iRacing/ui/iRacingUI.exe"' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([])
+  expect(result.settings.gamePaths).toEqual({ iracing: 'A:/Games/iRacing/ui/iRacingUI.exe' })
+})
+
+// Only a MATCHED outer pair is a quoting artifact. Anything else means the value
+// is not a path Windows could open, and half-stripping it would store something
+// that fails later and further from the cause.
+test.each([
+  ['leading quote only', '"D:/Apps/SimHub/SimHub.exe'],
+  ['trailing quote only', 'D:/Apps/SimHub/SimHub.exe"'],
+  ['single quotes', "'D:/Apps/SimHub/SimHub.exe'"],
+  ['embedded quote', 'D:/Apps/Sim"Hub/SimHub.exe']
+])('an unmatched or embedded quote is still rejected: %s (#859)', async (_label, badPath) => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({ appPaths: { simhub: badPath }, customSlots: 1 })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({})
+})
+
+// The length cap has to run on the form that gets STORED. Validating the raw
+// string and persisting the stripped one is how a cap gets beaten by two
+// characters, and the reason must stay 'too-long' rather than drifting to
+// 'not-an-exe' now that a stray quote is a rejection too.
+test('the length cap is measured after the quotes come off (#859)', async () => {
+  await loadConfigModule()
+
+  const overlong = `C:/${'x'.repeat(301)}.exe`
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: `"${overlong}"` },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'gamePaths', key: 'iracing', reason: 'too-long' }])
+  expect(result.settings.gamePaths).toEqual({})
+})
+
+// The same bug from the other side: a path that fits only once the quotes are
+// off must not be rejected for their two characters.
+test('a path that fits only when unquoted is accepted (#859)', async () => {
+  await loadConfigModule()
+
+  const exact = `C:/${'x'.repeat(300 - 'C:/.exe'.length)}.exe`
+  expect(exact.length).toBe(300)
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: `"${exact}"` },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([])
+  expect(result.settings.gamePaths).toEqual({ iracing: exact })
+})
