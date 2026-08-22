@@ -16,13 +16,14 @@ import {
   getDroppedSettingsEntries,
   getSupportedConfigValues,
   getStoredBoolean,
+  getStoredStringRecord,
   getStoredZoomFactor,
   requireSafeZoomFactor,
   sanitizeImportedConfig,
   sanitizeSettingsPatch,
   store
 } from '../store'
-import { isRecord } from '../utils'
+import { isRecord, isValidExePath } from '../utils'
 import {
   abortActiveLaunches,
   cancelPendingElevatedHandoffs,
@@ -509,6 +510,32 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle('get-settings', () => {
     return getPersistedSettings()
+  })
+
+  /**
+   * Game keys whose configured executable no longer resolves on disk (#794).
+   *
+   * Deliberately a one-shot query rather than a field on the running-apps
+   * payload. The filesystem cost is not the reason — the scan already calls
+   * `isValidExePath` on every configured game path each tick, in
+   * `getProfileTrackablePaths` and again over `gamePaths` — the CADENCE is.
+   * Anything the renderer draws has to join `normalizeRunningAppsSnapshot`, so
+   * a path that flaps (a share reconnecting, a drive spinning up, an antivirus
+   * holding the file) would publish and re-render the row every 2 seconds. This
+   * is config state answered on a settled cadence, on a channel that carries
+   * process state.
+   *
+   * A blank or unset path answers "not missing". Those rows are not rendered at
+   * all (GameList keeps only games with a truthy `gamePaths` entry), and saying
+   * a game is missing because it was never configured is wrong in the one
+   * direction that sends the user looking for a file that was never there.
+   */
+  ipcMain.handle('get-missing-game-paths', () => {
+    const gamePaths = getStoredStringRecord('gamePaths')
+
+    return Object.entries(gamePaths)
+      .filter(([, gamePath]) => gamePath.trim().length > 0 && !isValidExePath(gamePath))
+      .map(([gameKey]) => gameKey)
   })
 
   ipcMain.handle('save-settings', (_event, patch: unknown) => {

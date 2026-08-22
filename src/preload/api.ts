@@ -301,6 +301,8 @@ export interface ElectronAPI {
   checkForUpdates: () => Promise<unknown>
   getUpdateInfo: () => Promise<UpdateAvailability | null>
   getSettings: () => Promise<Settings>
+  /** Game keys whose configured executable no longer resolves on disk (#794). */
+  getMissingGamePaths: () => Promise<string[]>
   saveSettings: (patch: Partial<WritableSettings>) => Promise<SaveSettingsResult>
   getProfiles: () => Promise<Record<string, unknown>>
   saveProfile: (gameKey: string, profileSet: unknown) => Promise<void>

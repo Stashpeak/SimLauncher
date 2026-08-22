@@ -18,6 +18,10 @@ const getSettingsMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/store', () => ({
   getSettings: (...args: unknown[]) => getSettingsMock(...args),
+  // Reached through useMissingGamePaths on mount (#794). Omitting it left the
+  // hook calling `undefined()`, which its own catch swallowed into a console
+  // error — the test still passed, on a component that was half-broken.
+  getMissingGamePaths: vi.fn().mockResolvedValue([]),
   onStoreConfigChanged: () => () => {}
 }))
 
