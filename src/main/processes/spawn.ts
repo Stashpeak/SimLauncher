@@ -330,6 +330,12 @@ export async function launchProfileApps(
       validApps.forEach((entry) => {
         if (gamePath && pathsEqual(entry.path, gamePath)) return
         const claimKey = normalizePathForComparison(entry.path)
+        // A live handle outranks a claim, and a second profile finding the app
+        // already running is exactly the case where it must (CodeRabbit on
+        // #853). Whoever started it holds the handle; claiming it here would
+        // give BOTH rows the control and let this profile close the other
+        // profile's companion, which is the bug the claim exists to fix.
+        if (runningProcesses.has(claimKey)) return
         adoptedCompanionOwners.set(claimKey, {
           path: entry.path,
           gameKey,

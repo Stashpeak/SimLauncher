@@ -3496,6 +3496,42 @@ test('a claim survives the ticks before its app is up, and ends when it goes (#8
   expect(adoptedCompanionOwners.size).toBe(0)
 })
 
+// CodeRabbit on #853: a live handle outranks a claim. One profile launches a
+// shared companion, a second profile then finds it already running. Letting the
+// second one claim it would put the control on BOTH rows and let the second
+// close the first's companion, which is the exact bug this whole mechanism
+// exists to fix, reintroduced from the other direction.
+test('a second profile does not claim a companion the first one launched (#853)', async () => {
+  const { launchProfileApps, collectRunningAppsSnapshot } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] },
+      iracing: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  markExistingPath('C:/Tools/SimHub.exe')
+  vi.useFakeTimers()
+  try {
+    await launchProfileApps(sender, 'ac', ['C:/Tools/SimHub.exe'])
+    registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '1234')
+    processNames.add('simhub.exe')
+
+    // Past the post-launch cooldown, or the second launch is refused outright
+    // and the test would pass without ever exercising the claim.
+    await vi.advanceTimersByTimeAsync(11000)
+
+    // iRacing's launch finds it already up and skips it.
+    await expect(
+      launchProfileApps(sender, 'iracing', ['C:/Tools/SimHub.exe'])
+    ).resolves.toMatchObject({ launchedCount: 0, skippedCount: 1 })
+  } finally {
+    vi.useRealTimers()
+  }
+
+  expect(Array.from((await collectRunningAppsSnapshot()).closableGameKeys)).toEqual(['ac'])
+})
+
 // The inverse failure the claim can cause, found by an adversarial review pass
 // on #853: a claim is made for everything the launch INTENDS to handle, so an
 // app that then fails to start would still attach this profile to whatever is
