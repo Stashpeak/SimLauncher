@@ -141,6 +141,15 @@ export function GameRow({
     isActiveRef.current = isActive
   }, [isActive])
 
+  // Same mirror, same reason, for the launch lock (Codex on #864). The switch
+  // gate below is checked before an IPC round-trip and acted on after it, and a
+  // captured prop cannot see a launch that started in between: the re-render
+  // does not reach an async closure that already read it.
+  const isLaunchBlockedRef = useRef(isLaunchBlocked)
+  useEffect(() => {
+    isLaunchBlockedRef.current = isLaunchBlocked
+  }, [isLaunchBlocked])
+
   // Removes a still-pending "+" profile and restores the previously-active one.
   // Clears the ref up front so the two callers (the close effect and the
   // post-save guard) can't double-run, and reads the store fresh so it reflects
@@ -271,6 +280,24 @@ export function GameRow({
     }
 
     const latestProfileSet = await getProfileRuntimeConfig()
+
+    // Asked again, and from the ref rather than the prop, because the check
+    // above is now separated from the save by an IPC round-trip. Starting this
+    // row's game during that round-trip leaves the closure holding the answer
+    // it read before the launch existed, and the save it then performs is the
+    // very abort this guard exists to prevent (Codex on #864).
+    //
+    // Placed HERE, before anything with a side effect, rather than immediately
+    // before the save: on the running path `switchProfileApps` has already
+    // stopped and started apps by then, and bailing at that point would leave a
+    // half-switch behind. That path does not need it anyway, since main refuses
+    // the switch itself while a launch is active and this function returns on
+    // its failure. Nothing has happened yet at this line, so returning is clean.
+    if (isLaunchBlockedRef.current) {
+      notify('Launch is settling. Try again shortly.', 'warn')
+      return
+    }
+
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
 

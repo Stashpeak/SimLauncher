@@ -68,12 +68,16 @@ const PROFILE_SET = {
   ]
 }
 
+// Controllable, because the interesting window is the one this IPC round-trip
+// opens: the gate is read before it and the save happens after it.
+const getProfileRuntimeConfigMock = vi.fn()
+
 vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
   useGameProfile: () => ({
     profileSet: PROFILE_SET,
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
-    getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
+    getProfileRuntimeConfig: (...args: unknown[]) => getProfileRuntimeConfigMock(...args),
     saveProfileSet: saveProfileSetMock
   })
 }))
@@ -180,6 +184,7 @@ async function clickProfile(name: string): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks()
   saveProfileSetMock.mockResolvedValue(undefined)
+  getProfileRuntimeConfigMock.mockResolvedValue(PROFILE_SET)
 })
 
 afterEach(async () => {
@@ -211,6 +216,48 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
     expect(notifyMock).toHaveBeenCalledWith('Launch is settling. Try again shortly.', 'warn')
 
     // Leave nothing hanging for the next test.
+    await act(async () => {
+      settleLaunch?.({ success: true, launchedCount: 1 })
+    })
+  })
+
+  // The gate is read before an IPC round-trip and acted on after it, so a
+  // launch that starts in between leaves the closure holding an answer from
+  // before it existed. This is the same check-then-suspend shape that produced
+  // five separate findings on #714 and was the reason #715 moved the launch
+  // path's own check into the same synchronous block as the start.
+  test('a launch that starts during the profile read still stops the save (#864)', async () => {
+    let settleProfileRead: ((value: unknown) => void) | undefined
+    getProfileRuntimeConfigMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleProfileRead = resolve
+        })
+    )
+    let settleLaunch: ((result: unknown) => void) | undefined
+    launchProfileMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleLaunch = resolve
+        })
+    )
+
+    await mountRow()
+
+    // The switch starts while nothing is launching, so it passes the first gate
+    // and parks on the profile read.
+    await clickProfile('Race')
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    // Only NOW does a launch begin, which the parked closure cannot see.
+    await clickLaunch()
+
+    await act(async () => {
+      settleProfileRead?.(PROFILE_SET)
+    })
+
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
     await act(async () => {
       settleLaunch?.({ success: true, launchedCount: 1 })
     })
