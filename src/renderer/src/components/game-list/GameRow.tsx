@@ -287,12 +287,9 @@ export function GameRow({
     // it read before the launch existed, and the save it then performs is the
     // very abort this guard exists to prevent (Codex on #864).
     //
-    // Placed HERE, before anything with a side effect, rather than immediately
-    // before the save: on the running path `switchProfileApps` has already
-    // stopped and started apps by then, and bailing at that point would leave a
-    // half-switch behind. That path does not need it anyway, since main refuses
-    // the switch itself while a launch is active and this function returns on
-    // its failure. Nothing has happened yet at this line, so returning is clean.
+    // This is the cheap one, taken before any side effect so the common case
+    // costs nothing further. It is NOT sufficient on its own: see the second
+    // check immediately before the save, which is the authoritative one.
     if (isLaunchBlockedRef.current) {
       notify('Launch is settling. Try again shortly.', 'warn')
       return
@@ -389,6 +386,28 @@ export function GameRow({
         }
 
         await onRunningStateRefresh()
+      }
+
+      // The authoritative check, in the same block as the action it guards.
+      //
+      // The earlier one is not enough, and the reason is the empty-diff case
+      // (Codex on #864): on a running row `getProfileSwitchDiff` and
+      // `onRunningStateRefresh` are both awaited above, and when the diff is
+      // empty `switchProfileApps` is skipped entirely, so main's own launch
+      // guard never runs. A launch starting during either await would otherwise
+      // arrive here unopposed and be aborted by the save.
+      //
+      // Bailing here can leave a switch half applied, when `switchProfileApps`
+      // succeeded and a launch began during the refresh that follows it. That
+      // is the better of the two outcomes and is chosen deliberately: an
+      // unsaved profile whose apps have moved is visible, recoverable by
+      // retrying the switch, and the same shape this function already produces
+      // on a failed switch. The alternative is killing a launch the user just
+      // started, which is #843 itself and gives them a game that never starts
+      // with nothing on screen to explain it.
+      if (isLaunchBlockedRef.current) {
+        notify('Launch is settling. Try again shortly.', 'warn')
+        return
       }
 
       // The save is what cancels a pending UAC handoff the outgoing profile

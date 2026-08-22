@@ -123,7 +123,7 @@ let root: Root | null = null
  * only widens the closed window and has its own coverage in
  * `useLaunchBlock.test.tsx`.
  */
-function Harness() {
+function Harness({ isRunning = false }: { isRunning?: boolean }) {
   const [launching, setLaunching] = useState(false)
   const onLaunchStart = useCallback(() => setLaunching(true), [])
   const onLaunchEnd = useCallback(() => setLaunching(false), [])
@@ -133,9 +133,10 @@ function Harness() {
       <GameRow
         game={GAME}
         isActive={false}
-        // The whole point: the game is NOT running, which is the case that used
-        // to skip the diff branch and fall through to a bare save.
-        isRunning={false}
+        // Not running is the case that used to skip the diff branch and fall
+        // through to a bare save. Running is the case that reaches the save
+        // through a DIFFERENT set of awaits when the diff turns out empty.
+        isRunning={isRunning}
         isGameRunning={false}
         runningAppIcons={[]}
         hasClosableApps={false}
@@ -154,12 +155,12 @@ function Harness() {
   )
 }
 
-async function mountRow(): Promise<void> {
+async function mountRow(isRunning = false): Promise<void> {
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
     root = createRoot(container)
-    root.render(<Harness />)
+    root.render(<Harness isRunning={isRunning} />)
   })
 }
 
@@ -254,6 +255,48 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
 
     await act(async () => {
       settleProfileRead?.(PROFILE_SET)
+    })
+
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      settleLaunch?.({ success: true, launchedCount: 1 })
+    })
+  })
+
+  // The earlier re-check is not the last suspension on a RUNNING row. When the
+  // app diff comes back empty, `switchProfileApps` is skipped entirely, so
+  // main's own launch guard never runs, and `getProfileSwitchDiff` plus
+  // `onRunningStateRefresh` are both still awaited before the save. A launch
+  // starting in there arrives at the save unopposed (Codex on #864).
+  test('an empty diff on a running row does not carry the save past a new launch (#864)', async () => {
+    let settleDiff: ((value: unknown) => void) | undefined
+    getProfileSwitchDiffMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleDiff = resolve
+        })
+    )
+    let settleLaunch: ((result: unknown) => void) | undefined
+    launchProfileMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleLaunch = resolve
+        })
+    )
+
+    await mountRow(true)
+
+    // Parks on the diff read, having passed the first gate.
+    await clickProfile('Race')
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    await clickLaunch()
+
+    // Empty on both sides, which is what skips switchProfileApps and with it
+    // main's refusal.
+    await act(async () => {
+      settleDiff?.({ toStopCount: 0, toStartCount: 0 })
     })
 
     expect(saveProfileSetMock).not.toHaveBeenCalled()
