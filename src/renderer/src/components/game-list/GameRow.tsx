@@ -162,7 +162,18 @@ export function GameRow({
   // Committing synchronously puts the update in the same task as the click that
   // started the launch, ahead of any continuation that resumes after it.
   const isLaunchBlockedRef = useRef(isLaunchBlocked)
+  // How many times the lock has been HANDED BACK. This is the identity a plain
+  // "did I start it" boolean could not provide (Codex twice on #864): the lock
+  // can be released and taken again by someone else while a switch is suspended,
+  // and both times that happened the boolean went on claiming a lock that was no
+  // longer the one it started. Counting releases lets a suspended continuation
+  // ask the only question that matters, which is whether the lock it is looking
+  // at is still the one it took, rather than merely whether it ever took one.
+  const lockReleaseCountRef = useRef(0)
   useLayoutEffect(() => {
+    if (isLaunchBlockedRef.current && !isLaunchBlocked) {
+      lockReleaseCountRef.current += 1
+    }
     isLaunchBlockedRef.current = isLaunchBlocked
   }, [isLaunchBlocked])
 
@@ -326,7 +337,15 @@ export function GameRow({
       // never save the profile. It is also the case that needs the check least:
       // running `switchProfileApps` means main's guard already ran, and it
       // refuses a competing launch for as long as our controller is registered.
+      //
+      // Paired with the release count, because ownership has to expire. It ends
+      // the moment the lock goes back, whether that is immediately (a switch
+      // that started nothing gets a zero cooldown) or ten seconds later (the
+      // cooldown running out while the refresh below is still pending). In both
+      // cases the next lock belongs to someone else, and both were shipped as
+      // bugs before this counter existed.
       let ownsTheLaunchLock = false
+      let lockReleaseCountWhenTaken = 0
 
       if (isRunning) {
         const diff = await getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
@@ -348,6 +367,7 @@ export function GameRow({
 
           onLaunchStart(game.key)
           ownsTheLaunchLock = true
+          lockReleaseCountWhenTaken = lockReleaseCountRef.current
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           // The kill phase runs before the switch can cancel or fail, so a
           // stranded consent prompt has to be reported on every one of the
@@ -381,22 +401,7 @@ export function GameRow({
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
-          const switchCooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
-          onLaunchEnd(game.key, switchCooldownMs)
-          // Ownership ends the moment the lock is actually released, which is
-          // NOT the moment the switch stops running (Codex P2 on #864). A
-          // switch that started nothing gets a zero cooldown, so the lock is
-          // free again while `onRunningStateRefresh` below is still awaited,
-          // and the Launch button is live. A launch begun in there owns a
-          // BRAND NEW lock, and continuing to claim it as ours would skip the
-          // guard and abort it with the save.
-          //
-          // With a non-zero cooldown the opposite holds and the flag must
-          // stay: the lock is still ours, and no competing launch can start
-          // because the button is blocked for its duration.
-          if (switchCooldownMs === 0) {
-            ownsTheLaunchLock = false
-          }
+          onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
 
           const switchWarnings: string[] = []
           if (result.killFailures && result.killFailures.length > 0) {
@@ -439,7 +444,10 @@ export function GameRow({
       // on a failed switch. The alternative is killing a launch the user just
       // started, which is #843 itself and gives them a game that never starts
       // with nothing on screen to explain it.
-      if (!ownsTheLaunchLock && isLaunchBlockedRef.current) {
+      const stillHoldsItsOwnLock =
+        ownsTheLaunchLock && lockReleaseCountRef.current === lockReleaseCountWhenTaken
+
+      if (!stillHoldsItsOwnLock && isLaunchBlockedRef.current) {
         notify('Launch is settling. Try again shortly.', 'warn')
         return
       }

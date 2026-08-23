@@ -121,6 +121,9 @@ const LAUNCH_LABEL = 'Launch Assetto Corsa: Default profile'
 
 let container: HTMLDivElement
 let root: Root | null = null
+// Set by the harness whenever a non-zero cooldown starts; calling it is the
+// test's stand-in for the cooldown timer firing.
+let expireCooldown: (() => void) | undefined
 
 /**
  * Stands in for GameList's `useLaunchBlock`: the lock goes true synchronously
@@ -137,7 +140,12 @@ function Harness({ isRunning = false }: { isRunning?: boolean }) {
   const [launching, setLaunching] = useState(false)
   const onLaunchStart = useCallback(() => setLaunching(true), [])
   const onLaunchEnd = useCallback((_key: string, cooldownMs?: number) => {
-    if (cooldownMs && cooldownMs > 0) return
+    if (cooldownMs && cooldownMs > 0) {
+      // Held, and released later, exactly as `useLaunchBlock` does. Modelling
+      // the cooldown as "held forever" is what hid the expiry case.
+      expireCooldown = () => setLaunching(false)
+      return
+    }
     setLaunching(false)
   }, [])
 
@@ -201,6 +209,7 @@ beforeEach(() => {
   getProfileRuntimeConfigMock.mockResolvedValue(PROFILE_SET)
   switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 1 })
   onRunningStateRefreshMock.mockResolvedValue(undefined)
+  expireCooldown = undefined
 })
 
 afterEach(async () => {
@@ -412,6 +421,63 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
     })
   })
 
+  // The other half of the same mistake. With a NON-zero cooldown the lock is
+  // genuinely still the switch's, right up until the cooldown runs out. If that
+  // happens while `onRunningStateRefresh` is still pending, the next launch
+  // takes a fresh lock and a boolean set once goes on claiming it (Codex P2 on
+  // #864, second time). Ownership has to expire with the lock, not with the
+  // switch.
+  test('ownership expires with the cooldown, not with the switch (#864)', async () => {
+    getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 1 })
+    // Started something, so the switch holds the lock through a real cooldown.
+    switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 1 })
+
+    let settleRefresh: (() => void) | undefined
+    onRunningStateRefreshMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settleRefresh = () => resolve()
+        })
+    )
+    let settleLaunch: ((result: unknown) => void) | undefined
+    launchProfileMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleLaunch = resolve
+        })
+    )
+
+    await mountRow(true)
+    await clickProfile('Race')
+
+    const confirm = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Switch Profile')
+    )
+    await act(async () => {
+      confirm!.click()
+    })
+
+    expect(switchProfileAppsMock).toHaveBeenCalledTimes(1)
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    // The cooldown runs out while the refresh is still pending, and somebody
+    // takes the freed lock.
+    await act(async () => {
+      expireCooldown?.()
+    })
+    await clickLaunch()
+
+    await act(async () => {
+      settleRefresh?.()
+    })
+
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      settleLaunch?.({ success: true, launchedCount: 1 })
+    })
+  })
+
   // The half that stops "refuse everything" from passing. Without it, deleting
   // the switch entirely would go green.
   //
@@ -454,10 +520,17 @@ test('the launch-lock mirror is committed synchronously (#864)', () => {
     join(process.cwd(), 'src/renderer/src/components/game-list/GameRow.tsx'),
     'utf8'
   )
-  const mirror = source.match(
-    /(useEffect|useLayoutEffect)\(\(\) => \{\s*isLaunchBlockedRef\.current = isLaunchBlocked/
-  )
+  // Located by walking back from the assignment to whichever effect encloses
+  // it, rather than by matching the effect's exact body. The body has already
+  // grown once (it counts lock releases now), and a shape-matching regex that
+  // silently stops matching is a test that quietly stops testing.
+  const assignment = source.indexOf('isLaunchBlockedRef.current = isLaunchBlocked')
+  expect(assignment).toBeGreaterThan(-1)
 
-  expect(mirror).not.toBeNull()
-  expect(mirror?.[1]).toBe('useLayoutEffect')
+  const enclosingEffect = source
+    .slice(0, assignment)
+    .match(/(useEffect|useLayoutEffect)\(\(\) => \{(?![\s\S]*?\}, \[[\s\S]*?\}, \[)/g)
+
+  expect(enclosingEffect).not.toBeNull()
+  expect(enclosingEffect?.[enclosingEffect.length - 1]).toContain('useLayoutEffect')
 })
