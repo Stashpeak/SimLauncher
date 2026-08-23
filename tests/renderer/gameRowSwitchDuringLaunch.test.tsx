@@ -26,6 +26,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const notifyMock = vi.fn()
 const launchProfileMock = vi.fn()
@@ -370,4 +372,33 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
 
     expect(saveProfileSetMock).toHaveBeenCalledTimes(1)
   })
+})
+
+/**
+ * A structural assertion, deliberately, because the behaviour it protects
+ * cannot be reached from a test in this environment.
+ *
+ * The hazard is a scheduling race: a passive effect is scheduled and may run
+ * after paint, while the switch continuation resumes on a microtask the moment
+ * its IPC settles. Lose that race and the continuation reads the lock from
+ * before the launch existed, which is the bug this whole file is about
+ * (CodeRabbit on #864).
+ *
+ * `act` flushes effects, so every behavioural test above commits the mirror
+ * before any continuation can resume. That is exactly why they all stayed green
+ * with the passive version, and why writing another one here would assert
+ * nothing. Pinning the shape is the honest option: it is the same approach
+ * `tests/main/guardedStart.test.ts` takes for its own timing invariant.
+ */
+test('the launch-lock mirror is committed synchronously (#864)', () => {
+  const source = readFileSync(
+    join(process.cwd(), 'src/renderer/src/components/game-list/GameRow.tsx'),
+    'utf8'
+  )
+  const mirror = source.match(
+    /(useEffect|useLayoutEffect)\(\(\) => \{\s*isLaunchBlockedRef\.current = isLaunchBlocked/
+  )
+
+  expect(mirror).not.toBeNull()
+  expect(mirror?.[1]).toBe('useLayoutEffect')
 })

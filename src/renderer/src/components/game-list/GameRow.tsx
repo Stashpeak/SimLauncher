@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -145,8 +153,16 @@ export function GameRow({
   // gate below is checked before an IPC round-trip and acted on after it, and a
   // captured prop cannot see a launch that started in between: the re-render
   // does not reach an async closure that already read it.
+  //
+  // LAYOUT effect, not a passive one, and that is load-bearing (CodeRabbit on
+  // #864). A passive effect is scheduled and can run after paint, while the
+  // continuation this mirror exists for resumes on a microtask as soon as its
+  // IPC settles. The passive version could therefore lose the race and hand the
+  // continuation the answer from before the launch, which is the whole bug.
+  // Committing synchronously puts the update in the same task as the click that
+  // started the launch, ahead of any continuation that resumes after it.
   const isLaunchBlockedRef = useRef(isLaunchBlocked)
-  useEffect(() => {
+  useLayoutEffect(() => {
     isLaunchBlockedRef.current = isLaunchBlocked
   }, [isLaunchBlocked])
 
