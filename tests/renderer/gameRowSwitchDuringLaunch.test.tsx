@@ -34,6 +34,9 @@ const launchProfileMock = vi.fn()
 const saveProfileSetMock = vi.fn().mockResolvedValue(undefined)
 const getProfileSwitchDiffMock = vi.fn()
 const switchProfileAppsMock = vi.fn()
+// Controllable too: a switch that started nothing releases its lock BEFORE
+// this runs, so this is the window in which a competing launch can appear.
+const onRunningStateRefreshMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: (...args: unknown[]) => launchProfileMock(...args),
@@ -156,7 +159,7 @@ function Harness({ isRunning = false }: { isRunning?: boolean }) {
         isLaunchBlocked={launching}
         onLaunchStart={onLaunchStart}
         onLaunchEnd={onLaunchEnd}
-        onRunningStateRefresh={vi.fn().mockResolvedValue(undefined)}
+        onRunningStateRefresh={onRunningStateRefreshMock}
         onToggleEditor={vi.fn()}
         onCloseEditor={vi.fn()}
         cacheInitialized={true}
@@ -197,6 +200,7 @@ beforeEach(() => {
   saveProfileSetMock.mockResolvedValue(undefined)
   getProfileRuntimeConfigMock.mockResolvedValue(PROFILE_SET)
   switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 1 })
+  onRunningStateRefreshMock.mockResolvedValue(undefined)
 })
 
 afterEach(async () => {
@@ -351,6 +355,61 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
 
     expect(switchProfileAppsMock).toHaveBeenCalledTimes(1)
     expect(saveProfileSetMock).toHaveBeenCalledTimes(1)
+  })
+
+  // Ownership has to end when the LOCK is released, not when the switch stops
+  // running. A switch that started nothing gets a zero cooldown, so the lock is
+  // free again while `onRunningStateRefresh` is still awaited and the Launch
+  // button is live. A launch begun in there owns a brand new lock, and treating
+  // it as the switch's own would skip the guard and abort it (Codex P2 on
+  // #864). The previous ownership test could not see this: it returned
+  // `launchedCount: 1`, which keeps the original lock held.
+  test('a switch that started nothing stops claiming the lock it released (#864)', async () => {
+    getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 0 })
+    // Success, but nothing started: this is what releases the lock early.
+    switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 0 })
+
+    let settleRefresh: (() => void) | undefined
+    onRunningStateRefreshMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settleRefresh = () => resolve()
+        })
+    )
+    let settleLaunch: ((result: unknown) => void) | undefined
+    launchProfileMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleLaunch = resolve
+        })
+    )
+
+    await mountRow(true)
+    await clickProfile('Race')
+
+    const confirm = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Switch Profile')
+    )
+    await act(async () => {
+      confirm!.click()
+    })
+
+    // Parked on the refresh, with the switch's own lock already handed back.
+    expect(switchProfileAppsMock).toHaveBeenCalledTimes(1)
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    // A competing launch takes a NEW lock in that window.
+    await clickLaunch()
+
+    await act(async () => {
+      settleRefresh?.()
+    })
+
+    expect(saveProfileSetMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      settleLaunch?.({ success: true, launchedCount: 1 })
+    })
   })
 
   // The half that stops "refuse everything" from passing. Without it, deleting

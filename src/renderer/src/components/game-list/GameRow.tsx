@@ -381,7 +381,22 @@ export function GameRow({
             onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
             return
           }
-          onLaunchEnd(game.key, result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS)
+          const switchCooldownMs = result.launchedCount === 0 ? 0 : POST_LAUNCH_BLOCK_MS
+          onLaunchEnd(game.key, switchCooldownMs)
+          // Ownership ends the moment the lock is actually released, which is
+          // NOT the moment the switch stops running (Codex P2 on #864). A
+          // switch that started nothing gets a zero cooldown, so the lock is
+          // free again while `onRunningStateRefresh` below is still awaited,
+          // and the Launch button is live. A launch begun in there owns a
+          // BRAND NEW lock, and continuing to claim it as ours would skip the
+          // guard and abort it with the save.
+          //
+          // With a non-zero cooldown the opposite holds and the flag must
+          // stay: the lock is still ours, and no competing launch can start
+          // because the button is blocked for its duration.
+          if (switchCooldownMs === 0) {
+            ownsTheLaunchLock = false
+          }
 
           const switchWarnings: string[] = []
           if (result.killFailures && result.killFailures.length > 0) {
