@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -141,6 +149,34 @@ export function GameRow({
     isActiveRef.current = isActive
   }, [isActive])
 
+  // Same mirror, same reason, for the launch lock (Codex on #864). The switch
+  // gate below is checked before an IPC round-trip and acted on after it, and a
+  // captured prop cannot see a launch that started in between: the re-render
+  // does not reach an async closure that already read it.
+  //
+  // LAYOUT effect, not a passive one, and that is load-bearing (CodeRabbit on
+  // #864). A passive effect is scheduled and can run after paint, while the
+  // continuation this mirror exists for resumes on a microtask as soon as its
+  // IPC settles. The passive version could therefore lose the race and hand the
+  // continuation the answer from before the launch, which is the whole bug.
+  // Committing synchronously puts the update in the same task as the click that
+  // started the launch, ahead of any continuation that resumes after it.
+  const isLaunchBlockedRef = useRef(isLaunchBlocked)
+  // How many times the lock has been HANDED BACK. This is the identity a plain
+  // "did I start it" boolean could not provide (Codex twice on #864): the lock
+  // can be released and taken again by someone else while a switch is suspended,
+  // and both times that happened the boolean went on claiming a lock that was no
+  // longer the one it started. Counting releases lets a suspended continuation
+  // ask the only question that matters, which is whether the lock it is looking
+  // at is still the one it took, rather than merely whether it ever took one.
+  const lockReleaseCountRef = useRef(0)
+  useLayoutEffect(() => {
+    if (isLaunchBlockedRef.current && !isLaunchBlocked) {
+      lockReleaseCountRef.current += 1
+    }
+    isLaunchBlockedRef.current = isLaunchBlocked
+  }, [isLaunchBlocked])
+
   // Removes a still-pending "+" profile and restores the previously-active one.
   // Clears the ref up front so the two callers (the close effect and the
   // post-save guard) can't double-run, and reads the store fresh so it reflects
@@ -249,12 +285,37 @@ export function GameRow({
       return
     }
 
-    if (isRunning && isLaunchBlocked) {
+    // Not gated on `isRunning`, and that is the fix rather than an oversight
+    // (#843). A row whose game is not running skips the diff branch below and
+    // falls through to a bare `saveProfileSet`, and that save is what calls
+    // `abortActiveLaunches(gameKey)` in main. Since `activeLaunchControllers`
+    // holds one controller per GAME, the abort takes down the entire in-flight
+    // sequence rather than the leaving entry, and the game never starts.
+    //
+    // Main already refuses this: `switch-profile-apps` bails on
+    // `isAnyLaunchActive() || hasOtherActiveLaunchControllers()`. Only the
+    // empty-diff fall-through was more permissive than the path beside it, so
+    // this makes the two agree rather than inventing a rule.
+    //
+    // `isLaunchBlocked` covers the whole dangerous span by construction: the
+    // abort only reaches controllers still in the registry, every one is
+    // unregistered in a `finally` when its sequence returns, and every launch
+    // initiator sets this flag synchronously before dispatching its IPC.
+    //
+    // This is the entry gate and it reads the PROP, which is correct here
+    // because nothing has suspended yet. It is not the last word: everything
+    // after this point is separated from the save by at least one await, so the
+    // authoritative check is the one immediately before `saveProfileSet`, which
+    // reads the ref. Refusing early is still worth it, because it spares an IPC
+    // round-trip and, on a running row, avoids raising a switch confirmation
+    // for something that is going to be refused anyway.
+    if (isLaunchBlocked) {
       notify('Launch is settling. Try again shortly.', 'warn')
       return
     }
 
     const latestProfileSet = await getProfileRuntimeConfig()
+
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
 
@@ -269,6 +330,22 @@ export function GameRow({
 
     try {
       let switchWarning: string | undefined
+      // Whether the lock the check below sees is OUR OWN (Codex P1 on #864).
+      // A confirmed running switch calls `onLaunchStart` itself and then holds
+      // the lock through the post-launch cooldown, so a check that rejects any
+      // active lock would reject this switch's own, leave the apps moved and
+      // never save the profile. It is also the case that needs the check least:
+      // running `switchProfileApps` means main's guard already ran, and it
+      // refuses a competing launch for as long as our controller is registered.
+      //
+      // Paired with the release count, because ownership has to expire. It ends
+      // the moment the lock goes back, whether that is immediately (a switch
+      // that started nothing gets a zero cooldown) or ten seconds later (the
+      // cooldown running out while the refresh below is still pending). In both
+      // cases the next lock belongs to someone else, and both were shipped as
+      // bugs before this counter existed.
+      let ownsTheLaunchLock = false
+      let lockReleaseCountWhenTaken = 0
 
       if (isRunning) {
         const diff = await getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
@@ -289,6 +366,8 @@ export function GameRow({
           }
 
           onLaunchStart(game.key)
+          ownsTheLaunchLock = true
+          lockReleaseCountWhenTaken = lockReleaseCountRef.current
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           // The kill phase runs before the switch can cancel or fail, so a
           // stranded consent prompt has to be reported on every one of the
@@ -346,6 +425,31 @@ export function GameRow({
         }
 
         await onRunningStateRefresh()
+      }
+
+      // The authoritative check, in the same block as the action it guards.
+      //
+      // The earlier one is not enough, and the reason is the empty-diff case
+      // (Codex on #864): on a running row `getProfileSwitchDiff` and
+      // `onRunningStateRefresh` are both awaited above, and when the diff is
+      // empty `switchProfileApps` is skipped entirely, so main's own launch
+      // guard never runs. A launch starting during either await would otherwise
+      // arrive here unopposed and be aborted by the save.
+      //
+      // Bailing here can leave a switch half applied, when `switchProfileApps`
+      // succeeded and a launch began during the refresh that follows it. That
+      // is the better of the two outcomes and is chosen deliberately: an
+      // unsaved profile whose apps have moved is visible, recoverable by
+      // retrying the switch, and the same shape this function already produces
+      // on a failed switch. The alternative is killing a launch the user just
+      // started, which is #843 itself and gives them a game that never starts
+      // with nothing on screen to explain it.
+      const stillHoldsItsOwnLock =
+        ownsTheLaunchLock && lockReleaseCountRef.current === lockReleaseCountWhenTaken
+
+      if (!stillHoldsItsOwnLock && isLaunchBlockedRef.current) {
+        notify('Launch is settling. Try again shortly.', 'warn')
+        return
       }
 
       // The save is what cancels a pending UAC handoff the outgoing profile
