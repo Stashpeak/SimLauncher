@@ -31,13 +31,14 @@ const notifyMock = vi.fn()
 const launchProfileMock = vi.fn()
 const saveProfileSetMock = vi.fn().mockResolvedValue(undefined)
 const getProfileSwitchDiffMock = vi.fn()
+const switchProfileAppsMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: (...args: unknown[]) => launchProfileMock(...args),
   killLaunchedApps: vi.fn(),
   relaunchMissingProfile: vi.fn(),
   getProfileSwitchDiff: (...args: unknown[]) => getProfileSwitchDiffMock(...args),
-  switchProfileApps: vi.fn()
+  switchProfileApps: (...args: unknown[]) => switchProfileAppsMock(...args)
 }))
 
 vi.mock('../../src/renderer/src/lib/store', () => ({
@@ -117,16 +118,23 @@ let container: HTMLDivElement
 let root: Root | null = null
 
 /**
- * Stands in for GameList's `useLaunchBlock`, and only for the part this test is
- * about: `isLaunchBlocked` goes true synchronously when a launch starts and
- * false when it ends. The real hook also holds it through a cooldown, which
- * only widens the closed window and has its own coverage in
- * `useLaunchBlock.test.tsx`.
+ * Stands in for GameList's `useLaunchBlock`: the lock goes true synchronously
+ * when a launch starts, and a non-zero cooldown HOLDS it after the launch ends.
+ *
+ * That cooldown is not a detail. An earlier version of this harness cleared the
+ * lock the moment a launch ended, which quietly made a whole class of case
+ * untestable: a confirmed running switch takes the lock itself and then holds it
+ * through the cooldown, so the row's own guard can be looking at its own lock.
+ * With the cooldown modelled away the tests agreed with the code and both were
+ * wrong (Codex P1 on #864).
  */
 function Harness({ isRunning = false }: { isRunning?: boolean }) {
   const [launching, setLaunching] = useState(false)
   const onLaunchStart = useCallback(() => setLaunching(true), [])
-  const onLaunchEnd = useCallback(() => setLaunching(false), [])
+  const onLaunchEnd = useCallback((_key: string, cooldownMs?: number) => {
+    if (cooldownMs && cooldownMs > 0) return
+    setLaunching(false)
+  }, [])
 
   return (
     <AppDirtyProvider>
@@ -186,6 +194,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   saveProfileSetMock.mockResolvedValue(undefined)
   getProfileRuntimeConfigMock.mockResolvedValue(PROFILE_SET)
+  switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 1 })
 })
 
 afterEach(async () => {
@@ -215,6 +224,13 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
 
     expect(saveProfileSetMock).not.toHaveBeenCalled()
     expect(notifyMock).toHaveBeenCalledWith('Launch is settling. Try again shortly.', 'warn')
+
+    // Refused at the FIRST gate, before the profile read. The later gate would
+    // catch this one too, so without this line the early bail is unpinned and
+    // could be deleted with the suite still green. It earns its place by
+    // sparing an IPC round-trip and, on a running row, by not raising a switch
+    // confirmation dialog for a switch that is going to be refused anyway.
+    expect(getProfileRuntimeConfigMock).not.toHaveBeenCalled()
 
     // Leave nothing hanging for the next test.
     await act(async () => {
@@ -306,10 +322,46 @@ describe('a profile switch cannot reach the store while a launch is in flight (#
     })
   })
 
+  // The guard must not fire on the lock this switch took itself. A confirmed
+  // running switch calls `onLaunchStart`, then holds the lock through the
+  // post-launch cooldown, so rejecting any active lock would move the apps and
+  // never save the profile: a half-switch on the ordinary path rather than the
+  // rare one (Codex P1 on #864). This case also needs the guard least, since
+  // running `switchProfileApps` means main's own guard already ran.
+  test('a confirmed running switch still saves, despite holding its own lock (#864)', async () => {
+    getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 1 })
+    switchProfileAppsMock.mockResolvedValue({ success: true, launchedCount: 1 })
+
+    await mountRow(true)
+
+    await clickProfile('Race')
+
+    // Staged, not performed: the running switch asks first.
+    expect(switchProfileAppsMock).not.toHaveBeenCalled()
+
+    const confirm = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Switch Profile')
+    )
+    expect(confirm).toBeDefined()
+    await act(async () => {
+      confirm!.click()
+    })
+
+    expect(switchProfileAppsMock).toHaveBeenCalledTimes(1)
+    expect(saveProfileSetMock).toHaveBeenCalledTimes(1)
+  })
+
   // The half that stops "refuse everything" from passing. Without it, deleting
   // the switch entirely would go green.
-  test('the same switch goes through once the launch has settled', async () => {
-    launchProfileMock.mockResolvedValue({ success: true, launchedCount: 1 })
+  //
+  // Uses a launch that STARTED nothing, because that is the real path on which
+  // the lock clears immediately: GameRow passes `launchedCount === 0 ? 0 :
+  // POST_LAUNCH_BLOCK_MS`, so only this shape releases without waiting out the
+  // cooldown. Asserting liveness after a launch that did start something would
+  // require waiting the block out, which is `useLaunchBlock`'s own contract and
+  // is covered there.
+  test('the same switch goes through once the lock has cleared', async () => {
+    launchProfileMock.mockResolvedValue({ success: true, launchedCount: 0 })
 
     await mountRow()
     await clickLaunch()

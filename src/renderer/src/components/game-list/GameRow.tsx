@@ -274,26 +274,20 @@ export function GameRow({
     // abort only reaches controllers still in the registry, every one is
     // unregistered in a `finally` when its sequence returns, and every launch
     // initiator sets this flag synchronously before dispatching its IPC.
+    //
+    // This is the entry gate and it reads the PROP, which is correct here
+    // because nothing has suspended yet. It is not the last word: everything
+    // after this point is separated from the save by at least one await, so the
+    // authoritative check is the one immediately before `saveProfileSet`, which
+    // reads the ref. Refusing early is still worth it, because it spares an IPC
+    // round-trip and, on a running row, avoids raising a switch confirmation
+    // for something that is going to be refused anyway.
     if (isLaunchBlocked) {
       notify('Launch is settling. Try again shortly.', 'warn')
       return
     }
 
     const latestProfileSet = await getProfileRuntimeConfig()
-
-    // Asked again, and from the ref rather than the prop, because the check
-    // above is now separated from the save by an IPC round-trip. Starting this
-    // row's game during that round-trip leaves the closure holding the answer
-    // it read before the launch existed, and the save it then performs is the
-    // very abort this guard exists to prevent (Codex on #864).
-    //
-    // This is the cheap one, taken before any side effect so the common case
-    // costs nothing further. It is NOT sufficient on its own: see the second
-    // check immediately before the save, which is the authoritative one.
-    if (isLaunchBlockedRef.current) {
-      notify('Launch is settling. Try again shortly.', 'warn')
-      return
-    }
 
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
@@ -309,6 +303,14 @@ export function GameRow({
 
     try {
       let switchWarning: string | undefined
+      // Whether the lock the check below sees is OUR OWN (Codex P1 on #864).
+      // A confirmed running switch calls `onLaunchStart` itself and then holds
+      // the lock through the post-launch cooldown, so a check that rejects any
+      // active lock would reject this switch's own, leave the apps moved and
+      // never save the profile. It is also the case that needs the check least:
+      // running `switchProfileApps` means main's guard already ran, and it
+      // refuses a competing launch for as long as our controller is registered.
+      let ownsTheLaunchLock = false
 
       if (isRunning) {
         const diff = await getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
@@ -329,6 +331,7 @@ export function GameRow({
           }
 
           onLaunchStart(game.key)
+          ownsTheLaunchLock = true
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           // The kill phase runs before the switch can cancel or fail, so a
           // stranded consent prompt has to be reported on every one of the
@@ -405,7 +408,7 @@ export function GameRow({
       // on a failed switch. The alternative is killing a launch the user just
       // started, which is #843 itself and gives them a game that never starts
       // with nothing on screen to explain it.
-      if (isLaunchBlockedRef.current) {
+      if (!ownsTheLaunchLock && isLaunchBlockedRef.current) {
         notify('Launch is settling. Try again shortly.', 'warn')
         return
       }
