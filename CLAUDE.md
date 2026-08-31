@@ -66,7 +66,7 @@ Three-process Electron app:
 
 **electron-store in tests:** requires `projectName: 'SimLauncher'` in the constructor (already set in `store.ts`). Without it, electron-store throws in a non-Electron test environment.
 
-**Commit messages** must reference an issue (`#N`), which the `.githooks/commit-msg` hook enforces; a `docs:` subject line is exempt. Conventional Commits are enforced on the **PR title** by `.github/workflows/pr-title.yml`, not on individual commits. A PR touching anything outside `tests/`, `docs/`, `.github/` and tsconfig must also tick one box in the **Smoke check** section of the PR template, enforced by `.github/workflows/pr-smoke-note.yml`; that block is what the next release's manual smoke checklist is built from. `Needs no manual check` is a normal answer, but it is adjudicated against the diff at release time and a wrong one is named in the smoke closeout, so write the honest reason rather than the one that goes green.
+**Commit messages** must reference an issue (`#N`), which the `.githooks/commit-msg` hook enforces; a `docs:` subject line is exempt. Conventional Commits are enforced on the **PR title** by `.github/workflows/pr-title.yml`, not on individual commits. A PR touching anything outside `tests/`, `docs/`, `.github/`, Markdown files, editor and tooling dotfiles, and tsconfig must also tick one box in the **Smoke check** section of the PR template, enforced by `.github/workflows/pr-smoke-note.yml`; that block is what the next release's manual smoke checklist is built from. `Needs no manual check` is a normal answer, but it is adjudicated against the diff at release time and a wrong one is named in the smoke closeout, so write the honest reason rather than the one that goes green.
 
 ## Code documentation
 

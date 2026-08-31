@@ -32,7 +32,7 @@ Electron desktop app for simracing enthusiasts — React + TypeScript + Tailwind
 - Commit messages MUST reference an issue (`#N`); a `docs:` subject line is exempt
 - Hook at [`.githooks/commit-msg`](.githooks/commit-msg) enforces only that reference, not the commit format
 - Conventional Commits are enforced on the PR title by [`.github/workflows/pr-title.yml`](.github/workflows/pr-title.yml)
-- A PR touching anything outside `tests/`, `docs/`, `.github/` and tsconfig must tick one box in the **Smoke check** section of [`.github/pull_request_template.md`](.github/pull_request_template.md), enforced by [`.github/workflows/pr-smoke-note.yml`](.github/workflows/pr-smoke-note.yml). `Needs no manual check` is a normal answer, but **it is adjudicated against the diff at release time and a wrong one is named in the smoke closeout**, so write the honest reason rather than the one that goes green
+- A PR touching anything outside `tests/`, `docs/`, `.github/`, Markdown files, editor and tooling dotfiles, and tsconfig must tick one box in the **Smoke check** section of [`.github/pull_request_template.md`](.github/pull_request_template.md), enforced by [`.github/workflows/pr-smoke-note.yml`](.github/workflows/pr-smoke-note.yml). `Needs no manual check` is a normal answer, but **it is adjudicated against the diff at release time and a wrong one is named in the smoke closeout**, so write the honest reason rather than the one that goes green
 
 ## Architecture Notes
 

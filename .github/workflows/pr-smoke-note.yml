@@ -35,6 +35,13 @@ on:
       - reopened
       - synchronize
 
+# Body edits arrive in bursts, and sync-pr-closes.yml rewrites the body from a
+# push while this may be running. Without a group, an older run can report after
+# a newer one and leave a stale conclusion standing on the PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: read
 
@@ -159,7 +166,10 @@ jobs:
               found.push({ ...opt, ticked, answer })
             }
 
-            if (found.length !== OPTIONS.length) {
+            // At least one marker, not both: deleting the option you did not
+            // pick is a normal way to tidy a PR body, and it must not read as a
+            // missing declaration.
+            if (found.length === 0) {
               return fail(
                 'The "Smoke check" section is missing from this PR body.',
                 '',
@@ -174,8 +184,13 @@ jobs:
               return fail(
                 'Tick one box in the "Smoke check" section.',
                 '',
-                '  - Needs no manual check  — nothing here changes what a user sees',
-                '  - Needs a manual check   — anything a user can see or feel',
+                // List only the options actually present, so a body that kept
+                // one option is not told to tick something it does not contain.
+                ...found.map((o) =>
+                  o.marker === 'smoke:none'
+                    ? '  - Needs no manual check  — nothing here changes what a user sees'
+                    : '  - Needs a manual check   — anything a user can see or feel'
+                ),
                 '',
                 "Both answers are fine. Recording which one is the requirement:",
                 "the next release's smoke checklist is built from these notes."

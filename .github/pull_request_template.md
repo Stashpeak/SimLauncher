@@ -17,9 +17,9 @@ Closes #
 Tick exactly ONE box below and write the text after it.
 
 You are only asked this when the PR touches something a user can reach. A PR
-that changes only tests, docs, CI or tsconfig is not asked, and you can leave
-this section untouched — CI works that out from the diff, so there is nothing
-to declare and nothing to skip.
+that changes only tests, docs, CI, Markdown, editor dotfiles or tsconfig is not
+asked, and you can leave this section untouched: CI works that out from the
+diff, so there is nothing to declare and nothing to skip.
 
 This is the input to the next release's smoke run sheet. The delta section of
 `internal-docs/SimLauncher/QA/<version> Smoke Test.md` is built by reading these
