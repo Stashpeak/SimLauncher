@@ -62,7 +62,7 @@ Three-process Electron app:
 
 **Tailwind:** v4 via `@tailwindcss/vite` — no `tailwind.config.js`. Custom tokens go in `@theme {}` blocks in `App.css`.
 
-**Tests:** Vitest with two named projects — `renderer` (jsdom, `tests/renderer/**`) and `main` (node, `tests/main/**`). Tests in `tests/main/` can't use browser APIs; tests in `tests/renderer/` can't import Electron modules.
+**Tests:** Vitest with three named projects — `renderer` (jsdom, `tests/renderer/**`), `main` (node, `tests/main/**`) and `ci` (node, `tests/ci/**`). Tests in `tests/main/` can't use browser APIs; tests in `tests/renderer/` can't import Electron modules. `tests/ci/` is for repo tooling rather than the app: it exercises files under `.github/`, so it belongs to neither of the other two.
 
 **electron-store in tests:** requires `projectName: 'SimLauncher'` in the constructor (already set in `store.ts`). Without it, electron-store throws in a non-Electron test environment.
 
