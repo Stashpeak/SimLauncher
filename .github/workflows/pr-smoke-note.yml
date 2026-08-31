@@ -1,0 +1,224 @@
+name: PR smoke note
+
+# A PR that can change what a user sees must declare whether it needs a manual
+# smoke check, so the next release's smoke coverage is driven by what shipped
+# rather than by whoever remembered to write a note.
+#
+# Why this exists: the delta section of the per-release smoke document is built
+# by reading manual-check notes out of merged PRs. In the 1.2.0 milestone, #677
+# and #766 shipped with no check anywhere in either QA document because their
+# PRs carried no note, and nothing flagged the absence — the smoke document
+# looked complete. Both were user-visible, and both sat in the area where a real
+# defect (#878) was later found by accident instead of by a check.
+#
+# ⚠️ This gate produces CONTENT, not coverage. The authority on whether a
+# release was actually covered is the `simlauncher-smoke` skill's phase A1: every
+# closed issue in the milestone, grepped against both QA documents, bucketed as
+# covered / waived / gap. Where the two disagree, A1 wins. Two sources of truth
+# for the run sheet is itself a way for this to rot, so the blocks below feed the
+# run sheet, they do not certify it.
+#
+# The gate is deliberately shallow. It checks that a decision was RECORDED, not
+# that the decision was good; only a human reading the diff can judge that, and
+# the run-sheet closeout is where a wrong "needs none" gets named.
+#
+# `pull_request_target` (matching pr-title.yml) so the gate also fires when the
+# body is edited after opening, which is when most people fill this in. Nothing
+# from the PR is ever checked out or executed here — this job reads the event
+# payload and the changed-file list, and treats both strictly as data — which is
+# what keeps that trigger safe.
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+# Body edits arrive in bursts, and sync-pr-closes.yml rewrites the body from a
+# push while this may be running. Without a group, an older run can report after
+# a newer one and leave a stale conclusion standing on the PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: read
+
+jobs:
+  smoke-note:
+    runs-on: ubuntu-latest
+    # Bot PRs are exempt: Dependabot writes its own body from a template we do
+    # not control, and a red check that cannot be satisfied only teaches us to
+    # ignore red checks.
+    #
+    # ⚠️ That exemption has one real hole, and it is handled in the smoke skill
+    # rather than here: dependabot.yml isolates the electron stack into its own
+    # grouped PR precisely because a major bump needs a real-launch smoke and a
+    # signed-build check (#634). So the electron dependency PR is the one bot PR
+    # that always needs a check, and `simlauncher-smoke` phase A1 carries a
+    # standing entry for it when building the run sheet.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.user.login != 'github-actions[bot]'
+    steps:
+      - name: Require a smoke-check declaration
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request
+
+            // --- 1. Is this PR even in scope? -----------------------------
+            //
+            // The default is COMPUTED from the diff rather than typed by the
+            // author. This is the part that keeps the box from becoming a
+            // ritual: on the 1.2.0 milestone, 11 of the 13 issues without a
+            // check legitimately needed none, so a gate that fires on every PR
+            // would train the "no check needed" reflex on the majority of PRs
+            // where ticking it is correct — and that trained reflex is exactly
+            // what would fire on the one PR where it is wrong.
+            //
+            // A PR that touches ONLY these paths cannot change what a user sees
+            // at runtime, so it is not asked. Anything else is.
+            const EXEMPT = [
+              /^tests\//,
+              /^docs\//,
+              /^\.github\//,
+              /\.md$/,
+              /^tsconfig(\.\w+)?\.json$/,
+              /^\.(gitignore|gitattributes|editorconfig|prettierrc.*|npmrc)$/,
+              /^\.vscode\//
+            ]
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100
+            })
+
+            const inScope = files
+              .map((f) => f.filename)
+              .filter((name) => !EXEMPT.some((re) => re.test(name)))
+
+            // A release PR is a version bump and a lockfile. Its smoke is the
+            // entire run that precedes the tag, not a per-PR note.
+            const isRelease = /^chore\(release\):/.test(pr.title || '')
+
+            if (isRelease) {
+              core.info('Release PR — the smoke run itself is the check. Skipping.')
+              return
+            }
+
+            if (files.length > 0 && inScope.length === 0) {
+              core.info(
+                `Out of scope: ${files.length} file(s), none outside tests/docs/CI. No declaration needed.`
+              )
+              return
+            }
+
+            // --- 2. In scope: a decision has to be on the record ------------
+            //
+            // Key on the HTML markers, never on the prose around them, so the
+            // template wording can be rewritten without breaking this gate.
+            // Same convention as the <!-- auto-closes --> block that
+            // sync-pr-closes.yml maintains in this same body.
+            const OPTIONS = [
+              { marker: 'smoke:none', label: 'Needs no manual check' },
+              { marker: 'smoke:check', label: 'Needs a manual check' }
+            ]
+
+            const scope = `Touches ${inScope.length} file(s) outside tests/docs/CI, e.g. ${inScope
+              .slice(0, 3)
+              .join(', ')}.`
+
+            const fail = (...lines) => core.setFailed([...lines, '', scope].join('\n'))
+
+            const lines = (pr.body || '').split(/\r?\n/)
+            const found = []
+
+            for (const opt of OPTIONS) {
+              const index = lines.findIndex(
+                (line) => line.includes(opt.marker) && /^\s*[-*]\s*\[[ xX]\]/.test(line)
+              )
+              if (index === -1) continue
+
+              const ticked = /^\s*[-*]\s*\[[xX]\]/.test(lines[index])
+
+              // The author's text may sit after the marker on the same line, or
+              // continue on the lines below it until the next checkbox or the
+              // next heading. Both shapes are accepted, because a real check
+              // description does not fit on one line.
+              let text = lines[index].split(opt.marker)[1] || ''
+              text = text.replace(/-->/, '')
+              for (let i = index + 1; i < lines.length; i++) {
+                if (/^\s*[-*]\s*\[[ xX]\]/.test(lines[i]) || /^\s*#{1,6}\s/.test(lines[i])) break
+                text += '\n' + lines[i]
+              }
+
+              // Strip the template's own prompt words and any HTML comments, so
+              // an untouched template does not read as a filled-in answer.
+              const answer = text
+                .replace(/<!--[\s\S]*?-->/g, '')
+                .replace(/^\s*(Reason|What to do, and what a correct result looks like)\s*:/i, '')
+                .trim()
+
+              found.push({ ...opt, ticked, answer })
+            }
+
+            // At least one marker, not both: deleting the option you did not
+            // pick is a normal way to tidy a PR body, and it must not read as a
+            // missing declaration.
+            if (found.length === 0) {
+              return fail(
+                'The "Smoke check" section is missing from this PR body.',
+                '',
+                'Paste it back from .github/pull_request_template.md, tick exactly one',
+                'box, and write the text after it.'
+              )
+            }
+
+            const ticked = found.filter((o) => o.ticked)
+
+            if (ticked.length === 0) {
+              return fail(
+                'Tick one box in the "Smoke check" section.',
+                '',
+                // List only the options actually present, so a body that kept
+                // one option is not told to tick something it does not contain.
+                ...found.map((o) =>
+                  o.marker === 'smoke:none'
+                    ? '  - Needs no manual check  — nothing here changes what a user sees'
+                    : '  - Needs a manual check   — anything a user can see or feel'
+                ),
+                '',
+                "Both answers are fine. Recording which one is the requirement:",
+                "the next release's smoke checklist is built from these notes."
+              )
+            }
+
+            if (ticked.length > 1) {
+              return fail(
+                'Tick exactly one box in the "Smoke check" section, not both.',
+                '',
+                'A change that is partly invisible and partly not needs a check,',
+                'so tick "Needs a manual check" and describe only the visible half.'
+              )
+            }
+
+            const [choice] = ticked
+
+            if (!choice.answer) {
+              return fail(
+                `"${choice.label}" is ticked but says nothing.`,
+                '',
+                choice.marker === 'smoke:none'
+                  ? 'Write the reason after it, e.g. "internal refactor, no behaviour reaches the UI".'
+                  : 'Write what to do and what a correct result looks like, precisely enough' +
+                    '\nthat someone else can judge pass or fail without asking you.',
+                '',
+                'A check that says "verify it works" cannot be run by anyone but its author.'
+              )
+            }
+
+            core.info(`${choice.label}: ${choice.answer.replace(/\s+/g, ' ').slice(0, 200)}`)
