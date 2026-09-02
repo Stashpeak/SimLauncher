@@ -31,11 +31,12 @@ _ROOT = []
 def root():
     """The repository root, so results never depend on where this was launched.
 
-    `git grep` is scoped to the current directory even when given a tree-ish.
-    Run from `scripts/`, the tree-wide search for a relocated line finds
-    nothing, so every move reads as a loss and a clean refactor escalates.
-    Verified: `git grep -F -e AUTO_CLOSE_GRACE_MS origin/main` returns nothing
-    from `scripts/` and three hits from the root.
+    Git commands that search the tree are scoped to the current directory even
+    when handed a tree-ish, so results would otherwise depend on where the
+    script was launched from. Measured: `git grep -F -e AUTO_CLOSE_GRACE_MS
+    origin/main` returns nothing from `scripts/` and three hits from the root.
+    Nothing here greps any more, but pinning the working directory is a
+    one-line guarantee that the next command added cannot reintroduce it.
     """
     if not _ROOT:
         p = subprocess.run(
@@ -127,52 +128,20 @@ def added_lines(sha):
     return {f: v for f, v in by_file.items() if v}
 
 
-def find_elsewhere(ref, line, exclude_path, claimed):
-    """One unclaimed whole-line occurrence of `line` outside `exclude_path`, or None.
-
-    Exactness and consume-once both matter here, and neither is free.
-    `git grep -F --quiet` answers "does this appear anywhere", which is a
-    substring test that also never runs out: a genuinely deleted line reads as
-    moved because it is contained in some longer line, and two deleted copies
-    both point at one survivor. Reporting a deletion as a move is the failure
-    that hides the #519 class, so the match is compared stripped and whole, and
-    each target occurrence is claimed by at most one source line.
-
-    `-e` is not decoration: a substantive line beginning with `-`, which is
-    every CSS custom property in this repo, is otherwise parsed as an option
-    and the resulting failure would be swallowed into a false loss.
-    """
-    out = git("grep", "-n", "-F", "-e", line, ref, allow_fail=True)
-    if not out:
-        return None
-    for hit in out.split("\n"):
-        # <ref>:<path>:<lineno>:<text>
-        parts = hit.split(":", 3)
-        if len(parts) < 4:
-            continue
-        _, path, lineno, text = parts
-        if path == exclude_path or text.strip() != line:
-            continue
-        key = (path, lineno)
-        if key in claimed:
-            continue
-        claimed.add(key)
-        return key
-    return None
-
-
-def survives(ref, path, lines, claimed):
-    """(kept, moved, lost) for these lines at ref.
+def survives(ref, path, lines):
+    """(kept, lost) for these lines at ref.
 
     Whole-line comparison with each target line consumed once. A substring test
     would count a short added line that happens to appear inside a longer one,
     and would count many duplicate source lines against a single target.
 
-    A kept line claims a specific occurrence in the SAME repository-wide pool
-    the moved search uses. Counting locally instead let one survivor be spent
-    twice: a block added to two files, with one file later deleted, had the
-    deleted copy claim the survivor as `moved` while the surviving file counted
-    the same occurrences as `kept`, and the loss disappeared from the report.
+    There is deliberately NO tree-wide search for relocated lines. One was
+    built and then measured: against every validated case it changed nothing.
+    The #519 loss still fires without it, and PR #821, the real #773 helper
+    extraction it was written for, still reads 99%. It produced five of this
+    PR's ten review findings on its own, including an ordering bug introduced
+    while fixing one of the others. A relocation is rare, and the human
+    adjudication step in D3b catches it with one `git grep` in about a minute.
     """
     blob = git("show", "%s:%s" % (ref, path), allow_fail=True)
     pool = {}
@@ -182,17 +151,13 @@ def survives(ref, path, lines, claimed):
             if s:
                 pool.setdefault(s, []).append(str(i))
 
-    kept, absent = 0, []
+    kept = 0
     for l in lines:
-        hit = next((ln for ln in pool.get(l, []) if (path, ln) not in claimed), None)
-        if hit is not None:
-            claimed.add((path, hit))
+        occurrences = pool.get(l)
+        if occurrences:
+            occurrences.pop()
             kept += 1
-        else:
-            absent.append(l)
-
-    moved = sum(1 for l in absent if find_elsewhere(ref, l, path, claimed))
-    return kept, moved, len(lines) - kept - moved
+    return kept, len(lines) - kept
 
 
 def report(ref, pr):
@@ -213,31 +178,28 @@ def report(ref, pr):
     # Test-only losses never escalate on their own: tests get rewritten and
     # moved routinely, and in the real #519 case the src/ evidence was already
     # conclusive. They stay in the report, out of the verdict.
-    # A moved line SURVIVES. Counting only `kept` made a pure helper extraction
-    # read as total loss: six lines relocated give (0, 6, 0) and would have been
-    # escalated at 0%, which is the false alarm the tree-wide search exists to
-    # prevent in the first place.
     src_live = src_tot = 0
     notes = []
     escalate = False
-    claimed = set()
     for path, lines in sorted(files.items()):
-        kept, moved, lost = survives(ref, path, lines, claimed)
+        kept, lost = survives(ref, path, lines)
         n = len(lines)
         test = bool(TEST_PATH.search(path))
         if not test:
-            src_live += kept + moved
+            src_live += kept
             src_tot += n
         if lost:
             tag = "test" if test else "SRC "
-            notes.append("      [%s] %-46s %d/%d live, %d moved, %d LOST"
-                         % (tag, path, kept, n, moved, lost))
-            # A majority gone, not a total wipe. Requiring zero survivors made
-            # one incidental match anywhere in the tree disarm the whole check:
-            # #536 at v1.1.0 is the real #519 loss, and `closeApps.ts` reading
-            # 0 live, 1 moved, 18 LOST silently stopped escalating. The suite
-            # caught it, which is the entire argument for having one.
-            if not test and lost >= 5 and lost * 2 >= n:
+            notes.append("      [%s] %-46s %d/%d live, %d LOST"
+                         % (tag, path, kept, n, lost))
+            # A STRICT majority gone, not a total wipe, and not exactly half:
+            # `>=` escalated a 5-of-10 partial loss, which is not a majority.
+            #
+            # The earlier form of this rule demanded ZERO survivors, and a
+            # single incidental match was enough to disarm it on the real #519
+            # loss. The selftest caught that, which is the whole argument for
+            # having one: the fix that introduced it was itself a correct fix.
+            if not test and lost >= 5 and lost * 2 > n:
                 escalate = True
 
     pct = 100.0 * src_live / src_tot if src_tot else 100.0
