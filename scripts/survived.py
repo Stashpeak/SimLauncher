@@ -25,6 +25,29 @@ class GitError(RuntimeError):
     pass
 
 
+_ROOT = []
+
+
+def root():
+    """The repository root, so results never depend on where this was launched.
+
+    `git grep` is scoped to the current directory even when given a tree-ish.
+    Run from `scripts/`, the tree-wide search for a relocated line finds
+    nothing, so every move reads as a loss and a clean refactor escalates.
+    Verified: `git grep -F -e AUTO_CLOSE_GRACE_MS origin/main` returns nothing
+    from `scripts/` and three hits from the root.
+    """
+    if not _ROOT:
+        p = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], capture_output=True,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        if p.returncode != 0:
+            raise GitError("not inside a git repository: %s" % p.stderr.strip())
+        _ROOT.append(p.stdout.strip())
+    return _ROOT[0]
+
+
 def git(*args, **kw):
     """Run git. Raises on failure rather than returning empty output.
 
@@ -35,7 +58,7 @@ def git(*args, **kw):
     """
     allow_fail = kw.pop("allow_fail", False)
     p = subprocess.run(
-        ["git", *args], capture_output=True, text=True,
+        ["git", "-C", root(), *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace",
     )
     if p.returncode != 0:
@@ -144,19 +167,26 @@ def survives(ref, path, lines, claimed):
     Whole-line comparison with each target line consumed once. A substring test
     would count a short added line that happens to appear inside a longer one,
     and would count many duplicate source lines against a single target.
+
+    A kept line claims a specific occurrence in the SAME repository-wide pool
+    the moved search uses. Counting locally instead let one survivor be spent
+    twice: a block added to two files, with one file later deleted, had the
+    deleted copy claim the survivor as `moved` while the surviving file counted
+    the same occurrences as `kept`, and the loss disappeared from the report.
     """
     blob = git("show", "%s:%s" % (ref, path), allow_fail=True)
     pool = {}
     if blob:
-        for l in blob.split("\n"):
+        for i, l in enumerate(blob.split("\n"), 1):
             s = l.strip()
             if s:
-                pool[s] = pool.get(s, 0) + 1
+                pool.setdefault(s, []).append(str(i))
 
     kept, absent = 0, []
     for l in lines:
-        if pool.get(l, 0) > 0:
-            pool[l] -= 1
+        hit = next((ln for ln in pool.get(l, []) if (path, ln) not in claimed), None)
+        if hit is not None:
+            claimed.add((path, hit))
             kept += 1
         else:
             absent.append(l)
