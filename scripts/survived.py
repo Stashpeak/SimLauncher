@@ -104,16 +104,46 @@ def added_lines(sha):
     return {f: v for f, v in by_file.items() if v}
 
 
-def survives(ref, path, lines):
+def find_elsewhere(ref, line, exclude_path, claimed):
+    """One unclaimed whole-line occurrence of `line` outside `exclude_path`, or None.
+
+    Exactness and consume-once both matter here, and neither is free.
+    `git grep -F --quiet` answers "does this appear anywhere", which is a
+    substring test that also never runs out: a genuinely deleted line reads as
+    moved because it is contained in some longer line, and two deleted copies
+    both point at one survivor. Reporting a deletion as a move is the failure
+    that hides the #519 class, so the match is compared stripped and whole, and
+    each target occurrence is claimed by at most one source line.
+
+    `-e` is not decoration: a substantive line beginning with `-`, which is
+    every CSS custom property in this repo, is otherwise parsed as an option
+    and the resulting failure would be swallowed into a false loss.
+    """
+    out = git("grep", "-n", "-F", "-e", line, ref, allow_fail=True)
+    if not out:
+        return None
+    for hit in out.split("\n"):
+        # <ref>:<path>:<lineno>:<text>
+        parts = hit.split(":", 3)
+        if len(parts) < 4:
+            continue
+        _, path, lineno, text = parts
+        if path == exclude_path or text.strip() != line:
+            continue
+        key = (path, lineno)
+        if key in claimed:
+            continue
+        claimed.add(key)
+        return key
+    return None
+
+
+def survives(ref, path, lines, claimed):
     """(kept, moved, lost) for these lines at ref.
 
-    Whole-line comparison with each target line consumed once. A substring
-    test would count a short added line that happens to appear inside a longer
-    one, and would count many duplicate source lines against a single target.
-
-    A line absent from its own file is looked for anywhere in the tree before
-    being called lost: #819 reads 0/9 on `kill.ts` only because those lines
-    MOVED in the #773 helper extraction.
+    Whole-line comparison with each target line consumed once. A substring test
+    would count a short added line that happens to appear inside a longer one,
+    and would count many duplicate source lines against a single target.
     """
     blob = git("show", "%s:%s" % (ref, path), allow_fail=True)
     pool = {}
@@ -131,11 +161,7 @@ def survives(ref, path, lines):
         else:
             absent.append(l)
 
-    moved = 0
-    for l in absent:
-        found = git("grep", "-F", "--quiet", l, ref, allow_fail=True)
-        if found is not None:
-            moved += 1
+    moved = sum(1 for l in absent if find_elsewhere(ref, l, path, claimed))
     return kept, moved, len(lines) - kept - moved
 
 
@@ -157,29 +183,39 @@ def report(ref, pr):
     # Test-only losses never escalate on their own: tests get rewritten and
     # moved routinely, and in the real #519 case the src/ evidence was already
     # conclusive. They stay in the report, out of the verdict.
-    src_kept = src_tot = 0
+    # A moved line SURVIVES. Counting only `kept` made a pure helper extraction
+    # read as total loss: six lines relocated give (0, 6, 0) and would have been
+    # escalated at 0%, which is the false alarm the tree-wide search exists to
+    # prevent in the first place.
+    src_live = src_tot = 0
     notes = []
     escalate = False
+    claimed = set()
     for path, lines in sorted(files.items()):
-        kept, moved, lost = survives(ref, path, lines)
+        kept, moved, lost = survives(ref, path, lines, claimed)
         n = len(lines)
         test = bool(TEST_PATH.search(path))
         if not test:
-            src_kept += kept
+            src_live += kept + moved
             src_tot += n
         if lost:
             tag = "test" if test else "SRC "
             notes.append("      [%s] %-46s %d/%d live, %d moved, %d LOST"
                          % (tag, path, kept, n, moved, lost))
-            if not test and lost >= 5 and kept == 0:
+            # A majority gone, not a total wipe. Requiring zero survivors made
+            # one incidental match anywhere in the tree disarm the whole check:
+            # #536 at v1.1.0 is the real #519 loss, and `closeApps.ts` reading
+            # 0 live, 1 moved, 18 LOST silently stopped escalating. The suite
+            # caught it, which is the entire argument for having one.
+            if not test and lost >= 5 and lost * 2 >= n:
                 escalate = True
 
-    pct = 100.0 * src_kept / src_tot if src_tot else 100.0
+    pct = 100.0 * src_live / src_tot if src_tot else 100.0
     if src_tot and pct < 50:
         escalate = True
     verdict = "!! ADJUDICATE" if escalate else "ok           "
     print("PR #%-4s  %s  %s  src %d/%d live (%.0f%%)"
-          % (pr, sha[:7], verdict, src_kept, src_tot, pct))
+          % (pr, sha[:7], verdict, src_live, src_tot, pct))
     for n in notes:
         print(n)
 
@@ -205,13 +241,26 @@ def selftest():
     ok = True
     for ref, pr, must_escalate, why in SELFTEST:
         buf = io.StringIO()
+        err = None
         try:
             with redirect_stdout(buf):
                 report(ref, pr)
         except GitError as e:
-            print("SKIP  %s #%s: %s" % (ref, pr, e))
-            continue
+            err = str(e)
         out = buf.getvalue()
+
+        # A case that never ran is a FAILURE, not a pass. report() catches its
+        # own GitError and prints "ERROR", which contains no "!! ADJUDICATE", so
+        # every must_escalate=False case used to pass without touching a fixture:
+        # with origin/main missing, three controls "passed" unexecuted and the
+        # suite exited 0. A self-test that can succeed without running is worse
+        # than none, because it certifies the thing it never checked.
+        if err or "ERROR:" in out or "no squash commit" in out:
+            ok = False
+            print("FAIL  %s #%-4s did not run\n      %s\n      %s"
+                  % (ref, pr, why, (err or out.strip())))
+            continue
+
         got = "!! ADJUDICATE" in out
         good = got == must_escalate
         ok = ok and good
