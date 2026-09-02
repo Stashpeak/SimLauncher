@@ -62,11 +62,11 @@ Three-process Electron app:
 
 **Tailwind:** v4 via `@tailwindcss/vite` — no `tailwind.config.js`. Custom tokens go in `@theme {}` blocks in `App.css`.
 
-**Tests:** Vitest with three named projects — `renderer` (jsdom, `tests/renderer/**`), `main` (node, `tests/main/**`) and `ci` (node, `tests/ci/**`). Tests in `tests/main/` can't use browser APIs; tests in `tests/renderer/` can't import Electron modules. `tests/ci/` is for repo tooling rather than the app: it exercises files under `.github/`, so it belongs to neither of the other two.
+**Tests:** Vitest with two named projects — `renderer` (jsdom, `tests/renderer/**`) and `main` (node, `tests/main/**`). Tests in `tests/main/` can't use browser APIs; tests in `tests/renderer/` can't import Electron modules.
 
 **electron-store in tests:** requires `projectName: 'SimLauncher'` in the constructor (already set in `store.ts`). Without it, electron-store throws in a non-Electron test environment.
 
-**Commit messages** must reference an issue (`#N`), which the `.githooks/commit-msg` hook enforces; a `docs:` subject line is exempt. Conventional Commits are enforced on the **PR title** by `.github/workflows/pr-title.yml`, not on individual commits. A PR touching anything outside `tests/`, `docs/`, `.github/`, Markdown files, editor and tooling dotfiles, and tsconfig must also tick one box in the **Smoke check** section of the PR template, enforced by `.github/workflows/pr-smoke-note.yml`; that block is what the next release's manual smoke checklist is built from. `Needs no manual check` is a normal answer, but it is adjudicated against the diff at release time and a wrong one is named in the smoke closeout, so write the honest reason rather than the one that goes green.
+**Commit messages** must reference an issue (`#N`), which the `.githooks/commit-msg` hook enforces; a `docs:` subject line is exempt. Conventional Commits are enforced on the **PR title** by `.github/workflows/pr-title.yml`, not on individual commits.
 
 ## Code documentation
 

@@ -8,9 +8,6 @@ const rendererTests = [
   'tests/renderer/**/*.test.tsx'
 ]
 const mainProcessTests = ['tests/electronApiSurface.test.ts', 'tests/main/**/*.test.ts']
-// Repo-tooling tests: they exercise files under .github/, not the app, so they
-// get their own project rather than pretending to be main-process tests.
-const ciTests = ['tests/ci/**/*.test.ts']
 
 export default defineConfig({
   test: {
@@ -29,9 +26,6 @@ export default defineConfig({
           },
           pool: 'vmThreads'
         }
-      },
-      {
-        test: { name: 'ci', environment: 'node', include: ciTests, pool: 'vmThreads' }
       }
     ]
   }
