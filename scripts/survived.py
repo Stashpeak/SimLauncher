@@ -85,6 +85,32 @@ TRIVIAL = re.compile(
 
 TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|__mocks__)/|\.(test|spec)\.[jt]sx?$")
 
+# Generated files and prose are reported but never judged. A lockfile is
+# rewritten wholesale by npm and a document is rewritten by hand, so neither
+# says anything about whether the FIX survived, and both are big enough to
+# decide the aggregate on their own. Measured at 3a4ada1: PR #703 read 5% live
+# because package-lock.json contributed 222 of its 227 lines, and PR #728
+# escalated on 11 deleted CONTRIBUTING.md lines while its real source loss was
+# 4. Both are routine cleanup, and both are exactly the false alarm this tool
+# exists to avoid.
+#
+# A blocklist, deliberately. An allowlist of known code extensions would fail
+# SILENT on an unlisted one, reporting "ok" for a fix that was deleted, which
+# is the failure this tool was written to catch. A blocklist fails the other
+# way: an unknown generated file makes noise that a human dismisses in a glance.
+GENERATED = re.compile(
+    r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(md|lock|snap)$"
+)
+
+
+def classify(path):
+    """`SRC ` counts toward the verdict. `test` and `gen ` are reported only."""
+    if TEST_PATH.search(path):
+        return "test"
+    if GENERATED.search(path):
+        return "gen "
+    return "SRC "
+
 
 def is_substantive(body):
     stripped = body.strip()
@@ -184,14 +210,13 @@ def report(ref, pr):
     for path, lines in sorted(files.items()):
         kept, lost = survives(ref, path, lines)
         n = len(lines)
-        test = bool(TEST_PATH.search(path))
-        if not test:
+        kind = classify(path)
+        if kind == "SRC ":
             src_live += kept
             src_tot += n
         if lost:
-            tag = "test" if test else "SRC "
             notes.append("      [%s] %-46s %d/%d live, %d LOST"
-                         % (tag, path, kept, n, lost))
+                         % (kind, path, kept, n, lost))
             # A STRICT majority gone, not a total wipe, and not exactly half:
             # `>=` escalated a 5-of-10 partial loss, which is not a majority.
             #
@@ -199,28 +224,49 @@ def report(ref, pr):
             # single incidental match was enough to disarm it on the real #519
             # loss. The selftest caught that, which is the whole argument for
             # having one: the fix that introduced it was itself a correct fix.
-            if not test and lost >= 5 and lost * 2 > n:
+            if kind == "SRC " and lost >= 5 and lost * 2 > n:
                 escalate = True
 
-    pct = 100.0 * src_live / src_tot if src_tot else 100.0
-    if src_tot and pct < 50:
+    # No source lines means this tool has no opinion, and it has to SAY so.
+    # Printing "ok ... 0/0 live (100%)" is the same failure as a self-test that
+    # passes without running: it certifies precisely what it never looked at.
+    if not src_tot:
+        print("PR #%-4s  %s  no source lines to judge (tests/generated only)"
+              % (pr, sha[:7]))
+        for note in notes:
+            print(note)
+        return
+
+    # The same small-sample floor the per-file rule already carries. Without it
+    # a 5-line source footprint escalates on 3 lines: PR #703 is a dependency
+    # bump whose only source lines are 3 in package.json, which the NEXT bump
+    # rewrites by definition. A fix that small is caught by the per-file rule
+    # or not at all, so the aggregate has nothing to add below this size.
+    pct = 100.0 * src_live / src_tot
+    if src_tot >= 10 and pct < 50:
         escalate = True
     verdict = "!! ADJUDICATE" if escalate else "ok           "
     print("PR #%-4s  %s  %s  src %d/%d live (%.0f%%)"
           % (pr, sha[:7], verdict, src_live, src_tot, pct))
-    for n in notes:
-        print(n)
+    for note in notes:
+        print(note)
 
 
+# Every ref below is immutable. These started on `origin/main`, which drifts:
+# a later legitimate refactor touching lines these PRs added would fail the
+# suite with nothing wrong in this script, and the answer changed with how
+# recently the clone had fetched, so two people could run it and disagree.
+# A tag where one exists, a full commit id where none does: #893 landed one
+# commit after v1.2.0 was cut, so it has no tag to hang on.
 SELFTEST = [
     # (ref, pr, must_escalate, why)
     ("v1.1.0", "536", True,
      "the #519 loss as it stood: closeApps.ts deleted by #557, not yet re-landed"),
-    ("origin/main", "536", False,
+    ("v1.2.0", "536", False,
      "same PR after #819 re-landed it"),
-    ("origin/main", "893", False,
+    ("3a4ada1cf91c22f9f5897096299225843103ca34", "893", False,
      "healthy control, nothing removed"),
-    ("origin/main", "819", False,
+    ("v1.2.0", "819", False,
      "false-positive control: reported 0/9 on kill.ts while all nine were JSDoc"),
 ]
 
