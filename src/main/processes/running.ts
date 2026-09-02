@@ -6,20 +6,25 @@ import {
   StoredProfileEntry,
   getActiveStoredProfile,
   getProfileTrackablePaths,
-  getStoredProfiles
+  getStoredProfiles,
+  isProcessTrackingEnabled
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
 import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
-import { pruneUnclosedProcesses } from './kill'
+import { getClosableLaunchedAppGameKeys, pruneUnclosedProcesses } from './kill'
 import {
+  isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
   pruneStoppedRunningProcesses,
+  pruneUntrackedGames,
   runningProcesses,
   unclosedProcesses
 } from './state'
+import { isTrackedPathRunning, resolveTrackedPathStates } from './pathResolution'
 import { readRunningProcessNames, type RunningProcessNamesResult } from './tasklist'
+import { isPathScopedExe } from './win32KillUtils'
 
 /**
  * A main-process consumer of one raw tasklist read.
@@ -45,6 +50,14 @@ export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | '
 
 export interface RunningAppsChangedPayload {
   apps: RunningApp[]
+  /**
+   * Game keys whose companions `killLaunchedApps` would currently close, which
+   * is NOT the same question as which apps are surfaced in `apps` (#673). A
+   * profile can have live, closable companions and an empty strip: after a
+   * restart, after the process-tracking toggle is cycled, or whenever its game
+   * is closed. Those are the rows that used to offer the user nothing at all.
+   */
+  closableGameKeys: string[]
   reason: RunningAppsChangeReason
   updatedAt: number
 }
@@ -97,7 +110,7 @@ let publishRunningAppsPromise: Promise<RunningAppsChangedPayload | null> | undef
  * companion utilities.
  */
 function getExternallyAdoptableGameKeys(
-  processNames: Set<string>,
+  isPathRunning: (appPath: string) => boolean,
   profiles: Record<string, StoredProfileEntry> | undefined,
   gamePaths: Record<string, string> | undefined,
   launchedGameKeys: Set<string>
@@ -133,7 +146,17 @@ function getExternallyAdoptableGameKeys(
     const exeName = getExeName(gamePath)
     const owners = gameExeOwners.get(exeName)
 
-    if (owners?.size === 1 && processNames.has(exeName)) {
+    // `isValidExePath` takes `unknown` and returns a plain boolean, so it does
+    // not narrow; the query below needs a string.
+    if (typeof gamePath !== 'string') {
+      return
+    }
+
+    // Path-verified (#674). Adopting on the image name alone surfaced a whole
+    // profile's companion list because something shared the game exe's name,
+    // which is the widest blast radius the collision had: one stranger, and a
+    // game the user never started looks like a live session.
+    if (owners?.size === 1 && isPathRunning(gamePath)) {
       adoptableGameKeys.add(gameKey)
     }
   })
@@ -148,7 +171,7 @@ function getExternallyAdoptableGameKeys(
 // a companion still surfaces that profile's companions (same aggregate-vs-game
 // distinction as the green dot, #587; the in-session-exe question is #585/#586).
 async function getTrackedRunningApps(
-  processNames: Set<string>,
+  isPathRunning: (appPath: string) => boolean,
   adoptedOrLaunchedGameKeys: Set<string>,
   profiles: Record<string, StoredProfileEntry> | undefined,
   appPaths: Record<string, string> | undefined,
@@ -164,17 +187,21 @@ async function getTrackedRunningApps(
 
     const profile = getActiveStoredProfile(profileEntry)
 
-    if (profile?.trackingEnabled === false) {
+    if (!isProcessTrackingEnabled(profile)) {
       return
     }
 
     const pathsToTrack = getProfileTrackablePaths(gameKey, profile, appPaths, gamePaths)
 
     pathsToTrack.forEach((trackedPath) => {
-      const processName = getExeName(trackedPath)
       const dedupeKey = `${gameKey}:${normalizePathForComparison(trackedPath)}`
 
-      if (processNames.has(processName) && !seen.has(dedupeKey)) {
+      // THE phantom icon (#674). This is the line that drew a strip entry for a
+      // configured app that was not running, because something unrelated on the
+      // system shared its exe name. The icon could not be dismissed either: it
+      // is derived here on every tick rather than stored, so `dismissAppIcon`
+      // had nothing to delete and it came straight back.
+      if (isPathRunning(trackedPath) && !seen.has(dedupeKey)) {
         trackedApps.push({
           path: trackedPath,
           name: path.basename(trackedPath),
@@ -208,8 +235,71 @@ export function registerProcessScanObserver(observer: ProcessScanObserver): void
   processScanObservers.add(observer)
 }
 
-export async function getRunningApps(): Promise<RunningApp[]> {
+/**
+ * Drop every surfaced record belonging to a game whose active profile has
+ * process tracking off (#591).
+ *
+ * Turning tracking off has to take effect on apps that are ALREADY recorded,
+ * not just on the next launch. `runningProcesses` is written at launch time and
+ * nothing removes an entry until its exe exits, so a profile launched while
+ * tracked would otherwise keep its strip icons, its dot and its Close Apps
+ * entry for the rest of the session, contradicting the setting the user just
+ * saved. Forget, never kill: those apps were started deliberately, and
+ * fire-and-forget means they outlive our interest in them.
+ *
+ * Deliberately SYNCHRONOUS, and called from two places for that reason
+ * (CodeRabbit on #834). Doing it only inside `getRunningApps` puts it behind
+ * that function's `tasklist` await, leaving a window after the profile is saved
+ * in which `killLaunchedApps` still finds the stale entries and closes apps the
+ * user just opted out of. `publishRunningApps` runs it at call time instead, so
+ * a save reconciles before it returns; `getRunningApps` keeps its own call for
+ * the paths that reach it without a publish (the `get-running-apps` handler).
+ * Idempotent, so running it twice per publish costs one store read.
+ *
+ * Games with a launch in flight are skipped, and that is load-bearing rather
+ * than an optimisation. This reads the store's ACTIVE profile, which during a
+ * profile switch still names the OUTGOING one: the renderer launches the
+ * incoming profile's apps before saving the new `activeProfileId`. Reconciling
+ * in that window would prune the entries the incoming TRACKED profile just
+ * correctly recorded, on the authority of the outgoing untracked one. It is the
+ * same staleness `LaunchProfileAppsOptions.profileId` exists to defeat, and the
+ * same reason auto-close consults this primitive before reading an absence as
+ * an exit (#204). A toggle saved mid-launch is simply applied by the next
+ * publish, once the sequence has ended and the store agrees with itself.
+ */
+function reconcileUntrackedGames(): void {
+  pruneUntrackedGames(
+    new Set(
+      Object.entries(getStoredProfiles())
+        .filter(
+          ([gameKey, profileEntry]) =>
+            !isLaunchActiveForGame(gameKey) &&
+            !isProcessTrackingEnabled(getActiveStoredProfile(profileEntry))
+        )
+        .map(([gameKey]) => gameKey)
+    )
+  )
+}
+
+/**
+ * One tick's worth of answers. `apps` is what the strip renders; the closable
+ * set is deliberately NOT derived from it, because the whole point of #673 is
+ * the profile whose companions are alive and absent from that list.
+ */
+interface RunningAppsSnapshot {
+  apps: RunningApp[]
+  closableGameKeys: Set<string>
+}
+
+// Exported for tests, which assert the closable set through the real tick
+// rather than against a hand-built resolver: the #674 precision this relies on
+// lives in how `isPathRunning` is assembled below, so a test that supplied its
+// own would be asserting against a copy of the logic under test.
+export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot> {
   const readResult = await readRunningProcessNames()
+  // `processNames` survives for exactly one job (see `isPathRunning`): a record
+  // whose "path" is a bare image name, which is not a path and must not be
+  // resolved as one. Every other question this function asks is about a PATH.
   const { processNames, succeeded: tasklistReadSucceeded } = readResult
   // Observers run before any derivation below, on every read rather than only
   // on scan ticks, and never get to break the caller: a throwing observer must
@@ -221,14 +311,93 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       console.error('Process scan observer error:', err)
     }
   })
+  const profiles = getStoredProfiles()
+  const appPaths = getStoredStringRecord('appPaths')
+  const gamePaths = getStoredStringRecord('gamePaths')
+
+  // Every path this tick could ask about, gathered before anything is decided
+  // so the whole tick costs ONE resolution rather than one per question (#674).
+  //
+  // Deliberately a superset: it spans all profiles, not just the ones that turn
+  // out to be adopted or launched, because adoption is itself one of the
+  // questions being answered. That costs nothing, since a path whose image name
+  // is absent from the snapshot is resolved for free and never reaches an
+  // enumeration.
+  //
+  // Collected BEFORE the pruning below, which is what makes pruning by path
+  // possible at all: a record about to be dropped still needs its own question
+  // answered.
+  const candidatePaths = new Set<string>()
+  Object.entries(profiles || {}).forEach(([gameKey, profileEntry]) => {
+    getProfileTrackablePaths(
+      gameKey,
+      getActiveStoredProfile(profileEntry),
+      appPaths,
+      gamePaths
+    ).forEach((trackablePath) => candidatePaths.add(trackablePath))
+  })
+  Object.values(gamePaths || {}).forEach((gamePath) => {
+    if (isValidExePath(gamePath)) {
+      candidatePaths.add(gamePath)
+    }
+  })
+  // Bare image names are filtered out rather than resolved: they are not paths,
+  // and `isPathRunning` answers them from the name set instead.
+  const addCandidate = (appPath: string) => {
+    if (isPathScopedExe(appPath)) {
+      candidatePaths.add(appPath)
+    }
+  }
+  runningProcesses.forEach((entry) => addCandidate(entry.path))
+  unclosedProcesses.forEach((entry) => addCandidate(entry.path))
+  processNameMismatchWarnings.forEach((entry) => addCandidate(entry.path))
+
+  const pathStates = await resolveTrackedPathStates(readResult, Array.from(candidatePaths))
+  // Folds `unknown` and "not asked" into "running", the same conservative
+  // reading the launch and kill paths use: a path that MIGHT be running must
+  // not have its record deleted or its icon pulled.
+  //
+  // The `tasklistReadSucceeded` term keeps a failed read behaving exactly as it
+  // did before #674, deliberately rather than by omission. A failed read used to
+  // yield an empty `processNames`, so every derivation below answered "not
+  // running" and the tick published an empty list; folding it to "running"
+  // instead would be a real behaviour change (the strip would freeze rather than
+  // blank) and it is not this issue's to make. Pruning is unaffected either way,
+  // being already gated on the same flag.
+  const isPathRunning = (appPath: string) => {
+    if (!tasklistReadSucceeded) {
+      return false
+    }
+
+    // A bare image name is NOT a path, and answering it as one silently
+    // destroys a record (Codex P2 on #846). An unclosed entry for a name-scoped
+    // companion stores the image name where a path would go
+    // (`registerUnclosedProcess` falls back to `attempt.processName`), and
+    // `normalizePathForComparison` resolves a bare name against the CURRENT
+    // WORKING DIRECTORY. So the comparison is against a path under SimLauncher's
+    // own install, never matches any real process, and the record gets pruned
+    // while its app is still running: the Garage61 telemetry agent, which is
+    // closed by `/IM` precisely because it has no configured path.
+    //
+    // Judged by SHAPE, matching how the kill path scopes its own cleanup and
+    // for the same reason (#677): whether an exe currently exists on disk must
+    // not decide whether a record is name-scoped.
+    if (!isPathScopedExe(appPath)) {
+      return processNames.has(getExeName(appPath))
+    }
+
+    return isTrackedPathRunning(pathStates.get(appPath))
+  }
+
   // When the tasklist read failed, processNames is an empty Set with no
   // signal value — skip pruning so we don't silently clear running/unclosed
   // state based on bogus "everything is gone" data (see #399).
   if (tasklistReadSucceeded) {
-    pruneStoppedRunningProcesses(processNames)
-    pruneUnclosedProcesses(processNames)
+    pruneStoppedRunningProcesses(isPathRunning)
+    pruneUnclosedProcesses(isPathRunning)
   }
   pruneExpiredProcessNameMismatchWarnings()
+  reconcileUntrackedGames()
 
   const launchedApps = Array.from(runningProcesses.values()).map((appProcess) => ({
     path: appProcess.path,
@@ -237,7 +406,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
     tracked: false
   }))
   const unclosedApps = Array.from(unclosedProcesses.values())
-    .filter((appProcess) => processNames.has(getExeName(appProcess.path)))
+    .filter((appProcess) => isPathRunning(appProcess.path))
     .map((appProcess) => ({
       path: appProcess.path,
       name: appProcess.name,
@@ -247,12 +416,17 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       elevated: appProcess.elevated ?? appProcess.reason === 'access_denied'
     }))
   const surfacedApps = [...launchedApps, ...unclosedApps]
-  // Mismatch-warning entries are shown only when the ORIGINAL exe is NOT in
-  // the tasklist (i.e. only the child process survives). If the original exe
-  // were still running it would appear in `surfacedApps` and no warning is
-  // needed — the user can see and track it normally.
+  // Mismatch-warning entries are shown only when the ORIGINAL exe is NOT
+  // running (i.e. only the child process survives). If the original were still
+  // running it would appear in `surfacedApps` and no warning is needed — the
+  // user can see and track it normally.
+  //
+  // Path-verified like the rest (#674), and here the collision SUPPRESSED a
+  // real warning rather than inventing one: a stranger holding the name made
+  // the original look alive, so the user was told nothing about a companion
+  // that had re-execed under a name SimLauncher cannot track.
   const mismatchWarnings = Array.from(processNameMismatchWarnings.values())
-    .filter((entry) => !processNames.has(getExeName(entry.path)))
+    .filter((entry) => !isPathRunning(entry.path))
     .map((entry) => ({
       path: entry.path,
       name: entry.name,
@@ -271,14 +445,11 @@ export async function getRunningApps(): Promise<RunningApp[]> {
     )
   )
   const launchedExeNames = new Set(surfacedApps.map((appProcess) => getExeName(appProcess.path)))
-  const profiles = getStoredProfiles()
-  const appPaths = getStoredStringRecord('appPaths')
-  const gamePaths = getStoredStringRecord('gamePaths')
   const launchedGameKeys = new Set(
     [...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey)
   )
   const adoptedGameKeys = getExternallyAdoptableGameKeys(
-    processNames,
+    isPathRunning,
     profiles,
     gamePaths,
     launchedGameKeys
@@ -286,7 +457,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
   const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
   const trackedApps = (
     await getTrackedRunningApps(
-      processNames,
+      isPathRunning,
       adoptedOrLaunchedGameKeys,
       profiles,
       appPaths,
@@ -298,7 +469,7 @@ export async function getRunningApps(): Promise<RunningApp[]> {
       !launchedExeNames.has(getExeName(appProcess.path))
   )
 
-  return [
+  const apps = [
     ...surfacedApps,
     ...mismatchWarnings.filter(
       (appProcess) =>
@@ -309,19 +480,38 @@ export async function getRunningApps(): Promise<RunningApp[]> {
         !warningKeys.has(`${appProcess.gameKey}:${normalizePathForComparison(appProcess.path)}`)
     )
   ]
+
+  // Answered from THIS tick's resolver, so it costs no spawn of its own (#673).
+  // A failed read makes `isPathRunning` answer false for everything, so the
+  // control blanks exactly as the strip does rather than freezing on a stale
+  // yes: same conservative reading, and it recovers on the next good tick.
+  return { apps, closableGameKeys: getClosableLaunchedAppGameKeys(processNames, isPathRunning) }
 }
 
-function normalizeRunningAppsSnapshot(apps: RunningApp[]) {
-  return JSON.stringify(
-    apps.map((app) => ({
+export async function getRunningApps(): Promise<RunningApp[]> {
+  return (await collectRunningAppsSnapshot()).apps
+}
+
+// The change-gate below suppresses a 'scan' publish whose snapshot is identical
+// to the last one, so anything the renderer RENDERS has to be in here. The
+// closable set qualifies and the app list cannot stand in for it: the state
+// #673 is about is precisely one where companions are closable and the list is
+// empty, so a companion appearing or exiting moves the set while leaving `apps`
+// byte-identical. Sorted because set iteration order follows insertion, and an
+// unsorted join would publish a spurious change whenever a profile happened to
+// be visited in a different order.
+function normalizeRunningAppsSnapshot({ apps, closableGameKeys }: RunningAppsSnapshot) {
+  return JSON.stringify({
+    apps: apps.map((app) => ({
       elevated: app.elevated ?? false,
       gameKey: app.gameKey,
       name: app.name,
       path: app.path,
       tracked: app.tracked ?? false,
       warning: app.warning ?? ''
-    }))
-  )
+    })),
+    closableGameKeys: Array.from(closableGameKeys).sort()
+  })
 }
 
 function removeRunningAppsSubscriber(webContents: WebContents) {
@@ -354,18 +544,28 @@ async function publishRunningAppsInternal(
     return null
   }
 
-  const apps = await getRunningApps()
+  const { apps, closableGameKeys } = await collectRunningAppsSnapshot()
   // Refresh on every scan (before the change-gate below) so the cadence always
   // reflects what's actually surfaced, including adopted external apps.
+  //
+  // Deliberately still the SURFACED count, not widened by the closable set: a
+  // closable-but-unsurfaced companion is the chronic, ambient state this feature
+  // exists to report, and holding the FAST 2s tasklist poll open for it would
+  // reverse #672 for every profile that has SimHub enabled.
   lastPublishedRunningAppsCount = apps.length
-  const snapshot = normalizeRunningAppsSnapshot(apps)
+  const snapshot = normalizeRunningAppsSnapshot({ apps, closableGameKeys })
 
   if (snapshot === lastRunningAppsSnapshot && reason === 'scan') {
     return null
   }
 
   lastRunningAppsSnapshot = snapshot
-  const payload = { apps, reason, updatedAt: Date.now() }
+  const payload = {
+    apps,
+    closableGameKeys: Array.from(closableGameKeys),
+    reason,
+    updatedAt: Date.now()
+  }
   emitRunningAppsChanged(payload)
   return payload
 }
@@ -386,6 +586,21 @@ export function publishRunningApps(
   // settling process set is tracked live even if the window is hidden.
   if (reason !== 'scan') {
     noteRunningAppsActivity()
+  }
+  // Before the chain, not inside it: a `'config'` publish follows the profile
+  // write synchronously, so reconciling here is what makes the tracking toggle
+  // take effect by the time the save handler returns rather than one tasklist
+  // read later (#591).
+  //
+  // Guarded, because running it synchronously moved it onto the CALLER's stack:
+  // `save-profile` calls this right after writing the store, so an exception in
+  // here would now fail the save itself, where the same exception inside the
+  // promise chain below was contained by the caller's `.catch`. Reconciling the
+  // running-apps view must never be able to take down a settings write.
+  try {
+    reconcileUntrackedGames()
+  } catch (err) {
+    console.error('Failed to reconcile untracked games before publishing:', err)
   }
 
   const next = (publishRunningAppsPromise || Promise.resolve(null))
@@ -504,7 +719,7 @@ export async function subscribeRunningApps(
   runningAppsSubscribers.add(webContents)
   webContents.once('destroyed', () => removeRunningAppsSubscriber(webContents))
 
-  const apps = await getRunningApps()
+  const { apps, closableGameKeys } = await collectRunningAppsSnapshot()
   // Seed the cadence-gating count from this bootstrap read BEFORE starting the
   // monitor (#708). Previously the monitor started first and scheduled its
   // first scan off the pre-subscription (stale, often 0) count, so a
@@ -512,10 +727,18 @@ export async function subscribeRunningApps(
   // bootstrap on the SLOW cadence for one tick (<=12s) before the first scan
   // self-corrected it. One-time and self-healing, but avoidable.
   lastPublishedRunningAppsCount = apps.length
-  lastRunningAppsSnapshot = normalizeRunningAppsSnapshot(apps)
+  lastRunningAppsSnapshot = normalizeRunningAppsSnapshot({ apps, closableGameKeys })
   startRunningAppsMonitor()
 
-  return { apps, reason: 'initial', updatedAt: Date.now() } satisfies RunningAppsChangedPayload
+  // This bootstrap answer is the one that matters most for #673: after a
+  // restart it is the FIRST thing the row learns, and before this change it
+  // could only ever say "nothing here".
+  return {
+    apps,
+    closableGameKeys: Array.from(closableGameKeys),
+    reason: 'initial',
+    updatedAt: Date.now()
+  } satisfies RunningAppsChangedPayload
 }
 
 export function unsubscribeRunningApps(webContents: WebContents): void {

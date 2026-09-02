@@ -3,6 +3,20 @@ import { beforeEach, expect, test, vi } from 'vitest'
 type MockIpcHandler = (...args: unknown[]) => Promise<unknown>
 
 const migrateProfilesToNamedSets = vi.fn()
+const cancelPendingElevatedHandoffs = vi.fn()
+const abortActiveLaunches = vi.fn()
+// Defaults to 1 so the report path is exercised. The real counter is a
+// module-level scalar the cancel callback increments; what matters here is that
+// the import DRAINS it and pushes the count (#842).
+const drainStrandedConsentPrompts = vi.fn(() => 1)
+const sendToRenderer = vi.fn()
+
+/** The stranded-prompt counts the import pushed to the renderer. */
+function pushedStrandedCounts(): number[] {
+  return sendToRenderer.mock.calls
+    .filter(([channel]) => channel === 'stranded-consent-prompts')
+    .map(([, count]) => count as number)
+}
 const importedConfig = {
   customSlots: 2,
   appPaths: { simhub: 'C:/Tools/NewSimHub.exe' }
@@ -57,7 +71,7 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
   const windowMock = {
     getMainWindow: vi.fn(() => null),
     applyRuntimeConfigSettings: vi.fn(),
-    sendToRenderer: vi.fn()
+    sendToRenderer
   }
   vi.doMock('../window', () => windowMock)
   vi.doMock('/src/main/window.ts', () => windowMock)
@@ -91,11 +105,26 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
   vi.doMock('../../src/main/store', () => storeMock)
   vi.doMock('../../src/main/store.ts', () => storeMock)
 
-  const profilesMock = { isStoredProfileSet: vi.fn(() => false) }
+  const profilesMock = {
+    isStoredProfileSet: vi.fn(() => false),
+    getProfileLaunchEntryId: vi.fn(),
+    getProfileSwitchLeavingKeys: vi.fn(() => [])
+  }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
   vi.doMock('../../src/main/profiles', () => profilesMock)
   vi.doMock('../../src/main/profiles.ts', () => profilesMock)
+
+  const processesMock = {
+    publishRunningApps: vi.fn(async () => {}),
+    abortActiveLaunches,
+    cancelPendingElevatedHandoffs,
+    drainStrandedConsentPrompts
+  }
+  vi.doMock('../processes', () => processesMock)
+  vi.doMock('/src/main/processes.ts', () => processesMock)
+  vi.doMock('../../src/main/processes', () => processesMock)
+  vi.doMock('../../src/main/processes.ts', () => processesMock)
 
   const configModule = await import('../../src/main/ipc/config')
   configModule.registerConfigHandlers()
@@ -168,6 +197,51 @@ test('applying an import rolls the store back when the apply throws', async () =
   expect(result.success).toBe(false)
   expect(result.error).toContain('corrupted profile set')
   expect(mockStore.data).toEqual(initial)
+})
+
+// An import replaces the whole store, so a pending elevated handoff is left
+// waiting on a profile that may no longer exist. Nothing else covers it:
+// `save-profile` never runs on this path, and a pending handoff has never
+// started, so no tasklist-diff-driven code can see it either (Codex P2 on #842).
+test('applying an import cancels every pending elevated handoff (#842)', async () => {
+  const { handlers } = await loadConfigHandlers({ customSlots: 5 })
+
+  await expect(previewThenApply(handlers)).resolves.toMatchObject({ success: true })
+
+  // Both mechanisms. A handoff younger than the grace window is not in the
+  // registry yet, so the abort signal is the only thing that reaches it and
+  // cancelling the registry alone left the whole pre-grace window uncovered
+  // (CodeRabbit on #842). Unscoped, unlike the switch's per-game abort, because
+  // an import replaces every game's config at once.
+  expect(abortActiveLaunches).toHaveBeenCalledTimes(1)
+  expect(abortActiveLaunches.mock.calls[0]).toEqual([])
+  expect(cancelPendingElevatedHandoffs).toHaveBeenCalledTimes(1)
+  // No game key and no predicate: unlike a profile switch there is no "profile
+  // being left" to diff against, so this is deliberately unscoped.
+  expect(cancelPendingElevatedHandoffs.mock.calls[0]).toEqual([])
+  // Killing the host does not remove the consent dialog, so the count has to
+  // reach the renderer or the user is never told the prompt is dead (#809).
+  expect(pushedStrandedCounts()).toEqual([1])
+})
+
+// The rollback half. Cancelling before the apply is known to have succeeded
+// would kill a prompt that is still valid for the config the rollback restores,
+// which is a worse outcome than the bug above: the user loses a live prompt for
+// a config they never stopped using.
+test('a rolled-back import cancels nothing (#842)', async () => {
+  const initial = { customSlots: 5, gamePaths: { iracing: 'C:/Games/Old.exe' } }
+  const { handlers, mockStore } = await loadConfigHandlers(initial)
+  migrateProfilesToNamedSets.mockImplementationOnce(() => {
+    throw new Error('corrupted profile set')
+  })
+
+  await expect(previewThenApply(handlers)).resolves.toMatchObject({ success: false })
+
+  expect(mockStore.data).toEqual(initial)
+  expect(abortActiveLaunches).not.toHaveBeenCalled()
+  expect(cancelPendingElevatedHandoffs).not.toHaveBeenCalled()
+  expect(drainStrandedConsentPrompts).not.toHaveBeenCalled()
+  expect(pushedStrandedCounts()).toEqual([])
 })
 
 test('apply-import-config only accepts the token issued by the matching preview', async () => {

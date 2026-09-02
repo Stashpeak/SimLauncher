@@ -16,13 +16,31 @@ import { execFile, type ChildProcess } from 'child_process'
 import path from 'path'
 
 import { writeAppErrorLog } from '../errorLog'
-import { getErrorMessage, getExeName, isValidExePath } from '../utils'
+import { getErrorMessage, getExeName, isValidExePath, normalizePathForComparison } from '../utils'
 
 import type { KillAttemptResult } from './types'
 
 // Generous for a healthy system (the query usually returns in tens of ms) but
 // bounded so a wedged WMI service cannot hang a kill request forever.
 const WMI_LOOKUP_TIMEOUT_MS = 3000
+
+/**
+ * Separate, larger budget for the name-scoped enumeration (#674), which is a
+ * different shape of query from the path-scoped lookup above: that one filters
+ * in WQL and returns a handful of PIDs, this one enumerates every process on the
+ * machine and filters in PowerShell.
+ *
+ * MEASURED, not guessed. On a warm developer machine the whole call is 300 to
+ * 400ms, but on a cold CI runner (windows-latest) the FIRST call took over 3s
+ * and blew the shared budget, while the two after it took 2523ms and 629ms. The
+ * cost is dominated by starting `powershell.exe`, not by the enumeration.
+ *
+ * Getting this wrong is not a slow path, it is a silently disabled feature: a
+ * timeout resolves `succeeded: false`, every candidate becomes `unknown`, and
+ * `unknown` folds to the pre-#674 answer. The first call after a boot is exactly
+ * when PowerShell is coldest and when a user is most likely to hit Launch.
+ */
+const PROCESS_ENUMERATION_TIMEOUT_MS = 10000
 
 function isAccessDeniedMessage(message: string) {
   return /(access is denied|permission denied|administrator|elevat)/i.test(message)
@@ -426,4 +444,322 @@ export async function killProcessByImageName(
     // failure is ambiguous, so it does not count as evidence.
     targetConfirmed: result.success || result.accessDenied === true
   }
+}
+
+/**
+ * One running instance of an image name, as seen by a name-scoped WMI
+ * enumeration.
+ *
+ * `executablePath` is null when WMI would not disclose it. That is not an
+ * error: a non-elevated SimLauncher cannot read the path of a process running
+ * at higher integrity, and on a real machine that is roughly 38% of all
+ * processes. Callers must treat null as "unknown", never as "different".
+ */
+export interface NamedProcessInstance {
+  /** Lowercased image name, matching how `tasklist` results are keyed. */
+  name: string
+  processId: number
+  executablePath: string | null
+  /**
+   * Windows session. 0 is the non-interactive services session, which cannot
+   * host a companion the user launched, so it is the one case where an
+   * unreadable path is still decidable (#674).
+   */
+  sessionId: number
+}
+
+/**
+ * Enumerate every running process whose image name is one of `processNames`.
+ *
+ * The discriminator `tasklist` cannot provide. `tasklist` returns image names
+ * with no path, so every "is my configured app already running?" answer built
+ * on it is name-only, and a same-named process from an unrelated path passes
+ * for the configured one (#674).
+ *
+ * ONE spawn regardless of how many names are asked about. Every caller batches
+ * its whole question into a single call, because the cost here is dominated by
+ * starting PowerShell, not by the enumeration.
+ *
+ * Names are injected as JSON through the environment rather than interpolated
+ * into the script, for the same reason `findProcessIdsByExecutablePath`
+ * documents: WQL string-literal escaping is ambiguous and version-dependent,
+ * and an exe name containing a quote would otherwise break the lookup or worse
+ * (#531). Comparison happens in the host language, which handles any character.
+ */
+export function findProcessesByName(processNames: string[]): Promise<{
+  instances: NamedProcessInstance[]
+  succeeded: boolean
+}> {
+  return new Promise((resolve) => {
+    const wanted = Array.from(new Set(processNames.map((name) => name.toLowerCase()))).filter(
+      (name) => name.length > 0
+    )
+
+    if (wanted.length === 0) {
+      // Not a failure: nothing was asked. `succeeded: true` matters, because
+      // callers treat a failed read as "no observation" and fall back to the
+      // conservative branch.
+      resolve({ instances: [], succeeded: true })
+      return
+    }
+
+    // ⚠️ Windows PowerShell 5.1 ONLY. `powershell.exe` is always 5.1 on Windows;
+    // `pwsh` is a separate binary this never invokes. Anything added after 5.1
+    // is unavailable here and fails at RUNTIME with a parameter-binding error,
+    // which this function reports as `succeeded: false` — so every candidate
+    // resolves `unknown` and the whole discriminator silently degrades to the
+    // name-only behaviour it exists to replace. `-AsArray` (PowerShell 6+) did
+    // exactly that and no mocked test could see it (CodeRabbit on #845).
+    // `tests/main/processEnumeration.win.test.ts` runs this against the real
+    // host so the next such parameter fails loudly instead.
+    const script = [
+      '$names = $env:SIMLAUNCHER_TARGET_PROCESS_NAMES | ConvertFrom-Json',
+      // Force an array: a single-element JSON array deserializes to a scalar,
+      // and `-contains` against a scalar silently matches nothing.
+      '$wanted = @($names) | ForEach-Object { $_.ToLowerInvariant() }',
+      // `@(...)` around the whole pipeline, then `-InputObject`, is the 5.1 way
+      // to guarantee a JSON array. Piping into ConvertTo-Json unrolls a
+      // single-element collection back to a scalar; `-InputObject` takes the
+      // array as one value. Verified on 5.1 for zero, one and many matches.
+      // `-Property` narrows what CIM marshals back. Worth ~15% on a fast
+      // machine and more where it matters, since the four fields below are all
+      // this needs and the default pulls every property of every process.
+      '$found = @(Get-CimInstance Win32_Process -Property Name,ProcessId,ExecutablePath,SessionId |',
+      '  Where-Object { $wanted -contains $_.Name.ToLowerInvariant() } |',
+      '  Select-Object @{N="name";E={$_.Name.ToLowerInvariant()}},',
+      '    @{N="processId";E={[int]$_.ProcessId}},',
+      '    @{N="executablePath";E={$_.ExecutablePath}},',
+      '    @{N="sessionId";E={[int]$_.SessionId}})',
+      // Explicit depth: 5.1 defaults to 2 and truncates deeper structures
+      // SILENTLY. These records are flat, so 3 is slack rather than a fix, but
+      // the silence is what makes leaving it implicit a bad trade.
+      'ConvertTo-Json -Compress -Depth 3 -InputObject $found'
+    ].join('\n')
+
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      {
+        windowsHide: true,
+        timeout: PROCESS_ENUMERATION_TIMEOUT_MS,
+        env: {
+          ...process.env,
+          SIMLAUNCHER_TARGET_PROCESS_NAMES: JSON.stringify(wanted)
+        }
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          // Written to the on-disk log, not just the console, and that is the
+          // point rather than symmetry with the sibling lookup. A failure here
+          // is INVISIBLE in the product: every candidate resolves `unknown`,
+          // which folds to the conservative answer, so the app behaves exactly
+          // as it did before #674 and reports nothing wrong. The log entry is
+          // the only way anyone finds out the discriminator stopped working.
+          //
+          // `killed` is how execFile reports that IT terminated the child, which
+          // with a plain timeout option means the deadline elapsed.
+          const detail = error.killed
+            ? `Process enumeration timed out after ${PROCESS_ENUMERATION_TIMEOUT_MS / 1000} seconds.`
+            : stderr.trim() || getErrorMessage(error)
+          console.error('Failed to enumerate processes by name:', detail)
+          writeAppErrorLog('kill', `Failed to enumerate processes by name: ${detail}`)
+          resolve({ instances: [], succeeded: false })
+          return
+        }
+
+        try {
+          const parsed: unknown = JSON.parse(stdout.trim() || '[]')
+          // A bare object is accepted as a one-element result. The script above
+          // guarantees an array, so this is not reachable through it — the point
+          // is that the parse must not depend on that guarantee holding. When it
+          // stopped holding, the failure was not a parse error but a silent
+          // total no-op, which is the worst shape a failure here can take.
+          const records = Array.isArray(parsed)
+            ? parsed
+            : typeof parsed === 'object' && parsed !== null
+              ? [parsed]
+              : null
+          if (!records) {
+            resolve({ instances: [], succeeded: false })
+            return
+          }
+          const instances = records.flatMap((entry): NamedProcessInstance[] => {
+            if (typeof entry !== 'object' || entry === null) return []
+            const record = entry as Record<string, unknown>
+            if (typeof record.name !== 'string' || typeof record.processId !== 'number') return []
+            return [
+              {
+                name: record.name.toLowerCase(),
+                processId: record.processId,
+                executablePath:
+                  typeof record.executablePath === 'string' && record.executablePath.length > 0
+                    ? record.executablePath
+                    : null,
+                // -1, not 0. Session 0 is the one value that DISMISSES an
+                // instance with an unreadable path, so defaulting a malformed
+                // record to it would silently license a double launch. A
+                // sentinel that is not a real session leaves such a record
+                // undecidable, which is the direction a missing field should
+                // fail in.
+                sessionId: typeof record.sessionId === 'number' ? record.sessionId : -1
+              }
+            ]
+          })
+          resolve({ instances, succeeded: true })
+        } catch (err) {
+          console.error('Failed to parse the process enumeration:', getErrorMessage(err))
+          resolve({ instances: [], succeeded: false })
+        }
+      }
+    )
+  })
+}
+
+/**
+ * What a name-scoped enumeration can say about ONE configured path.
+ *
+ * `unknown` is not a failure and must not be collapsed into either answer. It
+ * means the evidence is genuinely ambiguous, and every caller answers it the
+ * way it answered before #674, which is what keeps #390 (a genuinely elevated
+ * process invisible to a non-elevated SimLauncher) reporting as elevated.
+ */
+export type ConfiguredPathState = 'running' | 'not-running' | 'unknown'
+
+/**
+ * Decide whether the exe at `configuredPath` is among `instances`.
+ *
+ * The single decision rule behind every "is this app already running?" answer
+ * in the app (#674). It lives here, next to the enumeration that feeds it,
+ * because five call sites depend on agreeing, and agreeing by having copied the
+ * same expression is how they stop agreeing.
+ *
+ * Order matters and each step earns its place:
+ *
+ *   1. A path match wins outright, INCLUDING in session 0. Session is only ever
+ *      used to dismiss an instance, never to deny one that positively matches:
+ *      a service-hosted copy of the configured exe is still the configured exe.
+ *   2. An instance is dismissible when it has a readable path that differs, or
+ *      when it is in session 0. Session 0 is the non-interactive services
+ *      session, so it cannot be the companion the user launched, and that is
+ *      what makes an UNREADABLE path decidable there. On a real machine that
+ *      resolves 170 of the 187 processes whose path WMI will not disclose.
+ *   3. Anything left is an instance with an unreadable path in an interactive
+ *      session. That is exactly the shape of #390, so the answer is `unknown`
+ *      and the caller keeps its pre-#674 behaviour.
+ */
+export function resolveConfiguredPathState(
+  instances: NamedProcessInstance[],
+  configuredPath: string
+): ConfiguredPathState {
+  const targetName = getExeName(configuredPath)
+  const relevant = instances.filter((instance) => instance.name === targetName)
+
+  if (relevant.length === 0) {
+    return 'not-running'
+  }
+
+  const target = normalizePathForComparison(configuredPath)
+  if (
+    relevant.some(
+      (instance) =>
+        instance.executablePath && normalizePathForComparison(instance.executablePath) === target
+    )
+  ) {
+    return 'running'
+  }
+
+  const undecidable = relevant.filter(
+    (instance) => !instance.executablePath && instance.sessionId !== 0
+  )
+
+  return undecidable.length === 0 ? 'not-running' : 'unknown'
+}
+
+/**
+ * Decide, for a batch of configured paths, which of them are actually running.
+ *
+ * The shared entry point for every "is my configured app already running?"
+ * question in the app (#674). Callers pass the `tasklist` name set they already
+ * hold plus the paths they care about, and get one verdict per path.
+ *
+ * **It only pays when there is something to pay for.** A path whose image name
+ * is absent from `processNames` cannot be running, so it is answered for free
+ * and never reaches the enumeration. A launch with no collisions at all — the
+ * overwhelmingly common case — therefore costs ZERO extra spawns, and the cost
+ * of the rest is proportional to collisions, not to how often this is called.
+ *
+ * When the enumeration fails, its candidates come back `unknown` rather than
+ * either answer. That is the same no-observation discipline the running-apps
+ * poll documents for pruning (#399): a failed read is not evidence of absence,
+ * and inventing one here would silently un-skip apps mid-launch.
+ */
+export async function resolveConfiguredPathStates(
+  processNames: Set<string>,
+  configuredPaths: string[]
+): Promise<Map<string, ConfiguredPathState>> {
+  const states = new Map<string, ConfiguredPathState>()
+  const candidates: string[] = []
+
+  configuredPaths.forEach((configuredPath) => {
+    if (processNames.has(getExeName(configuredPath))) {
+      candidates.push(configuredPath)
+    } else {
+      states.set(configuredPath, 'not-running')
+    }
+  })
+
+  if (candidates.length === 0) {
+    return states
+  }
+
+  const { instances, succeeded } = await findProcessesByName(
+    candidates.map((configuredPath) => getExeName(configuredPath))
+  )
+
+  candidates.forEach((configuredPath) => {
+    states.set(
+      configuredPath,
+      succeeded ? resolveConfiguredPathState(instances, configuredPath) : 'unknown'
+    )
+  })
+
+  return states
+}
+
+/**
+ * Whether a configured path should be treated as running, folding `unknown`
+ * into "yes".
+ *
+ * The conservative reading, and the one every caller wants when it is deciding
+ * whether to SKIP something: an app that might be running must not be started
+ * twice, and #390's elevated-invisible process must keep being treated as
+ * present. Callers that need to distinguish ambiguity from certainty read the
+ * state directly instead.
+ */
+export function isConfiguredPathRunning(state: ConfiguredPathState | undefined): boolean {
+  return state !== 'not-running'
+}
+
+/**
+ * Which of `configuredPaths` count as running, folding `unknown` into "yes".
+ *
+ * The form every caller outside this module wants, and the reason it exists
+ * here rather than as an expression repeated at each of them: "is this configured
+ * app running?" is asked at five places that decide launches, kills, and the
+ * counts a confirmation dialog shows the user, and those answers have to agree.
+ * Before #674 they agreed because they all called the same name-only helper.
+ * They must keep agreeing now that the answer is harder to compute.
+ *
+ * Keyed by the path STRING as supplied, not a normalized form, so a caller can
+ * look its own entries back up without restating the normalization rule.
+ */
+export async function resolveRunningConfiguredPaths(
+  processNames: Set<string>,
+  configuredPaths: string[]
+): Promise<Set<string>> {
+  const states = await resolveConfiguredPathStates(processNames, configuredPaths)
+
+  return new Set(
+    configuredPaths.filter((configuredPath) => isConfiguredPathRunning(states.get(configuredPath)))
+  )
 }

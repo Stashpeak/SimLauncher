@@ -4,7 +4,7 @@ import fs from 'fs'
 
 import { getHighestReferencedCustomSlot } from '../../shared/domain/slots'
 import { migrateProfilesToNamedSets } from '../migrator'
-import { isStoredProfileSet } from '../profiles'
+import { getProfileSwitchLeavingKeys, isStoredProfileSet } from '../profiles'
 import {
   CONFIG_FILE_NAME,
   KNOWN_GAME_KEYS,
@@ -16,19 +16,27 @@ import {
   getDroppedSettingsEntries,
   getSupportedConfigValues,
   getStoredBoolean,
+  getStoredStringRecord,
   getStoredZoomFactor,
   requireSafeZoomFactor,
   sanitizeImportedConfig,
   sanitizeSettingsPatch,
   store
 } from '../store'
-import { isRecord } from '../utils'
+import { isRecord, isValidExePath } from '../utils'
+import {
+  abortActiveLaunches,
+  cancelPendingElevatedHandoffs,
+  drainStrandedConsentPrompts,
+  publishRunningApps
+} from '../processes'
 import { applyTrayVisibility } from '../tray'
 import { applyRuntimeConfigSettings, getMainWindow, sendToRenderer } from '../window'
 
 // Channel name is a contract shared with preload/index.ts. Renaming either
 // side without updating the other silently breaks store-change notifications.
 const STORE_CONFIG_CHANGED_CHANNEL = 'store-config-changed'
+const STRANDED_CONSENT_PROMPTS_CHANNEL = 'stranded-consent-prompts'
 // 24 bytes → 32-character base64url token, which is unguessable for a
 // single-session nonce and fits comfortably in an IPC argument.
 const IMPORT_PREVIEW_TOKEN_BYTES = 24
@@ -74,6 +82,31 @@ interface StoreConfigChangePayload {
 
 function notifyStoreConfigChanged(payload: StoreConfigChangePayload) {
   sendToRenderer(STORE_CONFIG_CHANGED_CHANNEL, payload)
+}
+
+/**
+ * Tells the user about consent prompts left on screen by elevated handoffs a
+ * config change cancelled (#809).
+ *
+ * PUSHED, not returned, and this is the one place in the codebase where that
+ * distinction is load-bearing. The kill results hand their count back to the
+ * caller because the caller ASKED to close things and is therefore certain to
+ * read the answer. Nobody asks a config write to cancel anything: it is a side
+ * effect of the active profile changing, so returning the count means every
+ * caller has to know a contract it has no reason to suspect. Four exist for
+ * `save-profile` alone (the row dropdown, the editor's save, its delete, its
+ * discard-pending restore) and an earlier version returned the count to all four
+ * while only the dropdown read it. Because the drain is destructive, the three
+ * that ignored it did not merely stay quiet, they consumed the count and
+ * destroyed it, leaving the user with a dead consent dialog and no explanation
+ * anywhere (Codex P2 on #782). A push cannot be dropped by forgetting to read
+ * it, and the sentence is written to stand on its own, so it needs no host toast
+ * to be understood.
+ */
+function reportStrandedConsentPrompts(count: number): void {
+  if (count > 0) {
+    sendToRenderer(STRANDED_CONSENT_PROMPTS_CHANNEL, count)
+  }
 }
 
 function clearPendingImport() {
@@ -219,12 +252,46 @@ function applySanitizedConfig(supportedConfig: Record<string, unknown>) {
     migrateProfilesToNamedSets()
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
+    // An import is the user replacing their configuration wholesale, so any
+    // pending elevated handoff is now waiting on a profile that may not exist
+    // any more. Approving its prompt afterwards would start a companion from
+    // the config they just replaced (Codex P2 on #842).
+    //
+    // Cancels ALL of them rather than diffing, and that is a different rule from
+    // `save-profile` on purpose. There the outgoing and incoming profiles are
+    // two known sets, so a leaving diff is well defined; here every game's
+    // profiles changed at once and there is no "the profile being left". Same
+    // reasoning that keeps `killLaunchedApps` game-wide for "close everything".
+    // The cost of over-cancelling is a prompt the user must re-trigger; the cost
+    // of under-cancelling is an app from a config that no longer exists.
+    //
+    // Deliberately AFTER the writes and the migrate: anything above throwing
+    // restores the old config, and cancelling a prompt that is still valid for
+    // the restored config would be the worse mistake.
+    //
+    // Both mechanisms, for the same reason the switch needs both: a handoff
+    // younger than the grace window is not in the registry yet, so the abort
+    // signal is the only thing that reaches it. Unscoped here, unlike the
+    // switch's per-game abort, because an import replaces every game's config at
+    // once (CodeRabbit on #842).
+    abortActiveLaunches()
+    cancelPendingElevatedHandoffs()
+    reportStrandedConsentPrompts(drainStrandedConsentPrompts())
     notifyStoreConfigChanged({ reason: 'import-config', keys: ['*'] })
+    // An import replaces every profile, so it can turn tracking on or off for
+    // any of them (#591). Both branches publish, because a rollback restores a
+    // different set of profiles than the one that was briefly live.
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
   } catch (err) {
     store.clear()
     setStoreEntries(snapshot)
     applyRuntimeConfigSettings()
     applyTrayVisibility(store.get('showTrayIcon') !== false)
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
     throw err
   }
 }
@@ -445,6 +512,32 @@ export function registerConfigHandlers(): void {
     return getPersistedSettings()
   })
 
+  /**
+   * Game keys whose configured executable no longer resolves on disk (#794).
+   *
+   * Deliberately a one-shot query rather than a field on the running-apps
+   * payload. The filesystem cost is not the reason — the scan already calls
+   * `isValidExePath` on every configured game path each tick, in
+   * `getProfileTrackablePaths` and again over `gamePaths` — the CADENCE is.
+   * Anything the renderer draws has to join `normalizeRunningAppsSnapshot`, so
+   * a path that flaps (a share reconnecting, a drive spinning up, an antivirus
+   * holding the file) would publish and re-render the row every 2 seconds. This
+   * is config state answered on a settled cadence, on a channel that carries
+   * process state.
+   *
+   * A blank or unset path answers "not missing". Those rows are not rendered at
+   * all (GameList keeps only games with a truthy `gamePaths` entry), and saying
+   * a game is missing because it was never configured is wrong in the one
+   * direction that sends the user looking for a file that was never there.
+   */
+  ipcMain.handle('get-missing-game-paths', () => {
+    const gamePaths = getStoredStringRecord('gamePaths')
+
+    return Object.entries(gamePaths)
+      .filter(([, gamePath]) => gamePath.trim().length > 0 && !isValidExePath(gamePath))
+      .map(([gameKey]) => gameKey)
+  })
+
   ipcMain.handle('save-settings', (_event, patch: unknown) => {
     if (!isRecord(patch)) return { settings: getPersistedSettings(), dropped: [] }
 
@@ -494,11 +587,85 @@ export function registerConfigHandlers(): void {
     if (typeof gameKey !== 'string' || !gameKey) return
     const sanitizedProfileSet = getSanitizedProfileSet(gameKey, profileSet)
     if (!sanitizedProfileSet) return
+    // Computed BEFORE the write, because the outgoing side only exists on disk
+    // until the next line replaces it.
+    const leavingKeys = getProfileSwitchLeavingKeys(gameKey, sanitizedProfileSet)
     const storedProfiles = store.get('profiles')
     const profiles = isRecord(storedProfiles) ? storedProfiles : {}
     profiles[gameKey] = sanitizedProfileSet
     store.set('profiles', profiles)
+    // A pending UAC handoff has never started, so it is in no tasklist snapshot,
+    // so `switch-profile-apps` can never see it: it decides what to stop from
+    // exactly such a snapshot and only calls the kill path when that set is
+    // non-empty. Worse, the renderer often does not reach that handler at all,
+    // because it gates the whole IPC on a diff the handoff contributes zero to
+    // (GameRow) and falls through to this save instead. Approving the old prompt
+    // afterwards then starts a companion belonging to a profile the user has
+    // already left (#782).
+    //
+    // Here rather than in the switch handler because THIS is the call the
+    // renderer cannot skip: every switch saves, whether or not it stops
+    // anything. Scoped to the leaving paths, so a plain profile edit (same
+    // `activeProfileId`) cancels nothing, and a switch never touches a prompt
+    // for an app the incoming profile also enables.
+    let strandedConsentPrompts = 0
+    if (leavingKeys.length > 0) {
+      // A pending handoff is reachable through TWO different mechanisms
+      // depending on its age, and this switch has to use both.
+      //
+      // Before the grace window expires the handoff is not in the registry at
+      // all: `spawn.ts` only registers it when the timer fires, so until then
+      // the abort signal is the only handle on it. That is the whole first ten
+      // seconds of an unanswered prompt, and it is reachable because the row
+      // only blocks switching when `isRunning && isLaunchBlocked` and an app
+      // parked on a UAC prompt has started nothing, so `isRunning` is false
+      // (Codex P1 on #842).
+      //
+      // `killProfileApps` already aborts on the way in, which is why the switch
+      // was covered whenever it stopped something. This save is exactly the path
+      // that skips the kill: a handoff contributes nothing to the tasklist diff
+      // the renderer gates that IPC on. Without this line the save was doing
+      // half of what the kill does, and the surviving half of #782 was simply
+      // the faster user.
+      //
+      // Whole-game rather than per-entry, matching `killProfileApps`: the
+      // sequence in flight belongs to the profile being left, and the user has
+      // left it.
+      abortActiveLaunches(gameKey)
+      // And the post-grace half, from the registry. Matched by SLOT KEY.
+      //
+      // Two slots can point at one exe (#357), so a path match would cancel the
+      // retained slot's prompt alongside the leaving one, which is the
+      // over-cancel this fix exists to remove (CodeRabbit on #782). Including
+      // the path as well then breaks it the other way: the registry stores the
+      // path as launched, while `leavingEntries` is rebuilt from the CURRENT
+      // `appPaths`, so changing that slot's exe in Settings while its prompt is
+      // unanswered makes the two disagree and the handoff outlives the switch
+      // (Codex P2 on #842). The slot key is the only part that does not move.
+      const leaving = new Set(leavingKeys)
+      cancelPendingElevatedHandoffs(
+        gameKey,
+        (handoff) => handoff.appKey !== undefined && leaving.has(handoff.appKey)
+      )
+      // Killing the host does NOT remove the consent prompt, so every cancel
+      // above leaves a dialog on screen that now does nothing (#809). The count
+      // is a single module-level scalar drained by whoever reports it, so this
+      // has to drain it here for two separate reasons: the user is never told
+      // otherwise, AND the stale count would be picked up by the next kill,
+      // including one for a completely different game, which would attribute
+      // the warning to an operation that stranded nothing (Codex P2 on #782).
+      strandedConsentPrompts = drainStrandedConsentPrompts()
+    }
+    reportStrandedConsentPrompts(strandedConsentPrompts)
     notifyStoreConfigChanged({ reason: 'save-profile', keys: ['profiles'] })
+    // Republish so a tracking toggle takes effect on save rather than on the
+    // next poll (#591). Saving a profile changes which processes are surfaced
+    // at all, and the tasklist scan is the only other thing that would notice,
+    // up to 12s later on the SLOW cadence. This is also what finally gives the
+    // 'config' change reason a producer; it has been declared and unused.
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
   })
 
   ipcMain.handle('save-profiles', (_event, profiles: unknown) => {
@@ -506,6 +673,11 @@ export function registerConfigHandlers(): void {
     if (!sanitizedProfiles) return
     store.set('profiles', sanitizedProfiles)
     notifyStoreConfigChanged({ reason: 'save-profiles', keys: ['profiles'] })
+    // Same reason as save-profile above: this is the bulk write, so it can
+    // change tracking for several games at once.
+    publishRunningApps('config').catch((err) => {
+      console.error('Failed to publish running apps after a profile change:', err)
+    })
   })
 
   ipcMain.handle('get-migration-flags', () => {

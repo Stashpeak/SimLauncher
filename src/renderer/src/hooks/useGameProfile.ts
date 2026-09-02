@@ -103,8 +103,11 @@ export function useGameProfile(
     [readProfileSet]
   )
 
+  // Returns nothing on purpose. A switch that strands a consent prompt reports
+  // it by a push from main straight to the toast layer, so no caller of this
+  // has to know that cancelling a UAC handoff is even possible (#782).
   const saveProfileSet = useCallback(
-    async (nextProfileSet: GameProfileSet) => {
+    async (nextProfileSet: GameProfileSet): Promise<void> => {
       await saveProfile(gameKey, nextProfileSet)
       applyProfileSet(nextProfileSet)
     },

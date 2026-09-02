@@ -4,6 +4,7 @@ import { getSettings, onStoreConfigChanged } from '../lib/store'
 import { getFileIcon } from '../lib/electron'
 import { useLaunchBlock } from '../hooks/useLaunchBlock'
 import { useRunningApps } from '../hooks/useRunningApps'
+import { useMissingGamePaths } from '../hooks/useMissingGamePaths'
 import { findGameExeRunningApp, isGameExeRunning } from '../lib/runningGame'
 import { getPathComparisonKey } from '../../../shared/path'
 import { useNotify } from './Notify'
@@ -54,7 +55,9 @@ export function GameList({
   const [gamePaths, setGamePaths] = useState<Record<string, string>>({})
   const [focusActiveTitle, setFocusActiveTitle] = useState(true)
   const { announce } = useNotify()
-  const { runningApps, runningStatus, refreshRunningState } = useRunningApps(configuredGames)
+  const { runningApps, runningStatus, closableGameKeys, refreshRunningState } =
+    useRunningApps(configuredGames)
+  const { missingGamePathKeys, refreshMissingGamePaths } = useMissingGamePaths()
   // Announce "X is now running" once a launch cooldown settles — but only if the
   // game EXECUTABLE itself is detected running by then. The cooldown also runs on
   // partial failures (a companion app started while the game exe failed), and
@@ -73,6 +76,17 @@ export function GameList({
       if (name) announce(`${name} is now running`)
     }
   })
+  // A launch attempt is the one moment the user is already being told a path is
+  // broken, via the skipped-entries toast, so the badge has to agree with that
+  // toast right then rather than at the next window focus. It also catches the
+  // repair: a launch that finally works clears a badge left from before (#794).
+  const handleLaunchEndAndRecheckPaths = useCallback(
+    (gameKey: string, cooldownMs?: number, options?: { primaryLaunch?: boolean }) => {
+      handleLaunchEnd(gameKey, cooldownMs, options)
+      void refreshMissingGamePaths()
+    },
+    [handleLaunchEnd, refreshMissingGamePaths]
+  )
   const { gameIcons } = useGamesSettings()
   const { appPaths: utilityAppPaths, utilityIcons } = useAppsSettings()
 
@@ -315,11 +329,13 @@ export function GameList({
               gameStatusDismissPath={gameRunningApp?.path}
               gameStatusTracked={gameRunningApp?.tracked}
               runningAppIcons={runningAppIcons}
+              hasClosableApps={closableGameKeys.has(game.key)}
+              gamePathMissing={missingGamePathKeys.has(game.key)}
               isDimmed={hasActiveTitle && !runningStatus[game.key]}
               isLaunching={launchingGameKey === game.key}
               isLaunchBlocked={launchingGameKey !== null}
               onLaunchStart={handleLaunchStart}
-              onLaunchEnd={handleLaunchEnd}
+              onLaunchEnd={handleLaunchEndAndRecheckPaths}
               onRunningStateRefresh={refreshRunningState}
               onToggleEditor={() =>
                 setActiveEditorKey((current) => (current === game.key ? null : game.key))

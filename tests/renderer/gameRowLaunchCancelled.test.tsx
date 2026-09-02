@@ -7,7 +7,7 @@
  *
  * Pinned here: when `launchProfile`/`relaunchMissingProfile` resolves with
  * `cancelled: true`, the row's toast must read as a neutral cancellation
- * ("Launch cancelled — closed apps instead.") — never the success toast, and
+ * ("Launch cancelled: closed apps instead.") — never the success toast, and
  * never the plain error toast either.
  */
 
@@ -60,6 +60,11 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
     getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
+    // `Promise<void>`, matching the hook. It briefly returned a stranded-prompt
+    // count for GameRow to read, until that count moved to a push from main so
+    // that no caller could drop it by not reading it (#782). Resolving to
+    // anything else here would let a future GameRow start depending on a value
+    // the real hook does not produce.
     saveProfileSet: vi.fn().mockResolvedValue(undefined)
   })
 }))
@@ -152,13 +157,13 @@ describe('GameRow launch cancellation toast (#670)', () => {
       success: false,
       cancelled: true,
       launchedCount: 1,
-      message: 'Launch cancelled — closed apps instead.'
+      message: 'Launch cancelled: closed apps instead.'
     })
 
     await renderRow()
     await clickPlayButton()
 
-    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
+    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled: closed apps instead.', 'warn')
     // Arg-shape-independent: a cancellation must not produce ANY success
     // toast, however many args the call carries.
     expect(notifyMock.mock.calls.some((call) => call[1] === 'success')).toBe(false)
@@ -174,7 +179,7 @@ describe('GameRow launch cancellation toast (#670)', () => {
     await renderRow()
     await clickPlayButton()
 
-    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled — closed apps instead.', 'warn')
+    expect(notifyMock).toHaveBeenCalledWith('Launch cancelled: closed apps instead.', 'warn')
   })
 
   // cancelled must be checked before the plain failure branch — otherwise a
@@ -184,7 +189,7 @@ describe('GameRow launch cancellation toast (#670)', () => {
       success: false,
       cancelled: true,
       launchedCount: 1,
-      message: 'Launch cancelled — closed apps instead.'
+      message: 'Launch cancelled: closed apps instead.'
     })
 
     await renderRow()

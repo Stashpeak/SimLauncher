@@ -1,5 +1,5 @@
 export { AUTO_CLOSE_GRACE_MS, initAutoClose } from './processes/autoClose'
-export { hasClosableLaunchedApps, killLaunchedApps, killProfileApps } from './processes/kill'
+export { killLaunchedApps, killProfileApps } from './processes/kill'
 export {
   getRunningApps,
   publishRunningApps,
@@ -7,13 +7,17 @@ export {
   unsubscribeRunningApps
 } from './processes/running'
 export {
+  abortActiveLaunches,
+  cancelPendingElevatedHandoffs,
   dismissAppIcon,
+  drainStrandedConsentPrompts,
   hasOtherActiveLaunchControllers,
   registerActiveLaunch,
   unregisterActiveLaunch
 } from './processes/state'
-export { launchProfileApps, isAnyLaunchActive, isRunningExePath } from './processes/spawn'
+export { launchProfileApps, isAnyLaunchActive } from './processes/spawn'
 export { readRunningProcessNames, invalidateProcessNameCache } from './processes/tasklist'
+export { resolveRunningConfiguredPaths } from './processes/win32KillUtils'
 export type { RunningAppsChangedPayload, RunningAppsChangeReason } from './processes/running'
 export type {
   KillFailure,

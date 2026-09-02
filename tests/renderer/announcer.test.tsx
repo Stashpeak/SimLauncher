@@ -25,12 +25,13 @@ beforeAll(() => {
   Element.prototype.animate = vi.fn(() => ({ cancel: vi.fn() })) as never
 })
 
-// Notify subscribes to two main-process push channels at mount. Stub the
+// Notify subscribes to three main-process push channels at mount. Stub the
 // electron bridge so the module doesn't touch window.electronAPI (undefined in
 // jsdom); each subscriber just returns its no-op unsubscribe.
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   onAppLaunchError: () => () => {},
-  onProcessNameMismatchWarning: () => () => {}
+  onProcessNameMismatchWarning: () => () => {},
+  onStrandedConsentPrompts: () => () => {}
 }))
 
 import { NotifyProvider, useNotify } from '../../src/renderer/src/components/Notify'

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import {
   createProfileId,
   getActiveGameProfile,
@@ -20,6 +28,7 @@ import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
 import { GameIcon } from './GameIcon'
+import { GamePathMissingBadge } from './GamePathMissingBadge'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
 import { GameRowActions } from './GameRowActions'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -39,6 +48,8 @@ export function GameRow({
   gameStatusDismissPath,
   gameStatusTracked,
   runningAppIcons,
+  hasClosableApps,
+  gamePathMissing,
   gameIconUrl,
   isDimmed,
   isLaunching,
@@ -69,6 +80,17 @@ export function GameRow({
   gameStatusDismissPath?: string
   gameStatusTracked?: boolean
   runningAppIcons: RunningAppIcon[]
+  // This profile has companion apps a Close Apps click would close, even though
+  // none of them are in `runningAppIcons` (#673). Chronic and ambient rather
+  // than session state: after a restart, after the process-tracking toggle is
+  // cycled, or whenever a companion autostarts with Windows.
+  hasClosableApps: boolean
+  // This game's configured executable no longer resolves on disk (#794). Config
+  // state, not process state, which is why it is a badge next to the title and
+  // never the status dot: the dot's vocabulary is entirely about processes
+  // (green = running, amber ring = cannot tell, #737), so any dot on an idle row
+  // would read as "something is running".
+  gamePathMissing: boolean
   gameIconUrl?: string
   isDimmed: boolean
   isLaunching: boolean
@@ -126,6 +148,34 @@ export function GameRow({
   useEffect(() => {
     isActiveRef.current = isActive
   }, [isActive])
+
+  // Same mirror, same reason, for the launch lock (Codex on #864). The switch
+  // gate below is checked before an IPC round-trip and acted on after it, and a
+  // captured prop cannot see a launch that started in between: the re-render
+  // does not reach an async closure that already read it.
+  //
+  // LAYOUT effect, not a passive one, and that is load-bearing (CodeRabbit on
+  // #864). A passive effect is scheduled and can run after paint, while the
+  // continuation this mirror exists for resumes on a microtask as soon as its
+  // IPC settles. The passive version could therefore lose the race and hand the
+  // continuation the answer from before the launch, which is the whole bug.
+  // Committing synchronously puts the update in the same task as the click that
+  // started the launch, ahead of any continuation that resumes after it.
+  const isLaunchBlockedRef = useRef(isLaunchBlocked)
+  // How many times the lock has been HANDED BACK. This is the identity a plain
+  // "did I start it" boolean could not provide (Codex twice on #864): the lock
+  // can be released and taken again by someone else while a switch is suspended,
+  // and both times that happened the boolean went on claiming a lock that was no
+  // longer the one it started. Counting releases lets a suspended continuation
+  // ask the only question that matters, which is whether the lock it is looking
+  // at is still the one it took, rather than merely whether it ever took one.
+  const lockReleaseCountRef = useRef(0)
+  useLayoutEffect(() => {
+    if (isLaunchBlockedRef.current && !isLaunchBlocked) {
+      lockReleaseCountRef.current += 1
+    }
+    isLaunchBlockedRef.current = isLaunchBlocked
+  }, [isLaunchBlocked])
 
   // Removes a still-pending "+" profile and restores the previously-active one.
   // Clears the ref up front so the two callers (the close effect and the
@@ -235,12 +285,37 @@ export function GameRow({
       return
     }
 
-    if (isRunning && isLaunchBlocked) {
+    // Not gated on `isRunning`, and that is the fix rather than an oversight
+    // (#843). A row whose game is not running skips the diff branch below and
+    // falls through to a bare `saveProfileSet`, and that save is what calls
+    // `abortActiveLaunches(gameKey)` in main. Since `activeLaunchControllers`
+    // holds one controller per GAME, the abort takes down the entire in-flight
+    // sequence rather than the leaving entry, and the game never starts.
+    //
+    // Main already refuses this: `switch-profile-apps` bails on
+    // `isAnyLaunchActive() || hasOtherActiveLaunchControllers()`. Only the
+    // empty-diff fall-through was more permissive than the path beside it, so
+    // this makes the two agree rather than inventing a rule.
+    //
+    // `isLaunchBlocked` covers the whole dangerous span by construction: the
+    // abort only reaches controllers still in the registry, every one is
+    // unregistered in a `finally` when its sequence returns, and every launch
+    // initiator sets this flag synchronously before dispatching its IPC.
+    //
+    // This is the entry gate and it reads the PROP, which is correct here
+    // because nothing has suspended yet. It is not the last word: everything
+    // after this point is separated from the save by at least one await, so the
+    // authoritative check is the one immediately before `saveProfileSet`, which
+    // reads the ref. Refusing early is still worth it, because it spares an IPC
+    // round-trip and, on a running row, avoids raising a switch confirmation
+    // for something that is going to be refused anyway.
+    if (isLaunchBlocked) {
       notify('Launch is settling. Try again shortly.', 'warn')
       return
     }
 
     const latestProfileSet = await getProfileRuntimeConfig()
+
     const currentProfile = getActiveGameProfile(latestProfileSet)
     const nextProfile = latestProfileSet.profiles.find((profile) => profile.id === nextProfileId)
 
@@ -255,6 +330,22 @@ export function GameRow({
 
     try {
       let switchWarning: string | undefined
+      // Whether the lock the check below sees is OUR OWN (Codex P1 on #864).
+      // A confirmed running switch calls `onLaunchStart` itself and then holds
+      // the lock through the post-launch cooldown, so a check that rejects any
+      // active lock would reject this switch's own, leave the apps moved and
+      // never save the profile. It is also the case that needs the check least:
+      // running `switchProfileApps` means main's guard already ran, and it
+      // refuses a competing launch for as long as our controller is registered.
+      //
+      // Paired with the release count, because ownership has to expire. It ends
+      // the moment the lock goes back, whether that is immediately (a switch
+      // that started nothing gets a zero cooldown) or ten seconds later (the
+      // cooldown running out while the refresh below is still pending). In both
+      // cases the next lock belongs to someone else, and both were shipped as
+      // bugs before this counter existed.
+      let ownsTheLaunchLock = false
+      let lockReleaseCountWhenTaken = 0
 
       if (isRunning) {
         const diff = await getProfileSwitchDiff(game.key, currentProfile.id, nextProfile.id)
@@ -275,6 +366,8 @@ export function GameRow({
           }
 
           onLaunchStart(game.key)
+          ownsTheLaunchLock = true
+          lockReleaseCountWhenTaken = lockReleaseCountRef.current
           const result = await switchProfileApps(game.key, currentProfile.id, nextProfile.id)
           // The kill phase runs before the switch can cancel or fail, so a
           // stranded consent prompt has to be reported on every one of the
@@ -286,7 +379,7 @@ export function GameRow({
           // an error; the switch is not saved and can simply be retried.
           if (result.cancelled) {
             notify(
-              [result.message || 'Launch cancelled — closed apps instead.', strandedNote]
+              [result.message || 'Launch cancelled: closed apps instead.', strandedNote]
                 .filter(Boolean)
                 .join(' '),
               'warn'
@@ -334,6 +427,37 @@ export function GameRow({
         await onRunningStateRefresh()
       }
 
+      // The authoritative check, in the same block as the action it guards.
+      //
+      // The earlier one is not enough, and the reason is the empty-diff case
+      // (Codex on #864): on a running row `getProfileSwitchDiff` and
+      // `onRunningStateRefresh` are both awaited above, and when the diff is
+      // empty `switchProfileApps` is skipped entirely, so main's own launch
+      // guard never runs. A launch starting during either await would otherwise
+      // arrive here unopposed and be aborted by the save.
+      //
+      // Bailing here can leave a switch half applied, when `switchProfileApps`
+      // succeeded and a launch began during the refresh that follows it. That
+      // is the better of the two outcomes and is chosen deliberately: an
+      // unsaved profile whose apps have moved is visible, recoverable by
+      // retrying the switch, and the same shape this function already produces
+      // on a failed switch. The alternative is killing a launch the user just
+      // started, which is #843 itself and gives them a game that never starts
+      // with nothing on screen to explain it.
+      const stillHoldsItsOwnLock =
+        ownsTheLaunchLock && lockReleaseCountRef.current === lockReleaseCountWhenTaken
+
+      if (!stillHoldsItsOwnLock && isLaunchBlockedRef.current) {
+        notify('Launch is settling. Try again shortly.', 'warn')
+        return
+      }
+
+      // The save is what cancels a pending UAC handoff the outgoing profile
+      // leaves behind, and it is reached on every switch, including the ones
+      // that skip `switchProfileApps` entirely because the diff is empty
+      // (#782). Nothing is read back from it: main pushes that note to the toast
+      // layer itself, because three other callers change the active profile the
+      // same way and none of them would think to look for it here.
       await saveProfileSet(updatedProfileSet)
       // Switching to another profile keeps the pending "+" profile on purpose,
       // so it's no longer a discard-on-close candidate (#453).
@@ -414,7 +538,7 @@ export function GameRow({
       // everything (#670) — this is neither a success nor a failure, so it
       // gets its own toast rather than falling into either branch below.
       if (result.cancelled) {
-        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        notify(result.message || 'Launch cancelled: closed apps instead.', 'warn')
         return
       }
 
@@ -504,7 +628,7 @@ export function GameRow({
 
       // Same cancellation case as handleLaunch above (#670).
       if (result.cancelled) {
-        notify(result.message || 'Launch cancelled — closed apps instead.', 'warn')
+        notify(result.message || 'Launch cancelled: closed apps instead.', 'warn')
         return
       }
 
@@ -574,6 +698,13 @@ export function GameRow({
   }
 
   const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
+  // Deliberately NOT folded into `canKill`, which swaps the primary button
+  // rather than adding to it (`GameRowActions.tsx`): folding it in would hand a
+  // user with an autostarted SimHub a red Close Apps primary and NO way to
+  // launch the game from the row, removing the one in-app recovery this bug
+  // leaves intact. Close Apps displaces Launch only when there is visible
+  // session state; ambient closable state gets a secondary control instead.
+  const canCloseLeftovers = !canKill && hasClosableApps && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
   const activeProfile = getActiveGameProfile(profileSet)
 
@@ -590,7 +721,18 @@ export function GameRow({
       <div
         className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? 'isolation-auto! z-20' : 'z-0'}`}
       >
-        <div className="flex items-center gap-5">
+        {/* The `min-w-0` chain down to the title is what lets a long name give
+            way instead of pushing the row wider than it is. A flex item refuses
+            to shrink below its content by default, and this row is fixed height
+            with the action group on the other side of a `justify-between`, so
+            without it an overflowing title walks into Launch and Close Apps.
+            That is worst at the 175% zoom preset, where an 800px window is only
+            about 457 CSS pixels wide, and worst of all on a broken-path row:
+            the badge is `shrink-0` by design, so the name is what has to yield,
+            and the controls it would otherwise displace are the recovery path
+            (Codex on PR #858). Truncated text stays whole in the accessibility
+            tree, and the row's own `aria-label` carries the full name anyway. */}
+        <div className="flex min-w-0 items-center gap-5">
           <GameIcon
             game={game}
             isRunning={isGameRunning}
@@ -599,9 +741,10 @@ export function GameRow({
             dismissPath={gameStatusDismissPath}
             tracked={gameStatusTracked}
           />
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <h2 className="game-title font-normal text-(--text-primary)">{game.name}</h2>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="game-title truncate font-normal text-(--text-primary)">{game.name}</h2>
+              {gamePathMissing && <GamePathMissingBadge />}
             </div>
             <RunningAppsStrip
               runningAppIcons={runningAppIcons}
@@ -615,6 +758,7 @@ export function GameRow({
           isLaunching={isLaunching}
           isLaunchBlocked={isLaunchBlocked}
           canKill={canKill}
+          canCloseLeftovers={canCloseLeftovers}
           canRelaunch={canRelaunch}
           onPrimary={handleLaunch}
           onKill={handleKill}

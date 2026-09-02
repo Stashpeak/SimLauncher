@@ -26,6 +26,12 @@ function exeNameOf(appPath: string) {
   return appPath.split(/[\\/]/).pop()!.toLowerCase()
 }
 
+// Configured paths whose IMAGE NAME is in the tasklist but which nothing is
+// actually running at — the #674 collision shape, and the only thing this suite
+// can say about paths at all (see the mock below). Empty by default, so every
+// test that predates #674 keeps exactly its old meaning.
+const collidingPaths = new Set<string>()
+
 // Flushes the microtask queue via a macrotask boundary (setImmediate always
 // runs after every microtask already queued). Used to let an IPC handler
 // advance past a real `await` (e.g. readRunningProcessNames' default resolved
@@ -48,8 +54,19 @@ async function loadLaunchHandlers() {
     killProfileApps,
     killLaunchedApps: vi.fn(),
     readRunningProcessNames,
-    isRunningExePath: (processNames: Set<string>, appPath: string) =>
-      processNames.has(exeNameOf(appPath)),
+    // A COPY of the name-only half of the real helper, plus `collidingPaths` as
+    // the path dimension. This suite mocks the module that owns the #674
+    // decision rule, so it cannot pin the rule — that is
+    // configuredPathState.test.ts, against the real implementation. What it does
+    // pin is that ipc/launch.ts asks the PATH-verified question at all, which is
+    // observable here precisely because `collidingPaths` can disagree with the
+    // name set.
+    resolveRunningConfiguredPaths: async (processNames: Set<string>, appPaths: string[]) =>
+      new Set(
+        appPaths.filter(
+          (appPath) => processNames.has(exeNameOf(appPath)) && !collidingPaths.has(appPath)
+        )
+      ),
     getRunningApps: vi.fn(async () => []),
     subscribeRunningApps: vi.fn(),
     unsubscribeRunningApps: vi.fn(),
@@ -67,7 +84,14 @@ async function loadLaunchHandlers() {
   vi.doMock('../../src/main/processes', () => processesMock)
   vi.doMock('../../src/main/processes.ts', () => processesMock)
 
-  const profilesMock = { buildActiveProfileLaunchEntries, buildNamedProfileLaunchEntries }
+  // Copy of the real identity function, because this suite mocks the module that
+  // owns it. The rule is pinned against the real one in profiles.test.ts.
+  const profilesMock = {
+    buildActiveProfileLaunchEntries,
+    buildNamedProfileLaunchEntries,
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`
+  }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
   vi.doMock('../../src/main/profiles', () => profilesMock)
@@ -96,6 +120,7 @@ const event = { sender }
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  collidingPaths.clear()
   isAnyLaunchActive.mockReturnValue(false)
   readRunningProcessNames.mockResolvedValue({ processNames: new Set(), succeeded: true })
   launchProfileApps.mockResolvedValue({ success: true, launchedCount: 1, skippedCount: 0 })
@@ -430,8 +455,11 @@ test('switch-profile-apps never kills or relaunches the game executable', async 
   expect(registerActiveLaunch).toHaveBeenCalledWith('iracing')
   const controller = registerActiveLaunch.mock.results[0]!.value as AbortController
   expect(controller.signal.aborted).toBe(false)
-  expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA.path], { except: controller })
-  expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [utilB], { controller })
+  expect(killProfileApps).toHaveBeenCalledWith('iracing', [utilA], { except: controller })
+  expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [utilB], {
+    controller,
+    profileId: 'p-to'
+  })
   expect(unregisterActiveLaunch).toHaveBeenCalledWith('iracing', controller)
 })
 
@@ -533,7 +561,7 @@ test('switch-profile-apps with nothing to start reports cancelled when Close App
   await expect(resultPromise).resolves.toMatchObject({
     success: false,
     cancelled: true,
-    message: 'Launch cancelled — closed apps instead.',
+    message: 'Launch cancelled: closed apps instead.',
     launchedCount: 0
   })
   expect(launchProfileApps).not.toHaveBeenCalled()
@@ -561,6 +589,80 @@ test('switch-profile-apps unregisters its controller when nothing new needs to s
   expect(unregisterActiveLaunch).toHaveBeenCalledWith('iracing', controller)
 })
 
+// #674 wiring. Every "is this running?" question in this file used to be
+// answered from the tasklist NAME set alone, so an unrelated process sharing an
+// exe name spoke for a configured app. `collidingPaths` is how this suite says
+// "the name is in the tasklist, but nothing of ours is at that path"; the
+// decision rule that produces that answer for real is pinned in
+// configuredPathState.test.ts.
+test('relaunch-missing-profile relaunches an app a same-named stranger masked (#674)', async () => {
+  const handlers = await loadLaunchHandlers()
+  buildActiveProfileLaunchEntries.mockReturnValue([GAME_ENTRY, SIMHUB_ENTRY])
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'simhub.exe']),
+    succeeded: true
+  })
+  collidingPaths.add(SIMHUB_ENTRY.path)
+
+  await handlers['relaunch-missing-profile'](event, 'iracing')
+
+  const controller = registerActiveLaunch.mock.results[0]!.value as AbortController
+  expect(launchProfileApps).toHaveBeenCalledWith(sender, 'iracing', [SIMHUB_ENTRY], { controller })
+})
+
+// The counts here are read out to the user in a confirmation dialog, so a
+// name-only answer promised to stop an app nothing was running and to start
+// nothing when a start was needed (#674).
+test('get-profile-switch-diff does not count a stranger as a running slot (#674)', async () => {
+  const handlers = await loadLaunchHandlers()
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  const utilB = { key: 'customapp2', path: 'C:/Tools/UtilB.exe' }
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY, utilB]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe', 'utilb.exe']),
+    succeeded: true
+  })
+  // Neither utility is really running: something else on the system holds both
+  // names. So the outgoing slot needs no stop, and the incoming one needs a
+  // start that the name-only reading refused it.
+  collidingPaths.add(utilA.path)
+  collidingPaths.add(utilB.path)
+
+  await expect(
+    handlers['get-profile-switch-diff'](event, 'iracing', 'p-from', 'p-to')
+  ).resolves.toEqual({ toStopCount: 0, toStartCount: 1 })
+})
+
+// And the action has to agree with the dialog that announced it, or the user
+// confirms one thing and gets another.
+test('switch-profile-apps does not kill a slot only a stranger was running (#674)', async () => {
+  const handlers = await loadLaunchHandlers()
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  const utilB = { key: 'customapp2', path: 'C:/Tools/UtilB.exe' }
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY, utilB]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe', 'utilb.exe']),
+    succeeded: true
+  })
+  collidingPaths.add(utilA.path)
+  collidingPaths.add(utilB.path)
+
+  await handlers['switch-profile-apps'](event, 'iracing', 'p-from', 'p-to')
+
+  expect(killProfileApps).not.toHaveBeenCalled()
+  const controller = registerActiveLaunch.mock.results[0]!.value as AbortController
+  expect(launchProfileApps).toHaveBeenCalledWith(
+    sender,
+    'iracing',
+    [utilB],
+    expect.objectContaining({ controller })
+  )
+})
+
 test('get-profile-switch-diff counts stops/starts without the game executable', async () => {
   const handlers = await loadLaunchHandlers()
   const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
@@ -576,4 +678,32 @@ test('get-profile-switch-diff counts stops/starts without the game executable', 
   await expect(
     handlers['get-profile-switch-diff'](event, 'iracing', 'p-from', 'p-to')
   ).resolves.toEqual({ toStopCount: 1, toStartCount: 1 })
+})
+
+// #591: the renderer launches the incoming profile's apps and only saves the
+// new activeProfileId afterwards, so anything resolving "the active profile"
+// from the store mid-switch gets the OUTGOING one. Whether the launched apps
+// are tracked at all now depends on that, so the handler has to name the
+// profile it is actually launching.
+test('switch-profile-apps tells the launch which profile it is launching (#591)', async () => {
+  const handlers = await loadLaunchHandlers()
+  const utilA = { key: 'customapp1', path: 'C:/Tools/UtilA.exe' }
+  const utilB = { key: 'customapp2', path: 'C:/Tools/UtilB.exe' }
+  buildNamedProfileLaunchEntries.mockImplementation((_gameKey: string, profileId: string) =>
+    profileId === 'p-from' ? [GAME_ENTRY, utilA] : [GAME_ENTRY, utilB]
+  )
+  readRunningProcessNames.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'utila.exe']),
+    succeeded: true
+  })
+  launchProfileApps.mockResolvedValue({ success: true, launchedCount: 1, skippedCount: 0 })
+
+  await handlers['switch-profile-apps'](event, 'iracing', 'p-from', 'p-to')
+
+  expect(launchProfileApps).toHaveBeenCalledWith(
+    sender,
+    'iracing',
+    [utilB],
+    expect.objectContaining({ profileId: 'p-to' })
+  )
 })

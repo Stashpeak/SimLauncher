@@ -22,6 +22,15 @@ export type RunningAppsChangeReason = 'initial' | 'launch' | 'exit' | 'kill' | '
 
 export interface RunningAppsChangedPayload {
   apps: RunningApp[]
+  /**
+   * Game keys whose companions a Close Apps click would currently close (#673).
+   * Absent and empty are NOT the same answer: `[]` is a measured "nothing to
+   * close" and clears the state, while omitting the field means the caller had
+   * no way to ask (the one-shot `getRunningApps` returns apps only) and leaves
+   * the last pushed answer standing. A consumer that folds the two together
+   * hides the control on every refresh that follows a kill.
+   */
+  closableGameKeys?: string[]
   reason: RunningAppsChangeReason
   updatedAt: number
 }
@@ -29,12 +38,19 @@ export interface RunningAppsChangedPayload {
 export interface UseRunningAppsResult {
   runningApps: RunningApp[]
   runningStatus: Record<string, boolean>
+  /** Game keys a Close Apps click would currently act on (#673). */
+  closableGameKeys: Set<string>
   refreshRunningState: (isMounted?: () => boolean) => Promise<void>
 }
+
+const EMPTY_CLOSABLE_GAME_KEYS: ReadonlySet<string> = new Set<string>()
 
 export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
   const [runningApps, setRunningApps] = useState<RunningApp[]>([])
   const [runningStatus, setRunningStatus] = useState<Record<string, boolean>>({})
+  const [closableGameKeys, setClosableGameKeys] = useState<Set<string>>(
+    EMPTY_CLOSABLE_GAME_KEYS as Set<string>
+  )
 
   const clearRunningState = useCallback(() => {
     // Referential stability: avoid triggering downstream re-renders when
@@ -42,10 +58,11 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
     // React bails out of the update.
     setRunningApps((current) => (current.length === 0 ? current : []))
     setRunningStatus((current) => (Object.keys(current).length === 0 ? current : {}))
+    setClosableGameKeys((current) => (current.size === 0 ? current : new Set<string>()))
   }, [])
 
   const applyRunningApps = useCallback(
-    (apps: RunningApp[] | undefined) => {
+    (apps: RunningApp[] | undefined, closable?: string[]) => {
       const nextApps: RunningApp[] = apps || []
       setRunningApps(nextApps)
 
@@ -54,6 +71,22 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
         newStatus[game.key] = nextApps.some((app) => app.gameKey === game.key)
       })
       setRunningStatus(newStatus)
+      // Absent rather than empty means the caller could not ask: the one-shot
+      // `getRunningApps` fallback below returns apps only. Leave the last
+      // pushed answer alone rather than overwriting it with a guess, because
+      // `refreshRunningState` runs right after every kill and profile switch —
+      // and `killLaunchedApps` has already published the authoritative set by
+      // then, so clearing here would throw away the newer truth and hide the
+      // control until the next scan tick, even when targets are still closable.
+      if (closable !== undefined) {
+        setClosableGameKeys((current) => {
+          const next = new Set(closable)
+          if (next.size === current.size && [...next].every((key) => current.has(key))) {
+            return current
+          }
+          return next
+        })
+      }
     },
     [configuredGames]
   )
@@ -94,7 +127,7 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
     // any events emitted synchronously during subscription are not lost.
     const unsubscribe = onRunningAppsChanged((payload: RunningAppsChangedPayload) => {
       if (isMounted()) {
-        applyRunningApps(payload.apps)
+        applyRunningApps(payload.apps, payload.closableGameKeys)
       }
     })
 
@@ -105,7 +138,7 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
     subscribeRunningApps()
       .then((payload: RunningAppsChangedPayload) => {
         if (isMounted()) {
-          applyRunningApps(payload.apps)
+          applyRunningApps(payload.apps, payload.closableGameKeys)
         }
       })
       .catch((err: unknown) => {
@@ -122,5 +155,5 @@ export function useRunningApps(configuredGames: Game[]): UseRunningAppsResult {
     }
   }, [applyRunningApps, clearRunningState, configuredGames.length, refreshRunningState])
 
-  return { runningApps, runningStatus, refreshRunningState }
+  return { runningApps, runningStatus, closableGameKeys, refreshRunningState }
 }

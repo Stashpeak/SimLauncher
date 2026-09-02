@@ -30,11 +30,19 @@ const STATUS_DOT_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-running) shadow-
 // the amber already used for the strip's elevated-companion triangle, and it
 // aliases `--warning-text`, so it follows the theme without a per-theme entry
 // (same as --status-danger / --status-success).
-// `status-dot-unknown` carries no styling of its own outside Windows High
-// Contrast, where App.css turns it into a hollow ring: that mode strips every
-// status dot to one system colour, which would otherwise make this state
-// indistinguishable from a running one (Codex P2 on #829).
-const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} status-dot-unknown bg-(--status-warning) shadow-[0_0_8px_var(--status-warning)]`
+// `status-dot-unknown` is styled in App.css as a hollow RING, in every theme
+// rather than only in Windows High Contrast. Colour alone fails WCAG 1.4.1, and
+// green-versus-amber is the pair red-green colour vision deficiency compresses
+// hardest, so at 12px the hue difference was a discrimination task rather than a
+// glance. High Contrast keeps its own copy of the rule because the OS overrides
+// author colours there (Codex P2 on #829); this is the general case (#737).
+//
+// The fill deliberately does NOT appear here: App.css owns it, because the ring
+// needs `background: var(--bg-gradient)` (the page showing through) and a
+// Tailwind `bg-(…)` utility would set `background-color`, which cannot take a
+// gradient — and would race the CSS rule on equal specificity. The amber is
+// still carried, by the border and the glow.
+const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} status-dot-unknown shadow-[0_0_8px_var(--status-warning)]`
 
 export function GameIcon({
   game,

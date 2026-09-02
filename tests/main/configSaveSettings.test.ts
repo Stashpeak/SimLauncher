@@ -50,7 +50,31 @@ async function loadConfigModule() {
     }
   }))
   vi.doMock('../../src/main/migrator', () => ({ migrateProfilesToNamedSets: vi.fn() }))
-  vi.doMock('../../src/main/profiles', () => ({ isStoredProfileSet: vi.fn() }))
+  // The real discriminator rather than a stub: the profile handlers below bail
+  // early when it says no, so a stub would make their tests pass vacuously.
+  vi.doMock('../../src/main/profiles', () => ({
+    isStoredProfileSet: (value: unknown) =>
+      !!value &&
+      typeof value === 'object' &&
+      Array.isArray((value as { profiles?: unknown }).profiles),
+    // Stubbed to "nothing is leaving": these tests are about the store write and
+    // the republish, not about #782's cancellation. The real behaviour is pinned
+    // in configProfileSwitchHandoff.test.ts against the real module.
+    getProfileSwitchLeavingKeys: vi.fn(() => []),
+    getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+      `${entry.key} ${entry.path.toLowerCase()}`
+  }))
+  // All four exports `ipc/config.ts` imports, not just the two these tests
+  // happen to reach. `getProfileSwitchLeavingKeys` is stubbed to `[]` here, so
+  // the cancellation block never runs and the gap is currently invisible; the
+  // day it does run, a missing export is a TypeError rather than a readable
+  // assertion failure (CodeRabbit on #842).
+  vi.doMock('../../src/main/processes', () => ({
+    publishRunningApps: vi.fn(async () => {}),
+    abortActiveLaunches: vi.fn(),
+    cancelPendingElevatedHandoffs: vi.fn(),
+    drainStrandedConsentPrompts: vi.fn(() => 0)
+  }))
   vi.doMock('../../src/main/tray', () => ({ applyTrayVisibility: vi.fn() }))
   vi.doMock('../../src/main/window', () => ({
     applyRuntimeConfigSettings: vi.fn(),
@@ -195,4 +219,136 @@ test('save-settings survives a throwing login-item write, and says so (#676)', a
     expect.objectContaining({ message: 'registry write refused' })
   )
   consoleError.mockRestore()
+})
+
+/**
+ * #591: a tracking toggle is a `profiles` write, and nothing else in the main
+ * process notices one until the next tasklist scan, which is up to 12s away on
+ * the SLOW cadence. Every path that writes `profiles` therefore republishes.
+ *
+ * Asserted rather than assumed: the call is fire-and-forget, so dropping it
+ * changes nothing observable in the handler's return value.
+ */
+async function invokeProfileHandler(channel: string, ...args: unknown[]): Promise<void> {
+  const { __ipcHandlers } = await import('electron')
+  await (__ipcHandlers as Record<string, MockIpcHandler>)[channel]({}, ...args)
+}
+
+test('save-profile republishes the running apps (#591)', async () => {
+  await loadConfigModule()
+  const { publishRunningApps } = await import('../../src/main/processes')
+
+  await invokeProfileHandler('save-profile', 'ac', {
+    activeProfileId: 'default',
+    profiles: [{ id: 'default', name: 'Default', trackingEnabled: false }]
+  })
+
+  expect(publishRunningApps).toHaveBeenCalledWith('config')
+})
+
+// The bulk write, which the Settings screen uses and which can change tracking
+// for several games at once. Separate test: wiring only the single-profile
+// handler passes the one above and fails this.
+test('save-profiles republishes the running apps too (#591)', async () => {
+  await loadConfigModule()
+  const { publishRunningApps } = await import('../../src/main/processes')
+
+  await invokeProfileHandler('save-profiles', {
+    ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+  })
+
+  expect(publishRunningApps).toHaveBeenCalledWith('config')
+})
+
+// A save that the sanitizer rejects writes nothing, so it must not claim the
+// running list changed either.
+test('a rejected profile save does not republish (#591)', async () => {
+  await loadConfigModule()
+  const { publishRunningApps } = await import('../../src/main/processes')
+
+  await invokeProfileHandler('save-profile', '', { activeProfileId: 'default', profiles: [] })
+
+  expect(publishRunningApps).not.toHaveBeenCalled()
+})
+
+// #859: Windows 11's own "Copy as path" wraps the value in double quotes, so the
+// shortest route from an exe in Explorer to a configured app was also the one
+// route that failed. The closing quote defeated the `.exe` test, and the user
+// was told `not-an-exe` while looking at a path plainly ending in `.exe`.
+test('a path pasted from Windows "Copy as path" is accepted, unquoted (#859)', async () => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({
+    appPaths: { simhub: '"D:/Apps/SimHub/SimHub.exe"' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([])
+  // Stored WITHOUT the quotes. Accepting the value but persisting it verbatim
+  // would only move the failure to spawn time, further from its cause.
+  expect(result.settings.appPaths).toEqual({ simhub: 'D:/Apps/SimHub/SimHub.exe' })
+})
+
+test('the same holds for a game path (#859)', async () => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: '"A:/Games/iRacing/ui/iRacingUI.exe"' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([])
+  expect(result.settings.gamePaths).toEqual({ iracing: 'A:/Games/iRacing/ui/iRacingUI.exe' })
+})
+
+// Only a MATCHED outer pair is a quoting artifact. Anything else means the value
+// is not a path Windows could open, and half-stripping it would store something
+// that fails later and further from the cause.
+test.each([
+  ['leading quote only', '"D:/Apps/SimHub/SimHub.exe'],
+  ['trailing quote only', 'D:/Apps/SimHub/SimHub.exe"'],
+  ['single quotes', "'D:/Apps/SimHub/SimHub.exe'"],
+  ['embedded quote', 'D:/Apps/Sim"Hub/SimHub.exe']
+])('an unmatched or embedded quote is still rejected: %s (#859)', async (_label, badPath) => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({ appPaths: { simhub: badPath }, customSlots: 1 })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({})
+})
+
+// The length cap has to run on the form that gets STORED. Validating the raw
+// string and persisting the stripped one is how a cap gets beaten by two
+// characters, and the reason must stay 'too-long' rather than drifting to
+// 'not-an-exe' now that a stray quote is a rejection too.
+test('the length cap is measured after the quotes come off (#859)', async () => {
+  await loadConfigModule()
+
+  const overlong = `C:/${'x'.repeat(301)}.exe`
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: `"${overlong}"` },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'gamePaths', key: 'iracing', reason: 'too-long' }])
+  expect(result.settings.gamePaths).toEqual({})
+})
+
+// The same bug from the other side: a path that fits only once the quotes are
+// off must not be rejected for their two characters.
+test('a path that fits only when unquoted is accepted (#859)', async () => {
+  await loadConfigModule()
+
+  const exact = `C:/${'x'.repeat(300 - 'C:/.exe'.length)}.exe`
+  expect(exact.length).toBe(300)
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: `"${exact}"` },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([])
+  expect(result.settings.gamePaths).toEqual({ iracing: exact })
 })

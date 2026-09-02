@@ -102,7 +102,7 @@ export function formatConfigRecoveryNotice(notice: ConfigRecoveryNotice): {
     return {
       type: 'warn',
       message:
-        "Your saved settings couldn't be opened — they may be locked by another program. SimLauncher started with defaults for now; your saved settings are untouched and will load next time."
+        "Your saved settings couldn't be opened. They may be locked by another program. SimLauncher started with defaults for now; your saved settings are untouched and will load next time."
     }
   }
 
@@ -418,21 +418,56 @@ function getSafeThemeMode(value: unknown) {
   return typeof value === 'string' && THEME_MODES.has(value) ? value : undefined
 }
 
+/**
+ * The form of a pasted path we are willing to store: trimmed, and with ONE
+ * matched pair of surrounding double quotes removed (#859).
+ *
+ * Windows 11's own "Copy as path" wraps the clipboard value in quotes, which
+ * makes the most natural way to get a path out of Explorer the one way that
+ * used to fail: the closing quote defeated the `.exe` test, so the entry was
+ * dropped and reported as `not-an-exe` while the user was looking at a path
+ * that plainly ended in `.exe`.
+ *
+ * Only a MATCHED pair is removed, and only the outermost one. A quote is not a
+ * legal character in a Windows path, so a matched pair can only be a quoting
+ * artifact, while anything left over means the value is not a path at all and
+ * the caller rejects it below rather than silently storing half-stripped
+ * nonsense.
+ */
+function normalizeConfiguredExePath(value: string): string {
+  const trimmed = value.trim()
+
+  return trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1).trim()
+    : trimmed
+}
+
 // Single source of truth for WHY an exe path is rejected, so the sanitizer's
 // accept/reject decision and the dropped-entry reason reported to the renderer
 // (#669) can never disagree. Returns null when the path is acceptable.
+//
+// Every check runs against the NORMALIZED form, because that is what would be
+// stored. Validating the raw string and persisting the stripped one (or the
+// reverse) is how a length cap gets bypassed by two characters.
 function getExePathRejectReason(value: unknown): DroppedSettingsReason | null {
   if (typeof value !== 'string') {
     return 'not-an-exe'
   }
 
-  const trimmedPath = value.trim()
+  const normalizedPath = normalizeConfiguredExePath(value)
 
-  if (trimmedPath.length === 0 || !/\.exe$/i.test(trimmedPath)) {
+  // A surviving quote means it was unmatched, or nested, or embedded. None of
+  // those is a path Windows can open, so this is a rejection rather than
+  // something to strip harder.
+  if (normalizedPath.includes('"')) {
     return 'not-an-exe'
   }
 
-  if (trimmedPath.length > MAX_IMPORT_PATH_LENGTH) {
+  if (normalizedPath.length === 0 || !/\.exe$/i.test(normalizedPath)) {
+    return 'not-an-exe'
+  }
+
+  if (normalizedPath.length > MAX_IMPORT_PATH_LENGTH) {
     return 'too-long'
   }
 
@@ -444,7 +479,7 @@ function isImportableExePath(value: unknown): value is string {
 }
 
 function getImportableExePath(value: unknown) {
-  return isImportableExePath(value) ? value.trim() : undefined
+  return isImportableExePath(value) ? normalizeConfiguredExePath(value) : undefined
 }
 
 function getUtilityKeySet(customSlots: number) {

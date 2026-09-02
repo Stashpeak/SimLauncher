@@ -18,6 +18,10 @@ const getSettingsMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/store', () => ({
   getSettings: (...args: unknown[]) => getSettingsMock(...args),
+  // Reached through useMissingGamePaths on mount (#794). Omitting it left the
+  // hook calling `undefined()`, which its own catch swallowed into a console
+  // error — the test still passed, on a component that was half-broken.
+  getMissingGamePaths: vi.fn().mockResolvedValue([]),
   onStoreConfigChanged: () => () => {}
 }))
 
@@ -25,7 +29,8 @@ vi.mock('../../src/renderer/src/lib/electron', () => ({
   getFileIcon: (...args: unknown[]) => getFileIconMock(...args),
   // Consumed by NotifyProvider; inert subscriptions are enough here.
   onAppLaunchError: () => () => {},
-  onProcessNameMismatchWarning: () => () => {}
+  onProcessNameMismatchWarning: () => () => {},
+  onStrandedConsentPrompts: () => () => {}
 }))
 
 // GameList only consumes { runningApps, runningStatus, refreshRunningState }.
@@ -110,6 +115,7 @@ async function renderGameList(
   runningAppsMock.mockReturnValue({
     runningApps,
     runningStatus: { iracing: runningApps.length > 0 },
+    closableGameKeys: new Set<string>(),
     refreshRunningState: vi.fn().mockResolvedValue(undefined)
   })
 

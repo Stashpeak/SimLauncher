@@ -3,18 +3,36 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const readRunningProcessNamesMock = vi.fn()
 const pruneUnclosedProcessesMock = vi.fn()
+// Configured paths whose image NAME is in the tasklist but which nothing is
+// actually running at — the #674 collision shape. Empty by default, so every
+// test written before it keeps its exact meaning.
+const collidingPaths = new Set<string>()
 
 async function loadRunningModule(opts?: {
   profiles?: Record<string, unknown>
   gamePaths?: Record<string, string>
   appPaths?: Record<string, string>
   trackablePaths?: string[]
+  // Paths that must answer "gone" to existsSync while everything else answers
+  // "there" — a game whose exe moved, was uninstalled, or sits on a share that
+  // dropped (#794). Compared case-insensitively, like every other path in this
+  // codebase.
+  missingPaths?: string[]
 }) {
   // utils.isValidExePath checks fs.existsSync; pretend every .exe exists so
   // adoption (which validates the configured game path) works host-independently.
+  // Slashes as well as case: `isValidExePath` runs `path.resolve` BEFORE
+  // `existsSync`, so what reaches this mock is backslashed regardless of how the
+  // fixture wrote it. Comparing raw strings made the missing set silently never
+  // match, which is a green test asserting nothing.
+  const normalizeForFixture = (value: string) => value.toLowerCase().replace(/\//g, '\\')
+  const missing = new Set((opts?.missingPaths ?? []).map(normalizeForFixture))
   vi.doMock('fs', () => ({
     default: {
-      existsSync: (filePath: unknown) => typeof filePath === 'string' && /\.exe$/i.test(filePath)
+      existsSync: (filePath: unknown) =>
+        typeof filePath === 'string' &&
+        /\.exe$/i.test(filePath) &&
+        !missing.has(normalizeForFixture(filePath))
     }
   }))
 
@@ -27,8 +45,45 @@ async function loadRunningModule(opts?: {
   vi.doMock('../../src/main/processes/tasklist', () => tasklistMock)
   vi.doMock('../../src/main/processes/tasklist.ts', () => tasklistMock)
 
+  // A COPY of the name-only fold, plus `collidingPaths` as the path dimension.
+  // This suite mocks the module that owns the #674 decision rule, so it cannot
+  // pin the rule (configuredPathState.test.ts does, against the real one) and it
+  // cannot pin the pid cache (processes.test.ts does, with a real snapshot).
+  // What it pins is that the POLL asks a path question at all, which is
+  // observable precisely because `collidingPaths` can disagree with the names.
+  const pathResolutionMock = {
+    resolveTrackedPathStates: async (
+      snapshot: { processNames: Set<string>; succeeded: boolean },
+      configuredPaths: string[]
+    ) => {
+      const states = new Map<string, string>()
+      if (!snapshot.succeeded) {
+        return states
+      }
+      configuredPaths.forEach((configuredPath) => {
+        const name = configuredPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''
+        states.set(
+          configuredPath,
+          snapshot.processNames.has(name) && !collidingPaths.has(configuredPath)
+            ? 'running'
+            : 'not-running'
+        )
+      })
+      return states
+    },
+    isTrackedPathRunning: (state?: string) => state !== 'not-running'
+  }
+  vi.doMock('./pathResolution', () => pathResolutionMock)
+  vi.doMock('/src/main/processes/pathResolution.ts', () => pathResolutionMock)
+  vi.doMock('../../src/main/processes/pathResolution', () => pathResolutionMock)
+  vi.doMock('../../src/main/processes/pathResolution.ts', () => pathResolutionMock)
+
   const killMock = {
     pruneUnclosedProcesses: pruneUnclosedProcessesMock,
+    // Its own behaviour is covered in processes.test.ts against the real store;
+    // here it only has to not be undefined, since every assertion in this file
+    // is about the app list or the poll cadence.
+    getClosableLaunchedAppGameKeys: vi.fn(() => new Set<string>()),
     killLaunchedApps: vi.fn(),
     killProfileApps: vi.fn()
   }
@@ -39,8 +94,24 @@ async function loadRunningModule(opts?: {
 
   const profilesMock = {
     getStoredProfiles: vi.fn(() => opts?.profiles ?? {}),
-    getActiveStoredProfile: vi.fn(() => undefined),
-    getProfileTrackablePaths: vi.fn(() => opts?.trackablePaths ?? [])
+    // Resolves the fixture rather than returning undefined (CodeRabbit on
+    // #834). It used to answer `undefined` unconditionally, which fed
+    // `undefined` into the predicate below and therefore always said "tracked":
+    // a `trackingEnabled: false` fixture could not reach the pruning or
+    // tracked-app paths at all, and the comment under it claimed otherwise.
+    // Nothing was silently passing yet, because no test had tried, but the next
+    // one to write that fixture would have got a green test for no reason.
+    getActiveStoredProfile: vi.fn((entry: unknown) => {
+      const set = entry as { activeProfileId?: string; profiles?: { id: string }[] } | undefined
+      return Array.isArray(set?.profiles)
+        ? set.profiles.find((profile) => profile.id === set.activeProfileId) || set.profiles[0]
+        : entry
+    }),
+    getProfileTrackablePaths: vi.fn(() => opts?.trackablePaths ?? []),
+    // The real predicate rather than a stub, so a tracking-off fixture is
+    // decided by the rule under test and not by the mock.
+    isProcessTrackingEnabled: (profile: { trackingEnabled?: boolean } | undefined) =>
+      profile?.trackingEnabled !== false
   }
   vi.doMock('../profiles', () => profilesMock)
   vi.doMock('/src/main/profiles.ts', () => profilesMock)
@@ -82,6 +153,7 @@ function seedState(stateModule: Awaited<ReturnType<typeof loadRunningModule>>['s
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  collidingPaths.clear()
 })
 
 afterEach(() => {
@@ -113,7 +185,9 @@ test('a successful tasklist read prunes processes that are gone', async () => {
   const apps = await runningModule.getRunningApps()
 
   expect(stateModule.runningProcesses.size).toBe(0)
-  expect(pruneUnclosedProcessesMock).toHaveBeenCalledWith(new Set())
+  // A predicate now, not the name set (#674). The wiring is what this asserts;
+  // what the predicate ANSWERS is pinned where the real resolver runs.
+  expect(pruneUnclosedProcessesMock).toHaveBeenCalledWith(expect.any(Function))
   expect(apps).toEqual([])
 })
 
@@ -346,4 +420,182 @@ test('an externally-adopted app keeps the poll fast even with empty maps (#672)'
   const reads = readRunningProcessNamesMock.mock.calls.length
   await vi.advanceTimersByTimeAsync(FAST_SCAN_MS)
   expect(readRunningProcessNamesMock.mock.calls.length).toBeGreaterThan(reads)
+})
+
+// Proves the loader's profile resolution actually reaches the rule, rather than
+// leaving the fixture inert (CodeRabbit on #834). Before the mock was fixed
+// both of these passed identically, because every profile read as tracked.
+//
+// Paired deliberately: the tracking-off half alone would pass on a harness that
+// surfaces nothing for any reason, so the tracking-on half is what proves the
+// fixture is otherwise live.
+test('tracking off prunes the seeded state and surfaces nothing (#591)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      iracing: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  seedState(stateModule)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe', 'crewchief.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(stateModule.runningProcesses.size).toBe(0)
+  expect(stateModule.unclosedProcesses.size).toBe(0)
+  expect(apps).toEqual([])
+})
+
+test('the same fixture with tracking on keeps both entries (#591)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      iracing: {
+        activeProfileId: 'loud',
+        profiles: [{ id: 'loud', name: 'Loud' }]
+      }
+    }
+  })
+  seedState(stateModule)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe', 'crewchief.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(stateModule.runningProcesses.size).toBe(1)
+  expect(apps.map((app) => app.path).sort()).toEqual([
+    'C:/Tools/CrewChief.exe',
+    'C:/Tools/SimHub.exe'
+  ])
+})
+
+// The reconcile has to happen at CALL time, not inside the publish's promise
+// chain (CodeRabbit on #834). `save-profile` writes the store and then calls
+// this synchronously, so anything reading `runningProcesses` before the publish
+// settles - `killLaunchedApps` on a tray click - would otherwise still find the
+// entries the user just opted out of, for one tasklist read.
+//
+// Deliberately NOT awaited before the assertion. Awaiting would pass either
+// way and prove nothing.
+test('a config publish reconciles before it returns, not after (#591)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      iracing: {
+        activeProfileId: 'quiet',
+        profiles: [{ id: 'quiet', name: 'Quiet', trackingEnabled: false }]
+      }
+    }
+  })
+  seedState(stateModule)
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['simhub.exe', 'crewchief.exe']),
+    succeeded: true
+  })
+  expect(stateModule.runningProcesses.size).toBe(1)
+
+  const pending = runningModule.publishRunningApps('config')
+
+  expect(stateModule.runningProcesses.size).toBe(0)
+  await pending
+})
+
+// Running the reconcile synchronously moved it onto the CALLER's stack, so a
+// throw in it would now fail `save-profile` itself, where the same throw inside
+// the promise chain was contained by the caller's `.catch`. Reconciling a view
+// of running apps must never take down a settings write.
+//
+// Asserting the log rather than only the absence of a throw: swallowing IS the
+// point of the catch, so the log line is the only evidence it happened, and a
+// silent swallow is the failure mode worth catching.
+test('a throwing reconcile does not fail the caller (#591)', async () => {
+  const opts = {} as { profiles?: Record<string, unknown> }
+  Object.defineProperty(opts, 'profiles', {
+    get() {
+      throw new Error('store unavailable')
+    }
+  })
+  const { runningModule } = await loadRunningModule(opts)
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+  try {
+    expect(() => runningModule.publishRunningApps('config')).not.toThrow()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to reconcile untracked games before publishing:',
+      expect.any(Error)
+    )
+  } finally {
+    consoleError.mockRestore()
+  }
+})
+
+// #794 acceptance, and it pins a DECISION rather than a fix: when the game's
+// configured exe no longer resolves, its companions stay unsurfaced. Adoption
+// runs `isValidExePath` on the game path (`running.ts` in
+// `getExternallyAdoptableGameKeys`), so a broken path keeps the key out of
+// `adoptedOrLaunchedGameKeys` and `getTrackedRunningApps` skips the whole
+// profile at its first gate.
+//
+// Surfacing them instead was considered and rejected on the issue: the
+// membership test would be intent-blind (a companion that autostarts with
+// Windows would light up every profile configuring it), and it would hold the
+// FAST poll open indefinitely, reversing #672. The row explains itself with a
+// badge instead. #851 is what gives these companions back, through remembered
+// ownership rather than inference, so this test exists to make sure that lands
+// deliberately rather than as a side effect.
+//
+// Reachable without any config edit: a game on a share or an external drive
+// that drops fails `existsSync` while its process is still very much alive.
+//
+// Mutation-checked, and the answer was not the obvious one: deleting the
+// `isValidExePath` guard in the ADOPTION loop leaves this green, because the
+// guard in the loop that builds `gameExeOwners` has already kept the key out of
+// the map, so `owners?.size === 1` is false anyway. Both have to go for this to
+// turn red. Worth knowing before anyone "simplifies" one of them away and reads
+// the still-green suite as permission.
+test('a game path that no longer resolves leaves its companions unsurfaced (#794)', async () => {
+  const { runningModule } = await loadRunningModule({
+    profiles: { iracing: {} },
+    gamePaths: { iracing: 'C:/Games/iRacingUI.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    trackablePaths: ['C:/Tools/SimHub.exe'],
+    missingPaths: ['C:/Games/iRacingUI.exe']
+  })
+  // The game AND the companion are both running. Only the config path is broken.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'simhub.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(apps).toEqual([])
+})
+
+// The control for the test above, and it is the whole reason that one means
+// anything: same fixture, same running processes, only the path resolves. If
+// this ever stops surfacing SimHub, the test above is passing because adoption
+// broke for some unrelated reason rather than because of the path check.
+test('the same fixture with a resolvable game path does surface them (#794)', async () => {
+  const { runningModule } = await loadRunningModule({
+    profiles: { iracing: {} },
+    gamePaths: { iracing: 'C:/Games/iRacingUI.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    trackablePaths: ['C:/Tools/SimHub.exe'],
+    missingPaths: []
+  })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['iracingui.exe', 'simhub.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(apps.map((app) => app.path)).toContain('C:/Tools/SimHub.exe')
 })

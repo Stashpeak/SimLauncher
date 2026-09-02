@@ -11,6 +11,41 @@ import type {
 
 export const runningProcesses = new Map<string, RunningProcessEntry>()
 export const unclosedProcesses = new Map<string, UnclosedProcessEntry>()
+
+/**
+ * Normalized companion path -> the game key whose launch claimed it, for
+ * companions that were ALREADY RUNNING when that launch reached them (#853).
+ *
+ * `runningProcesses` cannot hold these: it is keyed on a live `ChildProcess`
+ * handle, and a process we did not spawn has none. But the profile did ask for
+ * the app, it is up, and `killLaunchedApps` closes it by path, so the launch
+ * establishes ownership just as much as a spawn does. Without that, one already
+ * running companion put a Close Apps control on every OTHER row whose profile
+ * merely configures the same app.
+ *
+ * Attribution only, never a kill handle. In memory only, so a restart drops it
+ * and every configuring profile claims the app again, which is the state #851
+ * replaces with a persisted memory.
+ *
+ * Keyed by the normalized path so one app is claimed once, but it keeps the RAW
+ * path too, because that is the only form the running-apps tick can answer
+ * about: its path states are keyed by the path as configured, and an unresolved
+ * path reads as RUNNING by design. A normalized key handed to that resolver
+ * therefore never matches and the claim would outlive the process forever.
+ *
+ * `seenRunning` is what makes the claim survive its own launch. A claim is made
+ * when the launch decides the app is this profile's, which is BEFORE the app is
+ * up: companions start one at a time with delays between them, and an elevated
+ * one waits on a consent prompt that can sit on screen for two minutes. The
+ * scan ticks throughout. Pruning a claim for something not running yet deleted
+ * every claim within a tick or two of being made, which is why the mechanism
+ * measured as completely inert on a real machine. So a claim is pending until
+ * the poll has seen its app once, and only then does its exit end it.
+ */
+export const adoptedCompanionOwners = new Map<
+  string,
+  { path: string; gameKey: string; seenRunning: boolean }
+>()
 export const processNameMismatchWarnings = new Map<string, ProcessNameMismatchWarningEntry>()
 export const suppressedProcessNameMismatchWarnings = new Set<string>()
 
@@ -78,11 +113,30 @@ export function registerActiveLaunch(gameKey: string): AbortController {
  * Lives here, next to activeLaunchControllers, for the same reason: kill.ts must
  * reach it without importing spawn.ts.
  */
-const pendingElevatedHandoffs = new Map<number, { gameKey?: string; cancel: () => void }>()
+export interface PendingElevatedHandoff {
+  gameKey?: string
+  /**
+   * The profile SLOT this handoff belongs to, and the ONLY stable way to decide
+   * whether it is leaving.
+   *
+   * Two slots can point at one exe with different `appArgs` (#357), so the path
+   * alone does not identify it and a caller matching on path cancels both
+   * (CodeRabbit on #782). The path is not a usable tie-breaker either: it is a
+   * launch-time snapshot, while a caller's entries are rebuilt from the CURRENT
+   * `appPaths`, so editing that slot's exe in Settings while a prompt is
+   * unanswered makes the two disagree and a `key + path` match miss the handoff
+   * entirely (Codex P2 on #842). The key does not move.
+   */
+  appKey?: string
+  appPath: string
+  cancel: () => void
+}
+
+const pendingElevatedHandoffs = new Map<number, PendingElevatedHandoff>()
 
 export function registerPendingElevatedHandoff(
   handoffId: number,
-  entry: { gameKey?: string; cancel: () => void }
+  entry: PendingElevatedHandoff
 ): void {
   pendingElevatedHandoffs.set(handoffId, entry)
 }
@@ -92,17 +146,68 @@ export function unregisterPendingElevatedHandoff(handoffId: number): void {
 }
 
 /**
+ * Whether any handoff still waiting on a consent prompt targets this path.
+ *
+ * Two profile slots may point at one exe (#357), so one slot's denial says
+ * nothing about the other's prompt. Ownership of a companion is per PATH, so
+ * acting on the first slot to settle would throw away a claim the still-pending
+ * slot is about to need (#853).
+ */
+export function hasPendingElevatedHandoffForPath(appPath: string): boolean {
+  const wanted = normalizePathForComparison(appPath)
+  return Array.from(pendingElevatedHandoffs.values()).some(
+    (handoff) => normalizePathForComparison(handoff.appPath) === wanted
+  )
+}
+
+/**
  * Cancel every still-pending elevated handoff for `gameKey`, or all of them when
  * `gameKey` is undefined (the global "close everything" kill). Each entry
  * removes itself as its callback settles, so this is safe to call on every kill.
+ *
+ * `matches` narrows it further. Without it the scope is the whole game, which is
+ * right for "close everything I started here" but wrong for anything that stops
+ * a SUBSET: a profile switch that happens to stop one app would otherwise also
+ * kill the host of an app both profiles enable and that the switch never
+ * intended to touch, costing the user a permission prompt they were about to
+ * approve (#782).
+ *
+ * A predicate rather than a path list, for two reasons that pull the same way.
+ *
+ * Identity here is the SLOT, never the path. Two slots can share one exe (#357),
+ * so a path list cancels the retained slot's prompt along with the leaving one
+ * (CodeRabbit on #782), and the path recorded on an entry is a launch-time
+ * snapshot that the caller's current `appPaths` may no longer agree with (Codex
+ * on #842). Both narrowing callers, `killProfileApps` and the profile switch,
+ * therefore match on `appKey`.
+ *
+ * And a predicate does not have to narrow by identity at all: `killLaunchedApps`
+ * uses one to keep the whole-game scope while excluding handoffs whose profile
+ * currently has tracking off (#591).
  */
-export function cancelPendingElevatedHandoffs(gameKey?: string): void {
+export function cancelPendingElevatedHandoffs(
+  gameKey?: string,
+  matches?: (entry: PendingElevatedHandoff) => boolean
+): void {
   pendingElevatedHandoffs.forEach((entry, handoffId) => {
     if (gameKey !== undefined && entry.gameKey !== gameKey) {
       return
     }
+    if (matches && !matches(entry)) {
+      return
+    }
     pendingElevatedHandoffs.delete(handoffId)
-    entry.cancel()
+    // `cancel` is a callback owned by spawn.ts and it runs synchronously inside
+    // this loop, so a throw would abandon every entry after it AND propagate
+    // into whichever caller is running. That matters now that one of them is
+    // `save-profile` (#782): the same shape took down four config tests when the
+    // untracked reconcile went synchronous on #834. Deleted before the call, so
+    // a throwing entry cannot be retried forever either.
+    try {
+      entry.cancel()
+    } catch (err) {
+      console.error('Failed to cancel a pending elevated handoff:', err)
+    }
   })
 }
 
@@ -241,19 +346,73 @@ export function consumeProcessNameMismatchWarningSuppression(appPath: string): b
 /**
  * Reconcile `runningProcesses` against the live tasklist snapshot.
  *
- * Matching is done by exe name, not by the Map key (normalised path), because
- * some apps replace their process with a child of the same exe name — the
- * original PID is gone but the exe is still present, so the path key would
- * still match even without this exe-name check.  Conversely, if the exe name
- * disappears from the tasklist the ChildProcess handle is stale regardless of
- * what key it was filed under, so we drop it.
+ * Deliberately NOT matched on the Map key (a normalised path), because some
+ * apps replace their process with a child of the same exe name: the original
+ * PID is gone but the image is still there, and a key comparison would drop a
+ * record that is still live. The question is "is anything running at this
+ * path", which is what the predicate answers.
+ *
+ * Takes a PREDICATE rather than the name set it used to take (#674). Asking by
+ * name alone meant a same-named process anywhere on the system kept a dead
+ * record alive forever, and the caller is the only party that can answer the
+ * path question, so it passes in the answer rather than the raw snapshot. Same
+ * reasoning as `pruneUntrackedGames` taking keys: this module stays free of
+ * both profile and process-resolution knowledge.
+ *
+ * The predicate must answer "yes" when it does not know. A record is user
+ * visible, so an unobserved tick must not delete it.
  */
-export function pruneStoppedRunningProcesses(processNames: Set<string>): void {
+export function pruneStoppedRunningProcesses(isPathRunning: (appPath: string) => boolean): void {
   runningProcesses.forEach((appProcess, key) => {
-    if (!processNames.has(getExeName(appProcess.path))) {
+    if (!isPathRunning(appProcess.path)) {
       runningProcesses.delete(key)
     }
   })
+}
+
+/**
+ * Drop every surfaced record belonging to a game whose active profile has
+ * process tracking off (#591), without touching the processes themselves.
+ *
+ * Takes the keys rather than reading the store so this module stays free of
+ * profile knowledge, matching `pruneStoppedRunningProcesses` above.
+ */
+export function pruneUntrackedGames(untrackedGameKeys: Set<string>): void {
+  if (untrackedGameKeys.size === 0) {
+    return
+  }
+
+  runningProcesses.forEach((entry, key) => {
+    if (untrackedGameKeys.has(entry.gameKey)) {
+      runningProcesses.delete(key)
+    }
+  })
+  unclosedProcesses.forEach((entry, key) => {
+    if (untrackedGameKeys.has(entry.gameKey)) {
+      unclosedProcesses.delete(key)
+    }
+  })
+  processNameMismatchWarnings.forEach((entry, key) => {
+    if (untrackedGameKeys.has(entry.gameKey)) {
+      processNameMismatchWarnings.delete(key)
+    }
+  })
+  // `pendingElevatedHandoffs` is deliberately NOT touched here, and it used to
+  // be (Codex on #834). A handoff belonging to a now-untracked game has to be
+  // hidden from Close Apps, and this pass was how that happened: the entry was
+  // deleted outright.
+  //
+  // Both attempts to express it as stored state were wrong. Deleting put the
+  // handoff out of reach of the profile-switch and config-import consumers #782
+  // added, which need it precisely because the user is leaving that profile.
+  // Marking `tracked = false` instead fixed that and introduced a one-way door:
+  // this pass only ever receives the UNTRACKED set, so turning tracking back on
+  // while the prompt is still pending never restored the flag and Close Apps
+  // ignored the handoff forever (Codex P2 on #842).
+  //
+  // So tracking is not stored on the handoff at all. `killLaunchedApps` reads it
+  // live from the active profile at cancellation time, which is always current
+  // by construction and has no direction to get wrong.
 }
 
 export function pruneExpiredProcessNameMismatchWarnings(now = Date.now()): void {

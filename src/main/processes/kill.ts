@@ -5,6 +5,7 @@ import {
   getActiveStoredProfile,
   getProfileTrackablePaths,
   getStoredProfiles,
+  isProcessTrackingEnabled,
   isUtilityEnabled
 } from '../profiles'
 import { getStoredBoolean, getStoredStringRecord } from '../store'
@@ -12,6 +13,7 @@ import { getExeName, isValidExePath, normalizePathForComparison, pathsEqual, wai
 
 import {
   abortActiveLaunches,
+  adoptedCompanionOwners,
   cancelPendingElevatedHandoffs,
   drainStrandedConsentPrompts,
   processNameMismatchWarnings,
@@ -27,17 +29,20 @@ import type {
   KillFailure,
   KillFailureReason,
   KillProfileAppsOptions,
-  KillResult
+  KillResult,
+  ProfileLaunchEntry
 } from './types'
 import {
   GRACEFUL_CLOSE_WINDOW_MS,
+  type ConfiguredPathState,
   findProcessIdsByExecutablePath,
   hasChildExited,
   isFullExePath,
   isPathScopedExe,
   killProcessByImageName,
   killProcessTree,
-  requestGracefulClose
+  requestGracefulClose,
+  resolveConfiguredPathStates
 } from './win32KillUtils'
 
 // Hardcoded list of companion process names for utilities that spawn background
@@ -83,10 +88,44 @@ function registerUnclosedProcess(attempt: KillAttemptResult) {
   })
 }
 
-export function pruneUnclosedProcesses(processNames: Set<string>): void {
+/**
+ * Drop every leftover record whose app is no longer running.
+ *
+ * Takes a PREDICATE rather than the tasklist name set it used to take (#674),
+ * and that change is what makes a leftover clearable at all. Pruning by image
+ * name meant a record could only ever go away when the NAME left the tasklist,
+ * so a leftover created against a same-named stranger was permanent: the user
+ * could not dismiss it, closing the app did not clear it, and nothing else
+ * would. It also pinned the poll to its FAST cadence for the rest of the
+ * session, because `computeRunningAppsScanDelayMs` stays fast while any
+ * unclosed record exists.
+ *
+ * The predicate must answer "yes" when it does not know, so an unobserved tick
+ * cannot silently clear a real leftover.
+ */
+export function pruneUnclosedProcesses(isPathRunning: (appPath: string) => boolean): void {
   unclosedProcesses.forEach((entry, key) => {
-    if (!processNames.has(getExeName(entry.path))) {
+    if (!isPathRunning(entry.path)) {
       unclosedProcesses.delete(key)
+    }
+  })
+
+  // Same predicate, same "yes when unsure" contract, so an unobserved tick
+  // cannot drop a live claim. Dropping the claim of an app that has exited is
+  // what stops a stale owner surviving until the next launch and swallowing a
+  // hand-started copy the other profiles should be able to close (#853).
+  //
+  // A claim is made before its app is up, so "not running" means "not yet"
+  // until the poll has seen it once. Pruning on the first answer instead
+  // deleted every claim seconds after it was made: measured on a real machine,
+  // the map was empty on every single tick.
+  adoptedCompanionOwners.forEach((owner, ownedKey) => {
+    if (isPathRunning(owner.path)) {
+      owner.seenRunning = true
+      return
+    }
+    if (owner.seenRunning) {
+      adoptedCompanionOwners.delete(ownedKey)
     }
   })
 }
@@ -108,6 +147,21 @@ function getStoredAppPathTargets() {
       )
       .map(normalizePathForComparison)
   )
+}
+
+/**
+ * Whether the game a pending elevated handoff belongs to is currently managed
+ * (#591). Answered from the store on every call, never cached on the handoff:
+ * the prompt can outlive any number of tracking toggles in both directions.
+ *
+ * A handoff with no `gameKey` counts as tracked. It cannot be attributed to a
+ * profile that opted out, and the safe default for Close Apps is to close.
+ */
+function isHandoffProfileTracked(handoffGameKey?: string): boolean {
+  if (handoffGameKey === undefined) {
+    return true
+  }
+  return isProcessTrackingEnabled(getActiveStoredProfile(getStoredProfiles()[handoffGameKey]))
 }
 
 function hasProcessNameMismatchWarning(gameKey?: string) {
@@ -160,14 +214,19 @@ export async function finalizeKillAttempts(
   //     PIDs are found and taskkill then reports them already gone
   //
   // Deliberately narrow. With no such sibling the ambiguity is real and stays
-  // unresolved; discriminating name from path in general is #674.
+  // unresolved.
   //
-  // KNOWN RESIDUAL, recorded on #674: a sibling that located its target and
-  // closed it successfully still counts, even though an image surviving in the
-  // tasklist afterwards can only be something else, possibly a genuinely
-  // elevated-invisible process at this very path. Telling those apart needs each
-  // sibling's POST-kill state, which is what #674 builds. The trade is
-  // deliberate: the false positive suppressed here is far likelier than the
+  // #674 has since built the direct answer (`postKillPathStates` below), which
+  // needs no sibling at all. This stays as the fallback rather than being
+  // replaced, because the enumeration can fail, and a failed enumeration is
+  // reported as `unknown` -- indistinguishable here from an enumeration that ran
+  // and could not decide. Dropping this would hand those cases back to #818.
+  //
+  // KNOWN RESIDUAL, unchanged and now confined to this fallback: a sibling that
+  // located its target and closed it successfully still counts, even though an
+  // image surviving in the tasklist afterwards can only be something else,
+  // possibly a genuinely elevated-invisible process at this very path. The trade
+  // is deliberate: the false positive suppressed here is far likelier than the
   // false negative left behind.
   // Image names a bare-name `/IM` attempt actually closed. That kill is not
   // path-scoped, so it takes down whatever was running under the name, including
@@ -182,6 +241,37 @@ export async function finalizeKillAttempts(
       .filter((attempt) => !isPathScopedExe(attempt.appPath) && attempt.success)
       .map((attempt) => attempt.processName)
   )
+
+  // What the sibling heuristic above approximates, asked directly (#674).
+  //
+  // The whole ambiguity is that `processNamesAfterKill` knows names and not
+  // paths, so an image surviving the kill cannot say whether it survived at OUR
+  // path. A name-scoped enumeration can: it returns each surviving instance with
+  // its path and session, and a path with no instance of its own is empty no
+  // matter how many strangers share its name. On the field repro that is the
+  // difference between "SimHub could not be closed, it may be running as
+  // administrator" and the truth, which was 20 unrelated `cmd.exe` processes.
+  //
+  // Gated on `tasklistReadSucceeded`, and that gate is load-bearing rather than
+  // defensive: a failed read yields an EMPTY name set, which this function would
+  // otherwise read as "no path can be running" and answer every attempt
+  // `not-running` for free — turning a read failure into confident absence, the
+  // exact inversion #399 exists to prevent.
+  //
+  // The cost follows the same rule as the launch filter. A path whose image is
+  // absent from the post-kill tasklist is answered without enumerating, so the
+  // ordinary close (everything asked for actually died) pays nothing, and a
+  // batch that leaves survivors pays one spawn for all of them.
+  const fullPathAttemptPaths: string[] = []
+  attempts.forEach((attempt) => {
+    const appPath = attempt.appPath
+    if (isFullExePath(appPath)) {
+      fullPathAttemptPaths.push(appPath)
+    }
+  })
+  const postKillPathStates = tasklistReadSucceeded
+    ? await resolveConfiguredPathStates(processNamesAfterKill, fullPathAttemptPaths)
+    : new Map<string, ConfiguredPathState>()
 
   const confirmedPathsByImage = new Map<string, Set<string>>()
   attempts.forEach((attempt) => {
@@ -261,12 +351,33 @@ export async function finalizeKillAttempts(
         // or hides a leftover. `closedNothing` only decides whether to count the
         // attempt, and an attempt that found nothing closed nothing no matter
         // what else was running.
+        //
+        // The enumeration answers the same question outright and without needing
+        // a sibling, so it is tried first: `not-running` means no instance of
+        // this image is at this path, whoever else is holding the name (#674).
+        // The sibling heuristic below stays reachable when it cannot decide,
+        // which covers both an undecidable instance (#390's shape: an unreadable
+        // path in an interactive session) and an enumeration that failed
+        // outright. Its known residual comes along with it, documented above.
+        //
+        // ONLY `not-running` counts. `unknown` and a missing entry both mean the
+        // enumeration could not decide, and neither may weaken a verdict.
+        //
+        // `!imageGoneFromTasklist` is not redundant with it, and dropping it
+        // inverts a whole class of result. An image absent from the post-kill
+        // tasklist is `not-running` for free, but that is the SUCCESS case: this
+        // attempt closed the last instance. Only a path found empty while its
+        // image SURVIVES is the #674 shape, where the survivor is somebody
+        // else's process and the attempt was aimed at nothing.
+        const pathVerifiedEmpty =
+          !imageGoneFromTasklist && postKillPathStates.get(appPath) === 'not-running'
         const ownPath = normalizePathForComparison(appPath)
         const confirmedPaths = confirmedPathsByImage.get(attempt.processName)
         isEmptySameNameTarget =
           verifiablyEmpty &&
-          !!confirmedPaths &&
-          Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)
+          (pathVerifiedEmpty ||
+            (!!confirmedPaths &&
+              Array.from(confirmedPaths).some((confirmedPath) => confirmedPath !== ownPath)))
 
         // Either kind of sibling is enough to say this attempt closed nothing.
         // Without one, a lone empty attempt keeps its long-standing treatment
@@ -290,6 +401,15 @@ export async function finalizeKillAttempts(
           !imageGoneFromTasklist &&
           (processIds.length > 0 ||
             isElevatedInconclusive ||
+            // Deliberately NOT path-verified, unlike the two branches above
+            // (#674, review bot on #845 asked why it has no test). Every
+            // producer of `accessDenied` sets it only alongside `success: false`,
+            // and `hasFailedToClose` below independently fails any attempt that
+            // is unsuccessful, not-notFound and whose image survives -- exactly
+            // this branch's own conditions. So a discriminator here could not
+            // change a single outcome; it would be a line that reads as
+            // load-bearing while doing nothing. If that coupling is ever broken,
+            // this is the branch to revisit.
             (attempt.accessDenied === true &&
               !attempt.notFound &&
               (processNamesAfterKill.has(attempt.processName) || !tasklistReadSucceeded)))
@@ -464,6 +584,19 @@ function getProfileCompanionTargets(gameKey?: string) {
     }
 
     const profile = getActiveStoredProfile(profileEntry)
+
+    // Tracking off means SimLauncher does not manage this profile's apps at all
+    // (#591, desired behavior 2). Skipping the recording in spawn.ts is not
+    // enough on its own: this function rebuilds targets from the stored profile
+    // rather than from what was launched, so without this guard the tray's
+    // always-enabled Close Apps would still find and kill apps the user
+    // explicitly opted out of us touching. `getClosableLaunchedAppGameKeys`
+    // reads the same map, so this also stops the action being OFFERED for that
+    // profile. Gating here rather than storing the toggle's effect is what lets
+    // turning tracking back on restore the affordance with no relaunch (#591).
+    if (!isProcessTrackingEnabled(profile)) {
+      return
+    }
 
     // The hardcoded list is curated utility process names — never a game — so it
     // needs no game filtering. Only the path-based tracked companions can name a
@@ -644,7 +777,24 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   // (#675), so aborting is not enough: kill the still-live PowerShell host too,
   // or approving the prompt afterwards starts an app the user just closed
   // (Codex P1 on #779).
-  cancelPendingElevatedHandoffs(gameKey)
+  //
+  // Tracked handoffs only. This is the "close everything I manage" action, and a
+  // fire-and-forget profile (#591) has opted its apps out of being managed, so
+  // killing the host would strand a prompt the user was still entitled to
+  // answer. The exclusion is HERE rather than at registration because the other
+  // consumers, the profile switch and the config import, want the opposite:
+  // those are profile-departure events, and fire-and-forget protects a running
+  // app from being closed, not a departed profile from being finished with
+  // (Codex P2 on #842).
+  //
+  // Read LIVE from the active profile, not from anything stored on the handoff.
+  // A prompt can sit unanswered across any number of toggles in both directions,
+  // and a recorded flag only gets refreshed by whatever pass thinks to refresh
+  // it -- the version that stored it was updated by the untracked reconcile,
+  // which only ever sees the untracked set, so turning tracking back ON never
+  // restored it and Close Apps ignored the handoff forever. The current profile
+  // is the answer to "does the user manage this?" by definition.
+  cancelPendingElevatedHandoffs(gameKey, (handoff) => isHandoffProfileTracked(handoff.gameKey))
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()
@@ -722,56 +872,158 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
 }
 
 /**
- * Whether killLaunchedApps(gameKey) currently has at least one target it would
- * try to close: a tracked non-game process whose exe is running, or a configured
- * / hardcoded companion whose process is running.
+ * Which game keys killLaunchedApps(gameKey) currently has at least one target
+ * for: a tracked non-game process whose exe is running, or a configured /
+ * hardcoded companion whose process is running.
  *
- * NOT currently called from production. It was written for a tray "Close Apps"
- * item whose enabled state was cached and kept fresh by listeners; that design
- * was replaced by an always-enabled item, and the re-land in #519 does not use a
- * pre-check at all, because deciding "nothing to close" before reaching
- * killLaunchedApps skips the abort/cancel prologue and lets an in-flight launch
- * carry on (Codex P1 on #819). Kept because #673 plans to expose it over IPC for
- * the missing Close Apps affordance after a restart. If that changes, delete it
- * rather than leaving it to look load-bearing again.
+ * This drives the secondary Close Apps control (#673), the affordance that is
+ * otherwise lost when the in-memory maps do not survive a restart. Its
+ * predecessor answered one game key at a time and ran its own enumeration, and
+ * its JSDoc forbade calling it from a timer for that reason: one PowerShell
+ * spawn is fine for a click and is not fine once per poll, let alone once per
+ * ROW per poll. The affordance has to appear and clear on its own as processes
+ * come and go, so an on-demand shape could not drive it. Hence the inversion:
+ * answer every key at once, from a resolver the caller already paid for, which
+ * is zero extra spawns in the steady state (#846).
  *
  * KEEP IN SYNC with killLaunchedApps above — the two membership conditions here
  * mirror its two kill-task branches. Deliberately NOT derived from
  * getRunningApps(): that list gates companions on the owning game being launched
  * or adopted, while killLaunchedApps closes configured companions regardless, so
- * the surfaced list would under-report closable targets.
+ * the surfaced list would under-report closable targets. That difference is the
+ * whole point here, because the profile whose companions are invisible is
+ * exactly the one this control exists for.
+ *
+ * One deliberate asymmetry with killLaunchedApps, and it is not drift: this
+ * verifies a candidate against its PATH (#674) where the scheduling there stays
+ * name-gated. The two answer different questions. Scheduling a kill for a path
+ * nothing is running at costs a lookup and nothing else, because the kill is
+ * path-scoped and finalizeKillAttempts now judges the empty result correctly.
+ * Telling the user there is something to close when there is not is the defect
+ * this would otherwise ship to #673.
+ *
+ * A target owned by SEVERAL profiles marks all of them. That is honest rather
+ * than convenient: one SimHub configured in three profiles genuinely is closable
+ * from any of the three, and a click on any one of them closes the same process.
+ * The strip is what distinguishes "this profile's session" from "this profile
+ * could close it", and the strip is deliberately untouched here (#794 owns it).
  */
-export async function hasClosableLaunchedApps(gameKey?: string): Promise<boolean> {
-  const { processNames } = await readRunningProcessNames()
+export function getClosableLaunchedAppGameKeys(
+  processNames: Set<string>,
+  isPathRunning: (appPath: string) => boolean
+): Set<string> {
+  const closableGameKeys = new Set<string>()
   const gameExePaths = getConfiguredGameExePaths()
+  // What a launch of ours already accounts for. A companion SimLauncher started
+  // as part of one profile belongs to THAT profile, so the configured-target
+  // pass below must not hand it to every other profile that merely lists the
+  // same app: launching one game otherwise put a close control on every other
+  // row sharing a companion, and each of those clicks would have closed the
+  // running game's own companion (#853). This is not inventing attribution, it
+  // is keeping the attribution the launch already recorded. Ownership is
+  // genuinely unknown only for companions nobody started through us, which is
+  // the cohort #851 is about; those still fall through to every owner below.
+  const launchOwnedPaths = new Set<string>()
+  const launchOwnedNames = new Set<string>()
+  const companionTargets = Array.from(getProfileCompanionTargets().values())
 
   for (const appProcess of runningProcesses.values()) {
-    if (gameKey && appProcess.gameKey !== gameKey) {
-      continue
-    }
     if (appProcess.isGame || gameExePaths.has(normalizePathForComparison(appProcess.path))) {
       continue
     }
-    if (processNames.has(getExeName(appProcess.path))) {
-      return true
+    if (!isPathRunning(appProcess.path)) {
+      continue
     }
+    launchOwnedPaths.add(normalizePathForComparison(appProcess.path))
+    launchOwnedNames.add(appProcess.name.toLowerCase())
+    closableGameKeys.add(appProcess.gameKey)
   }
 
-  const companionTargets = getProfileCompanionTargets(gameKey)
-  for (const target of companionTargets.values()) {
-    if (processNames.has(target.processName)) {
-      return true
+  // The other way a launch establishes ownership: it handled the app but holds
+  // no child handle for it, because the app was already running, was handed off
+  // elevated, or replaced the process we started (`adoptedCompanionOwners`).
+  //
+  // Re-derived from the store on every read rather than trusted from record
+  // time, and the claim is worth nothing unless the profile STILL configures
+  // that path. Close Apps builds its targets from the store too, so a claim on
+  // an app the profile has since dropped would offer a close that targets
+  // nothing. That check also subsumes #591: `getProfileCompanionTargets` omits
+  // profiles with tracking off, so a claim made while tracking was on goes
+  // quiet while it is off and comes back after, with nothing deleted.
+  for (const [ownedKey, owner] of adoptedCompanionOwners) {
+    const configuredTarget = companionTargets.find(
+      (target) =>
+        target.scope === 'path' &&
+        normalizePathForComparison(target.appPath) === ownedKey &&
+        target.gameKeys.includes(owner.gameKey)
+    )
+    if (!configuredTarget) {
+      continue
     }
+    // Ask about the path AS CONFIGURED NOW, not as it was spelled when the
+    // claim was made (Codex on #853). The two match after normalization but the
+    // tick keys its answers by the raw string, so a re-saved path in a
+    // different case or slash style would go unanswered, and an unanswered path
+    // reads as running: the claim would outlive its process forever. Healing
+    // the record here also fixes the prune, which has no targets of its own.
+    owner.path = configuredTarget.appPath
+    if (!isPathRunning(owner.path)) {
+      continue
+    }
+    launchOwnedPaths.add(ownedKey)
+    launchOwnedNames.add(getExeName(owner.path).toLowerCase())
+    closableGameKeys.add(owner.gameKey)
   }
 
-  return false
+  for (const target of companionTargets) {
+    // A curated name-scoped target has no path to verify against, so it keeps
+    // the name-only answer. That is not a gap being tolerated: `/IM` is how such
+    // a target would be closed too, so name membership is exactly the condition
+    // under which closing it would do something.
+    const isRunning =
+      target.scope === 'name' ? processNames.has(target.processName) : isPathRunning(target.appPath)
+
+    if (!isRunning) {
+      continue
+    }
+    // Already owned by a launch of ours, so it is not up for adoption by the
+    // other profiles that configure it. See `launchOwnedPaths` above.
+    const isLaunchOwned =
+      target.scope === 'name'
+        ? launchOwnedNames.has(target.processName)
+        : launchOwnedPaths.has(normalizePathForComparison(target.appPath))
+    if (isLaunchOwned) {
+      continue
+    }
+
+    target.gameKeys.forEach((owner) => closableGameKeys.add(owner))
+  }
+
+  return closableGameKeys
 }
 
+/**
+ * Stops the apps a profile switch is leaving behind.
+ *
+ * Takes ENTRIES rather than paths, and that is load-bearing rather than
+ * cosmetic. The kill itself only ever needs paths: two slots pointing at one exe
+ * (#357) are a single target to a process killer, and stopping the exe stops it
+ * for both. But this call also cancels pending elevated handoffs, and a pending
+ * handoff has never started, so it is not a process at all -- it is a registry
+ * entry that knows exactly which slot it belongs to. Narrowing that by path
+ * cancels the retained slot's consent prompt alongside the leaving one, which is
+ * the same over-cancel #782 exists to remove (Codex P2 on #842).
+ *
+ * The caller is the only party that knows which SLOTS are stopping, so the
+ * signature takes what it has instead of letting it flatten the identity away
+ * and leaving this function to guess.
+ */
 export async function killProfileApps(
   gameKey: string,
-  appPathsToKill: string[],
+  entriesToKill: ProfileLaunchEntry[],
   options?: KillProfileAppsOptions
 ): Promise<KillResult> {
+  const appPathsToKill = entriesToKill.map((entry) => entry.path)
   const gamePaths = getStoredStringRecord('gamePaths')
   const gamePath = gamePaths?.[gameKey]
   const storedAppPathTargets = getStoredAppPathTargets()
@@ -816,7 +1068,34 @@ export async function killProfileApps(
   // Same reason as killLaunchedApps: a timed-out handoff is not reachable
   // through the abort signal once its sequence ended (#779 Codex P1). And the
   // same consequence: each one killed leaves its consent prompt behind (#809).
-  cancelPendingElevatedHandoffs(gameKey)
+  //
+  // Scoped to what this call is actually stopping, unlike killLaunchedApps which
+  // really does mean the whole game. This one is a SUBSET operation: a profile
+  // switch stopping one app was cancelling every pending handoff for the game,
+  // including one for an app both profiles enable and that the switch was never
+  // going to touch (#782).
+  //
+  // Matched by SLOT KEY, and only entries that survived validation are eligible:
+  // a path this call refused to kill has no business cancelling anything.
+  //
+  // The key alone, not key plus path. Two slots can share an exe with different
+  // args (#357), so a path match kills the retained slot's prompt alongside the
+  // leaving one, and the key is what tells them apart. Adding the path on top
+  // then breaks it the other way: the registry's path is a launch-time snapshot
+  // while these entries carry the CURRENT `appPaths`, so editing that slot's exe
+  // in Settings while a prompt is unanswered makes the two disagree and the
+  // handoff survives the switch away from it (Codex P2 on #842). The key does
+  // not move.
+  const validPaths = new Set(validAppPathsToKill.map(normalizePathForComparison))
+  const keysBeingKilled = new Set(
+    entriesToKill
+      .filter((entry) => validPaths.has(normalizePathForComparison(entry.path)))
+      .map((entry) => entry.key)
+  )
+  cancelPendingElevatedHandoffs(
+    gameKey,
+    (handoff) => handoff.appKey !== undefined && keysBeingKilled.has(handoff.appKey)
+  )
   const strandedPromptCount = drainStrandedConsentPrompts()
 
   const { processNames } = await readRunningProcessNames()

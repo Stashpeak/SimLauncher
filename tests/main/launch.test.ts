@@ -34,7 +34,11 @@ const mocks = vi.hoisted(() => ({
     ) => Promise<unknown>
   >(async () => ({ success: true, launchedCount: 0, skippedCount: 0 })),
   killProfileApps: vi.fn<
-    (gameKey: string, paths: string[], options?: { except?: AbortController }) => Promise<unknown>
+    (
+      gameKey: string,
+      entries: ProfileLaunchEntry[],
+      options?: { except?: AbortController }
+    ) => Promise<unknown>
   >(async () => ({
     success: true,
     closedCount: 0,
@@ -61,7 +65,13 @@ vi.mock('../../src/main/store', () => ({
   })
 }))
 
+// `getProfileLaunchEntryId` is re-implemented here because this suite mocks the
+// module that owns it. That makes it a COPY: these tests prove `ipc/launch.ts`
+// is wired to an identity function, not that the identity rule is right. The
+// rule itself is pinned against the real module in profiles.test.ts.
 vi.mock('../../src/main/profiles', () => ({
+  getProfileLaunchEntryId: (entry: { key: string; path: string }) =>
+    `${entry.key} ${entry.path.toLowerCase().replace(/\\/g, '/')}`,
   buildActiveProfileLaunchEntries: (gameKey: string) =>
     mocks.buildActiveProfileLaunchEntries(gameKey),
   buildNamedProfileLaunchEntries: (gameKey: string, profileId: string) =>
@@ -87,12 +97,25 @@ vi.mock('../../src/main/processes', async () => {
       entries: ProfileLaunchInput[],
       options?: { controller?: AbortController }
     ) => mocks.launchProfileApps(sender, gameKey, entries, options),
-    killProfileApps: (gameKey: string, paths: string[], options?: { except?: AbortController }) =>
-      mocks.killProfileApps(gameKey, paths, options),
+    killProfileApps: (
+      gameKey: string,
+      entries: ProfileLaunchEntry[],
+      options?: { except?: AbortController }
+    ) => mocks.killProfileApps(gameKey, entries, options),
     killLaunchedApps: vi.fn(),
     getRunningApps: vi.fn(),
-    isRunningExePath: (processNames: Set<string>, appPath: string) =>
-      processNames.has(appPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''),
+    // A COPY of the name-only half of the real helper. These tests are about
+    // the same-exe key swap (#357), which turns on entry IDENTITY and not on
+    // where the exe lives, so they model the tasklist the way it really is: a
+    // set of names. The #674 path rule is pinned against the real
+    // implementation in configuredPathState.test.ts, and its wiring into these
+    // handlers in ipcLaunch.test.ts.
+    resolveRunningConfiguredPaths: async (processNames: Set<string>, appPaths: string[]) =>
+      new Set(
+        appPaths.filter((appPath) =>
+          processNames.has(appPath.split(/[\\/]/).pop()?.toLowerCase() ?? '')
+        )
+      ),
     subscribeRunningApps: vi.fn(),
     unsubscribeRunningApps: vi.fn(),
     registerActiveLaunch: state.registerActiveLaunch,
@@ -220,28 +243,6 @@ test('validateProfileIds accepts string profile ids', async () => {
   expect(validateProfileIds('base', 'race')).toBeUndefined()
 })
 
-test('getProfileLaunchEntryId distinguishes utility slots that share an executable path', async () => {
-  // Two custom-app slots configured with the same .exe but different keys
-  // (e.g. one carries `--mode debug` args, the other `--mode silent`). The
-  // diff helper that powers `switch-profile-apps` must consider these as
-  // different entries so a slot swap triggers a stop + relaunch with the
-  // new args (regression for #397, follow-up to #357).
-  const { getProfileLaunchEntryId } = await import('../../src/main/ipc/launch')
-
-  const slot1 = { key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }
-  const slot2 = { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
-
-  expect(getProfileLaunchEntryId(slot1)).not.toBe(getProfileLaunchEntryId(slot2))
-})
-
-test('getProfileLaunchEntryId is case-insensitive for the executable path', async () => {
-  const { getProfileLaunchEntryId } = await import('../../src/main/ipc/launch')
-
-  expect(getProfileLaunchEntryId({ key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' })).toBe(
-    getProfileLaunchEntryId({ key: 'customapp1', path: 'c:/Tools/shared utility.exe' })
-  )
-})
-
 test('switch-profile-apps stops and relaunches when a slot moves to a new key but keeps the same exe', async () => {
   // Regression for #397: after the #357 key-based arg refactor, switching a
   // utility from one slot/key to another while keeping the same .exe used to
@@ -270,9 +271,13 @@ test('switch-profile-apps stops and relaunches when a slot moves to a new key bu
   const sender = { isDestroyed: () => false, send: vi.fn() } as unknown as WebContents
   await handler({ sender } as never, 'ac', 'from', 'to')
 
+  // The whole ENTRY, not the bare path. This test is the same-exe slot move, so
+  // it is exactly the case where flattening to a path loses the only thing that
+  // tells the leaving slot from the retained one, and the kill's handoff
+  // cancellation then takes out both (Codex P2 on #842).
   expect(mocks.killProfileApps).toHaveBeenCalledWith(
     'ac',
-    ['C:/Tools/Shared Utility.exe'],
+    [{ key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }],
     expect.objectContaining({ except: expect.any(AbortController) })
   )
   expect(mocks.launchProfileApps).toHaveBeenCalledWith(

@@ -149,3 +149,7 @@ vite.config.ts.timestamp-*
 .jules/
 .Jules/
 pnpm-lock.yaml
+
+# scripts/survived.py is the only Python here, and importing it leaves a
+# __pycache__ beside it that would otherwise show up as an untracked dir.
+__pycache__/

@@ -22,6 +22,7 @@ const notifyMock = vi.fn()
 const killLaunchedAppsMock = vi.fn()
 const switchProfileAppsMock = vi.fn()
 const getProfileSwitchDiffMock = vi.fn()
+const saveProfileSetMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: vi.fn(),
@@ -72,7 +73,7 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
     getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
-    saveProfileSet: vi.fn().mockResolvedValue(undefined)
+    saveProfileSet: saveProfileSetMock
   })
 }))
 
@@ -191,6 +192,10 @@ beforeEach(() => {
   killLaunchedAppsMock.mockReset()
   switchProfileAppsMock.mockReset()
   getProfileSwitchDiffMock.mockReset()
+  saveProfileSetMock.mockReset()
+  // `Promise<void>`, matching the hook. The stranded-prompt count is pushed from
+  // main now, not returned from here (#782).
+  saveProfileSetMock.mockResolvedValue(undefined)
   // Non-zero counts are what make the switch prompt for confirmation rather
   // than silently doing nothing.
   getProfileSwitchDiffMock.mockResolvedValue({ toStopCount: 1, toStartCount: 1 })
@@ -366,6 +371,14 @@ describe('profile switch stranded consent prompt toast (#809)', () => {
     // Warned switches are shown as a warning, not as a success.
     expect(notifyMock.mock.calls.some((call) => call[1] === 'warn')).toBe(true)
   })
+
+  // A switch that skips `switchProfileApps` entirely (empty diff) can still
+  // strand a prompt, because the save is what cancels the outgoing profile's
+  // pending handoff. That case is NOT tested here any more: the count no longer
+  // comes back through `saveProfileSet` for this row to fold in, it is pushed
+  // from main to the toast layer so the editor's delete and discard paths get it
+  // too (Codex P2 on #782). See notifyStrandedConsentPrompts.test.tsx. What this
+  // file still owns is everything the KILL reports, below.
 
   test('an ordinary switch says nothing about a prompt', async () => {
     switchProfileAppsMock.mockResolvedValue({

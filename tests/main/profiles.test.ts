@@ -29,6 +29,7 @@ import {
   buildActiveProfileLaunchEntries,
   buildNamedProfileLaunchEntries,
   getActiveStoredProfile,
+  getProfileLaunchEntryId,
   getProfileTrackablePaths,
   resolveActiveProfile,
   type StoredProfileEntry
@@ -205,4 +206,56 @@ test('getProfileTrackablePaths tolerates a missing profile and missing path reco
   ).toEqual(['C:/Games/iRacingUI.exe'])
 
   expect(getProfileTrackablePaths('iracing', undefined, undefined, undefined)).toEqual([])
+})
+
+// #591: tracking is ON unless the user turned it off, matching every profile
+// boolean except closeAppsOnGameExit. Pinned explicitly because the difference
+// between `!== false` and `=== true` is invisible in behavioural tests that all
+// set the key: nobody has it set, so an inverted predicate would silently make
+// every existing profile untracked, and the launch path would stop recording
+// anything for anyone.
+test('isProcessTrackingEnabled treats an absent flag as tracking ON (#591)', async () => {
+  const { isProcessTrackingEnabled } = await import('../../src/main/profiles')
+
+  expect(isProcessTrackingEnabled({})).toBe(true)
+  expect(isProcessTrackingEnabled(undefined)).toBe(true)
+  expect(isProcessTrackingEnabled({ trackingEnabled: true })).toBe(true)
+  expect(isProcessTrackingEnabled({ trackingEnabled: false })).toBe(false)
+})
+
+test('getActiveProfileForGame resolves the active member of a profile set (#591)', async () => {
+  const { getActiveProfileForGame } = await import('../../src/main/profiles')
+  storeData.profiles = {
+    ac: {
+      activeProfileId: 'race',
+      profiles: [
+        { id: 'default', name: 'Default', trackingEnabled: false },
+        { id: 'race', name: 'Race', trackingEnabled: true }
+      ]
+    }
+  }
+
+  expect(getActiveProfileForGame('ac')).toMatchObject({ id: 'race', trackingEnabled: true })
+  expect(getActiveProfileForGame('unknown')).toBeUndefined()
+})
+
+// Moved here from launch.test.ts when the helper moved out of ipc/launch.ts
+// (#782). That suite mocks this module, so its copy was answering: these have to
+// run against the real implementation to mean anything.
+test('getProfileLaunchEntryId distinguishes utility slots that share an executable path', () => {
+  // Two custom-app slots configured with the same .exe but different keys (e.g.
+  // one carries `--mode debug`, the other `--mode silent`). Everything that
+  // diffs two profiles has to treat these as different entries, or a slot swap
+  // neither stops nor relaunches, and a leaving slot's pending UAC handoff is
+  // read as retained (regression for #397, follow-up to #357, reused by #782).
+  const slot1 = { key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' }
+  const slot2 = { key: 'customapp2', path: 'C:/Tools/Shared Utility.exe' }
+
+  expect(getProfileLaunchEntryId(slot1)).not.toBe(getProfileLaunchEntryId(slot2))
+})
+
+test('getProfileLaunchEntryId is case-insensitive for the executable path', () => {
+  expect(getProfileLaunchEntryId({ key: 'customapp1', path: 'C:/Tools/Shared Utility.exe' })).toBe(
+    getProfileLaunchEntryId({ key: 'customapp1', path: 'c:/Tools/shared utility.exe' })
+  )
 })
