@@ -98,8 +98,16 @@ TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|__mocks__)/|\.(test|spec)\.[jt]s
 # SILENT on an unlisted one, reporting "ok" for a fix that was deleted, which
 # is the failure this tool was written to catch. A blocklist fails the other
 # way: an unknown generated file makes noise that a human dismisses in a glance.
+#
+# `svg` is here for the same reason as `md`, and by extension rather than by
+# directory. Measured: `docs/playbutton.svg` is 5 substantive lines, so redrawing
+# the README logo would report 5 of 5 source lines lost and escalate a docs-only
+# change. Excluding the `docs/` tree instead would have missed the repo's other
+# SVG, `assets/SimLauncher_Playbutton_Ghost.svg`, which has the same problem in
+# a directory that legitimately holds shipped files. Binary assets never reach
+# here: `git show --unified=0` emits no `+` lines for them.
 GENERATED = re.compile(
-    r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(md|lock|snap)$"
+    r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|\.(md|svg|lock|snap)$"
 )
 
 
