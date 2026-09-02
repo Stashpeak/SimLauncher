@@ -91,8 +91,8 @@ TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|__mocks__)/|\.(test|spec)\.[jt]s
 # decide the aggregate on their own. Measured at 3a4ada1: PR #703 read 5% live
 # because package-lock.json contributed 222 of its 227 lines, and PR #728
 # escalated on 11 deleted CONTRIBUTING.md lines while its real source loss was
-# 4. Both are routine cleanup, and both are exactly the false alarm this tool
-# exists to avoid.
+# 5, four in config.ts and one in AppsSection.tsx. Both are routine cleanup,
+# and both are exactly the false alarm this tool exists to avoid.
 #
 # A blocklist, deliberately. An allowlist of known code extensions would fail
 # SILENT on an unlisted one, reporting "ok" for a fix that was deleted, which
