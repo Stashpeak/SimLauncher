@@ -67,7 +67,7 @@ export function ProcessTrackingSection({
                   readOnly
                   aria-label={`Secondary executable ${index + 1}`}
                   placeholder="No secondary executable selected"
-                  className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle)"
+                  className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus-visible:ring-2 focus-visible:ring-(--accent)"
                 />
                 <button
                   type="button"

@@ -48,7 +48,7 @@ export function GamesSection(): ReactNode {
               onChange={(e) => onGamePathChange(game.key, e.target.value)}
               placeholder="No game path set"
               aria-label={`${game.name} executable path`}
-              className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus:text-(--text-primary)"
+              className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus-visible:ring-2 focus-visible:ring-(--accent) focus:text-(--text-primary)"
             />
 
             <button

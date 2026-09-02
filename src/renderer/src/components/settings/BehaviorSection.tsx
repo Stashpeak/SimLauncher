@@ -156,7 +156,7 @@ export function BehaviorSection(): ReactNode {
                   onLaunchDelayMsChange(normalizeLaunchDelayMs(val * 1000))
                 }
               }}
-              className="w-full bg-transparent pl-1 text-right text-[11px] font-semibold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-full bg-transparent pl-1 text-right text-[11px] font-semibold text-(--text-primary) outline-none focus-visible:ring-2 focus-visible:ring-(--accent) [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0.0"
             />
             <div className="mx-1 h-4 w-px bg-(--glass-border) opacity-35" />
