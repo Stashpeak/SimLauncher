@@ -180,14 +180,14 @@ def survives(ref, path, lines):
     blob = git("show", "%s:%s" % (ref, path), allow_fail=True)
     pool = {}
     if blob:
-        for i, l in enumerate(blob.split("\n"), 1):
-            s = l.strip()
+        for i, existing in enumerate(blob.split("\n"), 1):
+            s = existing.strip()
             if s:
                 pool.setdefault(s, []).append(str(i))
 
     kept = 0
-    for l in lines:
-        occurrences = pool.get(l)
+    for line in lines:
+        occurrences = pool.get(line)
         if occurrences:
             occurrences.pop()
             kept += 1
@@ -214,17 +214,21 @@ def report(ref, pr):
     # conclusive. They stay in the report, out of the verdict.
     src_live = src_tot = 0
     notes = []
+    examined = []
     escalate = False
     for path, lines in sorted(files.items()):
         kept, lost = survives(ref, path, lines)
         n = len(lines)
         kind = classify(path)
+        row = "      [%s] %-46s %d/%d live" % (kind, path, kept, n)
+        if lost:
+            row += ", %d LOST" % lost
+        examined.append(row)
         if kind == "SRC ":
             src_live += kept
             src_tot += n
         if lost:
-            notes.append("      [%s] %-46s %d/%d live, %d LOST"
-                         % (kind, path, kept, n, lost))
+            notes.append(row)
             # A STRICT majority gone, not a total wipe, and not exactly half:
             # `>=` escalated a 5-of-10 partial loss, which is not a majority.
             #
@@ -238,11 +242,16 @@ def report(ref, pr):
     # No source lines means this tool has no opinion, and it has to SAY so.
     # Printing "ok ... 0/0 live (100%)" is the same failure as a self-test that
     # passes without running: it certifies precisely what it never looked at.
+    #
+    # This branch lists EVERY file it looked at, losses or not, which the normal
+    # report deliberately does not. When the tool declines to judge, the reader
+    # has to be able to check that it was right to decline, and "tests/generated
+    # only" is a claim about files it does not otherwise name.
     if not src_tot:
         print("PR #%-4s  %s  no source lines to judge (tests/generated only)"
               % (pr, sha[:7]))
-        for note in notes:
-            print(note)
+        for row in examined:
+            print(row)
         return
 
     # The same small-sample floor the per-file rule already carries. Without it
