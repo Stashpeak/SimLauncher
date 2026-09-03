@@ -933,21 +933,31 @@ export interface DroppedSettingsEntry {
 const SLOT_KEYED_FIELDS = new Set<DroppedSettingsRecordField>(['appPaths', 'appNames', 'appArgs'])
 
 /**
- * Whether a rejected entry's key may have been RENUMBERED by the save now being
- * written, which is the one condition under which restoring it by key is unsafe.
+ * Whether a rejected entry's key may mean something DIFFERENT on the two sides of
+ * this write, which is the one condition under which restoring it by key is unsafe.
  *
- * True only for a `customapp<N>` key in a slot-keyed dictionary, on a save that
- * lowers `customSlots`. A built-in utility key in the same dictionary, or any key
- * at all when the count did not shrink, is stable and must still be preserved:
- * skipping it would erase a value the renderer is simultaneously reporting as
- * "Not saved", which is the exact bug #806 exists to fix.
+ * True for every `customapp<N>` key in a slot-keyed dictionary, unconditionally.
+ * The main process cannot tell whether a renumbering happened, so it must assume
+ * one did. `customSlots` looks like it should answer the question and does not:
+ * removing a slot and adding one in the same unsaved batch arrives as an
+ * unchanged count, and removing one while adding two arrives as growth. A guard
+ * reading that delta restores the DELETED slot's path into the slot that shifted
+ * up, which is the resurrection this guard exists to prevent, reached by a route
+ * the delta cannot see. Nor is it recoverable from the data: the shift point
+ * would be the lowest slot whose incoming value differs from the stored one, and
+ * a rejected entry differs by definition, so a rejected edit to slot 1 is
+ * indistinguishable from a removal of slot 1 whichever slot actually went.
+ *
+ * The cost is a real one and is stated rather than hidden: a rejected edit to a
+ * custom slot is not preserved even on an ordinary save where nothing moved, so
+ * for those keys the #806 erase still stands. Built-in utility keys and
+ * gamePaths, whose keys come from fixed allowlists and never shift, are
+ * preserved, and they are most of the surface. Lifting this needs the renderer to
+ * say which slot it removed; tracked in #915 with the state-lifetime hazard that
+ * makes it its own piece of work.
  */
-function isRenumberedByThisSave(
-  field: DroppedSettingsRecordField,
-  key: string,
-  slotsShrank: boolean
-): boolean {
-  return slotsShrank && SLOT_KEYED_FIELDS.has(field) && getCustomSlotNumberFromKey(key) !== null
+function hasUnstableKeyIdentity(field: DroppedSettingsRecordField, key: string): boolean {
+  return SLOT_KEYED_FIELDS.has(field) && getCustomSlotNumberFromKey(key) !== null
 }
 
 /**
@@ -1027,35 +1037,21 @@ export function preserveRejectedSettingsEntries(
     return safe
   }
 
-  // A save that LOWERS customSlots has renumbered the slot-keyed dictionaries on
-  // the way in (`shiftCustomSlotRecord` in `useCustomSlots.tsx`, applied to
-  // appPaths/appNames/appArgs), and the renderer sends the shifted records and
-  // the smaller count in the same patch. So `customapp1` after this write is a
-  // DIFFERENT slot from `customapp1` before it, and restoring by key would put
-  // the DELETED slot's value into the slot that shifted up: the user removes an
-  // app and it silently comes back, with a launchable path.
+  // Removing a custom slot renumbers the slot-keyed dictionaries on the way in
+  // (`shiftCustomSlotRecord` in `useCustomSlots.tsx`, applied to
+  // appPaths/appNames/appArgs), so `customapp1` arriving can be a DIFFERENT slot
+  // from `customapp1` on disk. Restoring by key would then put the DELETED slot's
+  // value into the slot that shifted up: the user removes an app and it silently
+  // comes back, with a launchable path.
   //
   // Preservation is only sound while a key means the same thing on both sides of
-  // the write, so it is skipped for exactly the keys that moved. Losing a
-  // rejected value on a slot that shifted is the lesser harm: an empty field the
-  // user can retype, rather than an app they deleted reappearing.
-  //
-  // Narrowed to the KEY rather than the field. `shiftCustomSlotRecord` only
-  // rewrites `customapp<N>`, so `simhub` in the same dictionary is as stable
-  // during a slot removal as it is on any other save, and skipping it would
-  // erase a value the renderer is at that moment reporting as "Not saved" —
-  // which is the bug this whole change exists to fix, reintroduced through the
-  // back door. gamePaths is untouched for the same reason: fixed allowlist,
-  // never renumbers. (Both P2s from Codex on #913, one per round.)
-  const storedSlots = store.get('customSlots')
-  const patchSlots = safe.customSlots
-  const slotsShrank =
-    typeof storedSlots === 'number' && typeof patchSlots === 'number' && patchSlots < storedSlots
-
+  // the write, so it is skipped for every custom-slot key. See
+  // `hasUnstableKeyIdentity` for why the `customSlots` count cannot narrow that
+  // and why the data cannot either.
   const merged = { ...safe }
 
   dropped.forEach(({ field, key }) => {
-    if (isRenumberedByThisSave(field, key, slotsShrank)) return
+    if (hasUnstableKeyIdentity(field, key)) return
 
     const sanitizedRecord = merged[field]
 

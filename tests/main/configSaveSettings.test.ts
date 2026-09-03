@@ -575,3 +575,56 @@ test('a slot removal still preserves a rejected BUILT-IN utility value (#806)', 
     customapp1: 'C:/Apps/B.exe'
   })
 })
+
+/**
+ * The route that killed the earlier `customSlots`-delta guard, and the reason the
+ * skip is now unconditional for custom-slot keys.
+ *
+ * Removing a slot and adding one before saving nets the count back to where it
+ * started, so a guard reading the delta sees no change, preserves, and restores
+ * the DELETED slot's path into the slot that shifted up. Same resurrection as the
+ * plain-removal case, reached by a route the count cannot see. Removing one and
+ * adding two would even read as growth.
+ */
+test('a slot removal masked by an added slot does not resurrect the deleted app (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Deleted.exe', customapp2: 'C:/Apps/Shifted.exe' },
+    customSlots: 2
+  })
+
+  // Remove slot 1, then Add: customSlots arrives unchanged at 2, while
+  // customapp1 now holds the shifted slot, edited to something invalid.
+  const result = await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Shifted.bat' },
+    customSlots: 2
+  })
+
+  expect(result.settings.appPaths).not.toHaveProperty('customapp1', 'C:/Apps/Deleted.exe')
+})
+
+/**
+ * Pins the KNOWN LIMITATION rather than a desired behaviour, which is why it
+ * asserts something unhelpful to the user: a rejected custom-slot value is not
+ * preserved even on an ordinary save where nothing was removed, because the main
+ * process cannot tell that from a save where something was.
+ *
+ * Here so the limitation cannot be quietly widened or quietly "fixed" by
+ * reintroducing a count-based guard. Lifting it properly needs the renderer to
+ * say which slot it removed, tracked in #915; when that lands this test should
+ * flip to expecting preservation.
+ */
+test('a rejected custom-slot value is NOT preserved, by design for now (#915)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appPaths: { customapp1: 'C:/Apps/A.exe' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/A.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'customapp1', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({})
+})
