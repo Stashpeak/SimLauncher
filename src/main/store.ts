@@ -922,39 +922,22 @@ export interface DroppedSettingsEntry {
   reason: DroppedSettingsReason
 }
 
-// The dictionaries that can hold custom-slot keys (`customapp1`, `customapp2`, …),
-// which the renderer renumbers when a slot is removed. `gamePaths` is absent on
-// purpose: its keys come from the fixed game allowlist and never shift.
-//
-// Membership here is necessary but NOT sufficient to call a key unstable: these
-// same dictionaries also hold built-in utility keys (`simhub`, …), which
-// `shiftCustomSlotRecord` passes through untouched. The per-key test below is
-// what decides.
+// Dictionaries that can hold custom-slot keys. gamePaths is absent on purpose:
+// game keys come from a fixed allowlist and never shift.
 const SLOT_KEYED_FIELDS = new Set<DroppedSettingsRecordField>(['appPaths', 'appNames', 'appArgs'])
 
 /**
- * Whether a rejected entry's key may mean something DIFFERENT on the two sides of
- * this write, which is the one condition under which restoring it by key is unsafe.
+ * Whether a rejected entry's key may mean a different slot on the two sides of
+ * this write, which is when restoring it by key is unsafe.
  *
- * True for every `customapp<N>` key in a slot-keyed dictionary, unconditionally.
- * The main process cannot tell whether a renumbering happened, so it must assume
- * one did. `customSlots` looks like it should answer the question and does not:
- * removing a slot and adding one in the same unsaved batch arrives as an
- * unchanged count, and removing one while adding two arrives as growth. A guard
- * reading that delta restores the DELETED slot's path into the slot that shifted
- * up, which is the resurrection this guard exists to prevent, reached by a route
- * the delta cannot see. Nor is it recoverable from the data: the shift point
- * would be the lowest slot whose incoming value differs from the stored one, and
- * a rejected entry differs by definition, so a rejected edit to slot 1 is
- * indistinguishable from a removal of slot 1 whichever slot actually went.
+ * True for every `customapp<N>` key, unconditionally. `customSlots` looks like it
+ * could narrow that and cannot: removing a slot and adding one before saving
+ * arrives as an unchanged count, so a guard reading the delta restores the
+ * DELETED slot's path into the slot that shifted up. Built-in utility keys, which
+ * `shiftCustomSlotRecord` never touches, stay preserved.
  *
- * The cost is a real one and is stated rather than hidden: a rejected edit to a
- * custom slot is not preserved even on an ordinary save where nothing moved, so
- * for those keys the #806 erase still stands. Built-in utility keys and
- * gamePaths, whose keys come from fixed allowlists and never shift, are
- * preserved, and they are most of the surface. Lifting this needs the renderer to
- * say which slot it removed; tracked in #915 with the state-lifetime hazard that
- * makes it its own piece of work.
+ * Cost: a rejected custom-slot edit is erased even when nothing moved. Lifting it
+ * needs the renderer to say which slot it removed (#915).
  */
 function hasUnstableKeyIdentity(field: DroppedSettingsRecordField, key: string): boolean {
   return SLOT_KEYED_FIELDS.has(field) && getCustomSlotNumberFromKey(key) !== null
@@ -1011,23 +994,16 @@ export function getDroppedSettingsEntries(patch: Record<string, unknown>): Dropp
  * patch for every entry the sanitizer REJECTED, so a rejected value leaves the
  * stored one alone instead of erasing it. #806
  *
- * The erase is a consequence of how the write works, not of the sanitizer:
- * `setStoreEntries` replaces each dictionary wholesale, and the sanitizers omit
- * a rejected key rather than passing the old value through, so the key is gone
- * from disk. The renderer then reports "Not saved", which reads as "your
- * previous value survived". It did not, until this.
+ * `setStoreEntries` replaces each dictionary wholesale and the sanitizers omit a
+ * rejected key, so without this the key is gone from disk while the renderer
+ * reports "Not saved".
  *
- * `dropped` is exactly the rejected set and nothing else, which is what makes
- * the merge safe: `getDroppedSettingsEntries` already excludes an unrecognized
- * key and a blank value, and a blank value is a deliberate clear. So a cleared
- * entry is still removed here and is never resurrected. That distinction is the
- * one #806 asks for; it did not need building, only using.
+ * Safe because `dropped` is the rejected set only: `getDroppedSettingsEntries`
+ * already excludes unrecognized keys and blank values, so a deliberate clear is
+ * never resurrected.
  *
- * Must be called BEFORE the write, since it reads the value being replaced.
- *
- * Deliberately NOT applied to config import. `applySanitizedConfig` replaces the
- * whole configuration on purpose, so carrying an entry over from the config the
- * user just replaced would be the wrong answer there.
+ * Call BEFORE the write, since it reads the value being replaced. Not used by
+ * config import, which replaces the whole configuration on purpose.
  */
 export function preserveRejectedSettingsEntries(
   safe: Record<string, unknown>,
@@ -1037,17 +1013,6 @@ export function preserveRejectedSettingsEntries(
     return safe
   }
 
-  // Removing a custom slot renumbers the slot-keyed dictionaries on the way in
-  // (`shiftCustomSlotRecord` in `useCustomSlots.tsx`, applied to
-  // appPaths/appNames/appArgs), so `customapp1` arriving can be a DIFFERENT slot
-  // from `customapp1` on disk. Restoring by key would then put the DELETED slot's
-  // value into the slot that shifted up: the user removes an app and it silently
-  // comes back, with a launchable path.
-  //
-  // Preservation is only sound while a key means the same thing on both sides of
-  // the write, so it is skipped for every custom-slot key. See
-  // `hasUnstableKeyIdentity` for why the `customSlots` count cannot narrow that
-  // and why the data cannot either.
   const merged = { ...safe }
 
   dropped.forEach(({ field, key }) => {

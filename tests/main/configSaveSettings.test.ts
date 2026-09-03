@@ -432,16 +432,9 @@ test('a rejected entry and a cleared sibling in one patch keep their own outcome
   expect(result.settings.appNames).toEqual({ simhub: 'Dash' })
 })
 
-/**
- * The remaining two of the four fields, and they are not filler. The merge
- * iterates `dropped` generically, so the only thing keeping gamePaths and
- * appArgs correct is that nobody special-cases the field. These two make that
- * assumption fail loudly instead of silently, and they are the two that differ:
- * gamePaths is validated against KNOWN_GAME_KEYS rather than the utility keys,
- * and appArgs has its own, much larger length cap. Raised by the review bot on
- * this PR, which is right that appNames and appPaths alone cannot see either
- * difference.
- */
+// The merge iterates `dropped` generically, so these two exist to make a
+// field-special-cased version fail loudly. They are also the two that differ:
+// gamePaths validates against KNOWN_GAME_KEYS, appArgs has its own length cap.
 test('a rejected gamePaths entry leaves the previously persisted path on disk (#806)', async () => {
   await loadConfigModule()
 
@@ -491,16 +484,9 @@ test('a rejected entry with no previous value still persists nothing (#806)', as
   expect(result.settings.appNames).toEqual({})
 })
 
-/**
- * The one case where restoring by key is WRONG, and it is a real user action
- * rather than a contrived one. Removing a custom slot renumbers the slot-keyed
- * dictionaries in the renderer (`shiftCustomSlotRecord`), and the shifted
- * records travel with the smaller `customSlots` in a single patch, so
- * `customapp1` on the way in is a different slot from `customapp1` on disk.
- * Restoring it would hand the user back the app they just deleted, with a
- * launchable path, which is worse than the erase this whole PR is fixing.
- * (Codex P2 on #913.)
- */
+// Removing a slot renumbers the dictionaries in the renderer, so `customapp1`
+// arriving is a different slot from `customapp1` on disk. Restoring it would
+// hand back the app the user just deleted, with a launchable path.
 test('removing a slot does not resurrect the deleted app when the shifted value is rejected (#806)', async () => {
   await loadConfigModule()
 
@@ -541,15 +527,9 @@ test('gamePaths is still preserved when a slot removal shrinks customSlots (#806
   expect(result.settings.gamePaths).toEqual({ iracing: 'C:/Games/iRacing/iRacingUI.exe' })
 })
 
-/**
- * The guard has to key on the KEY, not the field. appPaths, appNames and appArgs
- * hold built-in utility keys next to the custom-slot ones, and
- * `shiftCustomSlotRecord` only rewrites `customapp<N>`, so `simhub` is exactly as
- * stable during a slot removal as on any other save. A field-wide skip erases it
- * while the renderer reports "Not saved", which is #806 reintroduced through the
- * back door on this one path. (Second Codex P2 on #913, found in the fix for the
- * first one.)
- */
+// `shiftCustomSlotRecord` only rewrites `customapp<N>`, so a built-in key is as
+// stable during a slot removal as on any other save. A field-wide skip would
+// erase it while the renderer reports "Not saved", which is #806 all over again.
 test('a slot removal still preserves a rejected BUILT-IN utility value (#806)', async () => {
   await loadConfigModule()
 
@@ -576,16 +556,9 @@ test('a slot removal still preserves a rejected BUILT-IN utility value (#806)', 
   })
 })
 
-/**
- * The route that killed the earlier `customSlots`-delta guard, and the reason the
- * skip is now unconditional for custom-slot keys.
- *
- * Removing a slot and adding one before saving nets the count back to where it
- * started, so a guard reading the delta sees no change, preserves, and restores
- * the DELETED slot's path into the slot that shifted up. Same resurrection as the
- * plain-removal case, reached by a route the count cannot see. Removing one and
- * adding two would even read as growth.
- */
+// Why the skip is unconditional: remove a slot and add one before saving and the
+// count arrives unchanged, so a guard reading the delta preserves and resurrects
+// the deleted app. Remove one and add two and it even reads as growth.
 test('a slot removal masked by an added slot does not resurrect the deleted app (#806)', async () => {
   await loadConfigModule()
 
@@ -604,17 +577,9 @@ test('a slot removal masked by an added slot does not resurrect the deleted app 
   expect(result.settings.appPaths).not.toHaveProperty('customapp1', 'C:/Apps/Deleted.exe')
 })
 
-/**
- * Pins the KNOWN LIMITATION rather than a desired behaviour, which is why it
- * asserts something unhelpful to the user: a rejected custom-slot value is not
- * preserved even on an ordinary save where nothing was removed, because the main
- * process cannot tell that from a save where something was.
- *
- * Here so the limitation cannot be quietly widened or quietly "fixed" by
- * reintroducing a count-based guard. Lifting it properly needs the renderer to
- * say which slot it removed, tracked in #915; when that lands this test should
- * flip to expecting preservation.
- */
+// Pins a KNOWN LIMITATION, not a desired behaviour, so it cannot be quietly
+// widened or "fixed" by reintroducing a count-based guard. Flip this to expect
+// preservation when #915 lands.
 test('a rejected custom-slot value is NOT preserved, by design for now (#915)', async () => {
   await loadConfigModule()
 
