@@ -66,6 +66,23 @@ describe('countCodeLines', () => {
     expect(count(source, 'probe.tsx')).toBe(5)
   })
 
+  // Found by both review bots on #919, independently. `forEachChild` skips
+  // punctuation, so a comment on its own line before a closing token leads no
+  // node and trails nothing on its line. It was counted as code, which charged
+  // budget for the end-of-body why-comment this repo explicitly asks for.
+  it.each([
+    ['block body', 'function f() {\n  doThing()\n  // why we stop here\n}\n'],
+    ['object literal', 'const o = {\n  a: 1\n  // no b on purpose\n}\n'],
+    ['array literal', 'const a = [\n  1\n  // deliberately short\n]\n'],
+    ['if body', 'if (x) {\n  go()\n  // nothing else\n}\n']
+  ])('ignores a dangling comment before the closing token of a %s', (_name, source) => {
+    expect(count(source)).toBe(3)
+  })
+
+  it('ignores a comment on the last line of the file', () => {
+    expect(count('const a = 1\n// a trailing note\n')).toBe(1)
+  })
+
   it('does not treat comment markers inside a template string as comments', () => {
     expect(count('const url = `https://x/y`\nconst c = `/* not a comment */`\n')).toBe(2)
   })
@@ -113,6 +130,25 @@ describe('evaluateBudget', () => {
 
   it('skips an excluded file however large it is', () => {
     expect(run(['src/data.ts'], { 'src/data.ts': 5000 })).toEqual([])
+  })
+
+  // Raised by CodeRabbit on #919 as Major, and it was right: checking only for
+  // the key let an empty reason buy an exemption, which is the one way this
+  // config could be weakened while looking untouched.
+  it.each([
+    ['an empty string', ''],
+    ['whitespace', '   '],
+    ['null', null],
+    ['a non-string', 42]
+  ])('refuses to skip a file excluded with %s as its reason', (_name, reason) => {
+    const violations = run(
+      ['src/huge.ts'],
+      { 'src/huge.ts': 5000 },
+      {
+        exclusions: { 'src/huge.ts': reason as string }
+      }
+    )
+    expect(violations.some((v) => v.includes('excluded with no reason'))).toBe(true)
   })
 
   it('fails a budget entry whose file is gone', () => {

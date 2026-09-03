@@ -82,7 +82,20 @@ export function evaluateBudget({ files, config, codeLinesFor }) {
   }
 
   for (const file of [...present].sort()) {
-    if (Object.hasOwn(exclusions, file)) continue
+    // An exclusion must carry a written reason. Checking only for the key would
+    // let `"src/huge.ts": ""` silently buy an exemption, which is the one way
+    // this config can be weakened without it looking like anything happened.
+    if (Object.hasOwn(exclusions, file)) {
+      const reason = exclusions[file]
+      if (typeof reason === 'string' && reason.trim().length > 0) continue
+
+      violations.push(
+        `${file} is excluded with no reason (${JSON.stringify(reason)})\n` +
+          `  fix: give the exclusion a sentence saying why this file is not measured,\n` +
+          `       or remove it and give the file a budget`
+      )
+      continue
+    }
 
     const budget = budgets[file]
 

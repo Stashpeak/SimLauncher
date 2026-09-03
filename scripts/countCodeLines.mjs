@@ -48,13 +48,17 @@ function collectCommentRanges(text, sourceFile) {
       ])
     }
 
-    node.forEachChild(visit)
+    // getChildren, not forEachChild. forEachChild skips punctuation tokens, so
+    // a comment sitting on its own line before a closing `}` or `]` leads no
+    // node and trails nothing on its line, falls through, and gets counted as
+    // code. That is the common shape of a why-comment at the end of a body, so
+    // it would have charged budget for exactly the comments this repo asks for.
+    // Walking tokens too fixes every container at once rather than the three
+    // that happened to get reported.
+    for (const child of node.getChildren(sourceFile)) visit(child)
   }
 
   visit(sourceFile)
-  // The trailing block of a file hangs off the EOF token, which forEachChild
-  // does not reach, so a file ending in a comment would lose it.
-  add(ts.getLeadingCommentRanges(text, sourceFile.endOfFileToken.getFullStart()))
 
   return ranges
 }
