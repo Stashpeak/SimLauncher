@@ -32,6 +32,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Fails when a file that is already large gets larger (#918). Raising a
+      # ceiling is fine and expected; doing it in the diff is the whole point.
+      - name: Code-line budget
+        run: npm run size:check
+
       - name: Type check
         run: npm run typecheck
 

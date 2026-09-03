@@ -46,6 +46,14 @@ Electron desktop app for simracing enthusiasts — React + TypeScript + Tailwind
 - Doc-comment public/exported items (TS JSDoc) where applicable. English only.
 - Applies to AI agents too.
 
+## Code-line budget
+
+`npm run size:check` runs in the required `build` job and fails when a file that is already large gets larger. Ceilings live in [`scripts/size-budget.json`](scripts/size-budget.json); any `src/` file crossing 300 lines of code needs an entry there, or an exclusion with a written reason.
+
+It counts **code** only, so blank and comment-only lines are free. Add the comment. `kill.ts` is 43% comment and that documentation is why its race conditions are maintainable; a budget that charged for it would push exactly the wrong way.
+
+**Raising a ceiling is allowed — edit the number in the same PR.** The gate does not forbid growth, it makes growth appear in a diff. The current numbers are not an endorsement: `GameRow.tsx` was cut to 403 lines by #340 in the 0.9.8 refactor milestone and is over 800 today, and `spawn.ts` went 509 → 728 → 1317 while two issues sat open about that growth. Nobody noticed for months. A refactor PR should lower its file's number; nothing forces it to, and that omission was a deliberate call recorded on #918.
+
 ## Tooling facts that get guessed wrong
 
 - The package manager is **npm**. There is no pnpm and no yarn; `package-lock.json` is the only lockfile. Never generate a `pnpm-lock.yaml`.
