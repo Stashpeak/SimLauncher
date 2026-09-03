@@ -18,6 +18,7 @@ import {
   getStoredBoolean,
   getStoredStringRecord,
   getStoredZoomFactor,
+  preserveRejectedSettingsEntries,
   requireSafeZoomFactor,
   sanitizeImportedConfig,
   sanitizeSettingsPatch,
@@ -541,8 +542,11 @@ export function registerConfigHandlers(): void {
   ipcMain.handle('save-settings', (_event, patch: unknown) => {
     if (!isRecord(patch)) return { settings: getPersistedSettings(), dropped: [] }
 
-    const safe = sanitizeSettingsPatch(patch)
     const dropped = getDroppedSettingsEntries(patch)
+    // The sanitized patch REPLACES each dictionary, so a rejected key would be
+    // erased from disk while the renderer says "Not saved". Keep the stored
+    // value for exactly the rejected entries, before the write reads it. #806
+    const safe = preserveRejectedSettingsEntries(sanitizeSettingsPatch(patch), dropped)
     const changedKeys = Object.keys(safe)
     if (changedKeys.length > 0) {
       setStoreEntries(safe)

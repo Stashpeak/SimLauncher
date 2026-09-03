@@ -967,3 +967,57 @@ export function getDroppedSettingsEntries(patch: Record<string, unknown>): Dropp
 
   return dropped
 }
+
+/**
+ * Carries the previously persisted value back into a sanitized save-settings
+ * patch for every entry the sanitizer REJECTED, so a rejected value leaves the
+ * stored one alone instead of erasing it. #806
+ *
+ * The erase is a consequence of how the write works, not of the sanitizer:
+ * `setStoreEntries` replaces each dictionary wholesale, and the sanitizers omit
+ * a rejected key rather than passing the old value through, so the key is gone
+ * from disk. The renderer then reports "Not saved", which reads as "your
+ * previous value survived". It did not, until this.
+ *
+ * `dropped` is exactly the rejected set and nothing else, which is what makes
+ * the merge safe: `getDroppedSettingsEntries` already excludes an unrecognized
+ * key and a blank value, and a blank value is a deliberate clear. So a cleared
+ * entry is still removed here and is never resurrected. That distinction is the
+ * one #806 asks for; it did not need building, only using.
+ *
+ * Must be called BEFORE the write, since it reads the value being replaced.
+ *
+ * Deliberately NOT applied to config import. `applySanitizedConfig` replaces the
+ * whole configuration on purpose, so carrying an entry over from the config the
+ * user just replaced would be the wrong answer there.
+ */
+export function preserveRejectedSettingsEntries(
+  safe: Record<string, unknown>,
+  dropped: DroppedSettingsEntry[]
+): Record<string, unknown> {
+  if (dropped.length === 0) {
+    return safe
+  }
+
+  const merged = { ...safe }
+
+  dropped.forEach(({ field, key }) => {
+    const sanitizedRecord = merged[field]
+
+    // Nothing is being written for this dictionary, so there is nothing to
+    // erase and nothing to restore.
+    if (!isRecord(sanitizedRecord)) return
+
+    const storedValue = getStoredStringRecord(field)[key]
+
+    // No previous value to keep: a first save of a rejected entry still
+    // persists nothing, which is correct and is what "Not saved" already meant.
+    if (storedValue === undefined) return
+
+    // Re-read from `merged` each time so several rejected keys in one
+    // dictionary accumulate rather than overwrite each other.
+    merged[field] = { ...sanitizedRecord, [key]: storedValue }
+  })
+
+  return merged
+}

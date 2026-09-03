@@ -43,6 +43,17 @@ async function loadConfigModule() {
     getDroppedSettingsEntries: vi.fn(() => []),
     getSupportedConfigValues: vi.fn(),
     getStoredZoomFactor: vi.fn(),
+    // Identity, which is what the real one does when nothing was dropped — and
+    // `getDroppedSettingsEntries` above is stubbed to exactly that. Stubbing it
+    // to `{}` instead would make the sanitized-values assertions below pass
+    // vacuously. #806
+    preserveRejectedSettingsEntries: vi.fn((safe) => safe),
+    // The remaining two are not reached by any test here, and are listed for the
+    // reason given in configSaveSettings.test.ts: `ipc/config.ts` imports them,
+    // so the day a test does reach one, an omission is a TypeError rather than a
+    // readable assertion failure (CodeRabbit on #842).
+    getStoredBoolean: vi.fn(() => false),
+    getStoredStringRecord: vi.fn(() => ({})),
     requireSafeZoomFactor: vi.fn(),
     sanitizeImportedConfig: vi.fn((c) => {
       if (!c || typeof c !== 'object' || Object.keys(c).length === 0) return { imported: true }

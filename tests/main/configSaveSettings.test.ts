@@ -14,6 +14,7 @@ type MockIpcHandler = (...args: unknown[]) => unknown
 interface SaveSettingsResult {
   settings: {
     appPaths: Record<string, string>
+    appNames: Record<string, string>
     gamePaths: Record<string, string>
     startWithWindows?: boolean
   }
@@ -351,4 +352,96 @@ test('a path that fits only when unquoted is accepted (#859)', async () => {
 
   expect(result.dropped).toEqual([])
   expect(result.settings.gamePaths).toEqual({ iracing: exact })
+})
+
+/**
+ * #806: each dictionary is written WHOLESALE, and the sanitizers omit a rejected
+ * key rather than passing the old value through, so a rejected entry used to be
+ * erased from disk while the renderer reported "Not saved" — which reads as
+ * "your previous value survived". These pin the two halves that have to stay
+ * true together: a rejected value keeps the stored one, a cleared value does
+ * not come back.
+ *
+ * Every case saves TWICE on purpose. The first save is what establishes the
+ * on-disk value; asserting against a store that was empty to begin with is how
+ * the bug survived #669's coverage, since an erase and a no-op are the same
+ * empty record.
+ */
+test('a rejected appNames entry leaves the previously persisted name on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appNames: { simhub: 'Dash' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appNames: { simhub: 'x'.repeat(101) },
+    customSlots: 1
+  })
+
+  // Still reported: the merge must keep the entry, not swallow the warning.
+  expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appNames).toEqual({ simhub: 'Dash' })
+})
+
+// The write path is shared, so the fix has to be too. appNames is merely the
+// easiest dictionary to hit, not the only one.
+test('a rejected appPaths entry leaves the previously persisted path on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appPaths: { simhub: 'C:/Tools/SimHub.exe' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appPaths: { simhub: 'C:/Tools/SimHub.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({ simhub: 'C:/Tools/SimHub.exe' })
+})
+
+// The other half, and the one a careless merge breaks: an empty value is a
+// deliberate clear, it is not in `dropped`, and it must stay gone.
+test('a cleared appNames entry is still removed and not resurrected (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appNames: { simhub: 'Dash' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({ appNames: { simhub: '' }, customSlots: 1 })
+
+  expect(result.dropped).toEqual([])
+  expect(result.settings.appNames).toEqual({})
+})
+
+// The sharpest case, because one patch carries both intents at once: merging by
+// "whatever the sanitizer omitted" instead of "whatever was rejected" passes
+// both tests above and fails here, resurrecting the cleared sibling.
+test('a rejected entry and a cleared sibling in one patch keep their own outcomes (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appNames: { simhub: 'Dash', crewchief: 'Crew' },
+    customSlots: 1
+  })
+
+  const result = await invokeSaveSettings({
+    appNames: { simhub: 'x'.repeat(101), crewchief: '' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appNames).toEqual({ simhub: 'Dash' })
+})
+
+// A first save of a rejected value has nothing to preserve, and must not invent
+// anything. This is the case #669 already covered, kept explicit so the merge
+// cannot start writing an empty string or a stale key into a fresh store.
+test('a rejected entry with no previous value still persists nothing (#806)', async () => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({
+    appNames: { simhub: 'x'.repeat(101) },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appNames).toEqual({})
 })
