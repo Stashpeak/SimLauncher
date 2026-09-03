@@ -15,6 +15,7 @@ interface SaveSettingsResult {
   settings: {
     appPaths: Record<string, string>
     appNames: Record<string, string>
+    appArgs: Record<string, string>
     gamePaths: Record<string, string>
     startWithWindows?: boolean
   }
@@ -429,6 +430,50 @@ test('a rejected entry and a cleared sibling in one patch keep their own outcome
 
   expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
   expect(result.settings.appNames).toEqual({ simhub: 'Dash' })
+})
+
+/**
+ * The remaining two of the four fields, and they are not filler. The merge
+ * iterates `dropped` generically, so the only thing keeping gamePaths and
+ * appArgs correct is that nobody special-cases the field. These two make that
+ * assumption fail loudly instead of silently, and they are the two that differ:
+ * gamePaths is validated against KNOWN_GAME_KEYS rather than the utility keys,
+ * and appArgs has its own, much larger length cap. Raised by the review bot on
+ * this PR, which is right that appNames and appPaths alone cannot see either
+ * difference.
+ */
+test('a rejected gamePaths entry leaves the previously persisted path on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.exe' },
+    customSlots: 1
+  })
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'gamePaths', key: 'iracing', reason: 'not-an-exe' }])
+  expect(result.settings.gamePaths).toEqual({ iracing: 'C:/Games/iRacing/iRacingUI.exe' })
+})
+
+// appArgs rejects on length alone, and its cap is 500 rather than the 100 that
+// appNames uses, so a merge that reached for the wrong cap would show up here
+// and nowhere else.
+test('a rejected appArgs entry leaves the previously persisted args on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appArgs: { simhub: '--safe' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appArgs: { simhub: 'x'.repeat(501) },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appArgs', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appArgs).toEqual({ simhub: '--safe' })
 })
 
 // A first save of a rejected value has nothing to preserve, and must not invent
