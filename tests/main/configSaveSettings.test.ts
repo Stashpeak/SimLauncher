@@ -14,6 +14,8 @@ type MockIpcHandler = (...args: unknown[]) => unknown
 interface SaveSettingsResult {
   settings: {
     appPaths: Record<string, string>
+    appNames: Record<string, string>
+    appArgs: Record<string, string>
     gamePaths: Record<string, string>
     startWithWindows?: boolean
   }
@@ -351,4 +353,243 @@ test('a path that fits only when unquoted is accepted (#859)', async () => {
 
   expect(result.dropped).toEqual([])
   expect(result.settings.gamePaths).toEqual({ iracing: exact })
+})
+
+/**
+ * #806: each dictionary is written WHOLESALE, and the sanitizers omit a rejected
+ * key rather than passing the old value through, so a rejected entry used to be
+ * erased from disk while the renderer reported "Not saved" — which reads as
+ * "your previous value survived". These pin the two halves that have to stay
+ * true together: a rejected value keeps the stored one, a cleared value does
+ * not come back.
+ *
+ * Every case saves TWICE on purpose. The first save is what establishes the
+ * on-disk value; asserting against a store that was empty to begin with is how
+ * the bug survived #669's coverage, since an erase and a no-op are the same
+ * empty record.
+ */
+test('a rejected appNames entry leaves the previously persisted name on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appNames: { simhub: 'Dash' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appNames: { simhub: 'x'.repeat(101) },
+    customSlots: 1
+  })
+
+  // Still reported: the merge must keep the entry, not swallow the warning.
+  expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appNames).toEqual({ simhub: 'Dash' })
+})
+
+// The write path is shared, so the fix has to be too. appNames is merely the
+// easiest dictionary to hit, not the only one.
+test('a rejected appPaths entry leaves the previously persisted path on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appPaths: { simhub: 'C:/Tools/SimHub.exe' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appPaths: { simhub: 'C:/Tools/SimHub.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({ simhub: 'C:/Tools/SimHub.exe' })
+})
+
+// The other half, and the one a careless merge breaks: an empty value is a
+// deliberate clear, it is not in `dropped`, and it must stay gone.
+test('a cleared appNames entry is still removed and not resurrected (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appNames: { simhub: 'Dash' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({ appNames: { simhub: '' }, customSlots: 1 })
+
+  expect(result.dropped).toEqual([])
+  expect(result.settings.appNames).toEqual({})
+})
+
+// The sharpest case, because one patch carries both intents at once: merging by
+// "whatever the sanitizer omitted" instead of "whatever was rejected" passes
+// both tests above and fails here, resurrecting the cleared sibling.
+test('a rejected entry and a cleared sibling in one patch keep their own outcomes (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appNames: { simhub: 'Dash', crewchief: 'Crew' },
+    customSlots: 1
+  })
+
+  const result = await invokeSaveSettings({
+    appNames: { simhub: 'x'.repeat(101), crewchief: '' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appNames).toEqual({ simhub: 'Dash' })
+})
+
+// The merge iterates `dropped` generically, so these two exist to make a
+// field-special-cased version fail loudly. They are also the two that differ:
+// gamePaths validates against KNOWN_GAME_KEYS, appArgs has its own length cap.
+test('a rejected gamePaths entry leaves the previously persisted path on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.exe' },
+    customSlots: 1
+  })
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'gamePaths', key: 'iracing', reason: 'not-an-exe' }])
+  expect(result.settings.gamePaths).toEqual({ iracing: 'C:/Games/iRacing/iRacingUI.exe' })
+})
+
+// appArgs rejects on length alone, and its cap is 500 rather than the 100 that
+// appNames uses, so a merge that reached for the wrong cap would show up here
+// and nowhere else.
+test('a rejected appArgs entry leaves the previously persisted args on disk (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appArgs: { simhub: '--safe' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appArgs: { simhub: 'x'.repeat(501) },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appArgs', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appArgs).toEqual({ simhub: '--safe' })
+})
+
+// A first save of a rejected value has nothing to preserve, and must not invent
+// anything. This is the case #669 already covered, kept explicit so the merge
+// cannot start writing an empty string or a stale key into a fresh store.
+test('a rejected entry with no previous value still persists nothing (#806)', async () => {
+  await loadConfigModule()
+
+  const result = await invokeSaveSettings({
+    appNames: { simhub: 'x'.repeat(101) },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
+  expect(result.settings.appNames).toEqual({})
+})
+
+// Removing a slot renumbers the dictionaries in the renderer, so `customapp1`
+// arriving is a different slot from `customapp1` on disk. Restoring it would
+// hand back the app the user just deleted, with a launchable path.
+test('removing a slot does not resurrect the deleted app when the shifted value is rejected (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Deleted.exe', customapp2: 'C:/Apps/Shifted.exe' },
+    customSlots: 2
+  })
+
+  // Slot 1 removed: slot 2's value shifts down into customapp1 and is invalid.
+  const result = await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Shifted.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'customapp1', reason: 'not-an-exe' }])
+  // The assertion that matters is the absence of 'C:/Apps/Deleted.exe'.
+  expect(result.settings.appPaths).toEqual({})
+})
+
+// The counterpart, so the guard stays a scalpel rather than becoming a blanket
+// "give up whenever customSlots moves". Game keys come from a fixed allowlist
+// and never renumber, so a slot removal must not cost gamePaths its protection.
+test('gamePaths is still preserved when a slot removal shrinks customSlots (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.exe' },
+    appPaths: { customapp1: 'C:/Apps/A.exe', customapp2: 'C:/Apps/B.exe' },
+    customSlots: 2
+  })
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.bat' },
+    appPaths: { customapp1: 'C:/Apps/B.exe' },
+    customSlots: 1
+  })
+
+  expect(result.settings.gamePaths).toEqual({ iracing: 'C:/Games/iRacing/iRacingUI.exe' })
+})
+
+// `shiftCustomSlotRecord` only rewrites `customapp<N>`, so a built-in key is as
+// stable during a slot removal as on any other save. A field-wide skip would
+// erase it while the renderer reports "Not saved", which is #806 all over again.
+test('a slot removal still preserves a rejected BUILT-IN utility value (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appPaths: {
+      simhub: 'C:/Tools/SimHub.exe',
+      customapp1: 'C:/Apps/A.exe',
+      customapp2: 'C:/Apps/B.exe'
+    },
+    customSlots: 2
+  })
+
+  // Slot 1 removed (slot 2 shifts down and stays valid) while simhub is edited
+  // to something the sanitizer refuses, in the same save.
+  const result = await invokeSaveSettings({
+    appPaths: { simhub: 'C:/Tools/SimHub.bat', customapp1: 'C:/Apps/B.exe' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({
+    simhub: 'C:/Tools/SimHub.exe',
+    customapp1: 'C:/Apps/B.exe'
+  })
+})
+
+// Why the skip is unconditional: remove a slot and add one before saving and the
+// count arrives unchanged, so a guard reading the delta preserves and resurrects
+// the deleted app. Remove one and add two and it even reads as growth.
+test('a slot removal masked by an added slot does not resurrect the deleted app (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Deleted.exe', customapp2: 'C:/Apps/Shifted.exe' },
+    customSlots: 2
+  })
+
+  // Remove slot 1, then Add: customSlots arrives unchanged at 2, while
+  // customapp1 now holds the shifted slot, edited to something invalid.
+  const result = await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Shifted.bat' },
+    customSlots: 2
+  })
+
+  expect(result.settings.appPaths).not.toHaveProperty('customapp1', 'C:/Apps/Deleted.exe')
+})
+
+// Pins a KNOWN LIMITATION, not a desired behaviour, so it cannot be quietly
+// widened or "fixed" by reintroducing a count-based guard. Flip this to expect
+// preservation when #915 lands.
+test('a rejected custom-slot value is NOT preserved, by design for now (#915)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({ appPaths: { customapp1: 'C:/Apps/A.exe' }, customSlots: 1 })
+
+  const result = await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/A.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'customapp1', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({})
 })

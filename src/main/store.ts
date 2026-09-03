@@ -4,7 +4,7 @@ import path from 'path'
 import Store from 'electron-store'
 
 import { BUILT_IN_UTILITY_KEYS, KNOWN_GAME_KEYS } from '../shared/domain/registries'
-import { MAX_CUSTOM_SLOTS } from '../shared/domain/slots'
+import { MAX_CUSTOM_SLOTS, getCustomSlotNumberFromKey } from '../shared/domain/slots'
 import { clamp, isRecord, normalizePathForComparison } from './utils'
 
 // Re-exported for existing importers (ipc/config.ts, ipc/launch.ts) that pull
@@ -922,6 +922,27 @@ export interface DroppedSettingsEntry {
   reason: DroppedSettingsReason
 }
 
+// Dictionaries that can hold custom-slot keys. gamePaths is absent on purpose:
+// game keys come from a fixed allowlist and never shift.
+const SLOT_KEYED_FIELDS = new Set<DroppedSettingsRecordField>(['appPaths', 'appNames', 'appArgs'])
+
+/**
+ * Whether a rejected entry's key may mean a different slot on the two sides of
+ * this write, which is when restoring it by key is unsafe.
+ *
+ * True for every `customapp<N>` key, unconditionally. `customSlots` looks like it
+ * could narrow that and cannot: removing a slot and adding one before saving
+ * arrives as an unchanged count, so a guard reading the delta restores the
+ * DELETED slot's path into the slot that shifted up. Built-in utility keys, which
+ * `shiftCustomSlotRecord` never touches, stay preserved.
+ *
+ * Cost: a rejected custom-slot edit is erased even when nothing moved. Lifting it
+ * needs the renderer to say which slot it removed (#915).
+ */
+function hasUnstableKeyIdentity(field: DroppedSettingsRecordField, key: string): boolean {
+  return SLOT_KEYED_FIELDS.has(field) && getCustomSlotNumberFromKey(key) !== null
+}
+
 /**
  * Reports which appPaths/gamePaths/appNames/appArgs entries in a save-settings
  * patch belong to a known slot/game key but hold a value the sanitizer
@@ -966,4 +987,53 @@ export function getDroppedSettingsEntries(patch: Record<string, unknown>): Dropp
   )
 
   return dropped
+}
+
+/**
+ * Carries the previously persisted value back into a sanitized save-settings
+ * patch for every entry the sanitizer REJECTED, so a rejected value leaves the
+ * stored one alone instead of erasing it. #806
+ *
+ * `setStoreEntries` replaces each dictionary wholesale and the sanitizers omit a
+ * rejected key, so without this the key is gone from disk while the renderer
+ * reports "Not saved".
+ *
+ * Safe because `dropped` is the rejected set only: `getDroppedSettingsEntries`
+ * already excludes unrecognized keys and blank values, so a deliberate clear is
+ * never resurrected.
+ *
+ * Call BEFORE the write, since it reads the value being replaced. Not used by
+ * config import, which replaces the whole configuration on purpose.
+ */
+export function preserveRejectedSettingsEntries(
+  safe: Record<string, unknown>,
+  dropped: DroppedSettingsEntry[]
+): Record<string, unknown> {
+  if (dropped.length === 0) {
+    return safe
+  }
+
+  const merged = { ...safe }
+
+  dropped.forEach(({ field, key }) => {
+    if (hasUnstableKeyIdentity(field, key)) return
+
+    const sanitizedRecord = merged[field]
+
+    // Nothing is being written for this dictionary, so there is nothing to
+    // erase and nothing to restore.
+    if (!isRecord(sanitizedRecord)) return
+
+    const storedValue = getStoredStringRecord(field)[key]
+
+    // No previous value to keep: a first save of a rejected entry still
+    // persists nothing, which is correct and is what "Not saved" already meant.
+    if (storedValue === undefined) return
+
+    // Re-read from `merged` each time so several rejected keys in one
+    // dictionary accumulate rather than overwrite each other.
+    merged[field] = { ...sanitizedRecord, [key]: storedValue }
+  })
+
+  return merged
 }
