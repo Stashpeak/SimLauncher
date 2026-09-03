@@ -4,7 +4,7 @@ import path from 'path'
 import Store from 'electron-store'
 
 import { BUILT_IN_UTILITY_KEYS, KNOWN_GAME_KEYS } from '../shared/domain/registries'
-import { MAX_CUSTOM_SLOTS } from '../shared/domain/slots'
+import { MAX_CUSTOM_SLOTS, getCustomSlotNumberFromKey } from '../shared/domain/slots'
 import { clamp, isRecord, normalizePathForComparison } from './utils'
 
 // Re-exported for existing importers (ipc/config.ts, ipc/launch.ts) that pull
@@ -922,10 +922,33 @@ export interface DroppedSettingsEntry {
   reason: DroppedSettingsReason
 }
 
-// The dictionaries keyed by custom-slot POSITION (`customapp1`, `customapp2`, …),
+// The dictionaries that can hold custom-slot keys (`customapp1`, `customapp2`, …),
 // which the renderer renumbers when a slot is removed. `gamePaths` is absent on
 // purpose: its keys come from the fixed game allowlist and never shift.
+//
+// Membership here is necessary but NOT sufficient to call a key unstable: these
+// same dictionaries also hold built-in utility keys (`simhub`, …), which
+// `shiftCustomSlotRecord` passes through untouched. The per-key test below is
+// what decides.
 const SLOT_KEYED_FIELDS = new Set<DroppedSettingsRecordField>(['appPaths', 'appNames', 'appArgs'])
+
+/**
+ * Whether a rejected entry's key may have been RENUMBERED by the save now being
+ * written, which is the one condition under which restoring it by key is unsafe.
+ *
+ * True only for a `customapp<N>` key in a slot-keyed dictionary, on a save that
+ * lowers `customSlots`. A built-in utility key in the same dictionary, or any key
+ * at all when the count did not shrink, is stable and must still be preserved:
+ * skipping it would erase a value the renderer is simultaneously reporting as
+ * "Not saved", which is the exact bug #806 exists to fix.
+ */
+function isRenumberedByThisSave(
+  field: DroppedSettingsRecordField,
+  key: string,
+  slotsShrank: boolean
+): boolean {
+  return slotsShrank && SLOT_KEYED_FIELDS.has(field) && getCustomSlotNumberFromKey(key) !== null
+}
 
 /**
  * Reports which appPaths/gamePaths/appNames/appArgs entries in a save-settings
@@ -1013,13 +1036,17 @@ export function preserveRejectedSettingsEntries(
   // app and it silently comes back, with a launchable path.
   //
   // Preservation is only sound while a key means the same thing on both sides of
-  // the write, so it is skipped for those fields when the count shrinks. Losing
-  // a rejected value during a slot removal is the lesser harm: an empty field
-  // the user can retype, rather than an app they deleted reappearing.
+  // the write, so it is skipped for exactly the keys that moved. Losing a
+  // rejected value on a slot that shifted is the lesser harm: an empty field the
+  // user can retype, rather than an app they deleted reappearing.
   //
-  // gamePaths is deliberately still preserved. It is keyed by the fixed game
-  // allowlist, which never renumbers, so the hazard does not reach it.
-  // (Codex P2 on #913.)
+  // Narrowed to the KEY rather than the field. `shiftCustomSlotRecord` only
+  // rewrites `customapp<N>`, so `simhub` in the same dictionary is as stable
+  // during a slot removal as it is on any other save, and skipping it would
+  // erase a value the renderer is at that moment reporting as "Not saved" —
+  // which is the bug this whole change exists to fix, reintroduced through the
+  // back door. gamePaths is untouched for the same reason: fixed allowlist,
+  // never renumbers. (Both P2s from Codex on #913, one per round.)
   const storedSlots = store.get('customSlots')
   const patchSlots = safe.customSlots
   const slotsShrank =
@@ -1028,7 +1055,7 @@ export function preserveRejectedSettingsEntries(
   const merged = { ...safe }
 
   dropped.forEach(({ field, key }) => {
-    if (slotsShrank && SLOT_KEYED_FIELDS.has(field)) return
+    if (isRenumberedByThisSave(field, key, slotsShrank)) return
 
     const sanitizedRecord = merged[field]
 

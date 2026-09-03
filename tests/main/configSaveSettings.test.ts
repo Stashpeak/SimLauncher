@@ -540,3 +540,38 @@ test('gamePaths is still preserved when a slot removal shrinks customSlots (#806
 
   expect(result.settings.gamePaths).toEqual({ iracing: 'C:/Games/iRacing/iRacingUI.exe' })
 })
+
+/**
+ * The guard has to key on the KEY, not the field. appPaths, appNames and appArgs
+ * hold built-in utility keys next to the custom-slot ones, and
+ * `shiftCustomSlotRecord` only rewrites `customapp<N>`, so `simhub` is exactly as
+ * stable during a slot removal as on any other save. A field-wide skip erases it
+ * while the renderer reports "Not saved", which is #806 reintroduced through the
+ * back door on this one path. (Second Codex P2 on #913, found in the fix for the
+ * first one.)
+ */
+test('a slot removal still preserves a rejected BUILT-IN utility value (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appPaths: {
+      simhub: 'C:/Tools/SimHub.exe',
+      customapp1: 'C:/Apps/A.exe',
+      customapp2: 'C:/Apps/B.exe'
+    },
+    customSlots: 2
+  })
+
+  // Slot 1 removed (slot 2 shifts down and stays valid) while simhub is edited
+  // to something the sanitizer refuses, in the same save.
+  const result = await invokeSaveSettings({
+    appPaths: { simhub: 'C:/Tools/SimHub.bat', customapp1: 'C:/Apps/B.exe' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'simhub', reason: 'not-an-exe' }])
+  expect(result.settings.appPaths).toEqual({
+    simhub: 'C:/Tools/SimHub.exe',
+    customapp1: 'C:/Apps/B.exe'
+  })
+})
