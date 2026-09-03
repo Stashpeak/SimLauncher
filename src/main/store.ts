@@ -922,6 +922,11 @@ export interface DroppedSettingsEntry {
   reason: DroppedSettingsReason
 }
 
+// The dictionaries keyed by custom-slot POSITION (`customapp1`, `customapp2`, …),
+// which the renderer renumbers when a slot is removed. `gamePaths` is absent on
+// purpose: its keys come from the fixed game allowlist and never shift.
+const SLOT_KEYED_FIELDS = new Set<DroppedSettingsRecordField>(['appPaths', 'appNames', 'appArgs'])
+
 /**
  * Reports which appPaths/gamePaths/appNames/appArgs entries in a save-settings
  * patch belong to a known slot/game key but hold a value the sanitizer
@@ -999,9 +1004,32 @@ export function preserveRejectedSettingsEntries(
     return safe
   }
 
+  // A save that LOWERS customSlots has renumbered the slot-keyed dictionaries on
+  // the way in (`shiftCustomSlotRecord` in `useCustomSlots.tsx`, applied to
+  // appPaths/appNames/appArgs), and the renderer sends the shifted records and
+  // the smaller count in the same patch. So `customapp1` after this write is a
+  // DIFFERENT slot from `customapp1` before it, and restoring by key would put
+  // the DELETED slot's value into the slot that shifted up: the user removes an
+  // app and it silently comes back, with a launchable path.
+  //
+  // Preservation is only sound while a key means the same thing on both sides of
+  // the write, so it is skipped for those fields when the count shrinks. Losing
+  // a rejected value during a slot removal is the lesser harm: an empty field
+  // the user can retype, rather than an app they deleted reappearing.
+  //
+  // gamePaths is deliberately still preserved. It is keyed by the fixed game
+  // allowlist, which never renumbers, so the hazard does not reach it.
+  // (Codex P2 on #913.)
+  const storedSlots = store.get('customSlots')
+  const patchSlots = safe.customSlots
+  const slotsShrank =
+    typeof storedSlots === 'number' && typeof patchSlots === 'number' && patchSlots < storedSlots
+
   const merged = { ...safe }
 
   dropped.forEach(({ field, key }) => {
+    if (slotsShrank && SLOT_KEYED_FIELDS.has(field)) return
+
     const sanitizedRecord = merged[field]
 
     // Nothing is being written for this dictionary, so there is nothing to

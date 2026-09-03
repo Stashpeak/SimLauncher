@@ -490,3 +490,53 @@ test('a rejected entry with no previous value still persists nothing (#806)', as
   expect(result.dropped).toEqual([{ field: 'appNames', key: 'simhub', reason: 'too-long' }])
   expect(result.settings.appNames).toEqual({})
 })
+
+/**
+ * The one case where restoring by key is WRONG, and it is a real user action
+ * rather than a contrived one. Removing a custom slot renumbers the slot-keyed
+ * dictionaries in the renderer (`shiftCustomSlotRecord`), and the shifted
+ * records travel with the smaller `customSlots` in a single patch, so
+ * `customapp1` on the way in is a different slot from `customapp1` on disk.
+ * Restoring it would hand the user back the app they just deleted, with a
+ * launchable path, which is worse than the erase this whole PR is fixing.
+ * (Codex P2 on #913.)
+ */
+test('removing a slot does not resurrect the deleted app when the shifted value is rejected (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Deleted.exe', customapp2: 'C:/Apps/Shifted.exe' },
+    customSlots: 2
+  })
+
+  // Slot 1 removed: slot 2's value shifts down into customapp1 and is invalid.
+  const result = await invokeSaveSettings({
+    appPaths: { customapp1: 'C:/Apps/Shifted.bat' },
+    customSlots: 1
+  })
+
+  expect(result.dropped).toEqual([{ field: 'appPaths', key: 'customapp1', reason: 'not-an-exe' }])
+  // The assertion that matters is the absence of 'C:/Apps/Deleted.exe'.
+  expect(result.settings.appPaths).toEqual({})
+})
+
+// The counterpart, so the guard stays a scalpel rather than becoming a blanket
+// "give up whenever customSlots moves". Game keys come from a fixed allowlist
+// and never renumber, so a slot removal must not cost gamePaths its protection.
+test('gamePaths is still preserved when a slot removal shrinks customSlots (#806)', async () => {
+  await loadConfigModule()
+
+  await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.exe' },
+    appPaths: { customapp1: 'C:/Apps/A.exe', customapp2: 'C:/Apps/B.exe' },
+    customSlots: 2
+  })
+
+  const result = await invokeSaveSettings({
+    gamePaths: { iracing: 'C:/Games/iRacing/iRacingUI.bat' },
+    appPaths: { customapp1: 'C:/Apps/B.exe' },
+    customSlots: 1
+  })
+
+  expect(result.settings.gamePaths).toEqual({ iracing: 'C:/Games/iRacing/iRacingUI.exe' })
+})
