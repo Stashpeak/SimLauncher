@@ -1,0 +1,247 @@
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+// @ts-expect-error - plain .mjs repo tooling, no type declarations by design
+import { countCodeLines } from '../../scripts/countCodeLines.mjs'
+// @ts-expect-error - plain .mjs repo tooling, no type declarations by design
+import { evaluateBudget, toPosix } from '../../scripts/checkSizeBudget.mjs'
+
+/**
+ * Guards the code-line budget gate (#918).
+ *
+ * The rules are imported from the real script rather than restated here, so a
+ * change to the gate cannot leave a green test describing behaviour that no
+ * longer exists. `evaluateBudget` is pure for exactly this reason: the cases
+ * below need no repo, no git and no filesystem.
+ */
+
+const count = (source: string, file = 'probe.ts'): number => countCodeLines(file, source).code
+
+const config = {
+  thresholdCodeLines: 300,
+  budgets: { 'src/a.ts': 100 },
+  exclusions: { 'src/data.ts': 'generated' }
+}
+
+// The base config names src/a.ts and src/data.ts, so both are present by
+// default. A case that is about staleness passes its own file list instead.
+const run = (
+  files: string[],
+  counts: Record<string, number>,
+  overrides: Partial<typeof config> & { onlyTheseFiles?: boolean } = {}
+): string[] => {
+  const { onlyTheseFiles, ...configOverrides } = overrides
+  const merged = { ...config, ...configOverrides }
+  const referenced = onlyTheseFiles
+    ? []
+    : [...Object.keys(merged.budgets ?? {}), ...Object.keys(merged.exclusions ?? {})]
+
+  return evaluateBudget({
+    files: [...new Set([...referenced, ...files])],
+    config: merged,
+    codeLinesFor: (file: string) => counts[file] ?? 0
+  })
+}
+
+describe('countCodeLines', () => {
+  it('ignores blank lines and whole-line comments', () => {
+    expect(count('const a = 1\n\n// a comment\nconst b = 2\n')).toBe(2)
+  })
+
+  it('counts a line holding code and a trailing comment as code', () => {
+    expect(count('const a = 1 // explains a\n')).toBe(1)
+  })
+
+  it('ignores every line of a block comment', () => {
+    expect(count('/**\n * one\n * two\n */\nconst a = 1\n')).toBe(1)
+  })
+
+  it('counts a line where code follows a block comment that ends on it', () => {
+    expect(count('/* lead */ const a = 1\n')).toBe(1)
+  })
+
+  it('ignores JSX comments, which a regex counter reads as code', () => {
+    const source = 'export const V = () => (\n  <div>\n    {/* why */}\n    <p />\n  </div>\n)\n'
+    // Six lines, one of them a JSX comment.
+    expect(count(source, 'probe.tsx')).toBe(5)
+  })
+
+  // Found by both review bots on #919, independently. `forEachChild` skips
+  // punctuation, so a comment on its own line before a closing token leads no
+  // node and trails nothing on its line. It was counted as code, which charged
+  // budget for the end-of-body why-comment this repo explicitly asks for.
+  it.each([
+    ['block body', 'function f() {\n  doThing()\n  // why we stop here\n}\n'],
+    ['object literal', 'const o = {\n  a: 1\n  // no b on purpose\n}\n'],
+    ['array literal', 'const a = [\n  1\n  // deliberately short\n]\n'],
+    ['if body', 'if (x) {\n  go()\n  // nothing else\n}\n']
+  ])('ignores a dangling comment before the closing token of a %s', (_name, source) => {
+    expect(count(source)).toBe(3)
+  })
+
+  it('ignores a comment on the last line of the file', () => {
+    expect(count('const a = 1\n// a trailing note\n')).toBe(1)
+  })
+
+  it('does not treat comment markers inside a template string as comments', () => {
+    expect(count('const url = `https://x/y`\nconst c = `/* not a comment */`\n')).toBe(2)
+  })
+
+  it('does not treat a regex literal as the start of a comment', () => {
+    // A bare ts.createScanner mis-lexes this and swallows the following lines.
+    expect(count('const re = /https?:\\/\\//\nconst a = 1\nconst b = 2\n')).toBe(3)
+  })
+
+  it('counts CRLF the same as LF', () => {
+    const lf = 'const a = 1\n// c\nconst b = 2\n'
+    expect(count(lf.replace(/\n/g, '\r\n'))).toBe(count(lf))
+  })
+
+  it('throws rather than returning a wrong number for an unparseable file', () => {
+    expect(() => count('const a = (((\n')).toThrow(/could not be parsed/)
+  })
+
+  // TypeScript reports comment ranges in UTF-16 code units, so masking a line by
+  // code point drifts one slot per astral character and eats real code that sits
+  // just past the comment. Short tails are what expose it: the drift has to reach
+  // the end of the line before the count actually flips.
+  it.each([
+    ['one astral char, one code char', '/*\u{1F600}*/x\n'],
+    ['two astral chars, two code chars', '/*\u{1F600}\u{1F600}*/xy\n'],
+    ['two astral chars, a longer tail', '/*\u{1F600}\u{1F600}*/xyz\n'],
+    ['an astral char in a trailing comment', 'x /*\u{1F600}*/\n']
+  ])('counts code after a comment holding %s', (_label, source) => {
+    expect(count(source)).toBe(1)
+  })
+
+  it('is unaffected by a non-astral accented character, the control for the above', () => {
+    expect(count('/*é*/x\n')).toBe(1)
+  })
+
+  // U+2028 and U+2029 end a line for the TypeScript parser, and the offsets used
+  // for masking come from the parser's own line map. Splitting on `\n` alone puts
+  // a whole file on one line here while the parser sees many, so a file written
+  // this way would report a handful of lines and clear any budget.
+  it.each([
+    ['U+2028', '\u2028'],
+    ['U+2029', '\u2029']
+  ])('counts statements separated by %s as separate lines', (_label, sep) => {
+    expect(count(`const a = 1${sep}const b = 2${sep}const c = 3\n`)).toBe(3)
+  })
+
+  it('still excludes a comment line separated by U+2028', () => {
+    expect(count('const a = 1\u2028// why\u2028const c = 3\n')).toBe(2)
+  })
+})
+
+describe('evaluateBudget', () => {
+  it('passes a tracked file sitting exactly on its budget', () => {
+    expect(run(['src/a.ts'], { 'src/a.ts': 100 })).toEqual([])
+  })
+
+  it('fails a tracked file one line over its budget', () => {
+    const [violation] = run(['src/a.ts'], { 'src/a.ts': 101 })
+    expect(violation).toContain('grew past its budget')
+    expect(violation).toContain('101 code lines, budget 100 (+1)')
+  })
+
+  it('passes a tracked file that shrank, and keeps tracking it', () => {
+    // No lower bound by design: the downward ratchet was rejected on #918.
+    expect(run(['src/a.ts'], { 'src/a.ts': 10 })).toEqual([])
+  })
+
+  it('fails a new file at the threshold with no entry', () => {
+    const [violation] = run(['src/new.ts'], { 'src/new.ts': 300 })
+    expect(violation).toContain('is new above the threshold')
+    expect(violation).toContain('"src/new.ts": 300')
+  })
+
+  it('allows a new file below the threshold to stay unlisted', () => {
+    expect(run(['src/new.ts'], { 'src/new.ts': 299 })).toEqual([])
+  })
+
+  it('skips an excluded file however large it is', () => {
+    expect(run(['src/data.ts'], { 'src/data.ts': 5000 })).toEqual([])
+  })
+
+  // Raised by CodeRabbit on #919 as Major, and it was right: checking only for
+  // the key let an empty reason buy an exemption, which is the one way this
+  // config could be weakened while looking untouched.
+  it.each([
+    ['an empty string', ''],
+    ['whitespace', '   '],
+    ['null', null],
+    ['a non-string', 42]
+  ])('refuses to skip a file excluded with %s as its reason', (_name, reason) => {
+    const violations = run(
+      ['src/huge.ts'],
+      { 'src/huge.ts': 5000 },
+      {
+        exclusions: { 'src/huge.ts': reason as string }
+      }
+    )
+    expect(violations.some((v) => v.includes('excluded with no reason'))).toBe(true)
+  })
+
+  it('fails a budget entry whose file is gone', () => {
+    const violations = run([], {}, { onlyTheseFiles: true })
+    expect(violations.some((v) => v.includes('stale budget entry: src/a.ts'))).toBe(true)
+  })
+
+  it('fails an exclusion whose file is gone', () => {
+    const violations = run(['src/a.ts'], { 'src/a.ts': 100 }, { onlyTheseFiles: true })
+    expect(violations.some((v) => v.includes('stale exclusion: src/data.ts'))).toBe(true)
+  })
+
+  it('fails a path that is both budgeted and excluded', () => {
+    const violations = run(
+      ['src/a.ts'],
+      { 'src/a.ts': 100 },
+      {
+        exclusions: { 'src/a.ts': 'contradictory' }
+      }
+    )
+    expect(violations.some((v) => v.includes('both budgeted and excluded'))).toBe(true)
+  })
+
+  it('reports every problem in one pass rather than stopping at the first', () => {
+    const violations = run(
+      ['src/a.ts', 'src/new.ts'],
+      { 'src/a.ts': 400, 'src/new.ts': 350 },
+      { onlyTheseFiles: true }
+    )
+    expect(violations).toHaveLength(3)
+    expect(violations.some((v) => v.includes('grew past its budget'))).toBe(true)
+    expect(violations.some((v) => v.includes('is new above the threshold'))).toBe(true)
+    expect(violations.some((v) => v.includes('stale exclusion'))).toBe(true)
+  })
+
+  it('rejects a non-integer threshold instead of silently passing everything', () => {
+    expect(run(['src/a.ts'], { 'src/a.ts': 999 }, { thresholdCodeLines: 0 })[0]).toContain(
+      'thresholdCodeLines'
+    )
+  })
+
+  it('normalises Windows separators so both platforms agree', () => {
+    expect(toPosix('src\\main\\store.ts')).toBe('src/main/store.ts')
+    expect(run(['src\\a.ts'], { 'src/a.ts': 100 })).toEqual([])
+  })
+})
+
+describe('the committed budget', () => {
+  const budget = JSON.parse(
+    readFileSync(fileURLToPath(new URL('../../scripts/size-budget.json', import.meta.url)), 'utf8')
+  )
+
+  it('gives every exclusion a written reason', () => {
+    for (const [file, reason] of Object.entries(budget.exclusions)) {
+      expect(typeof reason, `${file} needs a reason`).toBe('string')
+      expect((reason as string).length, `${file} needs a real reason`).toBeGreaterThan(20)
+    }
+  })
+
+  it('uses forward slashes in every key, so the keys match on Windows', () => {
+    const keys = [...Object.keys(budget.budgets), ...Object.keys(budget.exclusions)]
+    expect(keys.filter((k) => k.includes('\\'))).toEqual([])
+  })
+})
