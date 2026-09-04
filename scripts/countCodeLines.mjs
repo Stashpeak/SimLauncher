@@ -66,7 +66,13 @@ function collectCommentRanges(text, sourceFile) {
 /** Whether the line still holds non-whitespace once every comment on it is blanked out. */
 function hasCodeOutsideComments(lineText, lineStart, ranges) {
   const lineEnd = lineStart + lineText.length
-  const chars = [...lineText]
+
+  // split(''), not [...lineText]. The spread iterates code points, so one astral
+  // character fills a single slot while TypeScript reports its range in UTF-16
+  // code units. The indexes then drift by one per astral character and the loop
+  // blanks that many characters of real code past the comment's end, which is
+  // enough to report `/*<emoji>*/x` as comment-only and let the line grow unbudgeted.
+  const chars = lineText.split('')
 
   for (const range of ranges) {
     const from = Math.max(range.pos, lineStart)

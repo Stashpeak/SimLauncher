@@ -100,6 +100,23 @@ describe('countCodeLines', () => {
   it('throws rather than returning a wrong number for an unparseable file', () => {
     expect(() => count('const a = (((\n')).toThrow(/could not be parsed/)
   })
+
+  // TypeScript reports comment ranges in UTF-16 code units, so masking a line by
+  // code point drifts one slot per astral character and eats real code that sits
+  // just past the comment. Short tails are what expose it: the drift has to reach
+  // the end of the line before the count actually flips.
+  it.each([
+    ['one astral char, one code char', '/*\u{1F600}*/x\n'],
+    ['two astral chars, two code chars', '/*\u{1F600}\u{1F600}*/xy\n'],
+    ['two astral chars, a longer tail', '/*\u{1F600}\u{1F600}*/xyz\n'],
+    ['an astral char in a trailing comment', 'x /*\u{1F600}*/\n']
+  ])('counts code after a comment holding %s', (_label, source) => {
+    expect(count(source)).toBe(1)
+  })
+
+  it('is unaffected by a non-astral accented character, the control for the above', () => {
+    expect(count('/*é*/x\n')).toBe(1)
+  })
 })
 
 describe('evaluateBudget', () => {
