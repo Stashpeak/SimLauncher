@@ -195,7 +195,6 @@ describe('evaluateBudget', () => {
       { 'src/a.ts': 400, 'src/new.ts': 350 },
       { onlyTheseFiles: true }
     )
-    // over budget, new-over-threshold, and the now-stale exclusion
     expect(violations).toHaveLength(3)
     expect(violations.some((v) => v.includes('grew past its budget'))).toBe(true)
     expect(violations.some((v) => v.includes('is new above the threshold'))).toBe(true)

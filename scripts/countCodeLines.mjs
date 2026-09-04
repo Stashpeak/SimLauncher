@@ -105,7 +105,18 @@ export function countCodeLines(filePath, sourceText) {
     filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   )
 
-  const syntactic = sourceFile.parseDiagnostics ?? []
+  // `parseDiagnostics` is internal, so treat its absence as a failure rather than
+  // defaulting to an empty array. A TypeScript upgrade that renames it would turn
+  // the throw below into a silent pass, and an unparseable file would then be
+  // counted instead of rejected: a wrong number that looks fine, which is the one
+  // outcome this counter must never produce.
+  const syntactic = sourceFile.parseDiagnostics
+  if (!Array.isArray(syntactic)) {
+    throw new Error(
+      `${filePath}: could not be parsed (TypeScript no longer exposes parseDiagnostics)`
+    )
+  }
+
   if (syntactic.length > 0) {
     const first = syntactic[0]
     const message = ts.flattenDiagnosticMessageText(first.messageText, ' ')
