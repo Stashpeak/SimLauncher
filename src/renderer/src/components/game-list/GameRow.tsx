@@ -796,7 +796,16 @@ export function GameRow({
         <div className="overflow-hidden">
           {isActive && (
             <div className="pb-4">
+              {/* Keyed so a profile change remounts the editor instead of
+                  reusing the instance. useDirtyTracking captures its baseline
+                  once and only resetDirty clears it, so a reused instance
+                  carries the previous profile's baseline into the new one:
+                  the editor reports changes nobody made, and Save writes that
+                  stale baseline over the profile on screen (#880). The key is
+                  the same identity the editor already reports itself under in
+                  reportProfileEditorDirty, so the two cannot disagree. */}
               <ProfileEditor
+                key={`${game.key}:${profileSet.activeProfileId}`}
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
