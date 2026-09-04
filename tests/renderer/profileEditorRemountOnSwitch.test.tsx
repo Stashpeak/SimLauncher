@@ -15,11 +15,10 @@
  * ⚠️ These tests document the MECHANISM, they do not guard the fix. They drive
  * `useDirtyTracking` through a probe and supply their own keys, so they pass
  * whether or not `GameRow` actually passes a `key` to `<ProfileEditor>`. Deleting
- * that key would reintroduce #880 with this file still green. A guard would have
- * to mount `GameRow` and switch profiles through the row's dropdown, which is
- * why it is not here: the switch is driven by `useGameProfile` and reachable
- * only through the menu. What these pin instead is why the key is load-bearing,
- * so a future refactor that removes it has something to read:
+ * that key would reintroduce #880 with this file still green. A guard has to
+ * mount `GameRow` instead, which is tracked as #923 along with the two dead ends
+ * a first attempt already hit. What these pin instead is why the key is
+ * load-bearing, so a future refactor that removes it has something to read:
  *   1. reusing an instance across a profile change carries the stale baseline
  *   2. a changed key remounts and the new profile arrives clean
  *   3. an edit to the SAME profile still reports dirty, so the fix does not
