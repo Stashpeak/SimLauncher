@@ -125,9 +125,13 @@ export function countCodeLines(filePath, sourceText) {
 
   const ranges = collectCommentRanges(text, sourceFile)
 
-  // Split on the three line endings rather than trusting one, then drop the
-  // empty tail a trailing newline produces so counts match `wc -l`.
-  const lines = text.split(/\r\n|\r|\n/)
+  // Split on every terminator ECMAScript recognises, not just the three common
+  // ones, because the offsets below come from the parser's own line map. U+2028
+  // and U+2029 end a line for TypeScript, so omitting them puts a whole file on
+  // one line here while the parser sees many: hundreds of statements would count
+  // as one, sailing past both the threshold and any budget. Then drop the empty
+  // tail a trailing terminator produces so counts match `wc -l`.
+  const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/)
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
 
   let code = 0

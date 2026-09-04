@@ -117,6 +117,21 @@ describe('countCodeLines', () => {
   it('is unaffected by a non-astral accented character, the control for the above', () => {
     expect(count('/*é*/x\n')).toBe(1)
   })
+
+  // U+2028 and U+2029 end a line for the TypeScript parser, and the offsets used
+  // for masking come from the parser's own line map. Splitting on `\n` alone puts
+  // a whole file on one line here while the parser sees many, so a file written
+  // this way would report a handful of lines and clear any budget.
+  it.each([
+    ['U+2028', '\u2028'],
+    ['U+2029', '\u2029']
+  ])('counts statements separated by %s as separate lines', (_label, sep) => {
+    expect(count(`const a = 1${sep}const b = 2${sep}const c = 3\n`)).toBe(3)
+  })
+
+  it('still excludes a comment line separated by U+2028', () => {
+    expect(count('const a = 1\u2028// why\u2028const c = 3\n')).toBe(2)
+  })
 })
 
 describe('evaluateBudget', () => {
