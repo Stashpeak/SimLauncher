@@ -864,10 +864,12 @@ export function sanitizeSettingsPatch(patch: Record<string, unknown>): Record<st
 
 export type DroppedSettingsRecordField = 'gamePaths' | 'appPaths' | 'appNames' | 'appArgs'
 
-// Why the sanitizer rejected the value — the renderer picks the warning text
-// from this, so it must reflect the check that actually failed (a legit .exe
-// path can be rejected purely for length). Same union as the shared rule
-// produces, under the name the settings save path has always imported.
+/**
+ * Why the sanitizer rejected the value — the renderer picks the warning text
+ * from this, so it must reflect the check that actually failed (a legit .exe
+ * path can be rejected purely for length). Same union as the shared rule
+ * produces, under the name the settings save path has always imported.
+ */
 export type DroppedSettingsReason = ExePathRejectReason
 
 export interface DroppedSettingsEntry {

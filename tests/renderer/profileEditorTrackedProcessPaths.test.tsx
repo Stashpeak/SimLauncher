@@ -17,6 +17,7 @@ import {
   useProfileEditor,
   type UseProfileEditorResult
 } from '../../src/renderer/src/hooks/useProfileEditor'
+import { MAX_CONFIGURED_EXE_PATH_LENGTH } from '../../src/shared/path'
 
 const getSettingsMock = vi.fn()
 const getProfilesMock = vi.fn()
@@ -189,6 +190,33 @@ describe('useProfileEditor typed secondary executables (#890)', () => {
       // The editor stays open on the offending value so it can be corrected.
       expect(onCloseMock).not.toHaveBeenCalled()
       expect(harness.getApi().trackedProcessPaths).toEqual(['C:/Tools/notes.txt'])
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('an over-long path is refused for length, not misreported as a non-.exe', async () => {
+    // Same shared rule, other branch. The wording has to name the check that
+    // failed: a correctly named .exe rejected purely for length must not be
+    // told it is not an .exe (#669 made that distinction for settings).
+    const harness = await mountEditor()
+    try {
+      const tooLong = `C:/${'a'.repeat(MAX_CONFIGURED_EXE_PATH_LENGTH)}.exe`
+      await act(async () => {
+        harness.getApi().handleTrackedProcessPathChange(0, tooLong)
+      })
+
+      let saved = true
+      await act(async () => {
+        saved = await harness.getApi().handleSave()
+      })
+
+      expect(saved).toBe(false)
+      expect(saveProfileMock).not.toHaveBeenCalled()
+      expect(notifyMock).toHaveBeenCalledWith(
+        'Not saved: Secondary executable 1 (path is too long)',
+        'warn'
+      )
     } finally {
       harness.unmount()
     }

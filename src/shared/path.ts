@@ -18,9 +18,11 @@
  */
 export const MAX_CONFIGURED_EXE_PATH_LENGTH = 300
 
-// Why an exe path is rejected. The renderer picks its warning text from this,
-// so it has to name the check that actually failed: a legitimately named .exe
-// can be rejected purely for length.
+/**
+ * Why an exe path is rejected. The renderer picks its warning text from this,
+ * so it has to name the check that actually failed: a legitimately named .exe
+ * can be rejected purely for length.
+ */
 export type ExePathRejectReason = 'not-an-exe' | 'too-long'
 
 /**
