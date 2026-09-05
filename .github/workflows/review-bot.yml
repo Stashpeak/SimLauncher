@@ -29,6 +29,20 @@ jobs:
     # anything. The `issue_comment` branch below is untouched on purpose: that
     # event runs in the base-repo context where secrets do resolve, so a manual
     # `@stashpeakbot` on a Dependabot PR still works.
+    #
+    # ⚠️ That exemption has one real hole, the same one `pr-smoke-note.yml`
+    # names above its own Dependabot skip: `dependabot.yml` isolates the electron
+    # stack into its own grouped PR precisely because a major runtime bump needs
+    # real scrutiny (#634, #907). So the electron dependency PR is the one bot PR
+    # that should still be reviewed, and #909 asked for that carve-out to stay
+    # visible rather than be widened away silently.
+    #
+    # It cannot be an exception in this `if`. Secrets are unavailable to EVERY
+    # Dependabot-triggered `pull_request` run regardless of which package moved,
+    # so letting the electron PR through would only recreate the same red check
+    # for the one PR that matters. The carve-out is therefore the manual path:
+    # comment `@stashpeakbot` on the electron PR, which resolves secrets and
+    # reviews it properly.
     if: >-
       (github.event_name == 'pull_request' &&
        github.actor != 'dependabot[bot]' &&
