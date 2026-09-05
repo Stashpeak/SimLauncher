@@ -19,6 +19,14 @@ jobs:
     concurrency:
       group: review-bot-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
+    # `github.actor`, not `github.event.pull_request.user.login`. The two differ
+    # on purpose from `pr-smoke-note.yml`, which asks who AUTHORED a PR on an
+    # event that a human can re-fire by editing the body. This asks who TRIGGERED
+    # the run, because that is what GitHub keys the secret restriction on, and it
+    # is the field their own documented example uses. On `types: [opened]` the
+    # two are always equal anyway; the distinction is here so the next reader
+    # does not "fix" one to match the other.
+    #
     # The actor check is what keeps Dependabot PRs out (#909). GitHub runs their
     # `pull_request` workflows in a restricted context with no repository
     # secrets, so `REVIEWBOT_PAT` resolves empty and the private checkout dies on

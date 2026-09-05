@@ -51,13 +51,17 @@ const WARMUP_TIMEOUT_MS = 20_000
  * Start a throwaway PowerShell so the first measured call does not pay for it.
  *
  * The production budget is per call and the first `powershell.exe` on a cold CI
- * runner has exceeded it three times, most recently twice on 2026-09-04 (#914).
- * Every later spawn in the same job runs in about two seconds, so what the
- * assertions were measuring was host start-up, not the shipped script.
+ * runner has exceeded it five times across four days (08-21, 09-01, 09-02 and
+ * twice on 09-04, #914). Later spawns in the same job land at four to six
+ * seconds, so what the assertions were measuring was start-up, not the shipped
+ * script.
  *
  * Deliberately the same invocation as production (`win32KillUtils.ts`, the
- * `-NoProfile -NonInteractive -ExecutionPolicy Bypass` form), because warming a
- * different one would warm a different thing.
+ * `-NoProfile -NonInteractive -ExecutionPolicy Bypass` form), and deliberately
+ * the same QUERY. `-Command exit` loads the host and stops there; the shipped
+ * script also auto-loads CimCmdlets and MMI and makes a first call into the WMI
+ * provider, every one of which is cold too. Warming only the host would have
+ * warmed a different thing, which is the argument this warm-up rests on.
  *
  * Failures here are swallowed on purpose. This is an optimisation, not a gate:
  * if the warm-up cannot run, the tests should still run and fail on their own
@@ -67,7 +71,14 @@ async function warmPowerShellHost(): Promise<void> {
   await new Promise<void>((resolve) => {
     const child = execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', 'exit'],
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        'Get-CimInstance Win32_Process -Property Name,ProcessId | Out-Null'
+      ],
       { timeout: WARMUP_TIMEOUT_MS, windowsHide: true },
       () => resolve()
     )
