@@ -25,6 +25,7 @@ import { getFileIcon, browsePath, launchProfile } from '../lib/electron'
 import { useAppsSettings } from '../components/settings/AppsContext'
 import { syncProfileUtilitiesWithSettings } from '../lib/profileEditorSettingsSync'
 import { formatSkippedLaunchEntries } from '../lib/skippedLaunchEntries'
+import { getExePathRejectReason } from '../../../shared/path'
 
 export interface ProfileEditorProps {
   gameKey: string
@@ -97,6 +98,7 @@ export interface UseProfileEditorResult {
   handleAddTrackedProcess: () => void
   handleBrowseTrackedProcess: (index: number) => Promise<void>
   handleRemoveTrackedProcess: (index: number) => void
+  handleTrackedProcessPathChange: (index: number, value: string) => void
   handleIconFailed: (utilityKey: string) => void
   handleLaunch: () => Promise<void>
   handleDiscardAndLaunch: () => void
@@ -440,6 +442,34 @@ export function useProfileEditor({
     setTrackedProcessPaths((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
   }
 
+  // Typed or pasted, as opposed to Browse (#890). Stored as typed: quote
+  // stripping for a "Copy as path" value is the store's job on save (#859),
+  // and doing it here as well would be a second copy of that rule.
+  const handleTrackedProcessPathChange = (index: number, value: string) => {
+    setTrackedProcessPaths((prev) =>
+      prev.map((current, currentIndex) => (currentIndex === index ? value : current))
+    )
+  }
+
+  // The store's sanitizer DROPS a secondary executable it rejects and reports
+  // nothing back, so once the field takes typed input an in-place edit of a
+  // working path to, say, a .txt would toast "Profile saved!" and erase the
+  // working path from disk: the #806 shape, one screen over. Refuse here, with
+  // the rule main would apply, so nothing is written and the value stays on
+  // screen to be corrected. Blank rows are not entries; they are filtered out
+  // at save, as before. Wording matches the settings save bar (#669).
+  const getTrackedProcessPathsWarning = (): string | null => {
+    const rejected = trackedProcessPaths.flatMap((processPath, index) => {
+      if (processPath.trim().length === 0) return []
+      const reason = getExePathRejectReason(processPath)
+      if (!reason) return []
+      const detail = reason === 'too-long' ? 'path is too long' : 'must be an .exe path'
+      return [`Secondary executable ${index + 1} (${detail})`]
+    })
+
+    return rejected.length > 0 ? `Not saved: ${rejected.join(', ')}` : null
+  }
+
   const executeLaunch = useCallback(async () => {
     setShowLaunchConfirm(false)
     onProfileCommitted?.()
@@ -524,6 +554,11 @@ export function useProfileEditor({
 
   const handleSave = async (shouldLaunch = false): Promise<boolean> => {
     if (shouldLaunch) setShowLaunchConfirm(false)
+    const trackedProcessPathsWarning = getTrackedProcessPathsWarning()
+    if (trackedProcessPathsWarning) {
+      notify(trackedProcessPathsWarning, 'warn')
+      return false
+    }
     try {
       // Re-read the store and surgically replace only the edited profile.
       // Sibling profiles are preserved exactly as stored — this prevents a
@@ -585,6 +620,11 @@ export function useProfileEditor({
   // "Save & Create New" path so the editor can stay open and reload onto
   // the newly created profile.
   const handleSaveOnly = async (): Promise<boolean> => {
+    const trackedProcessPathsWarning = getTrackedProcessPathsWarning()
+    if (trackedProcessPathsWarning) {
+      notify(trackedProcessPathsWarning, 'warn')
+      return false
+    }
     try {
       const allProfiles = await getProfiles()
       const profileSet = normalizeGameProfileSet(
@@ -745,6 +785,7 @@ export function useProfileEditor({
     handleAddTrackedProcess,
     handleBrowseTrackedProcess,
     handleRemoveTrackedProcess,
+    handleTrackedProcessPathChange,
     handleIconFailed: (utilityKey: string) =>
       setFailedIcons((prev) => ({ ...prev, [utilityKey]: true })),
     handleLaunch,
