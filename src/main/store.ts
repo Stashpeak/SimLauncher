@@ -5,6 +5,11 @@ import Store from 'electron-store'
 
 import { BUILT_IN_UTILITY_KEYS, KNOWN_GAME_KEYS } from '../shared/domain/registries'
 import { MAX_CUSTOM_SLOTS, getCustomSlotNumberFromKey } from '../shared/domain/slots'
+import {
+  getExePathRejectReason,
+  normalizeConfiguredExePath,
+  type ExePathRejectReason
+} from '../shared/path'
 import { clamp, isRecord, normalizePathForComparison } from './utils'
 
 // Re-exported for existing importers (ipc/config.ts, ipc/launch.ts) that pull
@@ -20,7 +25,6 @@ export const MIN_ZOOM_FACTOR = 0.5
 export const MAX_ZOOM_FACTOR = 3.0
 export const MAX_CONFIG_IMPORT_BYTES = 1_000_000
 
-const MAX_IMPORT_PATH_LENGTH = 300
 const MAX_CONFIG_STRING_LENGTH = 100
 const MAX_CONFIG_ARGS_LENGTH = 500
 const MAX_ACCENT_PRESET_LENGTH = 50
@@ -418,61 +422,10 @@ function getSafeThemeMode(value: unknown) {
   return typeof value === 'string' && THEME_MODES.has(value) ? value : undefined
 }
 
-/**
- * The form of a pasted path we are willing to store: trimmed, and with ONE
- * matched pair of surrounding double quotes removed (#859).
- *
- * Windows 11's own "Copy as path" wraps the clipboard value in quotes, which
- * makes the most natural way to get a path out of Explorer the one way that
- * used to fail: the closing quote defeated the `.exe` test, so the entry was
- * dropped and reported as `not-an-exe` while the user was looking at a path
- * that plainly ended in `.exe`.
- *
- * Only a MATCHED pair is removed, and only the outermost one. A quote is not a
- * legal character in a Windows path, so a matched pair can only be a quoting
- * artifact, while anything left over means the value is not a path at all and
- * the caller rejects it below rather than silently storing half-stripped
- * nonsense.
- */
-function normalizeConfiguredExePath(value: string): string {
-  const trimmed = value.trim()
-
-  return trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
-    ? trimmed.slice(1, -1).trim()
-    : trimmed
-}
-
-// Single source of truth for WHY an exe path is rejected, so the sanitizer's
-// accept/reject decision and the dropped-entry reason reported to the renderer
-// (#669) can never disagree. Returns null when the path is acceptable.
-//
-// Every check runs against the NORMALIZED form, because that is what would be
-// stored. Validating the raw string and persisting the stripped one (or the
-// reverse) is how a length cap gets bypassed by two characters.
-function getExePathRejectReason(value: unknown): DroppedSettingsReason | null {
-  if (typeof value !== 'string') {
-    return 'not-an-exe'
-  }
-
-  const normalizedPath = normalizeConfiguredExePath(value)
-
-  // A surviving quote means it was unmatched, or nested, or embedded. None of
-  // those is a path Windows can open, so this is a rejection rather than
-  // something to strip harder.
-  if (normalizedPath.includes('"')) {
-    return 'not-an-exe'
-  }
-
-  if (normalizedPath.length === 0 || !/\.exe$/i.test(normalizedPath)) {
-    return 'not-an-exe'
-  }
-
-  if (normalizedPath.length > MAX_IMPORT_PATH_LENGTH) {
-    return 'too-long'
-  }
-
-  return null
-}
+// The accept/reject rule for an exe path (`getExePathRejectReason`) and the
+// quote stripping it runs on (`normalizeConfiguredExePath`, #859) live in
+// src/shared/path.ts since #890, because the profile editor refuses a save on
+// the same rule before it reaches this file. Two copies would be two rules.
 
 function isImportableExePath(value: unknown): value is string {
   return typeof value === 'string' && getExePathRejectReason(value) === null
@@ -913,8 +866,9 @@ export type DroppedSettingsRecordField = 'gamePaths' | 'appPaths' | 'appNames' |
 
 // Why the sanitizer rejected the value — the renderer picks the warning text
 // from this, so it must reflect the check that actually failed (a legit .exe
-// path can be rejected purely for length).
-export type DroppedSettingsReason = 'not-an-exe' | 'too-long'
+// path can be rejected purely for length). Same union as the shared rule
+// produces, under the name the settings save path has always imported.
+export type DroppedSettingsReason = ExePathRejectReason
 
 export interface DroppedSettingsEntry {
   field: DroppedSettingsRecordField
