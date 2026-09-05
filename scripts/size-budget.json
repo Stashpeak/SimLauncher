@@ -1,7 +1,7 @@
 {
   "$comment": [
     "Code-line ceilings for files that are already large. Checked by scripts/checkSizeBudget.mjs, wired into the CI build job. See #918.",
-    "These numbers are NOT an endorsement of the current sizes. 569 code lines in GameRow.tsx is not fine; the ceiling only stops 570. Lowering them is the job of the refactor issues (#530, #775, #776, #396), and a refactor PR should drop its file's number here.",
+    "These numbers are NOT an endorsement of the current sizes. Each ceiling sits at whatever its file measured when it was last touched, so it only ever stops the line after that: GameRow.tsx is not a reasonable size, it is merely not growing unnoticed. Lowering them is the job of the refactor issues (#530, #775, #776, #396), and a refactor PR should drop its file's number here.",
     "Counting excludes blank and comment-only lines, so a comment is always free to add. kill.ts is 43% comment and spawn.ts 38%, and that documentation is what keeps their race conditions maintainable.",
     "Raising a ceiling is allowed: edit the number, in the same PR. The point is that the growth shows up in a diff rather than surfacing months later, which is what happened to GameRow.tsx (403 after #340, over 800 today) and spawn.ts (509 -> 728 -> 1317)."
   ],
@@ -14,7 +14,7 @@
     "src/main/processes/win32KillUtils.ts": 384,
     "src/main/store.ts": 700,
     "src/renderer/src/App.tsx": 399,
-    "src/renderer/src/components/game-list/GameRow.tsx": 569,
+    "src/renderer/src/components/game-list/GameRow.tsx": 570,
     "src/renderer/src/components/settings/SettingsContext.tsx": 482,
     "src/renderer/src/hooks/useProfileEditor.tsx": 637
   },
