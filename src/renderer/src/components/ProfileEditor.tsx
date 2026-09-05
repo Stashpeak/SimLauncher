@@ -143,6 +143,7 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
           onAddTrackedProcess={editor.handleAddTrackedProcess}
           onBrowseTrackedProcess={editor.handleBrowseTrackedProcess}
           onRemoveTrackedProcess={editor.handleRemoveTrackedProcess}
+          onTrackedProcessPathChange={editor.handleTrackedProcessPathChange}
         />
 
         <ProfileEditorActions

@@ -10,6 +10,7 @@ interface ProcessTrackingSectionProps {
   onAddTrackedProcess: () => void
   onBrowseTrackedProcess: (index: number) => void
   onRemoveTrackedProcess: (index: number) => void
+  onTrackedProcessPathChange: (index: number, value: string) => void
 }
 
 export function ProcessTrackingSection({
@@ -20,7 +21,8 @@ export function ProcessTrackingSection({
   onRelaunchControlsEnabledChange,
   onAddTrackedProcess,
   onBrowseTrackedProcess,
-  onRemoveTrackedProcess
+  onRemoveTrackedProcess,
+  onTrackedProcessPathChange
 }: ProcessTrackingSectionProps): ReactNode {
   return (
     <div className="space-y-4 border-t border-(--glass-border) pt-4">
@@ -59,15 +61,20 @@ export function ProcessTrackingSection({
 
         {trackedProcessPaths.length > 0 ? (
           <div className="space-y-2">
+            {/* Keyed by position, not by value. Rows have no identity of
+                their own (Browse and Remove already address them by index),
+                and a key that included the value remounted the row on every
+                keystroke, which dropped focus after one character once the
+                field became editable (#890). */}
             {trackedProcessPaths.map((processPath, index) => (
-              <div key={`${index}-${processPath}`} className="flex items-center gap-2">
+              <div key={index} className="flex items-center gap-2">
                 <input
                   type="text"
                   value={processPath}
-                  readOnly
+                  onChange={(event) => onTrackedProcessPathChange(index, event.target.value)}
                   aria-label={`Secondary executable ${index + 1}`}
-                  placeholder="No secondary executable selected"
-                  className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus-visible:ring-2 focus-visible:ring-(--accent)"
+                  placeholder="No secondary executable set"
+                  className="glass-recessed min-w-0 flex-1 truncate rounded-lg px-3 py-2 font-mono text-xs text-(--text-secondary) outline-none placeholder:text-(--text-subtle) focus-visible:ring-2 focus-visible:ring-(--accent) focus:text-(--text-primary)"
                 />
                 <button
                   type="button"
