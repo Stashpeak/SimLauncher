@@ -25,6 +25,42 @@ export function isValidExePath(p: unknown): boolean {
   return trimmedPath.length > 0 && /\.exe$/i.test(trimmedPath) && fs.existsSync(resolvedPath)
 }
 
+/**
+ * A bare image name: an `.exe` with no directory, which is what Task Manager
+ * shows and what the phantom-exit warning tells the user to enter under
+ * "Secondary executables to watch" (#929).
+ *
+ * Judged by SHAPE, never by existence. A bare name is not a file anywhere
+ * (`isValidExePath` resolves it against the CWD and says no), so the two
+ * predicates partition a configured entry into path-scoped and name-scoped, the
+ * same split the poll and the kill path make with `isPathScopedExe`. `win32`
+ * explicitly, like `getExeName`, so a host without backslash separators cannot
+ * read a Windows path as a name.
+ */
+export function isBareExeName(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const trimmed = value.trim()
+
+  return trimmed.length > 0 && /\.exe$/i.test(trimmed) && path.win32.basename(trimmed) === trimmed
+}
+
+/**
+ * What a "Secondary executables to watch" entry may be: a path that exists, or
+ * a bare image name (#929). One predicate rather than two call sites agreeing
+ * by accident, because three consumers read that list (the tracking poll,
+ * Close Apps, auto-close) and any two drifting apart would leave a name-only
+ * entry tracked by one and invisible to the others, which is exactly how the
+ * app's own repair instruction spent months not working.
+ *
+ * Not a type guard, for the same reason `isValidExePath` is not (#752).
+ */
+export function isTrackableSecondaryExe(value: unknown): boolean {
+  return isValidExePath(value) || isBareExeName(value)
+}
+
 export function getExeName(filePath: unknown): string {
   if (typeof filePath !== 'string') {
     return ''

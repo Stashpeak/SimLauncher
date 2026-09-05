@@ -16,12 +16,18 @@ vi.mock('../../src/main/store', () => ({
 
 // utils.isValidExePath checks fs.existsSync; pretend every .exe exists except
 // paths containing "missing", so trackable-path tests stay host-independent.
+//
+// Except under the test process's own CWD: isValidExePath resolves its input
+// first, so a bare image name arrives here as `<cwd>\name.exe`. Nothing this
+// app configures lives there, and a mock that said yes would let a bare name
+// pass an existence check it can never pass for real (#929).
 vi.mock('fs', () => ({
   default: {
     existsSync: (filePath: unknown) =>
       typeof filePath === 'string' &&
       /\.exe$/i.test(filePath) &&
-      !filePath.toLowerCase().includes('missing')
+      !filePath.toLowerCase().includes('missing') &&
+      !filePath.toLowerCase().startsWith(process.cwd().toLowerCase())
   }
 }))
 
@@ -195,6 +201,31 @@ test('getProfileTrackablePaths includes only the game, enabled utilities, and ex
     'C:/Games/iRacingUI.exe',
     'C:/Tools/SimHub.exe',
     'C:/Tools/Extra.exe'
+  ])
+})
+
+// #929: the phantom-exit warning tells the user to add the child's image NAME
+// from Task Manager under Secondary executables. A bare name is never a file
+// relative to the CWD, so the existence check that guards path-scoped entries
+// dropped it silently, and the app's own repair instruction could not work.
+test('getProfileTrackablePaths keeps a bare secondary exe name, deduped by name (#929)', () => {
+  const profile = {
+    trackedProcessPaths: [
+      'BeamNG.drive.x64.exe',
+      'beamng.drive.x64.EXE',
+      'notes.txt',
+      'C:/Tools/MissingTool.exe'
+    ]
+  }
+
+  expect(
+    getProfileTrackablePaths('beamng', profile, {}, { beamng: 'C:/Games/BeamNG.drive.exe' })
+  ).toEqual([
+    // The game, then the bare name once: its case variant is the same image,
+    // the .txt is not an executable of any shape, and a path-scoped entry is
+    // still held to existence.
+    'C:/Games/BeamNG.drive.exe',
+    'BeamNG.drive.x64.exe'
   ])
 })
 
