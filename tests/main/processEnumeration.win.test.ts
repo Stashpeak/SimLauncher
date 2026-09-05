@@ -31,6 +31,23 @@ import {
 const describeWindows = process.platform === 'win32' ? describe : describe.skip
 
 /**
+ * Both hooks and tests below run on a 30s budget; the warm-up child gets less.
+ *
+ * The gap is the point, not a rounding choice. `execFile` only STARTS killing a
+ * hung child when its own timeout expires, and the callback arrives after that.
+ * Give the child the same 30s as the hook and the kill begins exactly as Vitest
+ * gives up, so a warm-up that hangs fails the suite — on precisely the slow host
+ * the warm-up exists to tolerate, and by way of the one path that is supposed to
+ * be fail-open. Raised by Codex on #927.
+ *
+ * 10s of slack is far more than terminating a process and delivering a callback
+ * needs, and the warm-up has no reason to approach either number: it runs
+ * `exit`.
+ */
+const HOOK_TIMEOUT_MS = 30_000
+const WARMUP_TIMEOUT_MS = 20_000
+
+/**
  * Start a throwaway PowerShell so the first measured call does not pay for it.
  *
  * The production budget is per call and the first `powershell.exe` on a cold CI
@@ -51,7 +68,7 @@ async function warmPowerShellHost(): Promise<void> {
     const child = execFile(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', 'exit'],
-      { timeout: 30_000, windowsHide: true },
+      { timeout: WARMUP_TIMEOUT_MS, windowsHide: true },
       () => resolve()
     )
     child.on('error', () => resolve())
@@ -67,9 +84,18 @@ describeWindows('findProcessesByName against the real PowerShell host (#674)', (
   // Not the 3s WMI_LOOKUP_TIMEOUT_MS: that belongs to the path-scoped lookup,
   // and this comment cited it until the enumeration was given its own budget
   // (CodeRabbit on #845).
-  const TIMEOUT_MS = 30_000
+  const TIMEOUT_MS = HOOK_TIMEOUT_MS
 
-  beforeAll(warmPowerShellHost, TIMEOUT_MS)
+  beforeAll(warmPowerShellHost, HOOK_TIMEOUT_MS)
+
+  // Pins the relationship rather than the numbers. Both were 30_000 when this
+  // shipped, which meant a hung warm-up started its kill exactly as the hook
+  // gave up and could fail the suite from the one path meant to be fail-open.
+  // Editing either constant back into a tie should go red here, not in CI on a
+  // cold runner three weeks later.
+  test('the warm-up budget leaves the hook room to collect it', () => {
+    expect(WARMUP_TIMEOUT_MS).toBeLessThan(HOOK_TIMEOUT_MS - 5_000)
+  })
 
   test(
     'the shipped script runs and returns an array for zero, one and many matches',
