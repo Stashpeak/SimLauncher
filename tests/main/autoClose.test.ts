@@ -1,3 +1,4 @@
+import path from 'path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 // #204 auto-close. Every test drives `observeProcessScan` directly with a raw
@@ -45,10 +46,13 @@ async function loadAutoCloseModule(opts?: {
   // utils.isValidExePath checks fs.existsSync; pretend every .exe exists so the
   // armed check does not depend on the host filesystem.
   //
-  // Except under the test process's own CWD: isValidExePath resolves its input
-  // first, so a bare image name arrives here as `<cwd>\name.exe`. Nothing this
-  // app configures lives there, and a mock that said yes would let the #929
-  // tests pass an existence check a bare name can never pass for real.
+  // Except exactly what a bare image name resolves to: isValidExePath resolves
+  // its input first, so `name.exe` arrives here as `<cwd>/name.exe`, and a mock
+  // that said yes would let the #929 tests pass an existence check a bare name
+  // can never pass for real. Judged as "resolving the basename alone lands on
+  // the same path", not as "anything under the CWD": on a POSIX host
+  // `path.resolve('C:/Games/acs.exe')` is under the CWD too, and the wider rule
+  // rejected AC_GAME_PATHS there (CodeRabbit on #931).
   vi.doMock('perf_hooks', () => ({ performance: { now: () => monotonicNow } }))
 
   vi.doMock('fs', () => ({
@@ -56,7 +60,7 @@ async function loadAutoCloseModule(opts?: {
       existsSync: (filePath: unknown) =>
         typeof filePath === 'string' &&
         /\.exe$/i.test(filePath) &&
-        !filePath.toLowerCase().startsWith(process.cwd().toLowerCase())
+        path.resolve(path.basename(filePath)) !== filePath
     }
   }))
 

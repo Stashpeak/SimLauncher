@@ -17,19 +17,25 @@ vi.mock('../../src/main/store', () => ({
 // utils.isValidExePath checks fs.existsSync; pretend every .exe exists except
 // paths containing "missing", so trackable-path tests stay host-independent.
 //
-// Except under the test process's own CWD: isValidExePath resolves its input
-// first, so a bare image name arrives here as `<cwd>\name.exe`. Nothing this
-// app configures lives there, and a mock that said yes would let a bare name
-// pass an existence check it can never pass for real (#929).
-vi.mock('fs', () => ({
-  default: {
-    existsSync: (filePath: unknown) =>
-      typeof filePath === 'string' &&
-      /\.exe$/i.test(filePath) &&
-      !filePath.toLowerCase().includes('missing') &&
-      !filePath.toLowerCase().startsWith(process.cwd().toLowerCase())
+// Except exactly what a bare image name resolves to: isValidExePath resolves
+// its input first, so `name.exe` arrives here as `<cwd>/name.exe`, and a mock
+// that said yes would let a bare name pass an existence check it can never
+// pass for real (#929). Judged as "resolving the basename alone lands on the
+// same path" rather than as "anything under the CWD": on a POSIX host
+// `path.resolve('C:/Games/acs.exe')` is under the CWD too, and the wider rule
+// rejected every configured game path there (CodeRabbit on #931).
+vi.mock('fs', async () => {
+  const path = await import('node:path')
+  return {
+    default: {
+      existsSync: (filePath: unknown) =>
+        typeof filePath === 'string' &&
+        /\.exe$/i.test(filePath) &&
+        !filePath.toLowerCase().includes('missing') &&
+        path.resolve(path.basename(filePath)) !== filePath
+    }
   }
-}))
+})
 
 import {
   buildActiveProfileLaunchEntries,

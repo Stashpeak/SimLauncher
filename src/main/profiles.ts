@@ -344,6 +344,19 @@ export function isProcessTrackingEnabled(profile: StoredProfile | undefined): bo
   return profile?.trackingEnabled !== false
 }
 
+/**
+ * Every process a profile is tracking, in the order the game, then its enabled
+ * utilities, then its "Secondary executables to watch". Read by the running
+ * poll (what to surface) and by Close Apps (what to target), which is why the
+ * shape rules live here and not in either consumer.
+ *
+ * The game and utility paths are held to existence on disk. A secondary may
+ * also be a bare image name (#929): judged by shape and never resolved, since
+ * a name is not a file anywhere. Duplicates are dropped by canonical path for
+ * path entries and by lowercased name for bare ones; a bare name and a path to
+ * the same image are two entries on purpose, because the poll answers them
+ * from different evidence.
+ */
 export function getProfileTrackablePaths(
   gameKey: string,
   profile: StoredProfile | undefined,

@@ -1,7 +1,13 @@
 import path from 'path'
 import { describe, expect, test } from 'vitest'
 
-import { getExeName, normalizePathForComparison, pathsEqual } from '../../src/main/utils'
+import {
+  getExeName,
+  isBareExeName,
+  isTrackableSecondaryExe,
+  normalizePathForComparison,
+  pathsEqual
+} from '../../src/main/utils'
 
 describe('normalizePathForComparison', () => {
   test('returns "" for non-string inputs', () => {
@@ -85,5 +91,54 @@ describe('getExeName (relaxed input)', () => {
     expect(getExeName('  C:\\Apps\\Foo.exe  ')).toBe('foo.exe')
     expect(getExeName('C:\\Apps\\Foo.exe ')).toBe('foo.exe')
     expect(getExeName(' C:\\Apps\\Foo.exe')).toBe('foo.exe')
+  })
+})
+
+// The shape rule behind a secondary executable typed as a Task Manager image
+// name (#929). Pure, so it is pinned here on its own terms; the consumers'
+// suites cover what happens to an entry once the rule has admitted it.
+describe('isBareExeName', () => {
+  test('accepts an .exe with no directory, whatever the case or surrounding whitespace', () => {
+    expect(isBareExeName('BeamNG.drive.x64.exe')).toBe(true)
+    expect(isBareExeName('ACS.EXE')).toBe(true)
+    expect(isBareExeName('  acs_real.exe  ')).toBe(true)
+    expect(isBareExeName('garage61 telemetry agent.exe')).toBe(true)
+  })
+
+  test('rejects anything with a directory, under either separator, on any host', () => {
+    // win32 semantics explicitly, like getExeName: a POSIX host would otherwise
+    // read a backslash path as one long basename and call it bare.
+    expect(isBareExeName('C:\\Games\\acs.exe')).toBe(false)
+    expect(isBareExeName('C:/Games/acs.exe')).toBe(false)
+    expect(isBareExeName('.\\acs.exe')).toBe(false)
+    expect(isBareExeName('Games/acs.exe')).toBe(false)
+  })
+
+  test('rejects what is not an .exe name at all', () => {
+    expect(isBareExeName('notes.txt')).toBe(false)
+    expect(isBareExeName('acs')).toBe(false)
+    expect(isBareExeName('')).toBe(false)
+    expect(isBareExeName('   ')).toBe(false)
+    expect(isBareExeName(undefined)).toBe(false)
+    expect(isBareExeName(null)).toBe(false)
+    expect(isBareExeName(42)).toBe(false)
+  })
+})
+
+describe('isTrackableSecondaryExe', () => {
+  test('accepts a bare name without asking the filesystem', () => {
+    // No fs mock in this file, and no such file anywhere: the answer comes
+    // from the shape rule alone.
+    expect(isTrackableSecondaryExe('acs_real.exe')).toBe(true)
+  })
+
+  test('still holds a path-shaped entry to existence', () => {
+    expect(isTrackableSecondaryExe('C:/SimLauncher-No-Such-Dir/acs_real.exe')).toBe(false)
+  })
+
+  test('rejects what neither rule accepts', () => {
+    expect(isTrackableSecondaryExe('notes.txt')).toBe(false)
+    expect(isTrackableSecondaryExe('')).toBe(false)
+    expect(isTrackableSecondaryExe(undefined)).toBe(false)
   })
 })
