@@ -19,8 +19,19 @@ jobs:
     concurrency:
       group: review-bot-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
+    # The actor check is what keeps Dependabot PRs out (#909). GitHub runs their
+    # `pull_request` workflows in a restricted context with no repository
+    # secrets, so `REVIEWBOT_PAT` resolves empty and the private checkout dies on
+    # `Input required and not supplied: token`. The fork guard above does not
+    # catch them: Dependabot branches live in-repo, so they pass it, start the
+    # job and then fail. The result was three or four PRs permanently red for a
+    # reason nobody needs to read, which is how a red check stops meaning
+    # anything. The `issue_comment` branch below is untouched on purpose: that
+    # event runs in the base-repo context where secrets do resolve, so a manual
+    # `@stashpeakbot` on a Dependabot PR still works.
     if: >-
       (github.event_name == 'pull_request' &&
+       github.actor != 'dependabot[bot]' &&
        github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&

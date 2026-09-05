@@ -1,6 +1,7 @@
 import path from 'path'
+import { execFile } from 'node:child_process'
 
-import { describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test } from 'vitest'
 
 import { readRunningProcessNames } from '../../src/main/processes/tasklist'
 import {
@@ -29,6 +30,34 @@ import {
  */
 const describeWindows = process.platform === 'win32' ? describe : describe.skip
 
+/**
+ * Start a throwaway PowerShell so the first measured call does not pay for it.
+ *
+ * The production budget is per call and the first `powershell.exe` on a cold CI
+ * runner has exceeded it three times, most recently twice on 2026-09-04 (#914).
+ * Every later spawn in the same job runs in about two seconds, so what the
+ * assertions were measuring was host start-up, not the shipped script.
+ *
+ * Deliberately the same invocation as production (`win32KillUtils.ts`, the
+ * `-NoProfile -NonInteractive -ExecutionPolicy Bypass` form), because warming a
+ * different one would warm a different thing.
+ *
+ * Failures here are swallowed on purpose. This is an optimisation, not a gate:
+ * if the warm-up cannot run, the tests should still run and fail on their own
+ * terms rather than on this.
+ */
+async function warmPowerShellHost(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const child = execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', 'exit'],
+      { timeout: 30_000, windowsHide: true },
+      () => resolve()
+    )
+    child.on('error', () => resolve())
+  })
+}
+
 describeWindows('findProcessesByName against the real PowerShell host (#674)', () => {
   // PowerShell startup dominates, so the budget is per CALL, not per test. The
   // production budget is PROCESS_ENUMERATION_TIMEOUT_MS (10s), and the longest
@@ -40,13 +69,27 @@ describeWindows('findProcessesByName against the real PowerShell host (#674)', (
   // (CodeRabbit on #845).
   const TIMEOUT_MS = 30_000
 
+  beforeAll(warmPowerShellHost, TIMEOUT_MS)
+
   test(
     'the shipped script runs and returns an array for zero, one and many matches',
     async () => {
       // Zero. The name cannot exist, so this pins the empty shape rather than
       // the absence of a spawn.
+      //
+      // Timed, and the elapsed time is in the failure message on purpose. A
+      // bare `expected false to be true` sent three separate people to the job
+      // log to find out whether the script was broken or the runner was slow
+      // (#914). An elapsed time at or near the 10s production budget says
+      // timeout; anything well under it says the script itself failed.
+      const startedAt = Date.now()
       const none = await findProcessesByName(['simlauncher-no-such-process.exe'])
-      expect(none.succeeded).toBe(true)
+      const elapsedMs = Date.now() - startedAt
+
+      expect(
+        none.succeeded,
+        `enumeration reported failure after ${elapsedMs}ms. At or near PROCESS_ENUMERATION_TIMEOUT_MS (10000) this is a slow host, not a broken script: see #914. Well under it means the script failed and stderr carries the reason.`
+      ).toBe(true)
       expect(none.instances).toEqual([])
 
       // One and many at once. The single-match case is the one PowerShell
