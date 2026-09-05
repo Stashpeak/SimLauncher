@@ -19,8 +19,41 @@ jobs:
     concurrency:
       group: review-bot-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
+    # `github.actor`, not `github.event.pull_request.user.login`. The two differ
+    # on purpose from `pr-smoke-note.yml`, which asks who AUTHORED a PR on an
+    # event that a human can re-fire by editing the body. This asks who TRIGGERED
+    # the run, because that is what GitHub keys the secret restriction on, and it
+    # is the field their own documented example uses. On `types: [opened]` the
+    # two are always equal anyway; the distinction is here so the next reader
+    # does not "fix" one to match the other.
+    #
+    # The actor check is what keeps Dependabot PRs out (#909). GitHub runs their
+    # `pull_request` workflows in a restricted context with no repository
+    # secrets, so `REVIEWBOT_PAT` resolves empty and the private checkout dies on
+    # `Input required and not supplied: token`. The fork guard in the `if` below
+    # does not catch them: Dependabot branches live in-repo, so they pass it, start the
+    # job and then fail. The result was three or four PRs permanently red for a
+    # reason nobody needs to read, which is how a red check stops meaning
+    # anything. The `issue_comment` branch below is untouched on purpose: that
+    # event runs in the base-repo context where secrets do resolve, so a manual
+    # `@stashpeakbot` on a Dependabot PR still works.
+    #
+    # ⚠️ That exemption has one real hole, the same one `pr-smoke-note.yml`
+    # names above its own Dependabot skip: `dependabot.yml` isolates the electron
+    # stack into its own grouped PR precisely because a major runtime bump needs
+    # real scrutiny (#634, #907). So the electron dependency PR is the one bot PR
+    # that should still be reviewed, and #909 asked for that carve-out to stay
+    # visible rather than be widened away silently.
+    #
+    # It cannot be an exception in this `if`. Secrets are unavailable to EVERY
+    # Dependabot-triggered `pull_request` run regardless of which package moved,
+    # so letting the electron PR through would only recreate the same red check
+    # for the one PR that matters. The carve-out is therefore the manual path:
+    # comment `@stashpeakbot` on the electron PR, which resolves secrets and
+    # reviews it properly.
     if: >-
       (github.event_name == 'pull_request' &&
+       github.actor != 'dependabot[bot]' &&
        github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&

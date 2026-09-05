@@ -1,6 +1,7 @@
 import path from 'path'
+import { execFile } from 'node:child_process'
 
-import { describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test } from 'vitest'
 
 import { readRunningProcessNames } from '../../src/main/processes/tasklist'
 import {
@@ -29,6 +30,64 @@ import {
  */
 const describeWindows = process.platform === 'win32' ? describe : describe.skip
 
+/**
+ * Both hooks and tests below run on a 30s budget; the warm-up child gets less.
+ *
+ * The gap is the point, not a rounding choice. `execFile` only STARTS killing a
+ * hung child when its own timeout expires, and the callback arrives after that.
+ * Give the child the same 30s as the hook and the kill begins exactly as Vitest
+ * gives up, so a warm-up that hangs fails the suite — on precisely the slow host
+ * the warm-up exists to tolerate, and by way of the one path that is supposed to
+ * be fail-open. Raised by Codex on #927.
+ *
+ * 10s of slack is far more than terminating a process and delivering a callback
+ * needs. The warm-up runs the same query the tests do, and on the worst run on
+ * record (#914, 09-04 08:56) that query was killed at the 10s production budget
+ * twice in a row, so 20s is room to finish even then. If it still cannot, the
+ * kill at 20s is swallowed like every other warm-up failure.
+ */
+const HOOK_TIMEOUT_MS = 30_000
+const WARMUP_TIMEOUT_MS = 20_000
+
+/**
+ * Start a throwaway PowerShell so the first measured call does not pay for it.
+ *
+ * The production budget is per call and the first `powershell.exe` on a cold CI
+ * runner has exceeded it five times across four days (08-21, 09-01, 09-02 and
+ * twice on 09-04, #914). Later spawns in the same job land at four to six
+ * seconds, so what the assertions were measuring was start-up, not the shipped
+ * script.
+ *
+ * Deliberately the same invocation as production (`win32KillUtils.ts`, the
+ * `-NoProfile -NonInteractive -ExecutionPolicy Bypass` form), and deliberately
+ * the same QUERY. `-Command exit` loads the host and stops there; the shipped
+ * script also auto-loads CimCmdlets and MMI and makes a first call into the WMI
+ * provider, every one of which is cold too. Warming only the host would have
+ * warmed a different thing, which is the argument this warm-up rests on.
+ *
+ * Failures here are swallowed on purpose. This is an optimisation, not a gate:
+ * if the warm-up cannot run, the tests should still run and fail on their own
+ * terms rather than on this.
+ */
+async function warmPowerShellHost(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const child = execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        'Get-CimInstance Win32_Process -Property Name,ProcessId | Out-Null'
+      ],
+      { timeout: WARMUP_TIMEOUT_MS, windowsHide: true },
+      () => resolve()
+    )
+    child.on('error', () => resolve())
+  })
+}
+
 describeWindows('findProcessesByName against the real PowerShell host (#674)', () => {
   // PowerShell startup dominates, so the budget is per CALL, not per test. The
   // production budget is PROCESS_ENUMERATION_TIMEOUT_MS (10s), and the longest
@@ -38,15 +97,38 @@ describeWindows('findProcessesByName against the real PowerShell host (#674)', (
   // Not the 3s WMI_LOOKUP_TIMEOUT_MS: that belongs to the path-scoped lookup,
   // and this comment cited it until the enumeration was given its own budget
   // (CodeRabbit on #845).
-  const TIMEOUT_MS = 30_000
+  const TIMEOUT_MS = HOOK_TIMEOUT_MS
+
+  beforeAll(warmPowerShellHost, HOOK_TIMEOUT_MS)
+
+  // Pins the relationship rather than the numbers. Both were 30_000 when this
+  // shipped, which meant a hung warm-up started its kill exactly as the hook
+  // gave up and could fail the suite from the one path meant to be fail-open.
+  // Editing either constant back into a tie should go red here, not in CI on a
+  // cold runner three weeks later.
+  test('the warm-up budget leaves the hook room to collect it', () => {
+    expect(WARMUP_TIMEOUT_MS).toBeLessThan(HOOK_TIMEOUT_MS - 5_000)
+  })
 
   test(
     'the shipped script runs and returns an array for zero, one and many matches',
     async () => {
       // Zero. The name cannot exist, so this pins the empty shape rather than
       // the absence of a spawn.
+      //
+      // Timed, and the elapsed time is in the failure message on purpose. A
+      // bare `expected false to be true` sent three separate people to the job
+      // log to find out whether the script was broken or the runner was slow
+      // (#914). An elapsed time at or near the 10s production budget says
+      // timeout; anything well under it says the script itself failed.
+      const startedAt = Date.now()
       const none = await findProcessesByName(['simlauncher-no-such-process.exe'])
-      expect(none.succeeded).toBe(true)
+      const elapsedMs = Date.now() - startedAt
+
+      expect(
+        none.succeeded,
+        `enumeration reported failure after ${elapsedMs}ms. At or near PROCESS_ENUMERATION_TIMEOUT_MS (10000) this is a slow host, not a broken script: see #914. Well under it means the script failed and stderr carries the reason.`
+      ).toBe(true)
       expect(none.instances).toEqual([])
 
       // One and many at once. The single-match case is the one PowerShell
