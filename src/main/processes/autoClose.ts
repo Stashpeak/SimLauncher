@@ -8,7 +8,7 @@ import {
   type StoredProfile
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath } from '../utils'
+import { getExeName, isTrackableSecondaryExe, isValidExePath } from '../utils'
 
 import { killLaunchedApps } from './kill'
 import { registerProcessScanObserver, type ProcessScanObserver } from './running'
@@ -133,9 +133,15 @@ function hasContestedExeName(gameKey: string): boolean {
   )
 }
 
+// `isTrackableSecondaryExe`, not `isValidExePath`: a secondary configured by
+// image name off Task Manager is never a file on disk, and this is the list the
+// phantom-exit warning tells the user to put one in (#929). Only the NAME is
+// used below, so a bare entry is the natural case rather than a special one.
 function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
   return Array.isArray(profile?.trackedProcessPaths)
-    ? profile.trackedProcessPaths.filter(isValidExePath)
+    ? profile.trackedProcessPaths.filter((candidate): candidate is string =>
+        isTrackableSecondaryExe(candidate)
+      )
     : []
 }
 
@@ -156,9 +162,13 @@ function getSecondaryGamePaths(profile: StoredProfile | undefined): string[] {
  */
 function getArmedGameExeNames(gameKey: string): Set<string> {
   const gamePath = getStoredStringRecord('gamePaths')[gameKey]
-  const paths = [gamePath, ...getSecondaryGamePaths(getActiveProfileForGame(gameKey))].filter(
-    isValidExePath
-  )
+  // The game path is held to existence; the secondaries were already judged by
+  // their own rule above, and re-filtering them here by existence would drop a
+  // bare name again on the way out.
+  const paths = [
+    ...[gamePath].filter(isValidExePath),
+    ...getSecondaryGamePaths(getActiveProfileForGame(gameKey))
+  ]
   return new Set(paths.map(getExeName))
 }
 

@@ -13,7 +13,13 @@ import type {
 } from '../shared/domain/profile'
 import type { ProfileLaunchEntry } from './processes/types'
 import { getStoredStringRecord, store } from './store'
-import { isRecord, isValidExePath, normalizePathForComparison } from './utils'
+import {
+  isBareExeName,
+  isRecord,
+  isTrackableSecondaryExe,
+  isValidExePath,
+  normalizePathForComparison
+} from './utils'
 
 // Profile domain types are process-agnostic (#692); the canonical defs live in
 // the shared domain layer. Re-exported here under the main process's historical
@@ -338,6 +344,19 @@ export function isProcessTrackingEnabled(profile: StoredProfile | undefined): bo
   return profile?.trackingEnabled !== false
 }
 
+/**
+ * Every process a profile is tracking, in the order the game, then its enabled
+ * utilities, then its "Secondary executables to watch". Read by the running
+ * poll (what to surface) and by Close Apps (what to target), which is why the
+ * shape rules live here and not in either consumer.
+ *
+ * The game and utility paths are held to existence on disk. A secondary may
+ * also be a bare image name (#929): judged by shape and never resolved, since
+ * a name is not a file anywhere. Duplicates are dropped by canonical path for
+ * path entries and by lowercased name for bare ones; a bare name and a path to
+ * the same image are two entries on purpose, because the poll answers them
+ * from different evidence.
+ */
 export function getProfileTrackablePaths(
   gameKey: string,
   profile: StoredProfile | undefined,
@@ -348,13 +367,24 @@ export function getProfileTrackablePaths(
     gamePaths?.[gameKey],
     ...getEnabledUtilityKeys(profile)
       .filter((profileKey) => isValidExePath(appPaths?.[profileKey]))
-      .map((profileKey) => appPaths![profileKey]),
-    ...(Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : [])
+      .map((profileKey) => appPaths![profileKey])
   ].filter((candidate): candidate is string => isValidExePath(candidate))
+  // Secondary executables are the one list the user types into, and the
+  // phantom-exit warning tells them to type an image NAME off Task Manager. A
+  // name is never a file relative to the CWD, so holding it to the existence
+  // check the game and utility paths pass dropped it without a word, and the
+  // app's own repair instruction could not be followed (#929).
+  const secondaryExes = (
+    Array.isArray(profile?.trackedProcessPaths) ? profile.trackedProcessPaths : []
+  ).filter((candidate): candidate is string => isTrackableSecondaryExe(candidate))
   const seen = new Set<string>()
 
-  return trackablePaths.filter((trackablePath) => {
-    const key = normalizePathForComparison(trackablePath)
+  return [...trackablePaths, ...secondaryExes].filter((trackablePath) => {
+    // A bare name has no path to key by, and resolving it against the CWD
+    // would hand two spellings of one image two keys.
+    const key = isBareExeName(trackablePath)
+      ? trackablePath.trim().toLowerCase()
+      : normalizePathForComparison(trackablePath)
 
     if (!key || seen.has(key)) {
       return false

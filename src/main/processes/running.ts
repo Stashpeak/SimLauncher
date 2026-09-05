@@ -328,26 +328,29 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   // possible at all: a record about to be dropped still needs its own question
   // answered.
   const candidatePaths = new Set<string>()
+  // Bare image names are filtered out rather than resolved: they are not paths,
+  // and `isPathRunning` answers them from the name set instead. That includes a
+  // secondary executable configured by name (#929), which the profile list can
+  // now carry: resolving one would spend an enumeration per tick on a name
+  // whose path the poll never asks about.
+  const addCandidate = (appPath: string) => {
+    if (isPathScopedExe(appPath)) {
+      candidatePaths.add(appPath)
+    }
+  }
   Object.entries(profiles || {}).forEach(([gameKey, profileEntry]) => {
     getProfileTrackablePaths(
       gameKey,
       getActiveStoredProfile(profileEntry),
       appPaths,
       gamePaths
-    ).forEach((trackablePath) => candidatePaths.add(trackablePath))
+    ).forEach(addCandidate)
   })
   Object.values(gamePaths || {}).forEach((gamePath) => {
     if (isValidExePath(gamePath)) {
       candidatePaths.add(gamePath)
     }
   })
-  // Bare image names are filtered out rather than resolved: they are not paths,
-  // and `isPathRunning` answers them from the name set instead.
-  const addCandidate = (appPath: string) => {
-    if (isPathScopedExe(appPath)) {
-      candidatePaths.add(appPath)
-    }
-  }
   runningProcesses.forEach((entry) => addCandidate(entry.path))
   unclosedProcesses.forEach((entry) => addCandidate(entry.path))
   processNameMismatchWarnings.forEach((entry) => addCandidate(entry.path))
