@@ -41,8 +41,10 @@ const describeWindows = process.platform === 'win32' ? describe : describe.skip
  * be fail-open. Raised by Codex on #927.
  *
  * 10s of slack is far more than terminating a process and delivering a callback
- * needs, and the warm-up has no reason to approach either number: it runs
- * `exit`.
+ * needs. The warm-up runs the same query the tests do, and on the worst run on
+ * record (#914, 09-04 08:56) that query was killed at the 10s production budget
+ * twice in a row, so 20s is room to finish even then. If it still cannot, the
+ * kill at 20s is swallowed like every other warm-up failure.
  */
 const HOOK_TIMEOUT_MS = 30_000
 const WARMUP_TIMEOUT_MS = 20_000

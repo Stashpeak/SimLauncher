@@ -30,8 +30,8 @@ jobs:
     # The actor check is what keeps Dependabot PRs out (#909). GitHub runs their
     # `pull_request` workflows in a restricted context with no repository
     # secrets, so `REVIEWBOT_PAT` resolves empty and the private checkout dies on
-    # `Input required and not supplied: token`. The fork guard above does not
-    # catch them: Dependabot branches live in-repo, so they pass it, start the
+    # `Input required and not supplied: token`. The fork guard in the `if` below
+    # does not catch them: Dependabot branches live in-repo, so they pass it, start the
     # job and then fail. The result was three or four PRs permanently red for a
     # reason nobody needs to read, which is how a red check stops meaning
     # anything. The `issue_comment` branch below is untouched on purpose: that
