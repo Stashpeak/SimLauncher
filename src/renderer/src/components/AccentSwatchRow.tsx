@@ -70,7 +70,10 @@ export function AccentSwatchRow({
             aria-haspopup="dialog"
             aria-expanded={showPicker}
             aria-controls={showPicker ? 'accent-color-picker' : undefined}
-            className={`relative flex h-8 w-8 cursor-pointer items-center justify-center transition-transform hover:scale-110 active:scale-[0.98] ${
+            // rounded-full on the button itself, as on the presets: the focus
+            // ring follows the button's box, not the round layers inside it,
+            // so without it a keyboard user got a square ring on a circle. #887
+            className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110 active:scale-[0.98] ${
               isCustomColor ? 'scale-110' : ''
             }`}
           >

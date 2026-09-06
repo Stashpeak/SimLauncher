@@ -92,7 +92,7 @@ In that case, your current setup is already simple enough.
 - Light, dark, and system theme modes
 - Kill and relaunch controls for running companion apps
 - Config export and import
-- Start with Windows, start minimized, and minimize to tray options
+- Start with Windows, start minimized, and close to tray options
 - Toast notifications for launch status and errors
 
 ---
