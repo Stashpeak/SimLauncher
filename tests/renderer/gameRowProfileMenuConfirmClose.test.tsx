@@ -1,15 +1,17 @@
 /**
- * Codex P1 on #884 (PR #940): once the profile menu is portalled out of `#root`
- * at z-9999, a "Switch Running Profile" confirmation opened from it no longer
- * covers it. ConfirmDialog sits at z-100 and useFocusTrap only inerts `#root`,
- * so the menu stayed visible and clickable above the dialog: the user could
- * pick or create another profile while the first switch was waiting for an
- * answer. Before the portal the menu lived inside `#root`, under the dialog
- * and inert with everything else, so nothing had to close it.
+ * Codex P1 on #884 (PR #940): while the profile menu was portalled to body at
+ * z-9999 (the PR's first take), a "Switch Running Profile" confirmation opened
+ * from it no longer covered it. ConfirmDialog sits at z-100 and useFocusTrap
+ * only inerts `#root`, so the menu stayed visible and clickable above the
+ * dialog: the user could pick or create another profile while the first switch
+ * was waiting for an answer. The portal has since moved into `#root` at z-50,
+ * so a dialog covers and inerts the menu either way; what remains is what the
+ * user comes back to.
  *
- * The rule now: picking a profile that needs confirmation closes the menu and
- * puts focus on the trigger BEFORE the dialog opens, so the dialog's focus trap
- * records the trigger and hands focus back to it when the dialog closes.
+ * The rule: picking a profile that needs confirmation closes the menu and puts
+ * focus on the trigger BEFORE the dialog opens, so the dialog's focus trap
+ * records the trigger and hands focus back to it when the dialog closes,
+ * rather than into a menu whose selection did not happen.
  *
  * The real useProfileMenu is used here (the other GameRow tests mock it open),
  * because the thing under test is that it closes.
@@ -119,7 +121,8 @@ function trigger(): HTMLButtonElement {
   return button!
 }
 
-// The menu and the dialog both portal to document.body.
+// The menu portals out of the row (into #root, or body when the harness has
+// none, as here) and the dialog to body: neither is inside `container`.
 const menu = () => document.body.querySelector('[role="menu"]')
 const dialog = () => document.body.querySelector('[role="alertdialog"]')
 
@@ -168,8 +171,8 @@ describe('profile menu closes before the switch confirmation (#884, Codex P1)', 
     await openMenuAndPick('Race')
 
     expect(dialog()).not.toBeNull()
-    // Portalled at z-9999 outside #root, an open menu would float above the
-    // z-100 dialog and outside its inert background: it has to be gone.
+    // Left open it would sit under the dialog, inert, and take focus back when
+    // the dialog closes: it has to be gone.
     expect(menu()).toBeNull()
     expect(switchProfileAppsMock).not.toHaveBeenCalled()
   })

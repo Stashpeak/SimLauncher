@@ -69,8 +69,8 @@ async function renderMenu(
   return container
 }
 
-// The menu is portalled to document.body (#884), so the queries go there
-// rather than into the render container.
+// The menu is portalled out of the row (#884): into #root, or document.body
+// when the test mounts none, as here. Either way it is not in the container.
 function renderedNames(): string[] {
   return Array.from(document.body.querySelectorAll('[role="menuitemradio"]')).map(
     (item) => item.textContent?.trim() ?? ''

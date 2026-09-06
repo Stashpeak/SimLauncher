@@ -60,7 +60,11 @@ export function GameRowProfileMenu({
   // three. Same stack as Tooltip and useDismissMenu; `flip` is what opens it
   // upward on the bottom row. Open/close, keyboard and outside-press stay in
   // useProfileMenu, so no floating-ui interactions are wired here.
-  const { refs, floatingStyles } = useFloating({
+  const {
+    refs,
+    floatingStyles,
+    placement: resolvedPlacement
+  } = useFloating({
     open: profileMenuOpen,
     placement: 'bottom-end',
     middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
@@ -159,7 +163,12 @@ export function GameRowProfileMenu({
               // above the cap height exceeds the descent). Two extra pixels at
               // the bottom bring the two gaps together; the item's own
               // padding is untouched so its hover box stays centred.
-              className="dropdown-surface overlay-glass min-w-44 overflow-hidden rounded-xl px-1 pt-1 pb-1.5 animate-fade-slide"
+              // The entrance slides toward the pill: down from above when the
+              // menu opens below it, up from below when `flip` put it above
+              // (the bottom row), where the default keyframe would slide away.
+              className={`dropdown-surface overlay-glass min-w-44 overflow-hidden rounded-xl px-1 pt-1 pb-1.5 ${
+                resolvedPlacement.startsWith('top') ? 'animate-fade-slide-up' : 'animate-fade-slide'
+              }`}
             >
               {sortedProfiles.map((profile) => {
                 const selected = profile.id === profileSet.activeProfileId

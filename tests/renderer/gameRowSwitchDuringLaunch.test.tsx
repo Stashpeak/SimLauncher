@@ -194,7 +194,8 @@ async function clickLaunch(): Promise<void> {
 }
 
 async function clickProfile(name: string): Promise<void> {
-  // The menu is portalled to document.body (#884), so it is outside `container`.
+  // The menu is portalled out of the row (#884; into #root, or body when the
+  // test mounts none), so it is outside `container`.
   const option = Array.from(
     document.body.querySelectorAll<HTMLButtonElement>('button[role="menuitemradio"]')
   ).find((button) => button.textContent?.includes(name))

@@ -218,6 +218,36 @@ describe('GameRowProfileMenu positioning (#884)', () => {
     expect(wrapper.classList.contains('z-9999')).toBe(false)
   })
 
+  test('Tab or Escape on the trigger closes the open menu', async () => {
+    // Before the portal the menu was the next node after the trigger, so Tab
+    // walked into it and the menu's own handler closed it. Now Tab would move
+    // on with the menu left open and no pointer press to close it (found by
+    // the last-check review on #940).
+    await render(<Harness />)
+    const trigger = document.body.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!
+    expect(document.body.querySelector('[role="menu"]')).not.toBeNull()
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    await act(async () => {
+      trigger.dispatchEvent(tab)
+    })
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    // Tab keeps its default move: the browser goes on to the next control.
+    expect(tab.defaultPrevented).toBe(false)
+
+    await act(async () => {
+      trigger.click()
+    })
+    expect(document.body.querySelector('[role="menu"]')).not.toBeNull()
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    await act(async () => {
+      trigger.dispatchEvent(escape)
+    })
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    expect(escape.defaultPrevented).toBe(true)
+  })
+
   test('a press inside the portalled menu keeps it open; a press elsewhere closes it', async () => {
     await render(<Harness />)
 

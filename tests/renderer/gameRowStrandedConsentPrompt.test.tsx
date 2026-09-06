@@ -163,7 +163,8 @@ async function clickCloseApps(): Promise<void> {
  * and it is the confirmed call that actually runs the kill-then-launch.
  */
 async function switchToProfile(name: string): Promise<void> {
-  // The menu is portalled to document.body (#884), so it is outside `container`.
+  // The menu is portalled out of the row (#884; into #root, or body when the
+  // test mounts none), so it is outside `container`.
   const option = Array.from(document.body.querySelectorAll('button[role="menuitemradio"]')).find(
     (button) => button.textContent?.includes(name)
   ) as HTMLButtonElement | undefined
