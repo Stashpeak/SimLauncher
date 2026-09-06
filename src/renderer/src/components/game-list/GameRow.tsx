@@ -799,10 +799,12 @@ export function GameRow({
               {/* Keyed so a profile change remounts the editor instead of
                   reusing the instance. useDirtyTracking captures its baseline
                   once and only resetDirty clears it, so a reused instance
-                  carries the previous profile's baseline into the new one:
-                  the editor reports changes nobody made, and Save writes that
-                  stale baseline over the profile on screen (#880). The key is
-                  the same identity the editor already reports itself under in
+                  carries the previous profile's baseline into the new one and
+                  reports changes nobody made (#880). The baseline is only ever
+                  compared against, never written: handleSave builds the
+                  profile from local state, so the harm was the spurious dirty
+                  flag, not the saved profile (checked on #924). The key is the
+                  same identity the editor already reports itself under in
                   reportProfileEditorDirty, so the two cannot disagree. */}
               <ProfileEditor
                 key={`${game.key}:${profileSet.activeProfileId}`}
