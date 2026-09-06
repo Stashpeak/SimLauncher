@@ -73,11 +73,14 @@ export function BehaviorSection(): ReactNode {
       </div>
       <div className="settings-row">
         <div className="settings-label-group">
+          {/* Leads with the trigger (close), not the mechanism (minimize): a
+              user scanning the list for "close" did not find it as "Minimize
+              to tray on close". The stored key stays minimizeToTray. #891 */}
           <label htmlFor={minimizeToTrayId} className="settings-label">
-            Minimize to tray on close
+            Close to tray
           </label>
           <span className="settings-sublabel">
-            Keep SimLauncher running when the window is closed
+            Closing the window sends SimLauncher to the tray instead of quitting
           </span>
         </div>
         <Toggle
