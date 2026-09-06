@@ -1862,7 +1862,7 @@ test('an already-running app is still counted when another app was skipped as mi
 // "All profile applications launched." while entries had been skipped as
 // missing, which is the #739 contradiction the PR set out to remove.
 const loadSummaryBuilder = async () =>
-  (await import('../../src/main/processes/spawn')).buildLaunchSummaryMessage
+  (await import('../../src/main/processes/launchSummary')).buildLaunchSummaryMessage
 
 test('summary: nothing started and something missing does not claim everything launched', async () => {
   expect((await loadSummaryBuilder())(0, 0, 1)).toBe('No apps were started.')
@@ -1884,6 +1884,143 @@ test('summary: a missing entry alone drops the ALL claim but keeps the count', a
 
 test('summary: a clean launch is unchanged', async () => {
   expect((await loadSummaryBuilder())(3, 0, 0)).toBe('All profile applications launched.')
+})
+
+// #897. The already-running count had no identity, so a launch pressed while
+// the game was up said "Started 3 apps; skipped 1 already running" and read as
+// a fourth app nobody configured. The game is named as the game, and the number
+// that remains is the companions.
+test('summary: the game is named as the game, never counted among the apps (#897)', async () => {
+  const build = await loadSummaryBuilder()
+  const game = { skippedGameName: 'Assetto Corsa' }
+  expect(build(3, 1, 0, game)).toBe('Started 3 apps; Assetto Corsa was already running.')
+  expect(build(3, 3, 0, game)).toBe(
+    'Started 3 apps; Assetto Corsa and 2 apps were already running.'
+  )
+  expect(build(1, 2, 1, game)).toBe('Started 1 app; Assetto Corsa and 1 app were already running.')
+  expect(build(0, 1, 0, game)).toBe('No apps were started; Assetto Corsa was already running.')
+  expect(build(0, 3, 1, game)).toBe(
+    'No apps were started; Assetto Corsa and 2 apps were already running.'
+  )
+})
+
+// The other half of #897: a consent prompt nobody answered inside the grace
+// window was counted as started. `launchedCount` keeps counting it, because the
+// cooldown it drives has to cover a late approval, but the sentence gives it its
+// own clause instead of folding it into "Started N apps".
+test('summary: an unanswered consent prompt gets its own clause instead of counting as started (#897)', async () => {
+  const build = await loadSummaryBuilder()
+  expect(build(4, 1, 0, { awaitingElevationCount: 1 })).toBe(
+    'Started 3 apps; 1 is waiting for administrator permission; skipped 1 already running.'
+  )
+  expect(build(3, 0, 0, { awaitingElevationCount: 2 })).toBe(
+    'Started 1 app; 2 are waiting for administrator permission.'
+  )
+  expect(build(1, 0, 0, { awaitingElevationCount: 1 })).toBe(
+    'No apps were started; 1 is waiting for administrator permission.'
+  )
+  expect(build(2, 1, 0, { skippedGameName: 'Assetto Corsa', awaitingElevationCount: 1 })).toBe(
+    'Started 1 app; 1 is waiting for administrator permission; Assetto Corsa was already running.'
+  )
+})
+
+// The end-to-end shape of the first #897 occurrence: Launch on a profile whose
+// game is already up, which is the ordinary way to start companions alongside a
+// sim you already have open. The game entry comes from the store like the IPC
+// handler's does, so the skip has an identity to name.
+test('a launch with the game already running names the game instead of counting it (#897)', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Games/AssettoCorsa.exe', 'assettocorsa.exe', '4242')
+  processNames.add('assettocorsa.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  const result = await launchProfileApps(sender, 'ac', [
+    { key: 'ac', path: 'C:/Games/AssettoCorsa.exe' },
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' }
+  ])
+
+  expect(result).toMatchObject({
+    success: true,
+    message: 'Started 1 app; Assetto Corsa was already running.',
+    launchedCount: 1,
+    skippedCount: 1
+  })
+  expect(spawnCalls.map((call) => call.appPath)).toEqual(['C:/Tools/SimHub.exe'])
+})
+
+test('nothing to launch with the game among the running entries names it (#897)', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
+  registerProcess('C:/Games/AssettoCorsa.exe', 'assettocorsa.exe', '4242')
+  registerProcess('C:/Tools/SimHub.exe', 'simhub.exe', '4243')
+  processNames.add('assettocorsa.exe')
+  processNames.add('simhub.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  // Plain paths, the legacy input shape: the game is still recognised by its
+  // configured path, so a caller that never learned about entries gets the
+  // same sentence.
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Games/AssettoCorsa.exe'])
+  ).resolves.toMatchObject({
+    success: true,
+    message: 'Assetto Corsa is already running.',
+    launchedCount: 0,
+    skippedCount: 1
+  })
+
+  await expect(
+    launchProfileApps(sender, 'ac', ['C:/Games/AssettoCorsa.exe', 'C:/Tools/SimHub.exe'])
+  ).resolves.toMatchObject({
+    success: true,
+    message: 'Assetto Corsa and 1 app are already running.',
+    launchedCount: 0,
+    skippedCount: 2
+  })
+  expect(spawnCalls).toHaveLength(0)
+})
+
+// The second #897 occurrence, from the 1.2.0 smoke run: "osk.exe requested
+// administrator permission ... Started 4 apps; skipped 1 already running." The
+// prose hedged and the number counted the unanswered prompt as started.
+test('an unanswered consent prompt is not counted as started in the summary (#897)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Games/Race.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+
+    const { launchProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe' },
+      gamePaths: { ac: 'C:/Games/Race.exe' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const resultPromise = launchProfileApps(sender, 'ac', [
+      'C:/Tools/Admin Tool.exe',
+      'C:/Games/Race.exe'
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+    const result = await resultPromise
+
+    expect(result.success).toBe(true)
+    expect(result.message).toBe('Started 1 app; 1 is waiting for administrator permission.')
+    // The hedge beside it is unchanged, and so is the count the cooldown reads:
+    // a late approval can still start the app, so the block has to cover it.
+    expect(result.warning).toContain('requested administrator permission')
+    expect(result.launchedCount).toBe(2)
+    expect(result.elevatedCount).toBe(1)
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 test('launchProfileApps parses custom app arguments with quoted paths and escaped quotes', async () => {

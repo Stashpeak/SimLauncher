@@ -10,7 +10,7 @@
     "src/main/ipc/config.ts": 464,
     "src/main/processes/kill.ts": 576,
     "src/main/processes/running.ts": 424,
-    "src/main/processes/spawn.ts": 733,
+    "src/main/processes/spawn.ts": 727,
     "src/main/processes/win32KillUtils.ts": 384,
     "src/main/store.ts": 682,
     "src/renderer/src/App.tsx": 399,
