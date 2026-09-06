@@ -15,7 +15,7 @@
     "src/main/store.ts": 682,
     "src/renderer/src/App.tsx": 399,
     "src/renderer/src/components/game-list/GameRow.tsx": 570,
-    "src/renderer/src/components/settings/SettingsContext.tsx": 482,
+    "src/renderer/src/components/settings/SettingsContext.tsx": 486,
     "src/renderer/src/hooks/useProfileEditor.tsx": 665
   },
   "exclusions": {

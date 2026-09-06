@@ -39,6 +39,12 @@ vi.mock('../../src/renderer/src/lib/store', () => ({
   saveSettings: (...args: unknown[]) => saveSettingsMock(...args),
   saveProfiles: (...args: unknown[]) => saveProfilesMock(...args)
 }))
+// Same reason for lib/electron: the save refetches app icons after a
+// successful write (#898), and getFileIcon is bound at import time too.
+const getFileIconMock = vi.fn()
+vi.mock('../../src/renderer/src/lib/electron', () => ({
+  getFileIcon: (...args: unknown[]) => getFileIconMock(...args)
+}))
 
 const notifyMock = vi.fn()
 const resetDirtyMock = vi.fn()
@@ -47,6 +53,8 @@ const setAppNamesMock = vi.fn()
 const setGamePathsMock = vi.fn()
 const setAppArgsMock = vi.fn()
 const setLaunchDelayMsMock = vi.fn()
+const setAppIconsMock = vi.fn()
+const setIconLoadErrorsMock = vi.fn()
 
 // A valid Profiles value; passed through verbatim to saveProfiles.
 const PROFILES = { iracing: { utilities: [] } }
@@ -101,8 +109,30 @@ function buildArgs(overrides: Partial<SaveArgs> = {}): SaveArgs {
     setGamePaths: setGamePathsMock,
     setAppArgs: setAppArgsMock,
     setLaunchDelayMs: setLaunchDelayMsMock,
+    appIcons: {},
+    setAppIcons: setAppIconsMock,
+    setIconLoadErrors: setIconLoadErrorsMock,
+    // The synchronous mirror of the latest edited records (useSettingsState):
+    // by default nothing was touched after the save started.
+    latestSettingsObjects: {
+      current: {
+        appPaths: live.appPaths,
+        appNames: live.appNames,
+        appArgs: live.appArgs,
+        gamePaths: live.gamePaths
+      }
+    },
     ...overrides
   }
+}
+
+// Applies every functional updater the hook handed to a setter, in order, to a
+// starting value. The icon and error setters are called with updaters rather
+// than values so a Browse landing mid-save is not overwritten.
+function applyUpdaters<T>(mock: ReturnType<typeof vi.fn>, initial: T): T {
+  return mock.mock.calls.reduce<T>((value, [updater]) => {
+    return typeof updater === 'function' ? (updater as (prev: T) => T)(value) : (updater as T)
+  }, initial)
 }
 
 function Probe({
@@ -156,6 +186,9 @@ beforeEach(() => {
     Promise.resolve({ settings: patch, dropped: [] })
   )
   saveProfilesMock.mockResolvedValue(undefined)
+  // No icon for anything unless a test says otherwise, so the refetch after a
+  // save (#898) is inert in the cases that are not about it.
+  getFileIconMock.mockResolvedValue(null)
 })
 
 describe('useSettingsSave (#645)', () => {
@@ -514,6 +547,291 @@ describe('useSettingsSave (#645)', () => {
       expect(notifyMock).toHaveBeenCalledWith(expect.stringContaining('Left Rig Overlay'), 'warn')
       expect(notifyMock).not.toHaveBeenCalledWith(expect.stringContaining('Custom App 1'), 'warn')
     } finally {
+      harness.unmount()
+    }
+  })
+})
+
+// #898. A path pasted or typed into a slot kept the previous executable's icon
+// after Save. `get-file-icon` only answers for paths already in the store or
+// just picked through Browse, so the icon cannot be fetched while the path is
+// being typed, and the store-changed reload that would fetch it afterwards is
+// skipped for the provider's own save on purpose (#480). The save itself is the
+// moment the path becomes fetchable, so it refetches, with the same rule Browse
+// applies: an icon replaces the old one, no icon drops it (#428).
+describe('useSettingsSave (#898): icons follow the paths that were just saved', () => {
+  test('a successful save refetches the icon of every persisted app path', async () => {
+    getFileIconMock.mockResolvedValue('data:image/png;base64,NEW')
+
+    const harness = await renderSave(
+      buildArgs({ appIcons: { simhub: 'data:image/png;base64,OLD' } })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      // The persisted (trimmed) path, and only that: the empty sentinel is not
+      // a file to ask about.
+      expect(getFileIconMock).toHaveBeenCalledTimes(1)
+      expect(getFileIconMock).toHaveBeenCalledWith('C:/Tools/SimHub.exe')
+      expect(applyUpdaters(setAppIconsMock, { simhub: 'data:image/png;base64,OLD' })).toEqual({
+        simhub: 'data:image/png;base64,NEW'
+      })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('a path whose executable has no icon drops the stale one instead of keeping it', async () => {
+    getFileIconMock.mockResolvedValue(null)
+
+    const harness = await renderSave(
+      buildArgs({ appIcons: { simhub: 'data:image/png;base64,OLD' } })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(applyUpdaters(setAppIconsMock, { simhub: 'data:image/png;base64,OLD' })).toEqual({})
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('an icon Browse picked while the save was in flight survives the refetch', async () => {
+    getFileIconMock.mockResolvedValue('data:image/png;base64,NEW')
+
+    const harness = await renderSave(buildArgs())
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      // The updater is applied to state that gained a key after the save
+      // started; a value write would have discarded it.
+      expect(
+        applyUpdaters(setAppIconsMock, { customapp1: 'data:image/png;base64,BROWSED' })
+      ).toEqual({
+        customapp1: 'data:image/png;base64,BROWSED',
+        simhub: 'data:image/png;base64,NEW'
+      })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('a load error is cleared for a key whose icon changed and kept for the rest', async () => {
+    getFileIconMock.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === 'C:/Tools/SimHub.exe' ? 'data:image/png;base64,NEW' : 'data:image/png;base64,SAME'
+      )
+    )
+
+    const harness = await renderSave(
+      buildArgs({
+        appPaths: { simhub: 'C:/Tools/SimHub.exe', other: 'C:/Tools/Other.exe' },
+        appIcons: { simhub: 'data:image/png;base64,OLD', other: 'data:image/png;base64,SAME' }
+      })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      const errors = applyUpdaters(
+        setIconLoadErrorsMock,
+        new Set(['simhub', 'other', 'tracktitan'])
+      )
+      // simhub's image changed, so its failure to decode is stale; other's did
+      // not, and tracktitan's is a bundled icon this save never touched.
+      expect([...errors].sort()).toEqual(['other', 'tracktitan'])
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // A fetched icon belongs to the path it was fetched for. A slot the user
+  // moved on from while the save was in flight keeps whatever it shows: the
+  // save-race guard keeps the draft path, and the icon must not be handed the
+  // executable that path left behind (review bot and Codex on #936).
+  test('a slot retyped during the save keeps its draft and is not given the icon of the path it left', async () => {
+    const versions = { current: createSettingsObjectVersions() }
+    const latest = buildArgs().latestSettingsObjects
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      // The user retypes the slot's path while the write is in flight.
+      versions.current.appPaths += 1
+      latest.current = {
+        ...latest.current,
+        appPaths: { ...latest.current.appPaths, simhub: 'C:/Tools/Retyped.exe' }
+      }
+      return Promise.resolve({ settings: patch, dropped: [] })
+    })
+    getFileIconMock.mockResolvedValue('data:image/png;base64,WRITTEN')
+
+    const harness = await renderSave(
+      buildArgs({
+        settingsObjectEditVersions: versions,
+        latestSettingsObjects: latest,
+        appIcons: { simhub: 'data:image/png;base64,OLD' }
+      })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      // The draft survives, as before this PR.
+      expect(setAppPathsMock).not.toHaveBeenCalled()
+      // The fetch was for the persisted path (the draft would be refused), and
+      // its answer is not applied to a slot that no longer shows that path.
+      expect(getFileIconMock).toHaveBeenCalledWith('C:/Tools/SimHub.exe')
+      expect(applyUpdaters(setAppIconsMock, { simhub: 'data:image/png;base64,OLD' })).toEqual({
+        simhub: 'data:image/png;base64,OLD'
+      })
+      expect(applyUpdaters(setIconLoadErrorsMock, new Set(['simhub']))).toEqual(new Set(['simhub']))
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The same rule is what keeps a Browse safe: Browse sets the slot's icon the
+  // moment the dialog closes, and a refetch for the path the save wrote would
+  // overwrite it whenever the fetch settles second.
+  test('a slot Browsed to another executable during the save keeps the Browse icon', async () => {
+    const versions = { current: createSettingsObjectVersions() }
+    const latest = buildArgs().latestSettingsObjects
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      // Browse lands on the same slot while the write is in flight. It edits
+      // through updateSettingsObject, which bumps the field's version and the
+      // mirror alike; modelling only the mirror would be a Browse that the
+      // save-race guard cannot see.
+      versions.current.appPaths += 1
+      latest.current = {
+        ...latest.current,
+        appPaths: { ...latest.current.appPaths, simhub: 'C:/Tools/Browsed.exe' }
+      }
+      return Promise.resolve({ settings: patch, dropped: [] })
+    })
+    getFileIconMock.mockResolvedValue('data:image/png;base64,WRITTEN')
+
+    const harness = await renderSave(
+      buildArgs({ settingsObjectEditVersions: versions, latestSettingsObjects: latest })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(applyUpdaters(setAppIconsMock, { simhub: 'data:image/png;base64,BROWSED' })).toEqual({
+        simhub: 'data:image/png;base64,BROWSED'
+      })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The path the store keeps is the sanitizer's form of what was typed: trimmed,
+  // one matched pair of quotes removed (#859, the "Copy as path" case this
+  // issue is mostly about). The slot on screen still holds the raw input, so
+  // "still shows the path it was fetched for" has to be judged in that form or
+  // the pasted path is exactly the one that never gets its icon (Codex on #936).
+  // The write-back is skipped here on purpose (another slot edited mid-save),
+  // so nothing but the comparison itself can make this pass.
+  test('a pasted "Copy as path" value gets its icon once the sanitizer has stripped the quotes', async () => {
+    const versions = { current: createSettingsObjectVersions() }
+    const pastedPaths = { simhub: '"C:/Tools/SimHub.exe"', iracing: '' }
+    const latest = buildArgs().latestSettingsObjects
+    latest.current = { ...latest.current, appPaths: pastedPaths }
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      versions.current.appPaths += 1
+      return Promise.resolve({
+        settings: { ...patch, appPaths: { simhub: 'C:/Tools/SimHub.exe', iracing: '' } },
+        dropped: []
+      })
+    })
+    getFileIconMock.mockResolvedValue('data:image/png;base64,NEW')
+
+    const harness = await renderSave(
+      buildArgs({
+        appPaths: pastedPaths,
+        settingsObjectEditVersions: versions,
+        latestSettingsObjects: latest
+      })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(setAppPathsMock).not.toHaveBeenCalled()
+      expect(getFileIconMock).toHaveBeenCalledWith('C:/Tools/SimHub.exe')
+      expect(applyUpdaters(setAppIconsMock, {})).toEqual({ simhub: 'data:image/png;base64,NEW' })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The mirror useSettingsState keeps of the latest records is written by every
+  // edit and by the load; a write-back is a value change like either, and
+  // leaving it out kept the raw input past the sanitizer's normalization.
+  test('the write-back keeps the latest-records mirror in step with what was persisted', async () => {
+    const latest = buildArgs().latestSettingsObjects
+
+    const harness = await renderSave(buildArgs({ latestSettingsObjects: latest }))
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(latest.current).toEqual({
+        appPaths: SAVED_APP_PATHS,
+        appNames: { simhub: 'SimHub' },
+        appArgs: SAVED_APP_ARGS,
+        gamePaths: SAVED_GAME_PATHS
+      })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('a failed save refetches nothing', async () => {
+    saveSettingsMock.mockRejectedValue(new Error('disk full'))
+    getFileIconMock.mockResolvedValue('data:image/png;base64,NEW')
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const harness = await renderSave(buildArgs())
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(getFileIconMock).not.toHaveBeenCalled()
+      expect(setAppIconsMock).not.toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
+      harness.unmount()
+    }
+  })
+
+  test('an icon fetch that throws does not turn a saved settings into a failed one', async () => {
+    getFileIconMock.mockRejectedValue(new Error('shell unavailable'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const harness = await renderSave(buildArgs())
+    try {
+      let result: boolean | undefined
+      await act(async () => {
+        result = await harness.handleSave()
+      })
+
+      expect(result).toBe(true)
+      expect(notifyMock).toHaveBeenCalledWith('Settings saved!', 'success', 2500)
+      expect(notifyMock).not.toHaveBeenCalledWith('Failed to save settings', 'error')
+      expect(setAppIconsMock).not.toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
       harness.unmount()
     }
   })

@@ -1,8 +1,13 @@
-import { useCallback, type MutableRefObject } from 'react'
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
 import { GAMES, getUtilities, type Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
-import { getSettingsObjectChangesDuringSave, type SettingsObjectVersions } from './saveRace'
+import { refreshAppIcons } from './appIcons'
+import {
+  getSettingsObjectChangesDuringSave,
+  type SettingsObjectRecords,
+  type SettingsObjectVersions
+} from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 
 // A dropped custom app name can itself be the too-long value being reported —
@@ -131,6 +136,10 @@ interface UseSettingsSaveArgs {
   setGamePaths: (gamePaths: Record<string, string>) => void
   setAppArgs: (appArgs: Record<string, string>) => void
   setLaunchDelayMs: (launchDelayMs: number) => void
+  appIcons: Record<string, string>
+  setAppIcons: Dispatch<SetStateAction<Record<string, string>>>
+  setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
+  latestSettingsObjects: MutableRefObject<SettingsObjectRecords>
 }
 
 export function useSettingsSave({
@@ -161,7 +170,11 @@ export function useSettingsSave({
   setAppNames,
   setGamePaths,
   setAppArgs,
-  setLaunchDelayMs
+  setLaunchDelayMs,
+  appIcons,
+  setAppIcons,
+  setIconLoadErrors,
+  latestSettingsObjects
 }: UseSettingsSaveArgs): { handleSave: () => Promise<boolean> } {
   const handleSave = useCallback(async (): Promise<boolean> => {
     try {
@@ -225,6 +238,21 @@ export function useSettingsSave({
       if (!changedDuringSave.gamePaths) setGamePaths(persistedSettings.gamePaths)
       if (!changedDuringSave.appArgs) setAppArgs(persistedSettings.appArgs)
 
+      // The mirror useSettingsState keeps of the latest records is written by
+      // every edit and by the load; a write-back is a value change like either.
+      // Left out, the mirror kept the raw input past the sanitizer's own
+      // normalization, so a pasted "Copy as path" value with its quotes no
+      // longer matched the path that had just been stored (Codex on #936).
+      // Same guard per field as the write-backs above: an edit made mid-save
+      // is the latest value, not the persisted copy.
+      const mirror = latestSettingsObjects.current
+      latestSettingsObjects.current = {
+        appPaths: changedDuringSave.appPaths ? mirror.appPaths : persistedSettings.appPaths,
+        appNames: changedDuringSave.appNames ? mirror.appNames : persistedSettings.appNames,
+        appArgs: changedDuringSave.appArgs ? mirror.appArgs : persistedSettings.appArgs,
+        gamePaths: changedDuringSave.gamePaths ? mirror.gamePaths : persistedSettings.gamePaths
+      }
+
       setLaunchDelayMs(persistedSettings.launchDelayMs)
 
       if (saveResult.dropped.length > 0) {
@@ -242,6 +270,22 @@ export function useSettingsSave({
         ...currentSettingsState,
         ...persistedSettings
       })
+
+      // After the baseline and the toast: the icons are a picture of what was
+      // just written, not part of whether the write happened (#898).
+      //
+      // Not behind `changedDuringSave.appPaths` like the write-backs above,
+      // because that guard is per field and a retyped slot must not cost the
+      // untouched slots their icons. The per-slot version of the same guard
+      // lives inside: a result is applied only while the slot still shows the
+      // path it was fetched for (review bot and Codex on #936).
+      await refreshAppIcons(
+        persistedSettings.appPaths,
+        () => latestSettingsObjects.current.appPaths,
+        appIcons,
+        setAppIcons,
+        setIconLoadErrors
+      )
       return true
     } catch (err) {
       notify('Failed to save settings', 'error')
@@ -276,7 +320,11 @@ export function useSettingsSave({
     setAppNames,
     setGamePaths,
     setAppArgs,
-    setLaunchDelayMs
+    setLaunchDelayMs,
+    appIcons,
+    setAppIcons,
+    setIconLoadErrors,
+    latestSettingsObjects
   ])
 
   return { handleSave }

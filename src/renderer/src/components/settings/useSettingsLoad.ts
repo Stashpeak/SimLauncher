@@ -8,9 +8,10 @@ import {
   resolveCustomSlots,
   type Profiles
 } from '../../lib/config'
-import { getAssetData, getFileIcon } from '../../lib/electron'
+import { getAssetData } from '../../lib/electron'
 import { getProfiles, getSettings, onStoreConfigChanged } from '../../lib/store'
 import { normalizeThemeMode, type ThemeMode } from '../../lib/theme'
+import { fetchAppIcons } from './appIcons'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 import type { SettingsObjectRecords } from './saveRace'
 import type { SettingsStateSnapshot } from './useSettingsState'
@@ -147,13 +148,9 @@ export function useSettingsLoad({
 
     setIsCustomColor(settings.accentPreset === 'custom')
 
-    const iconEntries = await Promise.all(
-      Object.entries(settings.appPaths)
-        .filter((entry): entry is [string, string] => Boolean(entry[1]))
-        .map(async ([key, path]) => [key, await getFileIcon(path)] as const)
-    )
+    const fetchedIcons = await fetchAppIcons(settings.appPaths)
     const icons: Record<string, string> = {}
-    for (const [key, icon] of iconEntries) {
+    for (const [key, icon] of Object.entries(fetchedIcons)) {
       if (icon) icons[key] = icon
     }
     setAppIcons(icons)
