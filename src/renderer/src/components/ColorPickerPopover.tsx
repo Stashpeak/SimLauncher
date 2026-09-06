@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -23,6 +24,20 @@ const POPOVER_GAP = 12
 // popover does not stretch to the parent container's width.
 const POPOVER_WIDTH = 200
 
+// What the HEX field takes on its way to a colour: an optional `#` and up to
+// six hex digits, so a value copied from another picker pastes either way.
+const HEX_DRAFT_PATTERN = /^#?[0-9A-F]{0,6}$/i
+
+function isHexDraft(draft: string): boolean {
+  const candidate = draft.trim()
+  return candidate.length > 0 && HEX_DRAFT_PATTERN.test(candidate)
+}
+
+// The form the parent stores and the picker paints: `#` first, digits uppercase.
+function normalizeHexDraft(draft: string): string {
+  return `#${draft.trim().replace(/^#/, '').toUpperCase()}`
+}
+
 export function ColorPickerPopover({
   color,
   onChange,
@@ -32,6 +47,22 @@ export function ColorPickerPopover({
   const popoverRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<CSSProperties | null>(null)
   const hexInputId = useId()
+
+  // The HEX field keeps its own draft so that its DOM value is exactly what was
+  // typed. A controlled value that differs from the keystroke (uppercased, `#`
+  // prepended, an unwanted character dropped) makes React write the input's
+  // value, and Chromium clears a field's native undo stack on every programmatic
+  // write, which is why Ctrl+Z did nothing here. The parent still receives the
+  // stored form on every keystroke, so what is saved never waits for a blur
+  // that a popover closing on Escape may not deliver. #888
+  const [draft, setDraft] = useState(() => color.toUpperCase())
+
+  // A colour that did not come from this field (a drag on the picker, a preset
+  // swatch) replaces the draft; one that did is left alone, because the parent
+  // echoes back the stored form of what is on screen.
+  useEffect(() => {
+    setDraft((current) => (normalizeHexDraft(current) === color ? current : color.toUpperCase()))
+  }, [color])
 
   // This component is only mounted while the picker is open, so active is always true.
   // Focus is trapped here rather than via aria-modal because the popover is
@@ -122,23 +153,23 @@ export function ColorPickerPopover({
             id={hexInputId}
             type="text"
             aria-label="Hex color value"
-            value={color.toUpperCase()}
+            value={draft}
             onChange={(e) => {
-              let val = e.target.value
-              // Auto-prepend # if missing
-              if (val && !val.startsWith('#')) {
-                val = '#' + val
-              }
-              // Only update if it's a valid partial or full hex
-              if (/^#[0-9A-F]{0,6}$/i.test(val)) {
-                onChange(val)
+              const next = e.target.value
+              setDraft(next)
+              if (isHexDraft(next)) {
+                onChange(normalizeHexDraft(next))
               }
             }}
             onBlur={() => {
               // Ensure we don't leave it as just '#'
-              if (color === '#' || color.length < 4) {
+              const fallback = color === '#' || color.length < 4
+              if (fallback) {
                 onChange('#AD46FF')
               }
+              // Whatever was typed and not taken (an unwanted character, a
+              // cleared field) gives way to the colour actually in effect.
+              setDraft(fallback ? '#AD46FF' : color.toUpperCase())
             }}
             className="w-full rounded-lg bg-black/20 px-2 py-1.5 text-xs font-medium text-(--text-primary) outline-none transition-colors focus:bg-black/30 focus-visible:ring-2 focus-visible:ring-(--accent)"
             spellCheck={false}
