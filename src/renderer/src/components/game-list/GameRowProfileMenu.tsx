@@ -136,7 +136,16 @@ export function GameRowProfileMenu({
               role="menu"
               aria-label={`${gameName} profiles`}
               onKeyDown={handleProfileMenuKeyDown}
-              className="dropdown-surface overlay-glass min-w-44 overflow-hidden rounded-xl p-1 animate-fade-slide"
+              // `pb-1.5` where the other sides get `p-1`: an optical correction,
+              // measured on the running app (David, PR #940). The last item is
+              // the only unboxed text between two hard edges, the separator
+              // above and the menu edge below, and with symmetric padding the
+              // eye read 19px above its capitals against 16px below its
+              // baseline, because a glyph sits low in its line box (ascent
+              // above the cap height exceeds the descent). Two extra pixels at
+              // the bottom bring the two gaps together; the item's own
+              // padding is untouched so its hover box stays centred.
+              className="dropdown-surface overlay-glass min-w-44 overflow-hidden rounded-xl px-1 pt-1 pb-1.5 animate-fade-slide"
             >
               {sortedProfiles.map((profile) => {
                 const selected = profile.id === profileSet.activeProfileId
