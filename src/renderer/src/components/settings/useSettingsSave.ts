@@ -3,7 +3,11 @@ import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
 import { GAMES, getUtilities, type Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
 import { fetchAppIcons } from './appIcons'
-import { getSettingsObjectChangesDuringSave, type SettingsObjectVersions } from './saveRace'
+import {
+  getSettingsObjectChangesDuringSave,
+  type SettingsObjectRecords,
+  type SettingsObjectVersions
+} from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 
 // A dropped custom app name can itself be the too-long value being reported —
@@ -120,9 +124,18 @@ function trimStringRecord(values: Record<string, string>) {
  * flight puts an icon in state this call never saw, and a value write would
  * discard it. Cosmetic, so a failure here logs and must not turn a saved
  * settings into a failed one.
+ *
+ * A result belongs to the path it was fetched for. A slot the user retyped or
+ * Browsed while the fetch was in flight has moved on: the save-race guard keeps
+ * that draft, Browse has already set that slot's icon, and an answer for the
+ * path just written would overwrite it whenever the fetch settles second. So
+ * each result is applied only while the slot still shows the path it was
+ * fetched for, read from the synchronous mirror of the latest edits rather than
+ * from the state this call closed over (Codex on #936).
  */
 async function refreshAppIcons(
   persistedAppPaths: Record<string, string>,
+  latestAppPaths: () => Record<string, string>,
   previousIcons: Record<string, string>,
   setAppIcons: Dispatch<SetStateAction<Record<string, string>>>,
   setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
@@ -134,7 +147,10 @@ async function refreshAppIcons(
     console.error('Failed to refresh app icons after save:', err)
     return
   }
-  const keys = Object.keys(fetched)
+  const current = latestAppPaths()
+  const keys = Object.keys(fetched).filter(
+    (key) => (current[key] ?? '').trim() === persistedAppPaths[key]
+  )
   if (keys.length === 0) return
 
   setAppIcons((current) => {
@@ -195,6 +211,7 @@ interface UseSettingsSaveArgs {
   appIcons: Record<string, string>
   setAppIcons: Dispatch<SetStateAction<Record<string, string>>>
   setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
+  latestSettingsObjects: MutableRefObject<SettingsObjectRecords>
 }
 
 export function useSettingsSave({
@@ -228,7 +245,8 @@ export function useSettingsSave({
   setLaunchDelayMs,
   appIcons,
   setAppIcons,
-  setIconLoadErrors
+  setIconLoadErrors,
+  latestSettingsObjects
 }: UseSettingsSaveArgs): { handleSave: () => Promise<boolean> } {
   const handleSave = useCallback(async (): Promise<boolean> => {
     try {
@@ -313,15 +331,18 @@ export function useSettingsSave({
       // After the baseline and the toast: the icons are a picture of what was
       // just written, not part of whether the write happened (#898).
       //
-      // Deliberately NOT behind `changedDuringSave.appPaths`, unlike the
-      // write-backs above. That guard exists so a path retyped while the write
-      // was in flight is not overwritten by the stale persisted copy; an icon
-      // overwrites nothing the user typed. It is a fact about the disk, like
-      // the baseline `resetDirty` was just handed, and the retyped path gets
-      // its own icon from the save that persists it. Skipping the refetch here
-      // would leave the icon of an executable that is on neither the disk nor
-      // the screen (review bot on #936).
-      await refreshAppIcons(persistedSettings.appPaths, appIcons, setAppIcons, setIconLoadErrors)
+      // Not behind `changedDuringSave.appPaths` like the write-backs above,
+      // because that guard is per field and a retyped slot must not cost the
+      // untouched slots their icons. The per-slot version of the same guard
+      // lives inside: a result is applied only while the slot still shows the
+      // path it was fetched for (review bot and Codex on #936).
+      await refreshAppIcons(
+        persistedSettings.appPaths,
+        () => latestSettingsObjects.current.appPaths,
+        appIcons,
+        setAppIcons,
+        setIconLoadErrors
+      )
       return true
     } catch (err) {
       notify('Failed to save settings', 'error')
@@ -359,7 +380,8 @@ export function useSettingsSave({
     setLaunchDelayMs,
     appIcons,
     setAppIcons,
-    setIconLoadErrors
+    setIconLoadErrors,
+    latestSettingsObjects
   ])
 
   return { handleSave }
