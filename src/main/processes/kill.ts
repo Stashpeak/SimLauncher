@@ -616,6 +616,20 @@ function getProfileCompanionTargets(gameKey?: string) {
 
     getProfileTrackablePaths(profileGameKey, profile, appPaths, gamePaths).forEach(
       (processPath) => {
+        // A secondary configured by image NAME is tracked and awaited, never
+        // closed (#929). The only thing that asks the user for one is the
+        // phantom-exit warning, and what it asks for is the process a launcher
+        // stub handed off to: the GAME, under a name we do not have as a game
+        // path. Close Apps promises never to close the game, so the entry is
+        // surfaced by the poll and honoured by auto-close (`getSecondaryGamePaths`)
+        // and stops here. A companion the user wants under Close Apps is
+        // configured by path, which is also what keeps this from `/IM`-killing
+        // every same-named process on the machine (#677). That a PATH-scoped
+        // secondary is still a target is the older half of the same ambiguity,
+        // and unifying the two shapes is #444.
+        if (!isPathScopedExe(processPath)) {
+          return
+        }
         if (gameExePaths.has(normalizePathForComparison(processPath))) {
           return
         }

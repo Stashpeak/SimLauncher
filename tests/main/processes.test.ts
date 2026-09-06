@@ -4644,6 +4644,109 @@ test('two profiles pointing at same-named exes in different folders close both (
   expect(killedPids).toEqual(expect.arrayContaining(['1111', '2222']))
 })
 
+// #929: the phantom-exit warning tells the user to add the child's image NAME
+// from Task Manager under Secondary executables. #890 made that typeable; this
+// is the half that makes it do something. A bare name is never a file on disk,
+// so every consumer that guarded on existence dropped it without a word.
+//
+// This harness mocks getProfileTrackablePaths WITHOUT the existence filter, so
+// a bare entry has always reached running.ts and kill.ts here; the filter that
+// dropped it in production is pinned in profiles.test.ts. What is pinned here
+// is what the two consumers do with a bare entry once it arrives.
+test('a bare secondary exe name shows in the strip without buying an enumeration (#929)', async () => {
+  const { getRunningApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/acs.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['acs_real.exe'] }]
+      }
+    }
+  })
+  // The strip surfaces a profile's tracked apps once its game is launched or
+  // adopted, so the game runs at its configured path alongside the secondary.
+  markExistingPath('C:/Games/acs.exe')
+  registerProcess('C:/Games/acs.exe', 'acs.exe', '77')
+  processNames.add('acs.exe')
+  processNames.add('acs_real.exe')
+
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'acs_real.exe',
+        name: 'acs_real.exe',
+        gameKey: 'ac',
+        tracked: true
+      })
+    ])
+  )
+
+  // The name is answered from the tasklist snapshot, never resolved as a path:
+  // a bare name in the candidate set would cost one enumeration per tick for
+  // an answer `isPathRunning` never reads.
+  const enumerationsNamingIt = execFileCalls.filter(
+    (call) =>
+      call.command === 'powershell.exe' &&
+      String(
+        (call.options.env as Record<string, string> | undefined)
+          ?.SIMLAUNCHER_TARGET_PROCESS_NAMES ?? ''
+      ).includes('acs_real.exe')
+  )
+  expect(enumerationsNamingIt).toHaveLength(0)
+
+  processNames.delete('acs_real.exe')
+  await expect(getRunningApps()).resolves.not.toEqual(
+    expect.arrayContaining([expect.objectContaining({ path: 'acs_real.exe' })])
+  )
+})
+
+// The only thing that asks the user for a bare name is the phantom-exit
+// warning, and what it asks for is the process a launcher stub handed off to:
+// the game. Close Apps promises never to close the game, so a name entry is
+// tracked and awaited but is not a target and is not offered as one. A
+// companion wanted under Close Apps is configured by path (#444 owns unifying
+// the two shapes).
+test('a bare secondary exe name is tracked but is not a Close Apps target (#929)', async () => {
+  const { collectRunningAppsSnapshot, killLaunchedApps } = await loadProcessModulesWithStore({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['acs_real.exe'] }]
+      }
+    }
+  })
+  processNames.add('acs_real.exe')
+
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    success: true,
+    closedCount: 0,
+    failedCount: 0
+  })
+  expect(execFileCalls.filter((call) => call.command === 'taskkill')).toEqual([])
+})
+
+// The case the rule above exists for: the stub is the configured game, the
+// real process is the name the user typed, and a name-scoped target here would
+// mean Close Apps kills the game mid-session.
+test('a bare secondary name equal to the game exe is never a Close Apps target (#929)', async () => {
+  markExistingPath('C:/Games/acs.exe')
+  processNames.add('acs.exe')
+  const { collectRunningAppsSnapshot, killLaunchedApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/acs.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['acs.exe'] }]
+      }
+    }
+  })
+
+  expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
+  await killLaunchedApps('ac')
+  expect(execFileCalls.filter((call) => call.command === 'taskkill')).toEqual([])
+})
+
 // Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the
 // tasklist, which knows image NAMES only, so once two profiles can hold two
 // same-named paths both get scheduled even when only one of them is running.

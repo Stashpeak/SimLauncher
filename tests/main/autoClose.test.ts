@@ -1,3 +1,4 @@
+import path from 'path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 // #204 auto-close. Every test drives `observeProcessScan` directly with a raw
@@ -44,11 +45,22 @@ async function loadAutoCloseModule(opts?: {
 }) {
   // utils.isValidExePath checks fs.existsSync; pretend every .exe exists so the
   // armed check does not depend on the host filesystem.
+  //
+  // Except exactly what a bare image name resolves to: isValidExePath resolves
+  // its input first, so `name.exe` arrives here as `<cwd>/name.exe`, and a mock
+  // that said yes would let the #929 tests pass an existence check a bare name
+  // can never pass for real. Judged as "resolving the basename alone lands on
+  // the same path", not as "anything under the CWD": on a POSIX host
+  // `path.resolve('C:/Games/acs.exe')` is under the CWD too, and the wider rule
+  // rejected AC_GAME_PATHS there (CodeRabbit on #931).
   vi.doMock('perf_hooks', () => ({ performance: { now: () => monotonicNow } }))
 
   vi.doMock('fs', () => ({
     default: {
-      existsSync: (filePath: unknown) => typeof filePath === 'string' && /\.exe$/i.test(filePath)
+      existsSync: (filePath: unknown) =>
+        typeof filePath === 'string' &&
+        /\.exe$/i.test(filePath) &&
+        path.resolve(path.basename(filePath)) !== filePath
     }
   }))
 
@@ -602,6 +614,42 @@ test('a secondary executable still running keeps the session open (#204)', async
   readRunningProcessNamesMock.mockResolvedValue(GONE)
 
   // The stub exits, which is normal for a stub, while the game plays on.
+  observeProcessScan({ processNames: new Set(['acs.exe', 'acs_real.exe']), succeeded: true })
+  await advance(MIN_SESSION_MS)
+  observeProcessScan(REAL_RUNNING)
+  await advance(AUTO_CLOSE_GRACE_MS * 2)
+
+  expect(killLaunchedAppsMock).not.toHaveBeenCalled()
+})
+
+// #929: the same repair path, with what the warning literally asks for: the
+// image name off Task Manager, no directory. That is never a file on disk, so
+// it has to be kept on shape rather than existence, or the instruction the app
+// gives is one it then ignores.
+const STUB_NAME_PROFILES = { ac: { ...ARMED, trackedProcessPaths: ['acs_real.exe'] } }
+
+test('a stub-launched game arms on a bare secondary exe name (#929)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } = await loadAutoCloseModule({
+    profiles: STUB_NAME_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
+  observeProcessScan(REAL_RUNNING)
+  await advance(MIN_SESSION_MS)
+  observeProcessScan(GONE)
+  await advance(AUTO_CLOSE_GRACE_MS)
+
+  expect(killLaunchedAppsMock).toHaveBeenCalledWith('ac')
+})
+
+test('a bare secondary exe name still running keeps the session open (#929)', async () => {
+  const { observeProcessScan, AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } = await loadAutoCloseModule({
+    profiles: STUB_NAME_PROFILES,
+    gamePaths: AC_GAME_PATHS
+  })
+  readRunningProcessNamesMock.mockResolvedValue(GONE)
+
   observeProcessScan({ processNames: new Set(['acs.exe', 'acs_real.exe']), succeeded: true })
   await advance(MIN_SESSION_MS)
   observeProcessScan(REAL_RUNNING)
