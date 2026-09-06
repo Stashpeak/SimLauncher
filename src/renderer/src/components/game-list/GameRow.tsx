@@ -357,6 +357,19 @@ export function GameRow({
           const message = `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
 
           if (!skipRunningConfirm) {
+            // Close the menu BEFORE the dialog opens (Codex P1 on #884). The
+            // menu lives in a portal inside #root, so the dialog's focus trap
+            // covers and inerts it either way; this is about what the user
+            // comes back to. Left open, the menu would still be there under
+            // the dialog, with the item they clicked focused, and dismissing
+            // the dialog would return focus into a menu whose selection did
+            // not happen. Focus goes to the trigger synchronously, not through
+            // closeProfileMenu(true): that one focuses on the next animation
+            // frame, which would land after the dialog took focus and steal
+            // it back. The trap records the trigger as the element to return
+            // to, so dismissing the dialog puts focus on the trigger.
+            triggerRef.current?.focus()
+            closeProfileMenu(false)
             setProfileSwitchConfirm({
               nextProfileId: nextProfile.id,
               nextProfileName: nextProfile.name,
@@ -726,12 +739,13 @@ export function GameRow({
       // 3 of 7") instead of synthesizing a bare list marker ("bullet") in front
       // of each focused control in the row (#612). Keeps the list semantics.
       aria-label={game.name}
-      className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 ${profileMenuOpen ? 'z-40' : 'z-0'} ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      // No z-index lift while the menu is open any more: the menu is portalled
+      // out of the row (#884), so the row has nothing to raise above its
+      // siblings.
+      className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 z-0 ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
-      <div
-        className={`accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 ${profileMenuOpen ? 'isolation-auto! z-20' : 'z-0'}`}
-      >
+      <div className="accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 z-0">
         {/* The `min-w-0` chain down to the title is what lets a long name give
             way instead of pushing the row wider than it is. A flex item refuses
             to shrink below its content by default, and this row is fixed height

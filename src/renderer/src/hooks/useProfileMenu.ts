@@ -102,7 +102,11 @@ export function useProfileMenu(): UseProfileMenuResult {
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node
+      // The menu is portalled out of the row (#884), so a press inside it is
+      // outside the trigger's wrapper; without the second check the menu would
+      // close on pointerdown, before the click on an item ever fires.
+      if (!profileMenuRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         closeProfileMenu(false)
       }
     }
@@ -133,6 +137,21 @@ export function useProfileMenu(): UseProfileMenuResult {
 
   const handleProfileMenuTriggerKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>) => {
+      // Tab or Escape on the trigger while the menu is open closes it (#884).
+      // Before the portal the menu was the next node after the trigger, so
+      // Tab walked into it and the menu's own handler closed it; now Tab would
+      // move on to the primary button with the menu still open and nothing
+      // left to close it, since no pointer press happens. Tab keeps its
+      // default move; Escape is consumed and focus stays on the trigger.
+      if (profileMenuOpen && (event.key === 'Tab' || event.key === 'Escape')) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        closeProfileMenu(false)
+        return
+      }
+
       if (event.key !== 'ArrowDown' && event.key !== 'Enter' && event.key !== ' ') {
         return
       }
@@ -147,7 +166,7 @@ export function useProfileMenu(): UseProfileMenuResult {
 
       openProfileMenu(true)
     },
-    [focusSelectedProfile, openProfileMenu, profileMenuOpen]
+    [closeProfileMenu, focusSelectedProfile, openProfileMenu, profileMenuOpen]
   )
 
   const handleProfileMenuKeyDown = useCallback(

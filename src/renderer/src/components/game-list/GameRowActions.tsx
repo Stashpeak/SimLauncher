@@ -145,9 +145,10 @@ export function GameRowActions({
         {relaunchButton || closeLeftoversButton}
       </div>
 
-      <div className="no-drag glass-surface flex items-center rounded-full p-0.5">
-        <GameRowProfileMenu {...profileMenuProps} />
-
+      {/* The pill itself is rendered by GameRowProfileMenu, which anchors its
+          menu to it (#884); the separator and the primary button are its
+          children so the pill stays one control. */}
+      <GameRowProfileMenu {...profileMenuProps}>
         <div className="relative z-10 h-4 w-px bg-(--glass-border) opacity-15" />
 
         <Tooltip label={primaryTitle}>
@@ -190,7 +191,7 @@ export function GameRowActions({
             )}
           </button>
         </Tooltip>
-      </div>
+      </GameRowProfileMenu>
 
       <Tooltip label={isActive ? 'Close Profile Settings' : 'Profile Settings'}>
         <button

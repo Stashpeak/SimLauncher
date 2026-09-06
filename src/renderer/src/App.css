@@ -581,6 +581,25 @@ textarea {
   animation: fadeSlide 0.25s ease-out backwards;
 }
 
+/* The mirror of fadeSlide, for a surface that floating-ui has flipped ABOVE its
+   anchor (the profile menu on the bottom row, #884): it should slide up toward
+   the anchor, not down away from it. */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-slide-up {
+  animation: fadeSlideUp 0.25s ease-out backwards;
+}
+
 @keyframes tooltipIn {
   from {
     opacity: 0;
