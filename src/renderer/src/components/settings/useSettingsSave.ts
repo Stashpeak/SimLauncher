@@ -2,7 +2,7 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
 import { GAMES, getUtilities, type Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
-import { fetchAppIcons } from './appIcons'
+import { refreshAppIcons } from './appIcons'
 import {
   getSettingsObjectChangesDuringSave,
   type SettingsObjectRecords,
@@ -105,78 +105,6 @@ function trimStringRecord(values: Record<string, string>) {
       .map(([key, value]) => [key, value.trim()])
       .filter(([, value]) => value.length > 0)
   )
-}
-
-/**
- * Refetches the icons of the app paths a save just wrote (#898).
- *
- * A path pasted or typed into a slot cannot have its icon fetched while it is
- * being entered: `get-file-icon` only answers for paths already in the store or
- * just picked through Browse, which is how Browse shows an icon immediately and
- * typing never did. The save is the moment the path becomes fetchable, and
- * nothing else asks afterwards, because the store-changed reload skips this
- * provider's own save on purpose (#480). So the icon corrected itself only once
- * some other write reloaded Settings, typically enabling the slot in a profile.
- *
- * Same rule as the Browse branch: an icon replaces the previous one, no icon
- * drops it rather than leaving the old executable's picture on a new path
- * (#428). Functional updates, because a Browse that lands while the fetch is in
- * flight puts an icon in state this call never saw, and a value write would
- * discard it. Cosmetic, so a failure here logs and must not turn a saved
- * settings into a failed one.
- *
- * A result belongs to the path it was fetched for. A slot the user retyped or
- * Browsed while the fetch was in flight has moved on: the save-race guard keeps
- * that draft, Browse has already set that slot's icon, and an answer for the
- * path just written would overwrite it whenever the fetch settles second. So
- * each result is applied only while the slot still shows the path it was
- * fetched for, read from the synchronous mirror of the latest edits rather than
- * from the state this call closed over (Codex on #936).
- */
-async function refreshAppIcons(
-  persistedAppPaths: Record<string, string>,
-  latestAppPaths: () => Record<string, string>,
-  previousIcons: Record<string, string>,
-  setAppIcons: Dispatch<SetStateAction<Record<string, string>>>,
-  setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
-): Promise<void> {
-  let fetched: Record<string, string | null>
-  try {
-    fetched = await fetchAppIcons(persistedAppPaths)
-  } catch (err) {
-    console.error('Failed to refresh app icons after save:', err)
-    return
-  }
-  const current = latestAppPaths()
-  const keys = Object.keys(fetched).filter(
-    (key) => (current[key] ?? '').trim() === persistedAppPaths[key]
-  )
-  if (keys.length === 0) return
-
-  setAppIcons((current) => {
-    const next = { ...current }
-    for (const key of keys) {
-      const icon = fetched[key]
-      if (icon) {
-        next[key] = icon
-      } else {
-        delete next[key]
-      }
-    }
-    return next
-  })
-
-  // A decode failure belongs to the image that failed: stale once the image
-  // changes, still true while it does not, and never this save's business for
-  // a bundled icon it did not fetch.
-  const changed = keys.filter((key) => (fetched[key] ?? undefined) !== previousIcons[key])
-  if (changed.length === 0) return
-  setIconLoadErrors((current) => {
-    if (!changed.some((key) => current.has(key))) return current
-    const next = new Set(current)
-    changed.forEach((key) => next.delete(key))
-    return next
-  })
 }
 
 interface UseSettingsSaveArgs {
@@ -309,6 +237,21 @@ export function useSettingsSave({
       if (!changedDuringSave.appNames) setAppNames(persistedSettings.appNames)
       if (!changedDuringSave.gamePaths) setGamePaths(persistedSettings.gamePaths)
       if (!changedDuringSave.appArgs) setAppArgs(persistedSettings.appArgs)
+
+      // The mirror useSettingsState keeps of the latest records is written by
+      // every edit and by the load; a write-back is a value change like either.
+      // Left out, the mirror kept the raw input past the sanitizer's own
+      // normalization, so a pasted "Copy as path" value with its quotes no
+      // longer matched the path that had just been stored (Codex on #936).
+      // Same guard per field as the write-backs above: an edit made mid-save
+      // is the latest value, not the persisted copy.
+      const mirror = latestSettingsObjects.current
+      latestSettingsObjects.current = {
+        appPaths: changedDuringSave.appPaths ? mirror.appPaths : persistedSettings.appPaths,
+        appNames: changedDuringSave.appNames ? mirror.appNames : persistedSettings.appNames,
+        appArgs: changedDuringSave.appArgs ? mirror.appArgs : persistedSettings.appArgs,
+        gamePaths: changedDuringSave.gamePaths ? mirror.gamePaths : persistedSettings.gamePaths
+      }
 
       setLaunchDelayMs(persistedSettings.launchDelayMs)
 

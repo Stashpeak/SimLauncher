@@ -700,9 +700,14 @@ describe('useSettingsSave (#898): icons follow the paths that were just saved', 
   // moment the dialog closes, and a refetch for the path the save wrote would
   // overwrite it whenever the fetch settles second.
   test('a slot Browsed to another executable during the save keeps the Browse icon', async () => {
+    const versions = { current: createSettingsObjectVersions() }
     const latest = buildArgs().latestSettingsObjects
     saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
-      // Browse lands on the same slot while the write is in flight.
+      // Browse lands on the same slot while the write is in flight. It edits
+      // through updateSettingsObject, which bumps the field's version and the
+      // mirror alike; modelling only the mirror would be a Browse that the
+      // save-race guard cannot see.
+      versions.current.appPaths += 1
       latest.current = {
         ...latest.current,
         appPaths: { ...latest.current.appPaths, simhub: 'C:/Tools/Browsed.exe' }
@@ -711,7 +716,9 @@ describe('useSettingsSave (#898): icons follow the paths that were just saved', 
     })
     getFileIconMock.mockResolvedValue('data:image/png;base64,WRITTEN')
 
-    const harness = await renderSave(buildArgs({ latestSettingsObjects: latest }))
+    const harness = await renderSave(
+      buildArgs({ settingsObjectEditVersions: versions, latestSettingsObjects: latest })
+    )
     try {
       await act(async () => {
         await harness.handleSave()
@@ -719,6 +726,70 @@ describe('useSettingsSave (#898): icons follow the paths that were just saved', 
 
       expect(applyUpdaters(setAppIconsMock, { simhub: 'data:image/png;base64,BROWSED' })).toEqual({
         simhub: 'data:image/png;base64,BROWSED'
+      })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The path the store keeps is the sanitizer's form of what was typed: trimmed,
+  // one matched pair of quotes removed (#859, the "Copy as path" case this
+  // issue is mostly about). The slot on screen still holds the raw input, so
+  // "still shows the path it was fetched for" has to be judged in that form or
+  // the pasted path is exactly the one that never gets its icon (Codex on #936).
+  // The write-back is skipped here on purpose (another slot edited mid-save),
+  // so nothing but the comparison itself can make this pass.
+  test('a pasted "Copy as path" value gets its icon once the sanitizer has stripped the quotes', async () => {
+    const versions = { current: createSettingsObjectVersions() }
+    const pastedPaths = { simhub: '"C:/Tools/SimHub.exe"', iracing: '' }
+    const latest = buildArgs().latestSettingsObjects
+    latest.current = { ...latest.current, appPaths: pastedPaths }
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      versions.current.appPaths += 1
+      return Promise.resolve({
+        settings: { ...patch, appPaths: { simhub: 'C:/Tools/SimHub.exe', iracing: '' } },
+        dropped: []
+      })
+    })
+    getFileIconMock.mockResolvedValue('data:image/png;base64,NEW')
+
+    const harness = await renderSave(
+      buildArgs({
+        appPaths: pastedPaths,
+        settingsObjectEditVersions: versions,
+        latestSettingsObjects: latest
+      })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(setAppPathsMock).not.toHaveBeenCalled()
+      expect(getFileIconMock).toHaveBeenCalledWith('C:/Tools/SimHub.exe')
+      expect(applyUpdaters(setAppIconsMock, {})).toEqual({ simhub: 'data:image/png;base64,NEW' })
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  // The mirror useSettingsState keeps of the latest records is written by every
+  // edit and by the load; a write-back is a value change like either, and
+  // leaving it out kept the raw input past the sanitizer's normalization.
+  test('the write-back keeps the latest-records mirror in step with what was persisted', async () => {
+    const latest = buildArgs().latestSettingsObjects
+
+    const harness = await renderSave(buildArgs({ latestSettingsObjects: latest }))
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      expect(latest.current).toEqual({
+        appPaths: SAVED_APP_PATHS,
+        appNames: { simhub: 'SimHub' },
+        appArgs: SAVED_APP_ARGS,
+        gamePaths: SAVED_GAME_PATHS
       })
     } finally {
       harness.unmount()
