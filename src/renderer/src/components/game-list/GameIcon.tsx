@@ -38,10 +38,11 @@ const STATUS_DOT_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-running) shadow-
 // author colours there (Codex P2 on #829); this is the general case (#737).
 //
 // The fill deliberately does NOT appear here: App.css owns it, because the ring
-// needs `background: var(--bg-gradient)` (the page showing through) and a
-// Tailwind `bg-(…)` utility would set `background-color`, which cannot take a
-// gradient — and would race the CSS rule on equal specificity. The amber is
-// still carried, by the border and the glow.
+// needs a layered `background` (the row's glass fill over the page gradient,
+// the surface the icon sits on, #896) and a Tailwind `bg-(…)` utility would set
+// `background-color`, which cannot take a gradient — and would race the CSS
+// rule on equal specificity. The amber is still carried, by the border and the
+// glow.
 const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} status-dot-unknown shadow-[0_0_8px_var(--status-warning)]`
 
 export function GameIcon({

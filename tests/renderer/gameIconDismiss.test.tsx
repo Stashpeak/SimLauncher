@@ -183,8 +183,9 @@ describe('GameIcon dismiss menu (#737)', () => {
     )
     // The unknown state is carried by `status-dot-unknown`, whose ring and amber
     // border live in App.css. It deliberately has NO `bg-` utility: the ring's
-    // fill is a gradient (the page showing through), which `background-color`
-    // cannot take, and a utility would race the stylesheet on equal specificity.
+    // fill is layered gradients (the row showing through), which
+    // `background-color` cannot take, and a utility would race the stylesheet
+    // on equal specificity.
     expect(dotClass()).toContain('status-dot-unknown')
     expect(dotClass()).not.toContain('bg-(--status-running)')
   })
@@ -244,10 +245,18 @@ describe('GameIcon dismiss menu (#737)', () => {
     expect(generalAt).toBeLessThan(forcedColorsAt)
 
     const rule = css.slice(generalAt, css.indexOf('}', generalAt))
-    // The border is what makes it a shape; the gradient fill is what keeps the
-    // hole reading as the page rather than a hole punched in the game artwork.
+    // The border is what makes it a shape. The fill is what keeps the hole
+    // reading as the surface behind the icon rather than a hole punched in the
+    // game artwork: the row's own glass fill laid over the page gradient. The
+    // page gradient alone was the first version, and in the light theme the row
+    // is a tinted white on top of it, so the hole read as a smudge (#896).
+    // Layers are listed top first, so the fill has to precede the gradient.
     expect(rule).toContain('border: 2px solid var(--status-warning)')
-    expect(rule).toContain('background: var(--bg-gradient)')
+    const fillAt = rule.indexOf('var(--glass-surface-fill')
+    const pageAt = rule.indexOf('var(--bg-gradient)')
+    expect(fillAt).toBeGreaterThan(-1)
+    expect(pageAt).toBeGreaterThan(fillAt)
+    expect(rule).not.toContain('background: var(--bg-gradient)')
   })
 
   // Windows High Contrast strips every `.status-dot` to a single system colour,
