@@ -234,6 +234,14 @@ describe('GameRowProfileMenu positioning (#884)', () => {
     expect(document.body.querySelector('[role="menu"]')).toBeNull()
     // Tab keeps its default move: the browser goes on to the next control.
     expect(tab.defaultPrevented).toBe(false)
+    // And nothing pulls focus back afterwards: closeProfileMenu(true) would
+    // focus the trigger on the next animation frame, undoing the move the
+    // browser just made, so Tab could never leave. The trigger is never focused
+    // in this test, so focus landing on it could only come from that.
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+    })
+    expect(document.activeElement).not.toBe(trigger)
 
     await act(async () => {
       trigger.click()
