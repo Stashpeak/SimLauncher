@@ -69,8 +69,10 @@ async function renderMenu(
   return container
 }
 
-function renderedNames(menu: HTMLElement): string[] {
-  return Array.from(menu.querySelectorAll('[role="menuitemradio"]')).map(
+// The menu is portalled to document.body (#884), so the queries go there
+// rather than into the render container.
+function renderedNames(): string[] {
+  return Array.from(document.body.querySelectorAll('[role="menuitemradio"]')).map(
     (item) => item.textContent?.trim() ?? ''
   )
 }
@@ -87,7 +89,7 @@ afterEach(() => {
 
 describe('GameRowProfileMenu profile order (#885)', () => {
   test('lists profiles by name, not by when they were created', async () => {
-    const menu = await renderMenu(
+    await renderMenu(
       profileSetOf(
         'road',
         profile('road', 'VR - Road'),
@@ -98,7 +100,7 @@ describe('GameRowProfileMenu profile order (#885)', () => {
       )
     )
 
-    expect(renderedNames(menu)).toEqual([
+    expect(renderedNames()).toEqual([
       '1.2.0 Test',
       'OTT + Cheat Engine',
       'Single Monitor',
@@ -108,7 +110,7 @@ describe('GameRowProfileMenu profile order (#885)', () => {
   })
 
   test('orders by letter regardless of case, and by number inside a name', async () => {
-    const menu = await renderMenu(
+    await renderMenu(
       profileSetOf(
         'z',
         profile('z', 'Zeta'),
@@ -122,11 +124,11 @@ describe('GameRowProfileMenu profile order (#885)', () => {
     // A code-point sort would put "Zeta" and "Profile 2" ahead of "alpha" (every
     // capital sorts before every lowercase letter) and "profile 10" ahead of
     // "Profile 2" ("1" < "2").
-    expect(renderedNames(menu)).toEqual(['alpha', 'Beta', 'Profile 2', 'profile 10', 'Zeta'])
+    expect(renderedNames()).toEqual(['alpha', 'Beta', 'Profile 2', 'profile 10', 'Zeta'])
   })
 
   test('the active profile stays marked wherever sorting puts it', async () => {
-    const menu = await renderMenu(
+    await renderMenu(
       profileSetOf(
         'late',
         profile('first', 'Beta'),
@@ -136,21 +138,22 @@ describe('GameRowProfileMenu profile order (#885)', () => {
       )
     )
 
-    const checked = Array.from(menu.querySelectorAll('[role="menuitemradio"]')).filter(
+    const checked = Array.from(document.body.querySelectorAll('[role="menuitemradio"]')).filter(
       (item) => item.getAttribute('aria-checked') === 'true'
     )
     expect(checked.map((item) => item.textContent?.trim())).toEqual(['alpha'])
-    expect(renderedNames(menu)[0]).toBe('alpha')
+    expect(renderedNames()[0]).toBe('alpha')
   })
 
   test('selecting an item reports the id of the profile shown, not a position', async () => {
     const onProfileSelect = vi.fn()
-    const menu = await renderMenu(
-      profileSetOf('first', profile('first', 'Beta'), profile('second', 'alpha')),
-      { onProfileSelect }
-    )
+    await renderMenu(profileSetOf('first', profile('first', 'Beta'), profile('second', 'alpha')), {
+      onProfileSelect
+    })
 
-    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'))
+    const items = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')
+    )
     expect(items[0]?.textContent?.trim()).toBe('alpha')
     await act(async () => {
       items[0]?.click()
@@ -175,12 +178,12 @@ describe('GameRowProfileMenu profile order (#885)', () => {
 
   test('a renamed profile moves to its new place', async () => {
     const before = profileSetOf('b', profile('b', 'Beta'), profile('a', 'alpha'))
-    const menu = await renderMenu(before)
-    expect(renderedNames(menu)).toEqual(['alpha', 'Beta'])
+    await renderMenu(before)
+    expect(renderedNames()).toEqual(['alpha', 'Beta'])
 
     const after = profileSetOf('b', profile('b', 'Aardvark'), profile('a', 'alpha'))
     await renderMenu(after)
 
-    expect(renderedNames(menu)).toEqual(['Aardvark', 'alpha'])
+    expect(renderedNames()).toEqual(['Aardvark', 'alpha'])
   })
 })

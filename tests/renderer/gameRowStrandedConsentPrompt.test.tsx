@@ -163,7 +163,8 @@ async function clickCloseApps(): Promise<void> {
  * and it is the confirmed call that actually runs the kill-then-launch.
  */
 async function switchToProfile(name: string): Promise<void> {
-  const option = Array.from(container.querySelectorAll('button[role="menuitemradio"]')).find(
+  // The menu is portalled to document.body (#884), so it is outside `container`.
+  const option = Array.from(document.body.querySelectorAll('button[role="menuitemradio"]')).find(
     (button) => button.textContent?.includes(name)
   ) as HTMLButtonElement | undefined
   expect(option).toBeDefined()
@@ -404,7 +405,7 @@ describe('profile switch stranded consent prompt toast (#809)', () => {
     profileMenuOpen = true
     await renderRunningRow()
 
-    const option = Array.from(container.querySelectorAll('button[role="menuitemradio"]')).find(
+    const option = Array.from(document.body.querySelectorAll('button[role="menuitemradio"]')).find(
       (button) => button.textContent?.includes('Race')
     ) as HTMLButtonElement
     await act(async () => {

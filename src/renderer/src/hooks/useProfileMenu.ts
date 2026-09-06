@@ -102,7 +102,11 @@ export function useProfileMenu(): UseProfileMenuResult {
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node
+      // The menu is portalled out of the row (#884), so a press inside it is
+      // outside the trigger's wrapper; without the second check the menu would
+      // close on pointerdown, before the click on an item ever fires.
+      if (!profileMenuRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         closeProfileMenu(false)
       }
     }
