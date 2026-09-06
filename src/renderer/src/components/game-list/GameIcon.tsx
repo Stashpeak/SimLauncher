@@ -37,12 +37,14 @@ const STATUS_DOT_CLASS = `${STATUS_DOT_BASE_CLASS} bg-(--status-running) shadow-
 // glance. High Contrast keeps its own copy of the rule because the OS overrides
 // author colours there (Codex P2 on #829); this is the general case (#737).
 //
-// The fill deliberately does NOT appear here: App.css owns it, because the ring
-// needs `background: var(--bg-gradient)` (the page showing through) and a
-// Tailwind `bg-(…)` utility would set `background-color`, which cannot take a
-// gradient — and would race the CSS rule on equal specificity. The amber is
-// still carried, by the border and the glow.
-const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} status-dot-unknown shadow-[0_0_8px_var(--status-warning)]`
+// Deliberately NO `bg-` or `shadow-` utility here: App.css owns the ring's
+// background (transparent, so the row and the icon's own shadow show through)
+// and its glow, which has an inset half so the hole is lit like the halo
+// around it (#896), next to the forced-colors rule that gives it a `Canvas`
+// fill. A utility would race those stylesheet rules on equal specificity, and
+// a second shadow would double the glow. The amber is carried by the border
+// and the glow.
+const STATUS_DOT_UNKNOWN_CLASS = `${STATUS_DOT_BASE_CLASS} status-dot-unknown`
 
 export function GameIcon({
   game,

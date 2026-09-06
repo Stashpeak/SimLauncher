@@ -598,15 +598,26 @@ export function GameRow({
 
       if (!result.success) {
         const message = result.error || formatKillFailures(result.failures)
-        notify([message, strandedNote].filter(Boolean).join(' '), 'warn', 6000)
+        // Nothing closed is a failure. Something closed and something not is a
+        // warning: the action did work and left work. Both were amber before,
+        // and so was success, so the one signal that told them apart carried
+        // nothing (#889).
+        notify(
+          [message, strandedNote].filter(Boolean).join(' '),
+          result.closedCount > 0 ? 'warn' : 'error',
+          6000
+        )
         return
       }
 
+      // Green only when something was closed. Nothing to close keeps the amber
+      // with its reason in the text, and so does a stranded consent prompt,
+      // which is still on screen for the user to deal with (#809).
       notify(
         [result.message || `Closing companion apps for ${game.name}`, strandedNote]
           .filter(Boolean)
           .join(' '),
-        'warn'
+        result.closedCount > 0 && !strandedNote ? 'success' : 'warn'
       )
     } catch (err) {
       notify('Failed to close companion apps', 'error')
@@ -799,10 +810,12 @@ export function GameRow({
               {/* Keyed so a profile change remounts the editor instead of
                   reusing the instance. useDirtyTracking captures its baseline
                   once and only resetDirty clears it, so a reused instance
-                  carries the previous profile's baseline into the new one:
-                  the editor reports changes nobody made, and Save writes that
-                  stale baseline over the profile on screen (#880). The key is
-                  the same identity the editor already reports itself under in
+                  carries the previous profile's baseline into the new one and
+                  reports changes nobody made (#880). The baseline is only ever
+                  compared against, never written: handleSave builds the
+                  profile from local state, so the harm was the spurious dirty
+                  flag, not the saved profile (checked on #924). The key is the
+                  same identity the editor already reports itself under in
                   reportProfileEditorDirty, so the two cannot disagree. */}
               <ProfileEditor
                 key={`${game.key}:${profileSet.activeProfileId}`}
