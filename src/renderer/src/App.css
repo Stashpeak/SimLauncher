@@ -832,29 +832,23 @@ button:focus-visible,
    roughly 8% of men, which for a sim-racing audience is not an edge case. At
    12px the hue difference is a discrimination task; the hole is not.
 
-   The fill is the surface the icon sits on, so the ring reads as the row
-   showing through rather than a donut punched into the game artwork the dot
-   overlaps: the row's own glass fill laid over the page gradient, which is what
-   the row paints underneath the icon (its backdrop blur changes nothing on a
-   near-solid gradient at 12px). It used to be the page gradient alone, and in
-   the light theme the row is a tinted white on top of that, so the hole read
-   as a smudge of a different colour (#896). `--glass-surface-fill` is inherited
-   from the row, so an elevated surface is matched too, and both layers track
-   the theme without a per-theme entry. A colour cannot be a lower layer of the
-   `background` shorthand, which is why the fill goes in as a one-stop gradient.
-   This mirrors what the forced-colors block below already does with `Canvas`,
-   which needs its own rule there because the OS overrides author colours in
-   that mode.
+   The centre is transparent: whatever is behind the ring shows through, which
+   is the row's surface and, in the icon's corner, the icon's own shadow. Every
+   fill tried before it was an approximation of that and missed in at least one
+   theme, measured on the running app (#896): the page gradient alone read as
+   a greyer disc in the light theme, where the row is a tinted white on top of
+   it; the row's glass fill over the page gradient matched in light and sat
+   lighter and purpler in dark, because a gradient in an element's `background`
+   spans the element's own 12px, not the page. Nothing to approximate is the
+   only exact answer, and it costs the "donut punched into the artwork" look
+   #737 avoided only on icons whose artwork fills the corner. David's call,
+   2026-09-06. The forced-colors block below keeps its `Canvas` fill, because
+   the OS overrides author colours in that mode and the ring must stay a shape.
 
    The amber is still carried by the border and the glow, so nothing is lost:
    the shape is added, not substituted. */
 .status-dot-unknown {
-  background:
-    linear-gradient(
-      var(--glass-surface-fill, var(--glass-bg)),
-      var(--glass-surface-fill, var(--glass-bg))
-    ),
-    var(--bg-gradient);
+  background: transparent;
   border: 2px solid var(--status-warning);
 }
 
