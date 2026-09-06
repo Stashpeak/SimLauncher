@@ -1,7 +1,8 @@
-import { useCallback, type MutableRefObject } from 'react'
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
 import { saveProfiles, saveSettings as persistSettings } from '../../lib/store'
 import { GAMES, getUtilities, type Profiles } from '../../lib/config'
 import type { ThemeMode } from '../../lib/theme'
+import { fetchAppIcons } from './appIcons'
 import { getSettingsObjectChangesDuringSave, type SettingsObjectVersions } from './saveRace'
 import { normalizeLaunchDelayMs } from './settingsUtils'
 
@@ -102,6 +103,66 @@ function trimStringRecord(values: Record<string, string>) {
   )
 }
 
+/**
+ * Refetches the icons of the app paths a save just wrote (#898).
+ *
+ * A path pasted or typed into a slot cannot have its icon fetched while it is
+ * being entered: `get-file-icon` only answers for paths already in the store or
+ * just picked through Browse, which is how Browse shows an icon immediately and
+ * typing never did. The save is the moment the path becomes fetchable, and
+ * nothing else asks afterwards, because the store-changed reload skips this
+ * provider's own save on purpose (#480). So the icon corrected itself only once
+ * some other write reloaded Settings, typically enabling the slot in a profile.
+ *
+ * Same rule as the Browse branch: an icon replaces the previous one, no icon
+ * drops it rather than leaving the old executable's picture on a new path
+ * (#428). Functional updates, because a Browse that lands while the fetch is in
+ * flight puts an icon in state this call never saw, and a value write would
+ * discard it. Cosmetic, so a failure here logs and must not turn a saved
+ * settings into a failed one.
+ */
+async function refreshAppIcons(
+  persistedAppPaths: Record<string, string>,
+  previousIcons: Record<string, string>,
+  setAppIcons: Dispatch<SetStateAction<Record<string, string>>>,
+  setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
+): Promise<void> {
+  let fetched: Record<string, string | null>
+  try {
+    fetched = await fetchAppIcons(persistedAppPaths)
+  } catch (err) {
+    console.error('Failed to refresh app icons after save:', err)
+    return
+  }
+  const keys = Object.keys(fetched)
+  if (keys.length === 0) return
+
+  setAppIcons((current) => {
+    const next = { ...current }
+    for (const key of keys) {
+      const icon = fetched[key]
+      if (icon) {
+        next[key] = icon
+      } else {
+        delete next[key]
+      }
+    }
+    return next
+  })
+
+  // A decode failure belongs to the image that failed: stale once the image
+  // changes, still true while it does not, and never this save's business for
+  // a bundled icon it did not fetch.
+  const changed = keys.filter((key) => (fetched[key] ?? undefined) !== previousIcons[key])
+  if (changed.length === 0) return
+  setIconLoadErrors((current) => {
+    if (!changed.some((key) => current.has(key))) return current
+    const next = new Set(current)
+    changed.forEach((key) => next.delete(key))
+    return next
+  })
+}
+
 interface UseSettingsSaveArgs {
   appPaths: Record<string, string>
   appNames: Record<string, string>
@@ -131,6 +192,9 @@ interface UseSettingsSaveArgs {
   setGamePaths: (gamePaths: Record<string, string>) => void
   setAppArgs: (appArgs: Record<string, string>) => void
   setLaunchDelayMs: (launchDelayMs: number) => void
+  appIcons: Record<string, string>
+  setAppIcons: Dispatch<SetStateAction<Record<string, string>>>
+  setIconLoadErrors: Dispatch<SetStateAction<Set<string>>>
 }
 
 export function useSettingsSave({
@@ -161,7 +225,10 @@ export function useSettingsSave({
   setAppNames,
   setGamePaths,
   setAppArgs,
-  setLaunchDelayMs
+  setLaunchDelayMs,
+  appIcons,
+  setAppIcons,
+  setIconLoadErrors
 }: UseSettingsSaveArgs): { handleSave: () => Promise<boolean> } {
   const handleSave = useCallback(async (): Promise<boolean> => {
     try {
@@ -242,6 +309,10 @@ export function useSettingsSave({
         ...currentSettingsState,
         ...persistedSettings
       })
+
+      // After the baseline and the toast: the icons are a picture of what was
+      // just written, not part of whether the write happened (#898).
+      await refreshAppIcons(persistedSettings.appPaths, appIcons, setAppIcons, setIconLoadErrors)
       return true
     } catch (err) {
       notify('Failed to save settings', 'error')
@@ -276,7 +347,10 @@ export function useSettingsSave({
     setAppNames,
     setGamePaths,
     setAppArgs,
-    setLaunchDelayMs
+    setLaunchDelayMs,
+    appIcons,
+    setAppIcons,
+    setIconLoadErrors
   ])
 
   return { handleSave }

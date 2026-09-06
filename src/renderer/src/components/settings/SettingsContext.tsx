@@ -378,7 +378,10 @@ export function SettingsProvider({
     setAppNames,
     setGamePaths,
     setAppArgs,
-    setLaunchDelayMs
+    setLaunchDelayMs,
+    appIcons,
+    setAppIcons,
+    setIconLoadErrors
   })
 
   const utilities = useMemo(() => getUtilities(customSlots), [customSlots])
