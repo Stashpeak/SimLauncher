@@ -69,8 +69,18 @@ export interface LaunchResult {
   message?: string
   warning?: string
   error?: string
+  /**
+   * Launches this sequence started or handed off. Counts an elevated handoff
+   * whose consent prompt went unanswered inside the grace window, because the
+   * cooldown this drives has to cover a late approval; `message` gives that
+   * handoff its own clause instead of counting it as started (#897).
+   */
   launchedCount?: number
-  /** Apps not (re)launched because they were ALREADY RUNNING. Unrelated to `skipped`. */
+  /**
+   * Entries not (re)launched because they were ALREADY RUNNING, the game among
+   * them when the profile launches it; `message` names the game rather than
+   * counting it (#897). Unrelated to `skipped`.
+   */
   skippedCount?: number
   elevatedCount?: number
   failedCount?: number

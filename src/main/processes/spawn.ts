@@ -21,6 +21,11 @@ import {
 
 import { execFileUnlessAborted, spawnUnlessAborted } from './guardedStart'
 import {
+  buildLaunchSummaryMessage,
+  buildNothingToLaunchMessage,
+  getGameDisplayName
+} from './launchSummary'
+import {
   adoptedCompanionOwners,
   consumeProcessNameMismatchWarningSuppression,
   noteStrandedConsentPrompt,
@@ -147,52 +152,6 @@ function recordLateElevatedOutcome(
  */
 export function isAnyLaunchActive(): boolean {
   return activeLaunches.size > 0
-}
-
-/**
- * Wording for a sequence that finished with no failures and no kill.
- *
- * `skippedCount` and `missingCount` are two different senses of "skipped" (see
- * LaunchResult): the first is "already running", the second is entries filtered
- * out before spawn for an invalid or missing path. The renderer concatenates the
- * skip warning naming those missing entries onto this string, so claiming "All"
- * while `missingCount > 0` produces a toast that contradicts itself in
- * consecutive sentences (#739).
- *
- * Extracted from the return site, and written as ordered early returns rather
- * than nested ternaries, because the ordering IS the logic and both review bots
- * found a wrong branch in the ternary version. Exported for unit tests only, not
- * part of the processes barrel surface.
- */
-export function buildLaunchSummaryMessage(
-  launchedCount: number,
-  skippedCount: number,
-  missingCount: number
-): string {
-  // Nothing actually started. Reachable without failing or being cancelled:
-  // launchedCount subtracts elevated handoffs cancelled by a kill that did not
-  // abort this sequence's controller (the `except: launchController` path used
-  // by switch-profile-apps). Both "Started 0 apps" and "All ... launched" are
-  // false here, and the latter is the very contradiction this function fixes.
-  if (launchedCount === 0) {
-    return skippedCount > 0
-      ? `No apps were started; ${skippedCount} ${skippedCount === 1 ? 'was' : 'were'} already running.`
-      : 'No apps were started.'
-  }
-
-  const started = `Started ${launchedCount} app${launchedCount === 1 ? '' : 's'}`
-
-  // Must be tested before `missingCount`, or a launch that both skipped a
-  // running app and filtered out a missing one loses the already-running count.
-  if (skippedCount > 0) {
-    return `${started}; skipped ${skippedCount} already running.`
-  }
-
-  if (missingCount > 0) {
-    return `${started}.`
-  }
-
-  return 'All profile applications launched.'
 }
 
 // Mirrors the per-app wording built in `launchElevated`. Kept in step with it
@@ -342,6 +301,15 @@ export async function launchProfileApps(
     )
     const appsToLaunch = validApps.filter((entry) => !runningPaths.has(entry.path))
     const skippedCount = validApps.length - appsToLaunch.length
+    // The game is among those entries whenever the profile launches it, and it
+    // used to be counted as one more app in the summary (#897). Identified by
+    // key, the identity the renderer's skip warning resolves names by, which
+    // normalizeLaunchInput assigns to a plain path matching the configured game.
+    const skippedGameName = validApps.some(
+      (entry) => entry.key === gameKey && runningPaths.has(entry.path)
+    )
+      ? getGameDisplayName(gameKey)
+      : undefined
 
     // Every companion this launch handles belongs to this profile, and the
     // claim has to survive losing the child handle (#853). `runningProcesses`
@@ -403,10 +371,7 @@ export async function launchProfileApps(
         // warning the renderer concatenates onto this very string (#739) — one
         // sentence names an app that could not be found, the next claims they
         // are all running.
-        message:
-          skipped.length > 0
-            ? 'The remaining profile applications are already running.'
-            : 'All profile applications are already running.',
+        message: buildNothingToLaunchMessage(skippedCount, skipped.length, skippedGameName),
         launchedCount: 0,
         skippedCount,
         skipped
@@ -625,9 +590,20 @@ export async function launchProfileApps(
           ? buildPluralElevatedWarning(standingElevated.length, trackingEnabled)
           : undefined
 
+    // A handoff still waiting on its prompt is in `launchedCount`, because the
+    // cooldown that count drives has to cover a late approval, and it is in the
+    // hedged warning above. It must not be in "Started N apps" beside them: the
+    // smoke run read "Started 4 apps" next to a prompt nobody had answered (#897).
+    const awaitingElevationCount = elevatedResults.filter(
+      (result) => elevatedFate(result) === 'unknown'
+    ).length
+
     return {
       success: true,
-      message: buildLaunchSummaryMessage(launchedCount, skippedCount, skipped.length),
+      message: buildLaunchSummaryMessage(launchedCount, skippedCount, skipped.length, {
+        skippedGameName,
+        awaitingElevationCount
+      }),
       warning: elevatedWarning,
       launchedCount,
       skippedCount,
