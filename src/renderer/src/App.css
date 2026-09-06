@@ -845,11 +845,27 @@ button:focus-visible,
    2026-09-06. The forced-colors block below keeps its `Canvas` fill, because
    the OS overrides author colours in that mode and the ring must stay a shape.
 
-   The amber is still carried by the border and the glow, so nothing is lost:
-   the shape is added, not substituted. */
+   The glow lives here too, not in a shadow utility on the element, because it
+   has two halves that belong together: the outer 8px the running disc also
+   has, and an inset 2.5px so the hole is lit the way the halo outside it is.
+   An outer box-shadow never paints inside the border box, so with the outer
+   half alone the hole stayed at the row's own value while the row right next
+   to the ring was lit, and the eye read that as a filled disc, darker in the
+   dark theme and lighter in the light one. 2.5px is measured, not picked: the
+   mean luminance of the hole against the band just outside the ring came out
+   at +0.8 (light) and -0.5 (dark); 2px left the hole 8 to 10 under, 3px put it
+   7 to 10 over, 4px and up turn it into an amber disc, and a drop-shadow filter
+   overfills the enclosed hole from the whole circumference (#896). The
+   forced-colors block strips both halves with its one `box-shadow: none`.
+
+   The amber is carried by the border and the glow, so nothing is lost: the
+   shape is added, not substituted. */
 .status-dot-unknown {
   background: transparent;
   border: 2px solid var(--status-warning);
+  box-shadow:
+    0 0 8px var(--status-warning),
+    inset 0 0 2.5px var(--status-warning);
 }
 
 /* Respect the OS "reduce motion" preference: neutralize transitions and stop

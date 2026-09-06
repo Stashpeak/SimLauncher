@@ -254,6 +254,14 @@ describe('GameIcon dismiss menu (#737)', () => {
     expect(rule).toContain('background: transparent')
     expect(rule).not.toContain('var(--bg-gradient)')
     expect(rule).not.toContain('var(--glass-surface-fill')
+    // The glow has an inset half so the hole is lit the way the halo outside
+    // it is; an outer box-shadow alone never paints inside the border box and
+    // the eye read the unlit hole as a filled disc. 2.5px is the measured value
+    // where hole and halo match to within a unit in both themes (#896). It is
+    // the stylesheet's, so the element must not carry a shadow utility too.
+    expect(rule).toContain('0 0 8px var(--status-warning)')
+    expect(rule).toContain('inset 0 0 2.5px var(--status-warning)')
+    expect(dotClass()).not.toContain('shadow-[')
   })
 
   // Windows High Contrast strips every `.status-dot` to a single system colour,
