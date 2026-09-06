@@ -358,11 +358,12 @@ export function GameRow({
 
           if (!skipRunningConfirm) {
             // Close the menu BEFORE the dialog opens (Codex P1 on #884). The
-            // menu is portalled out of #root at z-9999 while ConfirmDialog is
-            // z-100 and useFocusTrap only inerts #root, so an open menu would
-            // float above the dialog, still clickable, and a second profile
-            // could be picked while this switch waits for an answer. Focus
-            // goes to the trigger synchronously, not through
+            // menu lives in a portal inside #root, so the dialog's focus trap
+            // covers and inerts it either way; this is about what the user
+            // comes back to. Left open, the menu would still be there under
+            // the dialog, with the item they clicked focused, and dismissing
+            // the dialog would return focus into a menu whose selection did
+            // not happen. Focus goes to the trigger synchronously, not through
             // closeProfileMenu(true): that one focuses on the next animation
             // frame, which would land after the dialog took focus and steal
             // it back. The trap records the trigger as the element to return

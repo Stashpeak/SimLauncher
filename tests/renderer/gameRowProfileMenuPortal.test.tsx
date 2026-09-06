@@ -194,6 +194,30 @@ describe('GameRowProfileMenu positioning (#884)', () => {
     expect(options.whileElementsMounted).toBe(autoUpdate)
   })
 
+  test('inside #root, below the dialog layer, so a modal covers and inerts it', async () => {
+    // The app mounts into #root and useFocusTrap marks that element inert
+    // while any dialog is open. A menu portalled to body at z-9999 escaped
+    // both (Codex P1 x2 on #940: still clickable above a z-100 dialog opened
+    // by the OS close request, which produces no pointerdown to close it).
+    const appRoot = document.createElement('div')
+    appRoot.id = 'root'
+    document.body.appendChild(appRoot)
+    await render(<GameRowProfileMenu {...staticProps()}>{primaryButton}</GameRowProfileMenu>)
+
+    const menu = document.body.querySelector('[role="menu"]')
+    expect(menu).not.toBeNull()
+    expect(appRoot.contains(menu)).toBe(true)
+
+    appRoot.setAttribute('inert', '')
+    expect(menu!.closest('[inert]')).toBe(appRoot)
+
+    // Above everything inside the app (nothing there is above z-40), below
+    // every dialog (z-100 and up in body).
+    const wrapper = menu!.parentElement!
+    expect(wrapper.classList.contains('z-50')).toBe(true)
+    expect(wrapper.classList.contains('z-9999')).toBe(false)
+  })
+
   test('a press inside the portalled menu keeps it open; a press elsewhere closes it', async () => {
     await render(<Harness />)
 

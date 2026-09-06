@@ -66,6 +66,20 @@ export function GameRowProfileMenu({
     middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate
   })
+  // The portal goes into #root, not document.body (Codex P1 x2 on #940). A
+  // menu is app content: every dialog (ConfirmDialog, ImportPreviewDialog,
+  // OnboardingModal, ColorPickerPopover) portals to body at z-100 or above and
+  // useFocusTrap marks #root inert while it is open, so a menu inside #root at
+  // z-50 is covered and inert with the rest of the app whatever opened the
+  // dialog, including paths with no pointer or key on the page such as the
+  // OS close request with unsaved changes. In body at z-9999 it floated above
+  // the dialog, clickable. #root is plain block (min-height only): no
+  // overflow to clip the menu, no isolation to starve the blur, and nothing
+  // in it sits above z-40. Tooltips stay in body at z-9999 on purpose (they
+  // have to show inside dialogs). Tests without a #root get `undefined`, which
+  // is FloatingPortal's "use body"; `null` would mean "wait for a root" and
+  // render nothing.
+  const appRoot = document.getElementById('root') ?? undefined
   // Display order only (#885). The stored list keeps creation order, and this
   // is a sorted copy made at render, never written back: everything that reads
   // `profileSet.profiles` (the active-profile lookup by id, the editor, main)
@@ -124,12 +138,12 @@ export function GameRowProfileMenu({
       </div>
       {children}
       {profileMenuOpen && (
-        <FloatingPortal>
+        <FloatingPortal root={appRoot}>
           {/* Unstyled outer wrapper carries floating-ui's transform; the glass
               sits on the inner element so the transform does not promote it to
               its own compositing layer, which breaks backdrop-filter (same
               split as Tooltip). */}
-          <div ref={refs.setFloating} style={floatingStyles} className="z-9999">
+          <div ref={refs.setFloating} style={floatingStyles} className="z-50">
             <div
               ref={menuRef}
               id={menuId}
