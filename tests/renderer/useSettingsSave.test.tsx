@@ -642,6 +642,44 @@ describe('useSettingsSave (#898): icons follow the paths that were just saved', 
     }
   })
 
+  // The save-race guard protects a draft: a path retyped while the write was in
+  // flight must not be overwritten by the stale persisted copy. The icon is not
+  // a draft, it is a picture of the disk, and it overwrites nothing the user
+  // typed, so the refetch runs regardless and the retyped path gets its own
+  // icon from the save that persists it (review bot on #936).
+  test('a path retyped during the save keeps the draft and still gets the icon of what was written', async () => {
+    const versions = { current: createSettingsObjectVersions() }
+    saveSettingsMock.mockImplementation((patch: Record<string, unknown>) => {
+      // The user retypes the slot's path while the write is in flight.
+      versions.current.appPaths += 1
+      return Promise.resolve({ settings: patch, dropped: [] })
+    })
+    getFileIconMock.mockResolvedValue('data:image/png;base64,WRITTEN')
+
+    const harness = await renderSave(
+      buildArgs({
+        settingsObjectEditVersions: versions,
+        appIcons: { simhub: 'data:image/png;base64,OLD' }
+      })
+    )
+    try {
+      await act(async () => {
+        await harness.handleSave()
+      })
+
+      // The draft survives, as before this PR.
+      expect(setAppPathsMock).not.toHaveBeenCalled()
+      // And the icon is the written executable's, fetched for the persisted
+      // path rather than the draft, which get-file-icon would refuse.
+      expect(getFileIconMock).toHaveBeenCalledWith('C:/Tools/SimHub.exe')
+      expect(applyUpdaters(setAppIconsMock, { simhub: 'data:image/png;base64,OLD' })).toEqual({
+        simhub: 'data:image/png;base64,WRITTEN'
+      })
+    } finally {
+      harness.unmount()
+    }
+  })
+
   test('a failed save refetches nothing', async () => {
     saveSettingsMock.mockRejectedValue(new Error('disk full'))
     getFileIconMock.mockResolvedValue('data:image/png;base64,NEW')

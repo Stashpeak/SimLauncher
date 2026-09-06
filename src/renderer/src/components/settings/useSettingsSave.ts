@@ -312,6 +312,15 @@ export function useSettingsSave({
 
       // After the baseline and the toast: the icons are a picture of what was
       // just written, not part of whether the write happened (#898).
+      //
+      // Deliberately NOT behind `changedDuringSave.appPaths`, unlike the
+      // write-backs above. That guard exists so a path retyped while the write
+      // was in flight is not overwritten by the stale persisted copy; an icon
+      // overwrites nothing the user typed. It is a fact about the disk, like
+      // the baseline `resetDirty` was just handed, and the retyped path gets
+      // its own icon from the save that persists it. Skipping the refetch here
+      // would leave the icon of an executable that is on neither the disk nor
+      // the screen (review bot on #936).
       await refreshAppIcons(persistedSettings.appPaths, appIcons, setAppIcons, setIconLoadErrors)
       return true
     } catch (err) {
