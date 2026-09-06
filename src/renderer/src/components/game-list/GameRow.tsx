@@ -357,6 +357,18 @@ export function GameRow({
           const message = `Switch to "${nextProfile.name}" while the game is running? This will ${parts.join(' and ')}.`
 
           if (!skipRunningConfirm) {
+            // Close the menu BEFORE the dialog opens (Codex P1 on #884). The
+            // menu is portalled out of #root at z-9999 while ConfirmDialog is
+            // z-100 and useFocusTrap only inerts #root, so an open menu would
+            // float above the dialog, still clickable, and a second profile
+            // could be picked while this switch waits for an answer. Focus
+            // goes to the trigger synchronously, not through
+            // closeProfileMenu(true): that one focuses on the next animation
+            // frame, which would land after the dialog took focus and steal
+            // it back. The trap records the trigger as the element to return
+            // to, so dismissing the dialog puts focus on the trigger.
+            triggerRef.current?.focus()
+            closeProfileMenu(false)
             setProfileSwitchConfirm({
               nextProfileId: nextProfile.id,
               nextProfileName: nextProfile.name,
