@@ -44,6 +44,19 @@ export function GameRowProfileMenu({
   onNewProfileSubmit
 }: GameRowProfileMenuProps): ReactNode {
   const menuId = useId()
+  // Display order only (#885). The stored list keeps creation order, and this
+  // is a sorted copy made at render, never written back: everything that reads
+  // `profileSet.profiles` (the active-profile lookup by id, the editor, main)
+  // sees the stored order and is unaffected. Creation order was never a choice
+  // anyone made, so it is not worth preserving on screen; custom ordering, if
+  // it ever comes, is a feature of its own, not a prerequisite for this.
+  // `localeCompare` orders by letter regardless of case ("alpha" before "Beta",
+  // where a code-point sort puts every capital first) and `numeric` keeps
+  // "Profile 2" ahead of "Profile 10". The keyboard handling in useProfileMenu
+  // walks the rendered items, so arrow keys follow this order as well.
+  const sortedProfiles = [...profileSet.profiles].sort((first, second) =>
+    first.name.localeCompare(second.name, undefined, { numeric: true })
+  )
   return (
     <div ref={profileMenuRef} className="relative">
       <Tooltip label={activeProfile.name} placement="bottom">
@@ -82,7 +95,7 @@ export function GameRowProfileMenu({
           onKeyDown={handleProfileMenuKeyDown}
           className="dropdown-surface overlay-glass absolute right-0 top-full z-50 mt-1.5 min-w-44 overflow-hidden rounded-xl p-1 animate-fade-slide"
         >
-          {profileSet.profiles.map((profile) => {
+          {sortedProfiles.map((profile) => {
             const selected = profile.id === profileSet.activeProfileId
 
             return (
