@@ -7,7 +7,11 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { findGameExeRunningApp, isGameExeRunning } from '../../src/renderer/src/lib/runningGame'
+import {
+  findGameExeRunningApp,
+  isClosableStripEntry,
+  isGameExeRunning
+} from '../../src/renderer/src/lib/runningGame'
 
 const acGame = { path: 'C:\\Games\\AssettoCorsa\\acs.exe', gameKey: 'ac' }
 const simhub = { path: 'C:\\Program Files\\SimHub\\SimHubWPF.exe', gameKey: 'ac' }
@@ -66,5 +70,45 @@ describe('findGameExeRunningApp', () => {
   test('matches case-insensitively (Windows paths)', () => {
     const entry = { path: acGame.path.toUpperCase(), gameKey: 'ac' }
     expect(findGameExeRunningApp([entry], 'ac', acGame.path)).toBe(entry)
+  })
+})
+
+/**
+ * The partition the row needs before it offers Close Apps: `kill.ts` refuses a
+ * name-scoped target, so counting one made the row swap Launch for a close that
+ * could never run (#947, #929).
+ *
+ * These specify the predicate; the assertion that actually goes red against the
+ * pre-fix code is in gameRowCanKillClosable.test.tsx, which drives the row.
+ */
+describe('isClosableStripEntry', () => {
+  test('a path-scoped companion is closable', () => {
+    expect(isClosableStripEntry(simhub)).toBe(true)
+  })
+
+  test('the configured game path is closable by shape, the game exclusion is kill.ts', () => {
+    // This predicate answers "could Close Apps act on this shape", not "is this
+    // the game". The game is excluded by full path in getProfileCompanionTargets
+    // and again at kill.ts:833, and the strip excludes it in GameList.
+    expect(isClosableStripEntry(acGame)).toBe(true)
+  })
+
+  test('a bare image name is not closable (#929)', () => {
+    expect(isClosableStripEntry({ path: 'AC2-Win64-Shipping.exe' })).toBe(false)
+  })
+
+  test('case does not change the shape', () => {
+    expect(isClosableStripEntry({ path: 'AC2-WIN64-SHIPPING.EXE' })).toBe(false)
+  })
+
+  test('a drive-relative name is a path, not a bare name', () => {
+    // path.win32.basename('C:app.exe') is 'app.exe', so main does not read this
+    // as bare either. The two spellings of the rule have to agree, which is why
+    // they are now one (src/shared/path.ts).
+    expect(isClosableStripEntry({ path: 'C:app.exe' })).toBe(true)
+  })
+
+  test('a forward-slash path is a path', () => {
+    expect(isClosableStripEntry({ path: 'A:/Apps/SimHub/SimHubWPF.exe' })).toBe(true)
   })
 })

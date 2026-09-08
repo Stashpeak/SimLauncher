@@ -1,3 +1,5 @@
+import { isBareExeName } from '../../../shared/path'
+
 import type { RunningApp } from '../hooks/useRunningApps'
 
 // Windows paths are case-insensitive, but the main process may return them in
@@ -34,4 +36,25 @@ export function isGameExeRunning(
   gamePath: string | undefined
 ): boolean {
   return !!findGameExeRunningApp(runningApps, gameKey, gamePath)
+}
+
+/**
+ * Whether a running-strip entry is something Close Apps could actually close.
+ *
+ * `getProfileCompanionTargets` (src/main/processes/kill.ts) drops every entry
+ * that is not path-scoped, because a name-scoped one is the GAME under a name
+ * we do not hold as a game path and Close Apps promises never to close the game
+ * (#929). The row has to make the same distinction: it derives its Close Apps
+ * affordance from what is in the strip, and counting an entry the kill path
+ * refuses offered a red Close Apps that closed nothing — and, because that
+ * button REPLACES the primary rather than adding to it, took the row's Launch
+ * button with it (#947).
+ *
+ * Deliberately narrower than "is this the game": it asks only whether the entry
+ * is closable, so it cannot widen what the row offers. How the strip should
+ * represent a name-scoped entry at all is #946, and this predicate does not
+ * decide it — the chip stays where it is.
+ */
+export function isClosableStripEntry(app: Pick<RunningApp, 'path'>): boolean {
+  return !isBareExeName(app.path)
 }
