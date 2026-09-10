@@ -125,6 +125,8 @@ async function renderRow(runningAppIcons: RunningAppIcon[]): Promise<void> {
           isRunning={true}
           isGameRunning={false}
           runningAppIcons={runningAppIcons}
+          hasClosableApps={false}
+          gamePathMissing={false}
           isDimmed={false}
           isLaunching={false}
           isLaunchBlocked={false}
