@@ -23,7 +23,7 @@ import {
   relaunchMissingProfile
 } from '../../lib/electron'
 import { formatKillFailures } from '../../lib/killFailures'
-import { isClosableStripEntry } from '../../lib/runningGame'
+import { getNameScopedSecondaries, isClosableStripEntry } from '../../lib/runningGame'
 import { formatStrandedConsentPrompts } from '../../../../shared/strandedConsentPrompts'
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
@@ -722,13 +722,19 @@ export function GameRow({
     }
   }
 
+  const activeProfile = getActiveGameProfile(profileSet)
   // Counts only what Close Apps could actually close. A name-scoped entry is
   // surfaced by the poll but refused as a target by `getProfileCompanionTargets`
   // (#929), so counting the icons alone offered a red Close Apps that closed
   // nothing — and since it REPLACES the primary rather than adding to it, the
-  // row lost its Launch button with it (#947). Narrowing, never widening: the
-  // ambient case below still must not reach here.
-  const canKill = runningAppIcons.some(isClosableStripEntry) && profileState.killControlsEnabled
+  // row lost its Launch button with it (#947). "Name-scoped" means a bare name
+  // THIS profile lists as a secondary: a curated target that failed to close is
+  // a bare name in the strip too, and it stays closable (Codex P2 on #950).
+  // Narrowing, never widening: the ambient case below still must not reach here.
+  const nameScopedSecondaries = getNameScopedSecondaries(activeProfile.trackedProcessPaths)
+  const canKill =
+    runningAppIcons.some((app) => isClosableStripEntry(app, nameScopedSecondaries)) &&
+    profileState.killControlsEnabled
   // Deliberately NOT folded into `canKill`, which swaps the primary button
   // rather than adding to it (`GameRowActions.tsx`): folding it in would hand a
   // user with an autostarted SimHub a red Close Apps primary and NO way to
@@ -737,7 +743,6 @@ export function GameRow({
   // session state; ambient closable state gets a secondary control instead.
   const canCloseLeftovers = !canKill && hasClosableApps && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
-  const activeProfile = getActiveGameProfile(profileSet)
 
   return (
     <div

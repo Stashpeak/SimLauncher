@@ -46,9 +46,12 @@ vi.mock('../../src/renderer/src/components/Notify', () => ({
   NotifyProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
+// The name-scoped entry below is in the strip only because the profile lists it
+// under "Secondary executables to watch", so the fixture profile does too. That
+// list, not the entry's shape, is what makes it a game rather than a target.
 const PROFILE_SET = {
   activeProfileId: 'default',
-  profiles: [{ id: 'default', name: 'Default' }]
+  profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['AC2-Win64-Shipping.exe'] }]
 }
 
 vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
@@ -107,6 +110,20 @@ const PATH_SCOPED: RunningAppIcon = {
   path: 'A:/Apps/SimHub/SimHubWPF.exe',
   gameKey: 'ac',
   tracked: true
+}
+
+// What `registerUnclosedProcess` publishes when closing a curated utility by
+// image name fails (Codex P2 on #950): the name sits where a path would, and
+// the failure rides along as the warning. Still a Close Apps target.
+const UNCLOSED_CURATED: RunningAppIcon = {
+  icon: null,
+  name: 'Garage61 telemetry agent.exe',
+  path: 'Garage61 telemetry agent.exe',
+  gameKey: 'ac',
+  tracked: true,
+  warning:
+    'Windows denied SimLauncher permission to close this app. It may be running as administrator.',
+  elevated: true
 }
 
 let container: HTMLDivElement
@@ -168,6 +185,23 @@ describe('the row offers Close Apps only for entries it could close (#947)', () 
     // `runningAppIcons.length > 0`, so this read "Close companion apps for
     // Assetto Corsa" and the row had no way to launch the game at all.
     expect(primaryButtonLabel()).toBe('Launch Assetto Corsa: Default profile')
+  })
+
+  // Codex P2 on #950. Not every bare name in the strip is a name-scoped
+  // secondary: a curated `/IM` target that failed to close is published under
+  // its image name, and Close Apps still targets it. That failure is visible
+  // and retryable, so it has to keep Close Apps as the primary, as it did
+  // before #947 was fixed.
+  test('a failed close of a curated name target keeps Close Apps', async () => {
+    await renderRow([UNCLOSED_CURATED])
+
+    expect(primaryButtonLabel()).toBe('Close companion apps for Assetto Corsa')
+  })
+
+  test('a curated failure next to a name-scoped entry still offers Close Apps', async () => {
+    await renderRow([NAME_SCOPED, UNCLOSED_CURATED])
+
+    expect(primaryButtonLabel()).toBe('Close companion apps for Assetto Corsa')
   })
 
   test('a path-scoped companion still offers Close Apps', async () => {

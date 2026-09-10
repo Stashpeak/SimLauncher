@@ -50,11 +50,40 @@ export function isGameExeRunning(
  * button REPLACES the primary rather than adding to it, took the row's Launch
  * button with it (#947).
  *
+ * Shape alone cannot decide it, though (Codex P2 on #950). A bare name also
+ * reaches the strip when a curated `/IM` target such as the Garage61 agent
+ * fails to close: `registerUnclosedProcess` records the image name where a path
+ * would go, and the kill path still targets it. So the refusal is keyed to the
+ * rule kill.ts actually applies, a bare name the profile lists under "Secondary
+ * executables to watch", not to every bare name. Residual: a curated name the
+ * user ALSO lists as a secondary reads as refused here while kill.ts would
+ * close it; the ambient Close control (`canCloseLeftovers`) still covers that.
+ *
  * Deliberately narrower than "is this the game": it asks only whether the entry
  * is closable, so it cannot widen what the row offers. How the strip should
  * represent a name-scoped entry at all is #946, and this predicate does not
  * decide it — the chip stays where it is.
  */
-export function isClosableStripEntry(app: Pick<RunningApp, 'path'>): boolean {
-  return !isBareExeName(app.path)
+export function isClosableStripEntry(
+  app: Pick<RunningApp, 'path'>,
+  nameScopedSecondaries: ReadonlySet<string>
+): boolean {
+  return !isBareExeName(app.path) || !nameScopedSecondaries.has(app.path.trim().toLowerCase())
+}
+
+/**
+ * The active profile's "Secondary executables to watch" entries that are bare
+ * image names, keyed the way main dedupes them in `getProfileTrackablePaths`
+ * (trimmed, lowercased). These are exactly the entries
+ * `getProfileCompanionTargets` refuses, and the only bare names the row must not
+ * count as closable.
+ */
+export function getNameScopedSecondaries(
+  trackedProcessPaths: readonly string[] | undefined
+): Set<string> {
+  return new Set(
+    (trackedProcessPaths ?? [])
+      .filter((entry) => isBareExeName(entry))
+      .map((entry) => entry.trim().toLowerCase())
+  )
 }
