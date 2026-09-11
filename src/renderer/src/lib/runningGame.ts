@@ -77,13 +77,17 @@ export function isClosableStripEntry(
  * (trimmed, lowercased). These are exactly the entries
  * `getProfileCompanionTargets` refuses, and the only bare names the row must not
  * count as closable.
+ *
+ * Takes `unknown` on purpose: a legacy or hand-edited config can hold anything
+ * in this field, and the store validates only the outer `profiles` object. Main
+ * reads it through the same `Array.isArray` guard (`getProfileTrackablePaths`),
+ * so one malformed profile cannot break the Games view here (Codex P2 on #950).
  */
-export function getNameScopedSecondaries(
-  trackedProcessPaths: readonly string[] | undefined
-): Set<string> {
+export function getNameScopedSecondaries(trackedProcessPaths: unknown): Set<string> {
+  const entries: unknown[] = Array.isArray(trackedProcessPaths) ? trackedProcessPaths : []
   return new Set(
-    (trackedProcessPaths ?? [])
-      .filter((entry) => isBareExeName(entry))
+    entries
+      .filter((entry): entry is string => isBareExeName(entry))
       .map((entry) => entry.trim().toLowerCase())
   )
 }

@@ -96,6 +96,22 @@ describe('getNameScopedSecondaries', () => {
   test('a profile with no list has no name-scoped entries', () => {
     expect(getNameScopedSecondaries(undefined).size).toBe(0)
   })
+
+  test('a malformed list reads as empty instead of throwing (Codex P2 on #950)', () => {
+    // A legacy or hand-edited config can hold anything here, and the store
+    // validates only the outer `profiles` object. Main guards the same field
+    // with Array.isArray (getProfileTrackablePaths); the row must not be the one
+    // place a bad value breaks the Games view.
+    expect(getNameScopedSecondaries('AC2-Win64-Shipping.exe').size).toBe(0)
+    expect(getNameScopedSecondaries({ 0: 'AC2-Win64-Shipping.exe' }).size).toBe(0)
+    expect(getNameScopedSecondaries(null).size).toBe(0)
+  })
+
+  test('non-string items in the list are skipped', () => {
+    expect([...getNameScopedSecondaries([42, null, 'AC2-Win64-Shipping.exe'])]).toEqual([
+      'ac2-win64-shipping.exe'
+    ])
+  })
 })
 
 describe('isClosableStripEntry', () => {
