@@ -1,6 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 
+import { isBareExeName } from '../shared/path'
+
 // isRecord lives in the shared domain layer now (#692); re-exported so the many
 // main-process importers keep their `from './utils'` path.
 export { isRecord } from '../shared/domain/guards'
@@ -33,19 +35,18 @@ export function isValidExePath(p: unknown): boolean {
  * Judged by SHAPE, never by existence. A bare name is not a file anywhere
  * (`isValidExePath` resolves it against the CWD and says no), so the two
  * predicates partition a configured entry into path-scoped and name-scoped, the
- * same split the poll and the kill path make with `isPathScopedExe`. `win32`
- * explicitly, like `getExeName`, so a host without backslash separators cannot
- * read a Windows path as a name.
+ * same split the poll and the kill path make with `isPathScopedExe`.
+ *
+ * Re-exported from `src/shared/path.ts` rather than implemented twice: the
+ * renderer needs the same partition to decide whether a strip entry is
+ * something Close Apps could act on (#947), and two spellings of a shape rule
+ * are how the poll and the kill path came to disagree in the first place.
+ *
+ * Imported at the top and re-exported here, not `export ... from`, because that
+ * form does not bind the name locally and `isTrackableSecondaryExe` below calls
+ * it.
  */
-export function isBareExeName(value: unknown): boolean {
-  if (typeof value !== 'string') {
-    return false
-  }
-
-  const trimmed = value.trim()
-
-  return trimmed.length > 0 && /\.exe$/i.test(trimmed) && path.win32.basename(trimmed) === trimmed
-}
+export { isBareExeName }
 
 /**
  * What a "Secondary executables to watch" entry may be: a path that exists, or

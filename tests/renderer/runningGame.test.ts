@@ -7,7 +7,12 @@
 
 import { describe, expect, test } from 'vitest'
 
-import { findGameExeRunningApp, isGameExeRunning } from '../../src/renderer/src/lib/runningGame'
+import {
+  findGameExeRunningApp,
+  getNameScopedSecondaries,
+  isClosableStripEntry,
+  isGameExeRunning
+} from '../../src/renderer/src/lib/runningGame'
 
 const acGame = { path: 'C:\\Games\\AssettoCorsa\\acs.exe', gameKey: 'ac' }
 const simhub = { path: 'C:\\Program Files\\SimHub\\SimHubWPF.exe', gameKey: 'ac' }
@@ -66,5 +71,90 @@ describe('findGameExeRunningApp', () => {
   test('matches case-insensitively (Windows paths)', () => {
     const entry = { path: acGame.path.toUpperCase(), gameKey: 'ac' }
     expect(findGameExeRunningApp([entry], 'ac', acGame.path)).toBe(entry)
+  })
+})
+
+/**
+ * The partition the row needs before it offers Close Apps: `kill.ts` refuses a
+ * name-scoped target, so counting one made the row swap Launch for a close that
+ * could never run (#947, #929).
+ *
+ * These specify the predicate; the assertion that actually goes red against the
+ * pre-fix code is in gameRowCanKillClosable.test.tsx, which drives the row.
+ */
+describe('getNameScopedSecondaries', () => {
+  test('keeps only the bare names, trimmed and lowercased', () => {
+    expect([
+      ...getNameScopedSecondaries([
+        ' AC2-Win64-Shipping.exe ',
+        'C:\\Tools\\helper.exe',
+        'C:app.exe'
+      ])
+    ]).toEqual(['ac2-win64-shipping.exe'])
+  })
+
+  test('a profile with no list has no name-scoped entries', () => {
+    expect(getNameScopedSecondaries(undefined).size).toBe(0)
+  })
+
+  test('a malformed list reads as empty instead of throwing (Codex P2 on #950)', () => {
+    // A legacy or hand-edited config can hold anything here, and the store
+    // validates only the outer `profiles` object. Main guards the same field
+    // with Array.isArray (getProfileTrackablePaths); the row must not be the one
+    // place a bad value breaks the Games view.
+    expect(getNameScopedSecondaries('AC2-Win64-Shipping.exe').size).toBe(0)
+    expect(getNameScopedSecondaries({ 0: 'AC2-Win64-Shipping.exe' }).size).toBe(0)
+    expect(getNameScopedSecondaries(null).size).toBe(0)
+  })
+
+  test('non-string items in the list are skipped', () => {
+    expect([...getNameScopedSecondaries([42, null, 'AC2-Win64-Shipping.exe'])]).toEqual([
+      'ac2-win64-shipping.exe'
+    ])
+  })
+})
+
+describe('isClosableStripEntry', () => {
+  // What the active profile lists under "Secondary executables to watch".
+  const nameScoped = getNameScopedSecondaries(['AC2-Win64-Shipping.exe', 'C:\\Tools\\helper.exe'])
+
+  test('a path-scoped companion is closable', () => {
+    expect(isClosableStripEntry(simhub, nameScoped)).toBe(true)
+  })
+
+  test('the configured game path is closable by shape, the game exclusion is kill.ts', () => {
+    // This predicate answers "could Close Apps act on this entry", not "is this
+    // the game". The game is excluded by full path in getProfileCompanionTargets
+    // and again at kill.ts:833, and the strip excludes it in GameList.
+    expect(isClosableStripEntry(acGame, nameScoped)).toBe(true)
+  })
+
+  test('a bare name the profile lists as a secondary is not closable (#929)', () => {
+    expect(isClosableStripEntry({ path: 'AC2-Win64-Shipping.exe' }, nameScoped)).toBe(false)
+  })
+
+  test('case and surrounding whitespace do not change the match', () => {
+    expect(isClosableStripEntry({ path: 'AC2-WIN64-SHIPPING.EXE' }, nameScoped)).toBe(false)
+    expect(isClosableStripEntry({ path: ' AC2-Win64-Shipping.exe ' }, nameScoped)).toBe(false)
+  })
+
+  test('a bare name the profile does not list is a curated target, so closable', () => {
+    // Codex P2 on #950. A failed `/IM` close of a curated utility (the Garage61
+    // agent) is published with its image name where a path would go, and
+    // getProfileCompanionTargets still targets it, so shape alone cannot decide.
+    expect(isClosableStripEntry({ path: 'Garage61 telemetry agent.exe' }, nameScoped)).toBe(true)
+  })
+
+  test('a drive-relative name is a path, not a bare name', () => {
+    // path.win32.basename('C:app.exe') is 'app.exe', so main does not read this
+    // as bare either. The two spellings of the rule have to agree, which is why
+    // they are now one (src/shared/path.ts).
+    expect(
+      isClosableStripEntry({ path: 'C:app.exe' }, getNameScopedSecondaries(['C:app.exe']))
+    ).toBe(true)
+  })
+
+  test('a forward-slash path is a path', () => {
+    expect(isClosableStripEntry({ path: 'A:/Apps/SimHub/SimHubWPF.exe' }, nameScoped)).toBe(true)
   })
 })

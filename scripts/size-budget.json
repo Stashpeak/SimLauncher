@@ -14,7 +14,7 @@
     "src/main/processes/win32KillUtils.ts": 384,
     "src/main/store.ts": 682,
     "src/renderer/src/App.tsx": 399,
-    "src/renderer/src/components/game-list/GameRow.tsx": 576,
+    "src/renderer/src/components/game-list/GameRow.tsx": 578,
     "src/renderer/src/components/settings/SettingsContext.tsx": 486,
     "src/renderer/src/hooks/useProfileEditor.tsx": 665
   },
