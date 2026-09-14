@@ -91,6 +91,7 @@ In that case, your current setup is already simple enough.
 - Automotive-themed accent color presets and a custom color picker
 - Light, dark, and system theme modes
 - Kill and relaunch controls for running companion apps
+- Optional per-profile auto-close of companion apps when the game exits
 - Config export and import
 - Start with Windows, start minimized, and close to tray options
 - Toast notifications for launch status and errors
@@ -99,7 +100,6 @@ In that case, your current setup is already simple enough.
 
 ## Planned Features
 
-- **Optional auto-close**: Automatically terminate companion apps and utilities when the sim game session ends.
 - **Smart path detection**: Automatic detection of installed sims and common utility app installation paths.
 - **Themed color collections**: Expanded accent presets and curated color palettes for deeper UI personalization.
 - **Enhanced session management**: Session-state-aware app launching and advanced restart triggers.
