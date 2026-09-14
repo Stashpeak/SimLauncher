@@ -52,7 +52,7 @@ export function AccentSwatchRow({
             onClick={() => onAccentChange(preset.hex)}
             aria-label={`Accent color ${preset.name}`}
             aria-pressed={accentPreset === preset.hex}
-            className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
+            className={`accent-swatch forced-color-adjust-none h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
             style={{ '--preset-color': preset.hex } as CSSProperties}
           />
         </Tooltip>
@@ -69,11 +69,12 @@ export function AccentSwatchRow({
             aria-label={isCustomColor ? 'Custom accent color (selected)' : 'Custom accent color'}
             aria-haspopup="dialog"
             aria-expanded={showPicker}
+            aria-pressed={isCustomColor}
             aria-controls={showPicker ? 'accent-color-picker' : undefined}
             // rounded-full on the button itself, as on the presets: the focus
             // ring follows the button's box, not the round layers inside it,
             // so without it a keyboard user got a square ring on a circle. #887
-            className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110 active:scale-[0.98] ${
+            className={`accent-swatch forced-color-adjust-none border-2 border-transparent relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110 active:scale-[0.98] ${
               isCustomColor ? 'scale-110' : ''
             }`}
           >
