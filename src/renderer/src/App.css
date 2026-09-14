@@ -935,22 +935,10 @@ button:focus-visible,
     border: 1px solid ButtonText !important;
   }
 
-  .dropdown-surface {
-    border: 1px solid CanvasText !important;
-  }
-
   /* Selected / checked controls stand out via the system Highlight. */
   .selected-surface,
   .dropdown-item[aria-checked='true'] {
     border: 1px solid Highlight !important;
-  }
-
-  /* Restore edge and active state to accent swatches (#960) */
-  .accent-swatch {
-    border-color: CanvasText !important;
-  }
-  .accent-swatch[aria-pressed='true'] {
-    border-color: Highlight !important;
   }
 
   /* Toggle switch: outline the track, fill the checked track with Highlight, and
