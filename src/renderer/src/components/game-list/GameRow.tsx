@@ -242,6 +242,10 @@ export function GameRow({
       // the freshly-persisted profile now that the store is consistent (#453).
       if (!isActiveRef.current) {
         void discardPendingProfile()
+        // Nothing to announce: the profile is already on its way out, and
+        // "Save it to keep it" would offer to keep something that is gone
+        // (Codex on #972).
+        return
       }
     } else {
       pendingNewProfileRef.current = null

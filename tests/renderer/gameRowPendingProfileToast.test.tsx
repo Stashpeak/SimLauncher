@@ -14,6 +14,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 const notifyMock = vi.fn()
+const saveProfileSetMock = vi.fn()
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
   launchProfile: vi.fn(),
@@ -54,7 +55,7 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
     profileState: { killControlsEnabled: true, relaunchControlsEnabled: true },
     loadProfileSet: vi.fn().mockResolvedValue(PROFILE_SET),
     getProfileRuntimeConfig: vi.fn().mockResolvedValue(PROFILE_SET),
-    saveProfileSet: vi.fn().mockResolvedValue(undefined)
+    saveProfileSet: saveProfileSetMock
   })
 }))
 
@@ -104,33 +105,37 @@ const GAME: Game = { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' }
 let container: HTMLDivElement
 let root: Root | null = null
 
+function row(isActive: boolean) {
+  return (
+    <AppDirtyProvider>
+      <GameRow
+        game={GAME}
+        isActive={isActive}
+        isRunning={false}
+        isGameRunning={false}
+        runningAppIcons={[]}
+        hasClosableApps={false}
+        gamePathMissing={false}
+        isDimmed={false}
+        isLaunching={false}
+        isLaunchBlocked={false}
+        onLaunchStart={vi.fn()}
+        onLaunchEnd={vi.fn()}
+        onRunningStateRefresh={vi.fn().mockResolvedValue(undefined)}
+        onToggleEditor={vi.fn()}
+        onCloseEditor={vi.fn()}
+        cacheInitialized={true}
+      />
+    </AppDirtyProvider>
+  )
+}
+
 async function renderRow(): Promise<void> {
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
     root = createRoot(container)
-    root.render(
-      <AppDirtyProvider>
-        <GameRow
-          game={GAME}
-          isActive={true}
-          isRunning={false}
-          isGameRunning={false}
-          runningAppIcons={[]}
-          hasClosableApps={false}
-          gamePathMissing={false}
-          isDimmed={false}
-          isLaunching={false}
-          isLaunchBlocked={false}
-          onLaunchStart={vi.fn()}
-          onLaunchEnd={vi.fn()}
-          onRunningStateRefresh={vi.fn().mockResolvedValue(undefined)}
-          onToggleEditor={vi.fn()}
-          onCloseEditor={vi.fn()}
-          cacheInitialized={true}
-        />
-      </AppDirtyProvider>
-    )
+    root.render(row(true))
   })
 }
 
@@ -147,6 +152,7 @@ async function click(label: string): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  saveProfileSetMock.mockResolvedValue(undefined)
 })
 
 afterEach(async () => {
@@ -174,6 +180,28 @@ describe('what the app says when a profile is created (#949)', () => {
       expect.stringContaining('Created profile'),
       expect.anything()
     )
+  })
+
+  // Codex P2 on #972. The editor can close while the create's save is still in
+  // flight; the profile is then discarded as soon as the save lands, and
+  // offering to save it would promise something that no longer exists.
+  test('an editor closed before the save lands says nothing about keeping it', async () => {
+    let finishSave: () => void = () => {}
+    saveProfileSetMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishSave = resolve))
+    )
+    await renderRow()
+    await click('New profile')
+
+    await act(async () => {
+      root?.render(row(false))
+    })
+    await act(async () => {
+      finishSave()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(notifyMock).not.toHaveBeenCalled()
   })
 
   test('a profile created from the menu form still says it was created', async () => {
