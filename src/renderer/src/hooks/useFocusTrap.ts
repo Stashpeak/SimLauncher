@@ -20,6 +20,11 @@ let trapDepth = 0
 // otherwise stopImmediatePropagation and win). #641
 const escapeStack: object[] = []
 
+// Pending focus restore target across traps. When a trap closes but its restore
+// target refuses focus (e.g. native file dialog reset), it parks it here; the
+// next trap to open will adopt it instead of capturing document.body.
+let pendingRestore: HTMLElement | null = null
+
 function setBackgroundInert(inert: boolean): void {
   const root = document.getElementById('root')
   if (!root) return
@@ -63,7 +68,13 @@ export function useFocusTrap(
     const container = containerRef.current
     if (!container) return
 
-    const previouslyFocused = document.activeElement as HTMLElement | null
+    let previouslyFocused = document.activeElement as HTMLElement | null
+    if (!previouslyFocused || previouslyFocused === document.body) {
+      if (pendingRestore && pendingRestore.isConnected) {
+        previouslyFocused = pendingRestore
+      }
+    }
+    pendingRestore = null
 
     const getFocusable = (): HTMLElement[] =>
       Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
@@ -135,7 +146,12 @@ export function useFocusTrap(
       if (trapDepth === 0) setBackgroundInert(false)
       // Restore focus only AFTER un-inerting; focusing an element inside an inert
       // subtree is a no-op.
-      previouslyFocused?.focus?.()
+      if (previouslyFocused?.isConnected) {
+        previouslyFocused.focus()
+        if (document.activeElement !== previouslyFocused) {
+          pendingRestore = previouslyFocused
+        }
+      }
     }
   }, [active, containerRef, initialFocusRef])
 }

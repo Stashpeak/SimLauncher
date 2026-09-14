@@ -18,9 +18,11 @@ export function ConfigSection(): ReactNode {
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={onExportConfig}
-            disabled={exportingConfig || importingConfig}
-            className="accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
+            onClick={exportingConfig || importingConfig ? undefined : onExportConfig}
+            aria-disabled={exportingConfig || importingConfig || undefined}
+            className={`accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98] ${
+              exportingConfig || importingConfig ? 'cursor-not-allowed opacity-50' : ''
+            }`}
           >
             <svg
               aria-hidden="true"
@@ -41,9 +43,11 @@ export function ConfigSection(): ReactNode {
           </button>
           <button
             type="button"
-            onClick={onImportConfig}
-            disabled={exportingConfig || importingConfig}
-            className="accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
+            onClick={exportingConfig || importingConfig ? undefined : onImportConfig}
+            aria-disabled={exportingConfig || importingConfig || undefined}
+            className={`accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98] ${
+              exportingConfig || importingConfig ? 'cursor-not-allowed opacity-50' : ''
+            }`}
           >
             <svg
               aria-hidden="true"
