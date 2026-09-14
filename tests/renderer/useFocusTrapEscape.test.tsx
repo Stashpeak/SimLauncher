@@ -122,3 +122,35 @@ test('with stacked traps, only the topmost (most recently opened) reacts to Esca
   await act(async () => outerRoot.unmount())
   outerContainer.remove()
 })
+
+// #948. Every dialog restores focus through this cleanup, so it is the one
+// place that decides whether closing ANY dialog scrolls the page. It hands focus
+// back to where it was when the dialog opened, and the background was inert in
+// between, so it must not scroll. jsdom does not scroll: this pins the call
+// shape, not the scroll itself.
+test('closing the trap restores focus to where it was without scrolling', async () => {
+  const outside = document.createElement('button')
+  outside.textContent = 'opener'
+  document.body.appendChild(outside)
+  outside.focus()
+  const focusSpy = vi.spyOn(outside, 'focus')
+
+  const trapContainer = document.createElement('div')
+  document.body.appendChild(trapContainer)
+  const trapRoot = createRoot(trapContainer)
+  await act(async () => {
+    trapRoot.render(<Harness />)
+  })
+  // Inside the trap. jsdom has no layout, so the trap finds nothing focusable
+  // and falls back to its container; which element it picks does not matter
+  // here, only that focus left `outside` and has to be handed back.
+  expect(trapContainer.contains(document.activeElement)).toBe(true)
+  expect(document.activeElement).not.toBe(outside)
+
+  await act(async () => trapRoot.unmount())
+  trapContainer.remove()
+
+  expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
+  expect(document.activeElement).toBe(outside)
+  outside.remove()
+})
