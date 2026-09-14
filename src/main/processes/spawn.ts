@@ -598,10 +598,25 @@ export async function launchProfileApps(
       (result) => elevatedFate(result) === 'unknown'
     ).length
 
+    // The mirror of skippedGameName: a game this sequence STARTED was folded
+    // into "Started N apps" (#952). launchResults[i] is appsToLaunch[i], because
+    // every iteration that is not cancelled pushes exactly one result. Only a
+    // start we know happened is named: a game behind an unanswered prompt is
+    // already in awaitingElevationCount, and a failed or cancelled one started
+    // nothing.
+    const gameIndex = appsToLaunch.findIndex((entry) => entry.key === gameKey)
+    const gameResult = gameIndex >= 0 ? launchResults[gameIndex] : undefined
+    const startedGameName =
+      gameResult?.status === 'launched' ||
+      (gameResult?.status === 'elevated' && elevatedFate(gameResult) === 'survived')
+        ? getGameDisplayName(gameKey)
+        : undefined
+
     return {
       success: true,
       message: buildLaunchSummaryMessage(launchedCount, skippedCount, skipped.length, {
         skippedGameName,
+        startedGameName,
         awaitingElevationCount
       }),
       warning: elevatedWarning,
