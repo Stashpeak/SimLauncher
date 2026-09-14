@@ -242,11 +242,28 @@ export function GameRow({
       // the freshly-persisted profile now that the store is consistent (#453).
       if (!isActiveRef.current) {
         void discardPendingProfile()
+        // Nothing to announce: the profile is already on its way out, and
+        // "Save it to keep it" would offer to keep something that is gone
+        // (Codex on #972).
+        return
       }
     } else {
       pendingNewProfileRef.current = null
     }
-    notify(`Created profile ${newProfile.name}`, 'success')
+    // A "+" profile is provisional: it is kept only once saved, launched or
+    // switched away from, and closing the editor discards it on purpose (#453).
+    // "Created profile" told the user the opposite and the profile then
+    // vanished without a word, so say what keeps it instead (#949). Held for
+    // 5 s because it is an instruction, not a confirmation.
+    if (options?.trackAsPending) {
+      notify(
+        `Added ${newProfile.name}. Save it to keep it. Closing the editor discards it.`,
+        'success',
+        5000
+      )
+    } else {
+      notify(`Created profile ${newProfile.name}`, 'success')
+    }
   }
 
   // When this row's editor closes for ANY reason -- explicit close / discard, or
