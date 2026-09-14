@@ -1924,6 +1924,59 @@ test('summary: an unanswered consent prompt gets its own clause instead of count
   )
 })
 
+// #952, the branch #897 left alone: a launch that STARTS the game counted it as
+// one of the apps. The 1.2.1 smoke run read "Started 3 apps; 1 is waiting for
+// administrator permission" for a game and two companions. The game is named as
+// the game here too, and never as "and 0 apps" when it started on its own.
+test('summary: a game that started is named as the game, never counted among the apps (#952)', async () => {
+  const build = await loadSummaryBuilder()
+  const game = { startedGameName: 'RaceRoom' }
+  expect(build(4, 0, 0, { ...game, awaitingElevationCount: 1 })).toBe(
+    'Started RaceRoom and 2 apps; 1 is waiting for administrator permission.'
+  )
+  expect(build(2, 1, 0, game)).toBe('Started RaceRoom and 1 app; skipped 1 already running.')
+  expect(build(1, 1, 0, game)).toBe('Started RaceRoom; skipped 1 already running.')
+  expect(build(2, 0, 1, game)).toBe('Started RaceRoom and 1 app.')
+  expect(build(1, 0, 1, game)).toBe('Started RaceRoom.')
+  expect(build(2, 0, 0, { ...game, awaitingElevationCount: 1 })).toBe(
+    'Started RaceRoom; 1 is waiting for administrator permission.'
+  )
+  // A clean launch still makes the ALL claim, with or without the game in it.
+  expect(build(3, 0, 0, game)).toBe('All profile applications launched.')
+  expect(build(1, 0, 0, game)).toBe('All profile applications launched.')
+})
+
+// #952 end to end. The missing entry keeps the sentence from collapsing into
+// "All profile applications launched.", which is what makes the count visible:
+// before the fix this read "Started 2 apps." for a game and one companion.
+test('a launch that starts the game names it instead of counting it (#952)', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  const result = await launchProfileApps(sender, 'ac', [
+    { key: 'ac', path: 'C:/Games/AssettoCorsa.exe' },
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    'C:/Tools/Missing.exe'
+  ])
+
+  expect(result).toMatchObject({
+    success: true,
+    message: 'Started Assetto Corsa and 1 app.',
+    // The count the cooldown reads still includes the game (#897 kept it too).
+    launchedCount: 2,
+    skippedCount: 0
+  })
+  expect(result.skipped).toHaveLength(1)
+  expect(spawnCalls.map((call) => call.appPath)).toEqual([
+    'C:/Games/AssettoCorsa.exe',
+    'C:/Tools/SimHub.exe'
+  ])
+})
+
 // The end-to-end shape of the first #897 occurrence: Launch on a profile whose
 // game is already up, which is the ordinary way to start companions alongside a
 // sim you already have open. The game entry comes from the store like the IPC
@@ -2012,7 +2065,10 @@ test('an unanswered consent prompt is not counted as started in the summary (#89
     const result = await resultPromise
 
     expect(result.success).toBe(true)
-    expect(result.message).toBe('Started 1 app; 1 is waiting for administrator permission.')
+    // The one entry that started is the game, so it is named rather than
+    // counted. This used to read "Started 1 app", which pinned the other half
+    // of the same defect: the game counted as an app (#952).
+    expect(result.message).toBe('Started Assetto Corsa; 1 is waiting for administrator permission.')
     // The hedge beside it is unchanged, and so is the count the cooldown reads:
     // a late approval can still start the app, so the block has to cover it.
     expect(result.warning).toContain('requested administrator permission')
