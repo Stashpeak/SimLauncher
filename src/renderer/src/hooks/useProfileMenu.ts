@@ -38,8 +38,12 @@ export function useProfileMenu(): UseProfileMenuResult {
 
   const focusTrigger = useCallback(() => {
     // rAF defers focus until after React has committed the close state so the
-    // trigger is visible and interactive when focus lands on it.
-    window.requestAnimationFrame(() => triggerRef.current?.focus())
+    // trigger is visible and interactive when focus lands on it. This hands
+    // focus BACK to where the user just was, so it must not scroll: a bare
+    // focus() centred a row that sat near the bottom edge on every profile
+    // switch (#948). Moving focus to a new target (the menu items, the new
+    // profile input) keeps the default scroll, which is what reveals it.
+    window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
   }, [])
 
   const getMenuItems = useCallback(() => {

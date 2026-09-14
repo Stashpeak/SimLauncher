@@ -385,8 +385,9 @@ export function GameRow({
             // closeProfileMenu(true): that one focuses on the next animation
             // frame, which would land after the dialog took focus and steal
             // it back. The trap records the trigger as the element to return
-            // to, so dismissing the dialog puts focus on the trigger.
-            triggerRef.current?.focus()
+            // to, so dismissing the dialog puts focus on the trigger. Without
+            // scrolling, like every focus restoration (#948).
+            triggerRef.current?.focus({ preventScroll: true })
             closeProfileMenu(false)
             setProfileSwitchConfirm({
               nextProfileId: nextProfile.id,
