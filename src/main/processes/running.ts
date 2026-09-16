@@ -63,10 +63,12 @@ export interface RunningAppsChangedPayload {
 }
 
 const RUNNING_APPS_CHANGED_CHANNEL = 'running-apps-changed'
-// The process scan spawns `tasklist.exe` (plus a `conhost.exe`) every tick, so
-// the cadence is adaptive (#672): keep the responsive FAST poll only while it
-// earns that cost and back off to SLOW when idle in the tray, where a stale-by-
-// a-few-seconds list costs the user nothing.
+// The process scan used to spawn `tasklist.exe` (plus a `conhost.exe`) every
+// tick, which is why the cadence is adaptive (#672): keep the responsive FAST
+// poll only while it earns that cost and back off to SLOW when idle in the tray,
+// where a stale-by-a-few-seconds list costs the user nothing. Since #975 a tick
+// reads the process list in-process and spawns only as a fallback, so FAST is
+// cheap on a working install; the cadence stays for the fallback's sake.
 const FAST_RUNNING_APPS_SCAN_INTERVAL_MS = 2000
 const SLOW_RUNNING_APPS_SCAN_INTERVAL_MS = 12000
 // After any launch/exit/kill, stay on FAST for this long so a settling launch
@@ -621,7 +623,7 @@ export function publishRunningApps(
 
 /**
  * Pick the delay until the next process scan. FAST while the poll is earning its
- * `tasklist.exe` spawn — recent launch activity, a visible window, or any app
+ * cost — recent launch activity, a visible window, or any app
  * currently running (launcher-owned OR externally adopted, via the last
  * published count) — and SLOW only when the window is hidden AND nothing is
  * running (the idle-in-tray case #672 targets). The poll never stops, so a

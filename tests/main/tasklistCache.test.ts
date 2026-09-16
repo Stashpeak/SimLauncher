@@ -5,6 +5,11 @@ type ExecFileCallback = (error: Error | null, stdout: string) => void
 let execFileCallbacks: ExecFileCallback[] = []
 
 async function loadTasklistModule() {
+  // Pin the `tasklist` fallback (#975): on Windows the real native snapshot
+  // would otherwise answer and no callback below would ever be queued.
+  vi.doMock('../../src/main/processes/processSnapshot', () => ({
+    readProcessSnapshot: () => null
+  }))
   vi.doMock('child_process', () => ({
     execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, callback: ExecFileCallback) => {
       execFileCallbacks.push(callback)
