@@ -3,7 +3,11 @@ import { execFile } from 'node:child_process'
 
 import { beforeAll, describe, expect, test } from 'vitest'
 
-import { readRunningProcessNames } from '../../src/main/processes/tasklist'
+import {
+  prepareProcessSnapshot,
+  readProcessSnapshot
+} from '../../src/main/processes/processSnapshot'
+import { spawnTasklist } from '../../src/main/processes/tasklist'
 import {
   findProcessesByName,
   resolveConfiguredPathState
@@ -187,14 +191,18 @@ describeWindows('findProcessesByName against the real PowerShell host (#674)', (
  * it never was while it kept one column: a shape it mishandles does not throw,
  * it just yields fewer instances, and fewer instances resolve to `not-running`
  * — an app the user IS running would disappear from the strip.
+ *
+ * Since #975 `tasklist` is the fallback behind the native snapshot, so these
+ * call the spawn directly: going through `readRunningProcessNames` would now
+ * test the native path and leave the fallback parser with no live test at all.
  */
-describeWindows('readRunningProcessNames against the real tasklist (#674)', () => {
+describeWindows('the tasklist fallback against the real tasklist (#674)', () => {
   const TIMEOUT_MS = 30_000
 
   test(
     'the real snapshot parses into names AND instances, including this process',
     async () => {
-      const { processNames, processes, succeeded } = await readRunningProcessNames()
+      const { processNames, processes, succeeded } = await spawnTasklist()
 
       expect(succeeded).toBe(true)
       const self = path.basename(process.execPath).toLowerCase()
@@ -222,11 +230,77 @@ describeWindows('readRunningProcessNames against the real tasklist (#674)', () =
       // no enumeration at all. If this came back empty, the column being read
       // would be the wrong one (`Session Name` is localized text, `Session#` is
       // the number) and the cheap path would silently stop applying.
-      const { processes, succeeded } = await readRunningProcessNames()
+      const { processes, succeeded } = await spawnTasklist()
 
       expect(succeeded).toBe(true)
       expect(processes.some((entry) => entry.sessionId === 0)).toBe(true)
       expect(processes.some((entry) => entry.sessionId !== 0)).toBe(true)
+    },
+    TIMEOUT_MS
+  )
+})
+
+/**
+ * The native snapshot that now answers the poll (#975), against the machine.
+ *
+ * Every other test of it runs against a fake koffi, so a wrong struct layout, a
+ * wrong calling convention or a binding that does not load would all stay green
+ * there. Any of those turns the native path off in production, silently, and
+ * puts every poll back on the `tasklist` spawn this issue exists to remove.
+ */
+describeWindows('the native process snapshot against the real machine (#975)', () => {
+  const TIMEOUT_MS = 30_000
+
+  test(
+    'the binding loads and reads this very process with its session',
+    async () => {
+      await prepareProcessSnapshot()
+      const processes = readProcessSnapshot()
+
+      expect(
+        processes,
+        'the native snapshot answered null: the binding did not load or the enumeration failed, so every poll would fall back to spawning tasklist'
+      ).not.toBeNull()
+      const self = processes!.find((entry) => entry.processId === process.pid)
+      expect(self).toEqual({
+        name: path.basename(process.execPath).toLowerCase(),
+        processId: process.pid,
+        sessionId: expect.any(Number)
+      })
+      expect(processes!.some((entry) => entry.sessionId === 0)).toBe(true)
+      expect(processes!.some((entry) => entry.sessionId !== 0)).toBe(true)
+    },
+    TIMEOUT_MS
+  )
+
+  test(
+    'it agrees with tasklist on the name and session of every process both can see',
+    async () => {
+      await prepareProcessSnapshot()
+      const reference = await spawnTasklist()
+      const processes = readProcessSnapshot()
+
+      expect(reference.succeeded).toBe(true)
+      expect(processes).not.toBeNull()
+
+      const native = new Map(processes!.map((entry) => [entry.processId, entry]))
+      const shared = reference.processes.filter((entry) => native.has(entry.processId))
+      // Not the same set, and cannot be: processes start and exit between the
+      // two reads, `tasklist.exe` and its `conhost.exe` among them, and the
+      // native read drops the unnamed System Idle Process. Almost all of them
+      // must be shared, though, or the two are not describing the same machine.
+      expect(shared.length).toBeGreaterThan(reference.processes.length * 0.9)
+
+      const disagreements = shared
+        .filter((entry) => {
+          const mine = native.get(entry.processId)!
+          return mine.name !== entry.name || mine.sessionId !== entry.sessionId
+        })
+        .map((entry) => {
+          const mine = native.get(entry.processId)!
+          return `pid ${entry.processId}: tasklist ${entry.name}/${entry.sessionId}, native ${mine.name}/${mine.sessionId}`
+        })
+      expect(disagreements).toEqual([])
     },
     TIMEOUT_MS
   )

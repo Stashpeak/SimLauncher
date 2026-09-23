@@ -325,6 +325,13 @@ async function loadProcessModules() {
     }
   }))
 
+  // The process list below is served through a mocked `tasklist`, so the native
+  // snapshot (#975), which would answer first on Windows with the real machine,
+  // has to stay out of the way.
+  vi.doMock('../../src/main/processes/processSnapshot', () => ({
+    readProcessSnapshot: () => null
+  }))
+
   vi.doMock('child_process', () => ({
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })

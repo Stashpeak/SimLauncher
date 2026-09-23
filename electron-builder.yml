@@ -18,6 +18,15 @@ files:
   - '!node_modules/@floating-ui/**/*'
   - '!node_modules/scheduler/**/*'
   - '!node_modules/tabbable/**/*'
+  # koffi (#975) ships its C++ sources, vendored headers and docs so it can build
+  # from source on platforms without a prebuilt binary. The app only loads the
+  # JS entry points and the prebuilt win32-x64 `koffi.node`; the rest is ~1.8 MB
+  # of installer weight that nothing reads.
+  - '!node_modules/koffi/{doc,lib,vendor}/**/*'
+  - '!node_modules/koffi/src/koffi/src/**/*.{cc,hh,inc,S,asm}'
+  - '!node_modules/koffi/src/koffi/CMakeLists.txt'
+  - '!node_modules/koffi/*.md'
+  - '!node_modules/@koromix/**/*.lib'
 extraResources:
   - from: assets/
     to: assets/

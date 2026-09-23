@@ -1,5 +1,7 @@
 import { execFile } from 'child_process'
 
+import { readProcessSnapshot } from './processSnapshot'
+
 // 500 ms is short enough that UI updates feel live (polling interval is 2 s)
 // but long enough to collapse the burst of tasklist calls that fire during a
 // multi-app launch sequence (spawn → kill verify → running-apps publish).
@@ -45,7 +47,12 @@ let inflight: Promise<RunningProcessNamesResult> | undefined
 // process set changed while it was running (see readRunningProcessNames).
 let generation = 0
 
-function spawnTasklist(): Promise<RunningProcessNamesResult> {
+/**
+ * The `tasklist` read itself, which since #975 is the fallback rather than the
+ * normal path. Exported for the Windows test that holds the native snapshot to
+ * parity with it; production reads go through `readRunningProcessNames`.
+ */
+export function spawnTasklist(): Promise<RunningProcessNamesResult> {
   return new Promise<RunningProcessNamesResult>((resolve) => {
     // `/fo csv` gives a stable, quote-delimited format that is safe to parse
     // even when process names contain spaces or special characters.
@@ -103,8 +110,29 @@ function spawnTasklist(): Promise<RunningProcessNamesResult> {
 }
 
 /**
- * Return the set of currently running exe names (lowercase) from a `tasklist`
- * snapshot.
+ * One snapshot of the machine: in-process whenever the native binding can
+ * answer (#975), which on a working install is every read after the first, and
+ * a `tasklist` spawn otherwise, exactly as before.
+ *
+ * Both sources produce the same shape, and the name set is derived from the
+ * same rows as the instances, so the two can never disagree about what was
+ * running at that instant.
+ */
+function takeSnapshot(): Promise<RunningProcessNamesResult> {
+  const processes = readProcessSnapshot()
+  if (processes) {
+    return Promise.resolve({
+      processNames: new Set(processes.map((entry) => entry.name)),
+      processes,
+      succeeded: true
+    })
+  }
+  return spawnTasklist()
+}
+
+/**
+ * Return the set of currently running exe names (lowercase) from one process
+ * snapshot (see `takeSnapshot`).
  *
  * Concurrent callers within the TTL window share a single in-flight promise so
  * that a burst of simultaneous callers (e.g. launch + publish) issues at most
@@ -123,7 +151,7 @@ export function readRunningProcessNames(): Promise<RunningProcessNamesResult> {
   }
 
   const generationAtStart = generation
-  const read: Promise<RunningProcessNamesResult> = spawnTasklist()
+  const read: Promise<RunningProcessNamesResult> = takeSnapshot()
     .then((result) => {
       // Only cache successful reads so a transient tasklist failure doesn't
       // poison subsequent calls for the full TTL window and so callers can
