@@ -873,7 +873,7 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   })
 
   // From before the first companion can exit (the graceful phase already makes
-  // them exit) until the kill's own publish has gone out, see
+  // them exit) until every leftover is registered as unclosed, see
   // holdGamesDuringClose (#976).
   const releaseHeldGames = holdGamesDuringClose(getLaunchedGameKeys(gameKey))
   try {
@@ -887,6 +887,12 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
       await Promise.all(killTasks.map((startKill) => startKill())),
       gameKey
     )
+    // Released BEFORE the publish (Codex P2 on #985): by now every leftover is
+    // registered as unclosed and keeps its game launched on its own, so the
+    // hold has nothing left to cover, and a snapshot taken under it would keep
+    // a tracked app Close Apps never targets (a bare-name secondary) on the
+    // row until the next scan.
+    releaseHeldGames()
     await publishRunningApps('kill')
     return withStrandedConsentPrompts(result, strandedPromptCount)
   } finally {

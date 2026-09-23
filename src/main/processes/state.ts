@@ -290,8 +290,8 @@ const closingGameKeys = new Map<string, number>()
 
 /**
  * Hold these games as launched for the running poll while a Close Apps works
- * on them (#976). Returns the release, to be called once the kill's own
- * publish has gone out.
+ * on them (#976). Returns the release, to be called once every leftover is
+ * registered as unclosed.
  *
  * Without the hold, the row flashed as stopped mid-close. Each companion the
  * close kills publishes an `exit` snapshot, and once the last launched one is
@@ -305,7 +305,13 @@ export function holdGamesDuringClose(gameKeys: Iterable<string>): () => void {
   const held = Array.from(new Set(gameKeys))
   held.forEach((gameKey) => closingGameKeys.set(gameKey, (closingGameKeys.get(gameKey) ?? 0) + 1))
 
+  let released = false
+  // Idempotent: the kill releases early on success and again from a `finally`.
   return () => {
+    if (released) {
+      return
+    }
+    released = true
     held.forEach((gameKey) => {
       const count = (closingGameKeys.get(gameKey) ?? 0) - 1
       if (count > 0) {

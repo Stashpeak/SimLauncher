@@ -5009,6 +5009,43 @@ test('Close Apps keeps an unclosable companion on the row while the others exit 
   expect(getGamesHeldDuringClose()).toEqual([])
 })
 
+// Codex P2 on #985: the hold has to end before the kill's own publish. A bare
+// secondary name is tracked but never a Close Apps target (#929), so a
+// snapshot taken under the hold kept it, and the row, up after the close.
+test('the Close Apps publish is not taken under the hold (#976)', async () => {
+  const webContents = createMockWebContents()
+  markExistingPath('C:/Tools/Perplexity.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('acs_real.exe')
+  registerProcess('C:/Tools/Perplexity.exe', 'perplexity.exe', '1234')
+
+  const { killLaunchedApps, runningProcesses, subscribeRunningApps } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['acs_real.exe'] }]
+        }
+      }
+    })
+  runningProcesses.set(String.raw`c:\tools\perplexity.exe`, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  await subscribeRunningApps(asWebContents(webContents))
+  webContents.send.mockClear()
+
+  await killLaunchedApps('ac')
+
+  expect(webContents.send).toHaveBeenCalledWith(
+    'running-apps-changed',
+    expect.objectContaining({ reason: 'kill', apps: [] })
+  )
+})
+
 // Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the
 // tasklist, which knows image NAMES only, so once two profiles can hold two
 // same-named paths both get scheduled even when only one of them is running.
