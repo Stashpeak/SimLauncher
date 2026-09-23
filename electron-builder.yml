@@ -55,6 +55,11 @@ nsis:
   # "${productName} Setup ${version}" (with spaces) is sanitized to hyphens on
   # upload and `sha256sum -c SHA256SUMS.txt` fails on the downloaded asset (#614).
   artifactName: ${productName}-Setup-${version}.${ext}
+  # The default is "${productName} ${version}", so Installed apps listed
+  # "SimLauncher 1.2.2" while Windows already shows the version in the entry's
+  # details (#982). Safe across upgrades: the uninstall registry key is the GUID
+  # derived from appId, not this name, and DisplayVersion is written separately.
+  uninstallDisplayName: ${productName}
 publish:
   provider: github
   owner: Stashpeak
