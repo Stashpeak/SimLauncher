@@ -8,8 +8,8 @@
   "thresholdCodeLines": 300,
   "budgets": {
     "src/main/ipc/config.ts": 464,
-    "src/main/processes/kill.ts": 576,
-    "src/main/processes/running.ts": 424,
+    "src/main/processes/kill.ts": 577,
+    "src/main/processes/running.ts": 449,
     "src/main/processes/spawn.ts": 735,
     "src/main/processes/win32KillUtils.ts": 384,
     "src/main/store.ts": 682,

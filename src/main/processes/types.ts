@@ -215,6 +215,13 @@ export interface ProcessNameMismatchWarningEntry {
    * until the user explicitly dismisses the icon.
    */
   expiresAt?: number
+  /**
+   * Set by the running poll once a configured secondary executable of the same
+   * game has been seen running (#978): the handoff the warning describes has
+   * been followed, so the warning is no longer true. The entry is kept (hidden)
+   * while that secondary runs, and deleted when it stops.
+   */
+  handedOffToSecondary?: boolean
 }
 
 export interface UnclosedProcessEntry {

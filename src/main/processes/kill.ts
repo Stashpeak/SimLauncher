@@ -165,8 +165,11 @@ function isHandoffProfileTracked(handoffGameKey?: string): boolean {
 }
 
 function hasProcessNameMismatchWarning(gameKey?: string) {
+  // A handed-off entry (#978) is one whose child the user already added and
+  // SimLauncher is watching, so the advice below would be the same false claim.
   return Array.from(processNameMismatchWarnings.values()).some(
-    (warning) => gameKey === undefined || warning.gameKey === gameKey
+    (warning) =>
+      !warning.handedOffToSecondary && (gameKey === undefined || warning.gameKey === gameKey)
   )
 }
 

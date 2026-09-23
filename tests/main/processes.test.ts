@@ -4947,6 +4947,103 @@ test('a bare secondary name equal to the game exe is never a Close Apps target (
   expect(execFileCalls.filter((call) => call.command === 'taskkill')).toEqual([])
 })
 
+// #978: the stub-game warning says tracking is lost and asks for a secondary
+// executable. Found in the 1.2.2 smoke with the secondary configured and
+// running: the ring kept saying "can no longer detect" while the row was
+// sorted as running and the child had its own chip.
+async function launchStubGameThatExits(trackedProcessPaths: string[]) {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/StubLauncher.exe')
+  const modules = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths }]
+      }
+    }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = modules.launchProfileApps(sender, 'ac', ['C:/Games/StubLauncher.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+  // The stub hands off and exits inside the post-launch window.
+  processNames.delete('stublauncher.exe')
+  childHandlers.get('exit')?.()
+  expect(modules.processNameMismatchWarnings.size).toBe(1)
+
+  return modules
+}
+
+const stubWarning = expect.objectContaining({
+  path: 'C:/Games/StubLauncher.exe',
+  warning: expect.any(String)
+})
+
+test('the stub-game warning goes away while a configured secondary runs, and stays gone (#978)', async () => {
+  const { getRunningApps, killLaunchedApps, processNameMismatchWarnings } =
+    await launchStubGameThatExits(['GameStandIn.exe'])
+
+  // The child has not appeared yet: nothing says tracking is restored, so the
+  // warning is still true and still shown.
+  await expect(getRunningApps()).resolves.toEqual([stubWarning])
+
+  processNames.add('gamestandin.exe')
+  const apps = await getRunningApps()
+  expect(apps).not.toEqual(expect.arrayContaining([stubWarning]))
+  // Still counted as launched, so the row keeps showing the game as running
+  // through the secondary's chip rather than dropping to idle.
+  expect(apps).toEqual([
+    expect.objectContaining({ path: 'GameStandIn.exe', gameKey: 'ac', tracked: true })
+  ])
+  // Close Apps must not repeat the advice either.
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    message: 'No running companion apps to close.'
+  })
+
+  // The game closes. The ring must not come back with the same false claim.
+  processNames.delete('gamestandin.exe')
+  await expect(getRunningApps()).resolves.toEqual([])
+  expect(processNameMismatchWarnings.size).toBe(0)
+})
+
+test('a failed read does not clear a handed-off stub warning (#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+  processNames.add('gamestandin.exe')
+  await getRunningApps()
+
+  // A failed read answers "not running" for everything, which would read as
+  // the secondary stopping.
+  tasklistReadShouldFail = true
+  await getRunningApps()
+  expect(processNameMismatchWarnings.size).toBe(1)
+
+  tasklistReadShouldFail = false
+  await expect(getRunningApps()).resolves.not.toEqual(expect.arrayContaining([stubWarning]))
+})
+
+test('the stub-game warning stays while no configured secondary is running (#978)', async () => {
+  const { getRunningApps } = await launchStubGameThatExits(['GameStandIn.exe'])
+  // A differently named child the user has not configured: tracking really is
+  // lost, which is what the warning is for.
+  processNames.add('somethingelse.exe')
+
+  await expect(getRunningApps()).resolves.toEqual([stubWarning])
+})
+
 // Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the
 // tasklist, which knows image NAMES only, so once two profiles can hold two
 // same-named paths both get scheduled even when only one of them is running.
