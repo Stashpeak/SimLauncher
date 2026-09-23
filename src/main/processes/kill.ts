@@ -16,6 +16,7 @@ import {
   adoptedCompanionOwners,
   cancelPendingElevatedHandoffs,
   drainStrandedConsentPrompts,
+  holdGamesDuringClose,
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
@@ -871,18 +872,42 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     }
   })
 
-  // Ask first, then force. Only ever from here: `killProfileApps` (the profile
-  // switch) deliberately does not opt in, see requestGracefulCloseForTargets.
-  if (getStoredBoolean('gracefulCloseEnabled')) {
-    await requestGracefulCloseForTargets(gracefulChildren, gracefulPathTargets)
-  }
+  // From before the first companion can exit (the graceful phase already makes
+  // them exit) until the kill's own publish has gone out, see
+  // holdGamesDuringClose (#976).
+  const releaseHeldGames = holdGamesDuringClose(getLaunchedGameKeys(gameKey))
+  try {
+    // Ask first, then force. Only ever from here: `killProfileApps` (the profile
+    // switch) deliberately does not opt in, see requestGracefulCloseForTargets.
+    if (getStoredBoolean('gracefulCloseEnabled')) {
+      await requestGracefulCloseForTargets(gracefulChildren, gracefulPathTargets)
+    }
 
-  const result = await finalizeKillAttempts(
-    await Promise.all(killTasks.map((startKill) => startKill())),
-    gameKey
-  )
-  await publishRunningApps('kill')
-  return withStrandedConsentPrompts(result, strandedPromptCount)
+    const result = await finalizeKillAttempts(
+      await Promise.all(killTasks.map((startKill) => startKill())),
+      gameKey
+    )
+    await publishRunningApps('kill')
+    return withStrandedConsentPrompts(result, strandedPromptCount)
+  } finally {
+    releaseHeldGames()
+  }
+}
+
+/**
+ * The games the running poll currently counts as launched from SimLauncher's
+ * own records, within a Close Apps' scope. Only these are held: holding a game
+ * that was not already launched would surface its tracked apps for the length
+ * of the close, a flash of its own.
+ */
+function getLaunchedGameKeys(gameKey?: string): string[] {
+  return [
+    ...runningProcesses.values(),
+    ...unclosedProcesses.values(),
+    ...processNameMismatchWarnings.values()
+  ]
+    .map((entry) => entry.gameKey)
+    .filter((entryKey) => !!entryKey && (gameKey === undefined || entryKey === gameKey))
 }
 
 /**
