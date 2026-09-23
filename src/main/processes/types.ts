@@ -222,6 +222,12 @@ export interface ProcessNameMismatchWarningEntry {
    * while that secondary runs, and deleted when it stops.
    */
   handedOffToSecondary?: boolean
+  /**
+   * Image names running before the launch sequence started anything, kept on
+   * a game entry only. A secondary already in it is not evidence of this
+   * handoff: it may be a companion the user also lists as a secondary.
+   */
+  namesRunningAtLaunch?: ReadonlySet<string>
 }
 
 export interface UnclosedProcessEntry {

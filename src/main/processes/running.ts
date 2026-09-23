@@ -434,7 +434,14 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
 
       const profile = getActiveStoredProfile(profiles[entry.gameKey])
       const secondaries = Array.isArray(profile?.trackedProcessPaths)
-        ? profile.trackedProcessPaths.filter((candidate) => isTrackableSecondaryExe(candidate))
+        ? profile.trackedProcessPaths.filter(
+            (candidate) =>
+              isTrackableSecondaryExe(candidate) &&
+              // Only one that started after the launch counts (Codex P2 on
+              // #984): one that was already running says nothing about where
+              // the stub handed off, and would silence a warning that is true.
+              !entry.namesRunningAtLaunch?.has(getExeName(candidate))
+          )
         : []
 
       if (secondaries.some((secondary) => isPathRunning(secondary))) {

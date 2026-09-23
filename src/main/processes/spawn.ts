@@ -406,7 +406,8 @@ export async function launchProfileApps(
         appsToLaunch[index],
         gamePath,
         launchController.signal,
-        trackingEnabled
+        trackingEnabled,
+        processNames
       )
       // Nothing was started, so don't count it (and don't arm the post-launch
       // cooldown for an attempt that never happened).
@@ -1099,7 +1100,8 @@ export async function spawnDetachedApp(
   entry: ProfileLaunchEntry,
   gamePath?: string,
   signal?: AbortSignal,
-  trackingEnabled?: boolean
+  trackingEnabled?: boolean,
+  namesRunningAtLaunch?: ReadonlySet<string>
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
@@ -1267,7 +1269,11 @@ export async function spawnDetachedApp(
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning
+            warning,
+            // Read before this sequence started anything, so a secondary in
+            // it was already running and proves nothing about this handoff
+            // (#978). Game entries only: nothing else reads it.
+            namesRunningAtLaunch: wasGame ? namesRunningAtLaunch : undefined
           })
           // Suppress the toast notification for the game exe itself: fast-exit
           // is the normal pattern for launcher stubs (Steam, EA App, etc.) and

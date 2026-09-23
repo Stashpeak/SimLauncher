@@ -5035,6 +5035,61 @@ test('a failed read does not clear a handed-off stub warning (#978)', async () =
   await expect(getRunningApps()).resolves.not.toEqual(expect.arrayContaining([stubWarning]))
 })
 
+// Codex P2 on #984: a secondary that was already running before the launch is
+// no evidence of where the stub handed off. It may be a companion the user
+// also lists as a secondary, while the stub's real child is untracked.
+test('a secondary already running before the launch does not clear the stub warning (#978)', async () => {
+  processNames.add('gamestandin.exe')
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+  // Nor does its exit delete the warning.
+  processNames.delete('gamestandin.exe')
+  await getRunningApps()
+  expect(processNameMismatchWarnings.size).toBe(1)
+})
+
+// The pass is scoped to the GAME's entry. Secondaries belong to the game, so a
+// companion's own re-exec warning must survive the game's child running.
+test("a running game secondary does not clear a companion's own stub warning (#978)", async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  markExistingPath('C:/Tools/Perplexity.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['GameStandIn.exe'] }]
+      }
+    }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Perplexity.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+  processNames.delete('perplexity.exe')
+  childHandlers.get('exit')?.()
+  processNames.add('gamestandin.exe')
+
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/Perplexity.exe', warning: expect.any(String) })
+    ])
+  )
+})
+
 test('the stub-game warning stays while no configured secondary is running (#978)', async () => {
   const { getRunningApps } = await launchStubGameThatExits(['GameStandIn.exe'])
   // A differently named child the user has not configured: tracking really is
