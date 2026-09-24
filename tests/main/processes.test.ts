@@ -5051,6 +5051,75 @@ test('a secondary already running before the launch does not clear the stub warn
   expect(processNameMismatchWarnings.size).toBe(1)
 })
 
+// Codex P2 on #984, round 2. The baseline has to be taken when the GAME
+// starts: a utility the same sequence launched earlier (`gamePosition: 'last'`)
+// and also lists as a secondary would otherwise look like the stub's child.
+test('a secondary started earlier in the same launch does not clear the stub warning (#978)', async () => {
+  const autoSpawningChild = (onSpawn: () => void) => {
+    const handlers = new Map<string, (...args: unknown[]) => void>()
+    const child = {
+      pid: 1234,
+      exitCode: null,
+      signalCode: null,
+      handlers,
+      once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, handler)
+        if (event === 'spawn') {
+          queueMicrotask(() => {
+            onSpawn()
+            handler()
+          })
+        }
+        return child
+      }),
+      unref: vi.fn(),
+      kill: vi.fn()
+    }
+    return child
+  }
+  markExistingPath('C:/Tools/GameStandIn.exe')
+  markExistingPath('C:/Games/StubLauncher.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['GameStandIn.exe'] }]
+      }
+    }
+  })
+  const utilityChild = autoSpawningChild(() => processNames.add('gamestandin.exe'))
+  const gameChild = autoSpawningChild(() => processNames.add('stublauncher.exe'))
+  vi.mocked(await import('child_process'))
+    .spawn.mockReturnValueOnce(utilityChild as never)
+    .mockReturnValueOnce(gameChild as never)
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/GameStandIn.exe', 'C:/Games/StubLauncher.exe'])
+  processNames.delete('stublauncher.exe')
+  gameChild.handlers.get('exit')?.()
+
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+})
+
+// The secondary the handoff was observed through is taken out of the profile
+// while it runs. Nothing exited, so the entry must not be deleted as if the
+// game had closed; tracking really is lost again, so the warning returns.
+test('removing the observed secondary from the profile brings the warning back (#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+  processNames.add('gamestandin.exe')
+  await expect(getRunningApps()).resolves.not.toEqual(expect.arrayContaining([stubWarning]))
+
+  Object.assign(storeData, {
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    }
+  })
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+  expect(processNameMismatchWarnings.size).toBe(1)
+})
+
 // The pass is scoped to the GAME's entry. Secondaries belong to the game, so a
 // companion's own re-exec warning must survive the game's child running.
 test("a running game secondary does not clear a companion's own stub warning (#978)", async () => {

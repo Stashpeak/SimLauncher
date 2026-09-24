@@ -169,7 +169,7 @@ function hasProcessNameMismatchWarning(gameKey?: string) {
   // SimLauncher is watching, so the advice below would be the same false claim.
   return Array.from(processNameMismatchWarnings.values()).some(
     (warning) =>
-      !warning.handedOffToSecondary && (gameKey === undefined || warning.gameKey === gameKey)
+      warning.handedOffTo === undefined && (gameKey === undefined || warning.gameKey === gameKey)
   )
 }
 

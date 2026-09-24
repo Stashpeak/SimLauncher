@@ -434,21 +434,34 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
 
       const profile = getActiveStoredProfile(profiles[entry.gameKey])
       const secondaries = Array.isArray(profile?.trackedProcessPaths)
-        ? profile.trackedProcessPaths.filter(
-            (candidate) =>
-              isTrackableSecondaryExe(candidate) &&
-              // Only one that started after the launch counts (Codex P2 on
-              // #984): one that was already running says nothing about where
-              // the stub handed off, and would silence a warning that is true.
-              !entry.namesRunningAtLaunch?.has(getExeName(candidate))
-          )
+        ? profile.trackedProcessPaths.filter((candidate) => isTrackableSecondaryExe(candidate))
         : []
 
-      if (secondaries.some((secondary) => isPathRunning(secondary))) {
-        entry.handedOffToSecondary = true
-      } else if (entry.handedOffToSecondary) {
-        processNameMismatchWarnings.delete(key)
+      if (entry.handedOffTo !== undefined) {
+        // Only the observed secondary's own exit ends the entry. Taken out of
+        // the profile, it proves nothing any more and SimLauncher really has
+        // lost the game again, so the warning comes back instead of the row
+        // going idle for good (Codex P2 on #984).
+        if (!secondaries.includes(entry.handedOffTo)) {
+          entry.handedOffTo = undefined
+        } else if (isPathRunning(entry.handedOffTo)) {
+          return
+        } else {
+          processNameMismatchWarnings.delete(key)
+          return
+        }
       }
+
+      // Only a secondary that was not running when the game was spawned counts
+      // (Codex P2 on #984): one already up, such as a companion also listed as
+      // a secondary, says nothing about where the stub handed off. No baseline
+      // (its read failed) means nothing counts, and the warning stays true.
+      const baseline = entry.namesRunningAtLaunch
+      entry.handedOffTo = baseline
+        ? secondaries.find(
+            (secondary) => !baseline.has(getExeName(secondary)) && isPathRunning(secondary)
+          )
+        : undefined
     })
   }
 
@@ -480,7 +493,7 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   // that had re-execed under a name SimLauncher cannot track.
   const mismatchEntries = Array.from(processNameMismatchWarnings.values())
   const mismatchWarnings = mismatchEntries
-    .filter((entry) => !entry.handedOffToSecondary && !isPathRunning(entry.path))
+    .filter((entry) => entry.handedOffTo === undefined && !isPathRunning(entry.path))
     .map((entry) => ({
       path: entry.path,
       name: entry.name,
@@ -503,7 +516,9 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
     ...[...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey),
     // A handed-off entry is hidden from the strip but still means "launched",
     // see the #978 pass above.
-    ...mismatchEntries.filter((entry) => entry.handedOffToSecondary).map((entry) => entry.gameKey)
+    ...mismatchEntries
+      .filter((entry) => entry.handedOffTo !== undefined)
+      .map((entry) => entry.gameKey)
   ])
   const adoptedGameKeys = getExternallyAdoptableGameKeys(
     isPathRunning,

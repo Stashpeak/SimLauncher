@@ -216,16 +216,16 @@ export interface ProcessNameMismatchWarningEntry {
    */
   expiresAt?: number
   /**
-   * Set by the running poll once a configured secondary executable of the same
-   * game has been seen running (#978): the handoff the warning describes has
-   * been followed, so the warning is no longer true. The entry is kept (hidden)
-   * while that secondary runs, and deleted when it stops.
+   * The configured secondary executable the running poll saw take over from
+   * this game's stub (#978), as written in the profile. While it runs the
+   * warning is untrue and hidden; its exit is the game closing and deletes the
+   * entry; removing it from the profile clears this and the warning returns.
    */
-  handedOffToSecondary?: boolean
+  handedOffTo?: string
   /**
-   * Image names running before the launch sequence started anything, kept on
-   * a game entry only. A secondary already in it is not evidence of this
-   * handoff: it may be a companion the user also lists as a secondary.
+   * Image names running just before the game exe was spawned, from a read that
+   * succeeded; absent when it failed. A secondary already in it is not
+   * evidence of the handoff, and with no baseline nothing is.
    */
   namesRunningAtLaunch?: ReadonlySet<string>
 }

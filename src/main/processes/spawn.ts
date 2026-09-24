@@ -406,8 +406,7 @@ export async function launchProfileApps(
         appsToLaunch[index],
         gamePath,
         launchController.signal,
-        trackingEnabled,
-        processNames
+        trackingEnabled
       )
       // Nothing was started, so don't count it (and don't arm the post-launch
       // cooldown for an attempt that never happened).
@@ -1100,8 +1099,7 @@ export async function spawnDetachedApp(
   entry: ProfileLaunchEntry,
   gamePath?: string,
   signal?: AbortSignal,
-  trackingEnabled?: boolean,
-  namesRunningAtLaunch?: ReadonlySet<string>
+  trackingEnabled?: boolean
 ): Promise<AppLaunchResult> {
   const { path: appPath, key: appKey } = entry
   // Console-subsystem exes must NOT get DETACHED_PROCESS: without a console
@@ -1122,6 +1120,18 @@ export async function spawnDetachedApp(
   // The caller passes it whenever the profile being launched is not the
   // persisted active one; the fallback covers direct use of this function.
   const isTracked = trackingEnabled ?? isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
+  // What was running just before the game starts, so the running poll can tell
+  // the stub's child from a secondary that was already up (#978). Read here and
+  // fresh, not reused from the sequence's opening read: utilities launched
+  // before the game (`gamePosition: 'last'`) would otherwise look new. A failed
+  // read gives no baseline rather than an empty one, which would make every
+  // running secondary look new (Codex P2 on #984). Game entries only.
+  let namesRunningAtLaunch: ReadonlySet<string> | undefined
+  if (isTracked && !!gamePath && pathsEqual(appPath, gamePath)) {
+    invalidateProcessNameCache()
+    const baseline = await readRunningProcessNames()
+    namesRunningAtLaunch = baseline.succeeded ? baseline.processNames : undefined
+  }
 
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
@@ -1270,9 +1280,6 @@ export async function spawnDetachedApp(
             name: path.basename(appPath),
             gameKey,
             warning,
-            // Read before this sequence started anything, so a secondary in
-            // it was already running and proves nothing about this handoff
-            // (#978). Game entries only: nothing else reads it.
             namesRunningAtLaunch: wasGame ? namesRunningAtLaunch : undefined
           })
           // Suppress the toast notification for the game exe itself: fast-exit
