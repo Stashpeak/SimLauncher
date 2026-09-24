@@ -5209,6 +5209,155 @@ test('the stub-game warning stays while no configured secondary is running (#978
   await expect(getRunningApps()).resolves.toEqual([stubWarning])
 })
 
+// #976, seen in the 1.2.2 smoke: after the game had exited, Close Apps made
+// the row flash as fully stopped. The elevated companion is surfaced only as a
+// tracked app of a launched game, and the last launched companion exiting
+// mid-close left nothing counting the game as launched until the kill
+// registered the elevated one as unclosed, one tasklist read later.
+test('Close Apps keeps an unclosable companion on the row while the others exit (#976)', async () => {
+  markExistingPath('C:/Tools/Perplexity.exe')
+  markExistingPath('C:/Tools/OculusTrayTool.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('oculustraytool.exe')
+  registerProcess('C:/Tools/OculusTrayTool.exe', 'oculustraytool.exe', '7777')
+  accessDeniedPids.add('7777')
+
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/OculusTrayTool.exe' }
+    })
+  const perplexityKey = String.raw`c:\tools\perplexity.exe`
+  runningProcesses.set(perplexityKey, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  const trayTool = expect.objectContaining({ path: 'C:/Tools/OculusTrayTool.exe', gameKey: 'ac' })
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(expect.arrayContaining([trayTool]))
+
+  // Park the close before it can register anything as unclosed.
+  let releaseLookup: () => void = () => {}
+  wmiLookupBlocker = new Promise<void>((resolve) => {
+    releaseLookup = resolve
+  })
+  const killPromise = killLaunchedApps('ac')
+  await flushMicrotasks()
+
+  // Perplexity is closed, and its exit handler drops the record and publishes,
+  // which is the snapshot that used to come out without the tray tool.
+  runningProcesses.delete(perplexityKey)
+  processNames.delete('perplexity.exe')
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(expect.arrayContaining([trayTool]))
+
+  releaseLookup()
+  await killPromise
+  // The tray tool is now held by its unclosed record, and the hold is gone.
+  expect((await collectRunningAppsSnapshot()).apps).toEqual([
+    expect.objectContaining({
+      path: 'C:/Tools/OculusTrayTool.exe',
+      gameKey: 'ac',
+      warning: expect.any(String)
+    })
+  ])
+  const { getGamesHeldDuringClose } = await import('../../src/main/processes/state')
+  expect(getGamesHeldDuringClose()).toEqual([])
+})
+
+// Codex P2 on #985, round 2: the hold has to START before the kill's first
+// await. A companion exiting while the initial scan is pending publishes too.
+test('Close Apps holds its games while its initial scan is pending (#976)', async () => {
+  markExistingPath('C:/Tools/Perplexity.exe')
+  markExistingPath('C:/Tools/OculusTrayTool.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('oculustraytool.exe')
+  registerProcess('C:/Tools/OculusTrayTool.exe', 'oculustraytool.exe', '7777')
+  accessDeniedPids.add('7777')
+
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/OculusTrayTool.exe' }
+    })
+  const perplexityKey = String.raw`c:\tools\perplexity.exe`
+  runningProcesses.set(perplexityKey, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  let releaseScan: () => void = () => {}
+  tasklistReadBlocker = new Promise<void>((resolve) => {
+    releaseScan = resolve
+  })
+  const killPromise = killLaunchedApps('ac')
+  await flushMicrotasks()
+
+  runningProcesses.delete(perplexityKey)
+  processNames.delete('perplexity.exe')
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/OculusTrayTool.exe', gameKey: 'ac' })
+    ])
+  )
+
+  releaseScan()
+  await killPromise
+  const { getGamesHeldDuringClose } = await import('../../src/main/processes/state')
+  expect(getGamesHeldDuringClose()).toEqual([])
+})
+
+// Codex P2 on #985: the hold has to end before the kill's own publish. A bare
+// secondary name is tracked but never a Close Apps target (#929), so a
+// snapshot taken under the hold kept it, and the row, up after the close.
+test('the Close Apps publish is not taken under the hold (#976)', async () => {
+  const webContents = createMockWebContents()
+  markExistingPath('C:/Tools/Perplexity.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('acs_real.exe')
+  registerProcess('C:/Tools/Perplexity.exe', 'perplexity.exe', '1234')
+
+  const { killLaunchedApps, runningProcesses, subscribeRunningApps } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['acs_real.exe'] }]
+        }
+      }
+    })
+  runningProcesses.set(String.raw`c:\tools\perplexity.exe`, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  await subscribeRunningApps(asWebContents(webContents))
+  webContents.send.mockClear()
+
+  await killLaunchedApps('ac')
+
+  expect(webContents.send).toHaveBeenCalledWith(
+    'running-apps-changed',
+    expect.objectContaining({ reason: 'kill', apps: [] })
+  )
+})
+
 // Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the
 // tasklist, which knows image NAMES only, so once two profiles can hold two
 // same-named paths both get scheduled even when only one of them is running.
