@@ -5009,6 +5009,56 @@ test('Close Apps keeps an unclosable companion on the row while the others exit 
   expect(getGamesHeldDuringClose()).toEqual([])
 })
 
+// Codex P2 on #985, round 2: the hold has to START before the kill's first
+// await. A companion exiting while the initial scan is pending publishes too.
+test('Close Apps holds its games while its initial scan is pending (#976)', async () => {
+  markExistingPath('C:/Tools/Perplexity.exe')
+  markExistingPath('C:/Tools/OculusTrayTool.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('oculustraytool.exe')
+  registerProcess('C:/Tools/OculusTrayTool.exe', 'oculustraytool.exe', '7777')
+  accessDeniedPids.add('7777')
+
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/OculusTrayTool.exe' }
+    })
+  const perplexityKey = String.raw`c:\tools\perplexity.exe`
+  runningProcesses.set(perplexityKey, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  let releaseScan: () => void = () => {}
+  tasklistReadBlocker = new Promise<void>((resolve) => {
+    releaseScan = resolve
+  })
+  const killPromise = killLaunchedApps('ac')
+  await flushMicrotasks()
+
+  runningProcesses.delete(perplexityKey)
+  processNames.delete('perplexity.exe')
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/OculusTrayTool.exe', gameKey: 'ac' })
+    ])
+  )
+
+  releaseScan()
+  await killPromise
+  const { getGamesHeldDuringClose } = await import('../../src/main/processes/state')
+  expect(getGamesHeldDuringClose()).toEqual([])
+})
+
 // Codex P2 on #985: the hold has to end before the kill's own publish. A bare
 // secondary name is tracked but never a Close Apps target (#929), so a
 // snapshot taken under the hold kept it, and the row, up after the close.
