@@ -7,10 +7,17 @@ import {
   getActiveStoredProfile,
   getProfileTrackablePaths,
   getStoredProfiles,
-  isProcessTrackingEnabled
+  isProcessTrackingEnabled,
+  isUtilityEnabled
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
+import {
+  getExeName,
+  isTrackableSecondaryExe,
+  isValidExePath,
+  normalizePathForComparison,
+  pathsEqual
+} from '../utils'
 
 import { getClosableLaunchedAppGameKeys, pruneUnclosedProcesses } from './kill'
 import {
@@ -405,6 +412,76 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   pruneExpiredProcessNameMismatchWarnings()
   reconcileUntrackedGames()
 
+  // The stub-game warning says tracking is lost and asks for a secondary
+  // executable. Once one of the game's configured secondaries is running, the
+  // user has done exactly that and SimLauncher does see the game again, so the
+  // warning is false and must go (#978). Game entries only: the secondaries
+  // belong to the game, and a companion's own re-exec warning would otherwise
+  // be silenced by an unrelated process.
+  //
+  // Hidden rather than deleted while the secondary runs, because this entry is
+  // what keeps the game counted as launched (`launchedGameKeys` below), and
+  // that is what surfaces the secondary's chip at all: dropping it would take
+  // the row from "running" to idle while the game is still up. Deleted once
+  // the secondary stops, which is the game closing, observed; leaving it would
+  // bring the ring back with the same false claim. Gated on a good read like
+  // the prunes above, since a failed one says every secondary has stopped.
+  if (tasklistReadSucceeded) {
+    processNameMismatchWarnings.forEach((entry, key) => {
+      const gamePath = gamePaths[entry.gameKey]
+
+      if (!pathsEqual(entry.path, gamePath)) {
+        return
+      }
+
+      const profile = getActiveStoredProfile(profiles[entry.gameKey])
+      const secondaries = Array.isArray(profile?.trackedProcessPaths)
+        ? profile.trackedProcessPaths.filter((candidate) => isTrackableSecondaryExe(candidate))
+        : []
+
+      let observedExited = false
+      if (entry.handedOffTo !== undefined) {
+        // Taken out of the profile, the observed secondary proves nothing any
+        // more and SimLauncher really has lost the game again, so the warning
+        // comes back instead of the row going idle for good (Codex P2 on #984).
+        if (!secondaries.includes(entry.handedOffTo)) {
+          entry.handedOffTo = undefined
+        } else if (isPathRunning(entry.handedOffTo)) {
+          return
+        } else {
+          // Its exit ends the game only if no other new secondary took over:
+          // a bootstrap can hand off again (Codex P2 on #984, round 3).
+          observedExited = true
+        }
+      }
+
+      // Only a secondary that was not running when the game was spawned counts
+      // (Codex P2 on #984): one already up, such as a companion also listed as
+      // a secondary, says nothing about where the stub handed off. No baseline
+      // (its read failed) means nothing counts, and the warning stays true.
+      // Nor does one that is also an enabled utility of this profile: the
+      // launch starts those itself, after the game by default, so they come up
+      // after the baseline without being the stub's child (round 4).
+      const baseline = entry.namesRunningAtLaunch
+      const utilityNames = new Set(
+        Object.entries(appPaths)
+          .filter(([utilityKey]) => isUtilityEnabled(profile, utilityKey))
+          .map(([, utilityPath]) => getExeName(utilityPath))
+      )
+      entry.handedOffTo = baseline
+        ? secondaries.find(
+            (secondary) =>
+              !baseline.has(getExeName(secondary)) &&
+              !utilityNames.has(getExeName(secondary)) &&
+              isPathRunning(secondary)
+          )
+        : undefined
+      if (observedExited && entry.handedOffTo === undefined) {
+        processNameMismatchWarnings.delete(key)
+      }
+    })
+  }
+
   const launchedApps = Array.from(runningProcesses.values()).map((appProcess) => ({
     path: appProcess.path,
     name: appProcess.name,
@@ -431,8 +508,9 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   // real warning rather than inventing one: a stranger holding the name made
   // the original look alive, so the user was told nothing about a companion
   // that had re-execed under a name SimLauncher cannot track.
-  const mismatchWarnings = Array.from(processNameMismatchWarnings.values())
-    .filter((entry) => !isPathRunning(entry.path))
+  const mismatchEntries = Array.from(processNameMismatchWarnings.values())
+  const mismatchWarnings = mismatchEntries
+    .filter((entry) => entry.handedOffTo === undefined && !isPathRunning(entry.path))
     .map((entry) => ({
       path: entry.path,
       name: entry.name,
@@ -451,9 +529,14 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
     )
   )
   const launchedExeNames = new Set(surfacedApps.map((appProcess) => getExeName(appProcess.path)))
-  const launchedGameKeys = new Set(
-    [...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey)
-  )
+  const launchedGameKeys = new Set([
+    ...[...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey),
+    // A handed-off entry is hidden from the strip but still means "launched",
+    // see the #978 pass above.
+    ...mismatchEntries
+      .filter((entry) => entry.handedOffTo !== undefined)
+      .map((entry) => entry.gameKey)
+  ])
   const adoptedGameKeys = getExternallyAdoptableGameKeys(
     isPathRunning,
     profiles,

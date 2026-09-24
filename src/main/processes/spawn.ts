@@ -1120,6 +1120,18 @@ export async function spawnDetachedApp(
   // The caller passes it whenever the profile being launched is not the
   // persisted active one; the fallback covers direct use of this function.
   const isTracked = trackingEnabled ?? isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
+  // What was running just before the game starts, so the running poll can tell
+  // the stub's child from a secondary that was already up (#978). Read here and
+  // fresh, not reused from the sequence's opening read: utilities launched
+  // before the game (`gamePosition: 'last'`) would otherwise look new. A failed
+  // read gives no baseline rather than an empty one, which would make every
+  // running secondary look new (Codex P2 on #984). Game entries only.
+  let namesRunningAtLaunch: ReadonlySet<string> | undefined
+  if (isTracked && !!gamePath && pathsEqual(appPath, gamePath)) {
+    invalidateProcessNameCache()
+    const baseline = await readRunningProcessNames()
+    namesRunningAtLaunch = baseline.succeeded ? baseline.processNames : undefined
+  }
 
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
@@ -1267,7 +1279,8 @@ export async function spawnDetachedApp(
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning
+            warning,
+            namesRunningAtLaunch: wasGame ? namesRunningAtLaunch : undefined
           })
           // Suppress the toast notification for the game exe itself: fast-exit
           // is the normal pattern for launcher stubs (Steam, EA App, etc.) and
