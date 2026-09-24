@@ -14,6 +14,7 @@ import { getExeName, isValidExePath, normalizePathForComparison } from '../utils
 
 import { getClosableLaunchedAppGameKeys, pruneUnclosedProcesses } from './kill'
 import {
+  getGamesHeldDuringClose,
   isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
@@ -459,7 +460,13 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
     gamePaths,
     launchedGameKeys
   )
-  const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
+  const adoptedOrLaunchedGameKeys = new Set([
+    ...launchedGameKeys,
+    ...adoptedGameKeys,
+    // A Close Apps in flight keeps its games launched while their companions
+    // exit one by one (#976).
+    ...getGamesHeldDuringClose()
+  ])
   const trackedApps = (
     await getTrackedRunningApps(
       isPathRunning,

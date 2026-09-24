@@ -16,6 +16,7 @@ import {
   adoptedCompanionOwners,
   cancelPendingElevatedHandoffs,
   drainStrandedConsentPrompts,
+  holdGamesDuringClose,
   processNameMismatchWarnings,
   runningProcesses,
   suppressProcessNameMismatchWarning,
@@ -811,6 +812,23 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
   cancelPendingElevatedHandoffs(gameKey, (handoff) => isHandoffProfileTracked(handoff.gameKey))
   const strandedPromptCount = drainStrandedConsentPrompts()
 
+  // Before the first await (Codex P2 on #985): a companion can exit while the
+  // initial scan below is pending, and its `exit` publish would then land with
+  // nothing holding the game. Held until every leftover is registered as
+  // unclosed, see holdGamesDuringClose (#976).
+  const releaseHeldGames = holdGamesDuringClose(getLaunchedGameKeys(gameKey))
+  try {
+    return await closeLaunchedApps(gameKey, strandedPromptCount, releaseHeldGames)
+  } finally {
+    releaseHeldGames()
+  }
+}
+
+async function closeLaunchedApps(
+  gameKey: string | undefined,
+  strandedPromptCount: number,
+  releaseHeldGames: () => void
+): Promise<KillResult> {
   const { processNames } = await readRunningProcessNames()
   const gameExePaths = getConfiguredGameExePaths()
   const companionTargets = getProfileCompanionTargets(gameKey)
@@ -881,8 +899,30 @@ export async function killLaunchedApps(gameKey?: string): Promise<KillResult> {
     await Promise.all(killTasks.map((startKill) => startKill())),
     gameKey
   )
+  // Released BEFORE the publish (Codex P2 on #985): by now every leftover is
+  // registered as unclosed and keeps its game launched on its own, so the hold
+  // has nothing left to cover, and a snapshot taken under it would keep a
+  // tracked app Close Apps never targets (a bare-name secondary) on the row
+  // until the next scan. The caller's `finally` releases on the error path.
+  releaseHeldGames()
   await publishRunningApps('kill')
   return withStrandedConsentPrompts(result, strandedPromptCount)
+}
+
+/**
+ * The games the running poll currently counts as launched from SimLauncher's
+ * own records, within a Close Apps' scope. Only these are held: holding a game
+ * that was not already launched would surface its tracked apps for the length
+ * of the close, a flash of its own.
+ */
+function getLaunchedGameKeys(gameKey?: string): string[] {
+  return [
+    ...runningProcesses.values(),
+    ...unclosedProcesses.values(),
+    ...processNameMismatchWarnings.values()
+  ]
+    .map((entry) => entry.gameKey)
+    .filter((entryKey) => !!entryKey && (gameKey === undefined || entryKey === gameKey))
 }
 
 /**

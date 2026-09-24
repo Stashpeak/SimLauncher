@@ -284,6 +284,49 @@ export function isLaunchActiveForGame(gameKey: string): boolean {
   return activeLaunchControllers.has(gameKey)
 }
 
+// Counted, because a per-game Close Apps and the tray's global one can overlap
+// on the same game, and the first to finish must not release the other's hold.
+const closingGameKeys = new Map<string, number>()
+
+/**
+ * Hold these games as launched for the running poll while a Close Apps works
+ * on them (#976). Returns the release, to be called once every leftover is
+ * registered as unclosed.
+ *
+ * Without the hold, the row flashed as stopped mid-close. Each companion the
+ * close kills publishes an `exit` snapshot, and once the last launched one is
+ * gone nothing keeps the game counted as launched, so a companion SimLauncher
+ * cannot close (an elevated one, surfaced only as a tracked app of a launched
+ * game) dropped out of the strip. It came back one tasklist read later, when
+ * `finalizeKillAttempts` registered it as unclosed. With Focus active title on,
+ * that was two jumps.
+ */
+export function holdGamesDuringClose(gameKeys: Iterable<string>): () => void {
+  const held = Array.from(new Set(gameKeys))
+  held.forEach((gameKey) => closingGameKeys.set(gameKey, (closingGameKeys.get(gameKey) ?? 0) + 1))
+
+  let released = false
+  // Idempotent: the kill releases early on success and again from a `finally`.
+  return () => {
+    if (released) {
+      return
+    }
+    released = true
+    held.forEach((gameKey) => {
+      const count = (closingGameKeys.get(gameKey) ?? 0) - 1
+      if (count > 0) {
+        closingGameKeys.set(gameKey, count)
+      } else {
+        closingGameKeys.delete(gameKey)
+      }
+    })
+  }
+}
+
+export function getGamesHeldDuringClose(): string[] {
+  return Array.from(closingGameKeys.keys())
+}
+
 export function hasOtherActiveLaunchControllers(except?: AbortController): boolean {
   for (const controller of activeLaunchControllers.values()) {
     if (controller !== except) {
