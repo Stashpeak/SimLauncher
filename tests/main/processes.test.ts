@@ -5120,6 +5120,28 @@ test('removing the observed secondary from the profile brings the warning back (
   expect(processNameMismatchWarnings.size).toBe(1)
 })
 
+// Codex P2 on #984, round 3: a bootstrap can hand off again. The observed
+// secondary exiting while another new one runs is not the game closing.
+test('the handoff moves to another secondary when the observed one exits (#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'Bootstrap.exe',
+    'RealGame.exe'
+  ])
+  processNames.add('bootstrap.exe')
+  await getRunningApps()
+
+  processNames.add('realgame.exe')
+  processNames.delete('bootstrap.exe')
+  await expect(getRunningApps()).resolves.toEqual([
+    expect.objectContaining({ path: 'RealGame.exe', gameKey: 'ac', tracked: true })
+  ])
+  expect(processNameMismatchWarnings.size).toBe(1)
+
+  processNames.delete('realgame.exe')
+  await expect(getRunningApps()).resolves.toEqual([])
+  expect(processNameMismatchWarnings.size).toBe(0)
+})
+
 // The pass is scoped to the GAME's entry. Secondaries belong to the game, so a
 // companion's own re-exec warning must survive the game's child running.
 test("a running game secondary does not clear a companion's own stub warning (#978)", async () => {

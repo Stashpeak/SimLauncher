@@ -437,18 +437,19 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
         ? profile.trackedProcessPaths.filter((candidate) => isTrackableSecondaryExe(candidate))
         : []
 
+      let observedExited = false
       if (entry.handedOffTo !== undefined) {
-        // Only the observed secondary's own exit ends the entry. Taken out of
-        // the profile, it proves nothing any more and SimLauncher really has
-        // lost the game again, so the warning comes back instead of the row
-        // going idle for good (Codex P2 on #984).
+        // Taken out of the profile, the observed secondary proves nothing any
+        // more and SimLauncher really has lost the game again, so the warning
+        // comes back instead of the row going idle for good (Codex P2 on #984).
         if (!secondaries.includes(entry.handedOffTo)) {
           entry.handedOffTo = undefined
         } else if (isPathRunning(entry.handedOffTo)) {
           return
         } else {
-          processNameMismatchWarnings.delete(key)
-          return
+          // Its exit ends the game only if no other new secondary took over:
+          // a bootstrap can hand off again (Codex P2 on #984, round 3).
+          observedExited = true
         }
       }
 
@@ -462,6 +463,9 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
             (secondary) => !baseline.has(getExeName(secondary)) && isPathRunning(secondary)
           )
         : undefined
+      if (observedExited && entry.handedOffTo === undefined) {
+        processNameMismatchWarnings.delete(key)
+      }
     })
   }
 
