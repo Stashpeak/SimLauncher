@@ -4951,7 +4951,11 @@ test('a bare secondary name equal to the game exe is never a Close Apps target (
 // executable. Found in the 1.2.2 smoke with the secondary configured and
 // running: the ring kept saying "can no longer detect" while the row was
 // sorted as running and the child had its own chip.
-async function launchStubGameThatExits(trackedProcessPaths: string[]) {
+async function launchStubGameThatExits(
+  trackedProcessPaths: string[],
+  profileExtras: Record<string, unknown> = {},
+  appPaths: Record<string, string> = {}
+) {
   const childHandlers = new Map<string, (...args: unknown[]) => void>()
   const child = {
     pid: 1234,
@@ -4966,10 +4970,11 @@ async function launchStubGameThatExits(trackedProcessPaths: string[]) {
   markExistingPath('C:/Games/StubLauncher.exe')
   const modules = await loadProcessModulesWithStore({
     gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    appPaths,
     profiles: {
       ac: {
         activeProfileId: 'default',
-        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths }]
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths, ...profileExtras }]
       }
     }
   })
@@ -5140,6 +5145,20 @@ test('the handoff moves to another secondary when the observed one exits (#978)'
   processNames.delete('realgame.exe')
   await expect(getRunningApps()).resolves.toEqual([])
   expect(processNameMismatchWarnings.size).toBe(0)
+})
+
+// Codex P2 on #984, round 4. With the default game-first order the profile's
+// utilities start after the baseline, so one also listed as a secondary would
+// look like the stub's child. SimLauncher started it; the stub did not.
+test('an enabled utility also listed as a secondary does not clear the stub warning (#978)', async () => {
+  const { getRunningApps } = await launchStubGameThatExits(
+    ['GameStandIn.exe'],
+    { customapp2: true },
+    { customapp2: 'C:/Tools/GameStandIn.exe' }
+  )
+  processNames.add('gamestandin.exe')
+
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
 })
 
 // The pass is scoped to the GAME's entry. Secondaries belong to the game, so a

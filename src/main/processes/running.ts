@@ -7,7 +7,8 @@ import {
   getActiveStoredProfile,
   getProfileTrackablePaths,
   getStoredProfiles,
-  isProcessTrackingEnabled
+  isProcessTrackingEnabled,
+  isUtilityEnabled
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
 import {
@@ -457,10 +458,21 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
       // (Codex P2 on #984): one already up, such as a companion also listed as
       // a secondary, says nothing about where the stub handed off. No baseline
       // (its read failed) means nothing counts, and the warning stays true.
+      // Nor does one that is also an enabled utility of this profile: the
+      // launch starts those itself, after the game by default, so they come up
+      // after the baseline without being the stub's child (round 4).
       const baseline = entry.namesRunningAtLaunch
+      const utilityNames = new Set(
+        Object.entries(appPaths)
+          .filter(([utilityKey]) => isUtilityEnabled(profile, utilityKey))
+          .map(([, utilityPath]) => getExeName(utilityPath))
+      )
       entry.handedOffTo = baseline
         ? secondaries.find(
-            (secondary) => !baseline.has(getExeName(secondary)) && isPathRunning(secondary)
+            (secondary) =>
+              !baseline.has(getExeName(secondary)) &&
+              !utilityNames.has(getExeName(secondary)) &&
+              isPathRunning(secondary)
           )
         : undefined
       if (observedExited && entry.handedOffTo === undefined) {
