@@ -145,12 +145,12 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} up in launch order`}
-              disabled={orderIndex === 0}
-              onClick={() => {
+              aria-disabled={orderIndex === 0 || undefined}
+              onClick={orderIndex === 0 ? undefined : () => {
                 const previous = props.enabledUtilityEntries[orderIndex - 1]
                 if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
               }}
-              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+              className={`reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded ${orderIndex === 0 ? 'cursor-default opacity-30' : ''}`}
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
@@ -165,12 +165,12 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} down in launch order`}
-              disabled={orderIndex === props.enabledUtilityEntries.length - 1}
-              onClick={() => {
+              aria-disabled={orderIndex === props.enabledUtilityEntries.length - 1 || undefined}
+              onClick={orderIndex === props.enabledUtilityEntries.length - 1 ? undefined : () => {
                 const next = props.enabledUtilityEntries[orderIndex + 1]
                 if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
               }}
-              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+              className={`reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded ${orderIndex === props.enabledUtilityEntries.length - 1 ? 'cursor-default opacity-30' : ''}`}
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
