@@ -230,6 +230,13 @@ describe('evaluateRuntimeAudit: could not check', () => {
     [
       'an electron entry it cannot read',
       { auditReportVersion: 2, vulnerabilities: { electron: { via: 'odd' } } }
+    ],
+    [
+      'an electron advisory with neither a GHSA url nor an npm advisory number',
+      {
+        auditReportVersion: 2,
+        vulnerabilities: { electron: { via: [{ title: 'a', severity: 'high' }] } }
+      }
     ]
   ])('reports %s as unreadable, not as an outage', (_name, audit) => {
     const result = run({ audit })

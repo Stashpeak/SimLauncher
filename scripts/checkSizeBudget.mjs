@@ -4,6 +4,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { countCodeLines } from './countCodeLines.mjs'
+import { isMainModule } from './isMainModule.mjs'
 
 // Fails the build when a file that is already large gets larger. See #918.
 //
@@ -176,19 +177,7 @@ function main() {
   )
 }
 
-// Importing this module for its rules must not run the check. Both sides go
-// through realpath because Node resolves junctions and symlinks before it sets
-// import.meta.url but leaves process.argv[1] as typed: compared raw, a start
-// through a junction skipped main() and exited 0, a silent pass. Not
-// `import.meta.main`: it arrived in Node 24.2, engines allows any 24, and
-// where it is undefined the check would skip just as silently.
-const realPath = (file) => {
-  try {
-    return fs.realpathSync(file)
-  } catch {
-    return path.resolve(file)
-  }
-}
-if (process.argv[1] && realPath(process.argv[1]) === realPath(fileURLToPath(import.meta.url))) {
+// Importing this module for its rules must not run the check.
+if (isMainModule(import.meta.url)) {
   main()
 }

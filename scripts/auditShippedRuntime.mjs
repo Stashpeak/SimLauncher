@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { isMainModule } from './isMainModule.mjs'
 
 // Release gate for the Electron runtime the installer ships. See #998.
 //
@@ -192,7 +193,13 @@ export function electronAdvisories(audit) {
     }
     if (!isObject(via)) return undefined
     const url = typeof via.url === 'string' ? via.url : ''
-    const id = GHSA_IN_URL.exec(url)?.[0] ?? `npm advisory ${via.source}`
+    const ghsa = GHSA_IN_URL.exec(url)?.[0]
+    // With neither a GHSA id nor npm's own advisory number there is nothing to
+    // name the advisory by, and a shared fallback key would fold several into
+    // one FAIL line that no accepted entry could ever match.
+    const hasSource = typeof via.source === 'number' || typeof via.source === 'string'
+    if (ghsa === undefined && !hasSource) return undefined
+    const id = ghsa ?? `npm advisory ${via.source}`
     advisories.set(id.toLowerCase(), {
       id,
       severity: via.severity ?? 'unknown',
@@ -529,19 +536,7 @@ async function main() {
   process.exitCode = result.exitCode
 }
 
-// Importing this module for its rules must not run the check. Both sides go
-// through realpath because Node resolves junctions and symlinks before it sets
-// import.meta.url but leaves process.argv[1] as typed: compared raw, a start
-// through a junction skipped main() and exited 0, a silent pass. Not
-// `import.meta.main`: it arrived in Node 24.2, engines allows any 24, and
-// where it is undefined the check would skip just as silently.
-const realPath = (file) => {
-  try {
-    return fs.realpathSync(file)
-  } catch {
-    return path.resolve(file)
-  }
-}
-if (process.argv[1] && realPath(process.argv[1]) === realPath(fileURLToPath(import.meta.url))) {
+// Importing this module for its rules must not run the check.
+if (isMainModule(import.meta.url)) {
   await main()
 }
