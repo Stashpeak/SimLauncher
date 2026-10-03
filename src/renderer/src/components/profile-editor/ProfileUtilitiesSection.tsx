@@ -145,12 +145,26 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} up in launch order`}
-              disabled={orderIndex === 0}
-              onClick={() => {
-                const previous = props.enabledUtilityEntries[orderIndex - 1]
-                if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
-              }}
-              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+              // aria-disabled rather than `disabled`, for both buttons here
+              // (#979, the #830 pattern). Moving a companion to either end
+              // of the order makes the button just pressed unavailable, and
+              // Chromium blurs a focused element that becomes `disabled`, so
+              // a keyboard or Narrator user lands on <body> and starts over
+              // from the title bar. The handler is dropped at the ends as on
+              // the #830 buttons, though the neighbour lookup inside it would
+              // no-op there anyway. The attribute is what announces the button
+              // as unavailable, and the #830 rule in App.css gives it the
+              // disabled look.
+              aria-disabled={orderIndex === 0 || undefined}
+              onClick={
+                orderIndex === 0
+                  ? undefined
+                  : () => {
+                      const previous = props.enabledUtilityEntries[orderIndex - 1]
+                      if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
+                    }
+              }
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded"
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
@@ -165,12 +179,16 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} down in launch order`}
-              disabled={orderIndex === props.enabledUtilityEntries.length - 1}
-              onClick={() => {
-                const next = props.enabledUtilityEntries[orderIndex + 1]
-                if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
-              }}
-              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+              aria-disabled={orderIndex === props.enabledUtilityEntries.length - 1 || undefined}
+              onClick={
+                orderIndex === props.enabledUtilityEntries.length - 1
+                  ? undefined
+                  : () => {
+                      const next = props.enabledUtilityEntries[orderIndex + 1]
+                      if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
+                    }
+              }
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded"
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
