@@ -150,9 +150,11 @@ function renderUtilityRow(
               // of the order makes the button just pressed unavailable, and
               // Chromium blurs a focused element that becomes `disabled`, so
               // a keyboard or Narrator user lands on <body> and starts over
-              // from the title bar. Dropping the handler at the ends keeps the
-              // click inert; the attribute is what announces it, and the #830
-              // rule in App.css gives it the disabled look.
+              // from the title bar. The handler is dropped at the ends as on
+              // the #830 buttons, though the neighbour lookup inside it would
+              // no-op there anyway. The attribute is what announces the button
+              // as unavailable, and the #830 rule in App.css gives it the
+              // disabled look.
               aria-disabled={orderIndex === 0 || undefined}
               onClick={
                 orderIndex === 0
