@@ -50,6 +50,14 @@ Electron desktop app for simracing enthusiasts — React + TypeScript + Tailwind
 
 `npm run size:check` runs in the required `build` job and fails when a file that is already large gets larger. Ceilings live in [`scripts/size-budget.json`](scripts/size-budget.json); any `src/` TypeScript file at or above 300 lines of code needs an entry there, or an exclusion with a written reason. CSS is not covered, so `App.css` is invisible to the gate today (#921). It counts **code** only, so blank and comment-only lines are free: add the comment. **Raising a ceiling is allowed — edit the number in the same PR**, because the gate does not forbid growth, it makes growth show up in a diff. The current numbers are not an endorsement; `GameRow.tsx` was cut to 403 lines by #340 and is over 800 today. A refactor PR should lower its file's number, and nothing forces it to. See #918.
 
+## Release runtime audit
+
+`npm run audit:runtime` runs in `release.yml` after `npm ci` and before anything is built or signed. Run it at the start of a smoke run too, so a new advisory surfaces before the smoke rather than at the tag. `electron` is a devDependency, so the `npm audit --omit=dev` steps never see it, yet it is the runtime the installer ships: 1.2.3 went out with five high advisories past a green audit (#998). It reads plain `npm audit --json` and judges only advisories filed against the `electron` package itself. It is deliberately not in `ci.yml`, where an upstream advisory would turn every open PR red at once (#993).
+
+- **Exit 1: an electron advisory is not accepted.** Bump `electron` to a patched release of its major, or, when the advisory's "affected only if" conditions cannot occur in SimLauncher, add `{ "id": "GHSA-...", "reason": "...", "issue": N }` to [`scripts/runtime-audit-accepted.json`](scripts/runtime-audit-accepted.json). An entry without a reason or an issue fails the gate.
+- **Exit 2: could not check.** The registry gave no usable answer after three attempts. That says nothing about the runtime: re-run the job (#920).
+- **Warnings never fail it**, but read them: electron behind the newest patch of its major, a major past end of life, or an accepted entry npm no longer reports (delete it). Chromium and V8 fixes reach users only through those patch bumps and never appear in `npm audit`.
+
 ## Tooling facts that get guessed wrong
 
 - The package manager is **npm**. There is no pnpm and no yarn; `package-lock.json` is the only lockfile. Never generate a `pnpm-lock.yaml`.
