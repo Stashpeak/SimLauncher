@@ -145,6 +145,14 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} up in launch order`}
+              // aria-disabled rather than `disabled`, for both buttons here
+              // (#979, the #830 pattern). Moving a companion to either end
+              // of the order makes the button just pressed unavailable, and
+              // Chromium blurs a focused element that becomes `disabled`, so
+              // a keyboard or Narrator user lands on <body> and starts over
+              // from the title bar. Dropping the handler at the ends keeps the
+              // click inert; the attribute is what announces it, and the #830
+              // rule in App.css gives it the disabled look.
               aria-disabled={orderIndex === 0 || undefined}
               onClick={
                 orderIndex === 0
