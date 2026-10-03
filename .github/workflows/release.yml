@@ -44,10 +44,13 @@ jobs:
       # electron is a devDependency, so --omit=dev above never sees it, yet it
       # is the runtime the installer embeds: 1.2.3 shipped five high advisories
       # past a green audit (#998). Runs before anything is built or signed.
-      # Exit 1 is an unaccepted electron advisory (bump it, or record why it
-      # stays in scripts/runtime-audit-accepted.json); exit 2 means the
-      # registry gave no answer, so re-run (#920). Deliberately not in ci.yml:
-      # an upstream advisory there turns every open PR red at once (#993).
+      # Exit 1 is an unaccepted electron advisory: bump it, or record why it
+      # stays in scripts/runtime-audit-accepted.json, then move the tag onto
+      # the fix, since a re-run checks out this same commit. Exit 2 is could
+      # not check: re-run if npm gave no answer (#920), update the script if
+      # it answered in a form the script cannot read. Steps are in "Release
+      # runtime audit" in AGENTS.md. Deliberately not in ci.yml: an upstream
+      # advisory there turns every open PR red at once (#993).
       - name: Audit the shipped Electron runtime
         run: npm run audit:runtime
 

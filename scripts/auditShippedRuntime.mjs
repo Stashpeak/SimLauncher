@@ -25,10 +25,22 @@ import { fileURLToPath } from 'node:url'
 // - WARN when the locked electron is behind the newest patch of its major, or
 //   its major is past end of life. Chromium and V8 fixes ship in those patch
 //   releases and never reach npm audit, so this is the only signal for them.
-// - COULD NOT CHECK (exit 2) when the registry gives no usable answer. Never a
-//   pass, and deliberately not exit 1 either: the defect in #920 was an audit
-//   step that reported a registry outage and a real finding with the same
-//   exit code, so the reader had to open the log to learn which happened.
+// - COULD NOT CHECK (exit 2) when npm gives no usable answer. Never a pass,
+//   and deliberately not exit 1 either: the defect in #920 was an audit step
+//   that reported a registry outage and a real finding with the same exit
+//   code, so the reader had to open the log to learn which happened. Two kinds
+//   are told apart, on #920's own discriminator: no `auditReportVersion` at
+//   all is an outage (retried, and a re-run may help), while a report this
+//   script cannot read is an answer that a re-run only repeats, so it is not
+//   retried and says to update this script instead.
+//
+// Two npm settings fake a clean answer, and a machine can carry either one
+// without anyone noticing. `offline` (any npmrc, or npm_config_offline) makes
+// `npm audit` skip the registry and still print a well-formed version 2 report
+// with nothing in it. `omit=dev`, or NODE_ENV=production, leaves electron, a
+// devDependency, out of the report. Both read as a pass, so every query forces
+// --offline=false and the audit adds --include=dev (see AUDIT_QUERY): a
+// command-line flag outranks every npmrc and npm_config_* variable.
 //
 // Not wired into ci.yml on purpose: with strict required checks on main, an
 // upstream advisory would turn every open PR red at once (#993). The release
@@ -67,6 +79,31 @@ const ATTEMPTS = 3
 const FETCH_TIMEOUT_MS = 30000
 const BACKOFF_MS = 5000
 
+// --offline=false: offline mode answers the audit with a well-formed, empty
+// report instead of an error (measured on the 1.2.3 lockfile: six FAIL lines
+// become a PASS). On `npm view` it would serve cached, possibly stale tags.
+const FETCH_FLAGS = [`--fetch-timeout=${FETCH_TIMEOUT_MS}`, '--fetch-retries=0', '--offline=false']
+
+/**
+ * The two questions main() puts to npm, and what counts as an answer to each
+ * (anything else is retried). Exported so the tests pin the flags: losing one
+ * of them does not break anything visibly, it makes the gate pass on a report
+ * that silently left electron out.
+ */
+export const AUDIT_QUERY = {
+  // --include=dev: electron is a devDependency, and NODE_ENV=production or an
+  // omit=dev in any npmrc silently drops it from the report (measured: 11
+  // findings become 0 on the 1.2.3 lockfile), which would read as a pass.
+  args: ['audit', '--json', '--include=dev', ...FETCH_FLAGS],
+  isAnswer: isAuditAnswer
+}
+
+/** See AUDIT_QUERY. */
+export const DIST_TAGS_QUERY = {
+  args: ['view', 'electron', 'dist-tags', '--json', ...FETCH_FLAGS],
+  isAnswer: isDistTags
+}
+
 const GHSA_ID = /^GHSA(?:-[0-9a-z]{4}){3}$/i
 const GHSA_IN_URL = /GHSA(?:-[0-9a-z]{4}){3}/i
 
@@ -85,13 +122,20 @@ export function readNpmJson(text) {
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /**
- * Whether `npm audit --json` produced a report. Decided on the presence of
- * `auditReportVersion`, never on an error string: #920 saw a 503, a network
- * timeout and a hang for the same outage, and npm's failure payload
- * (`{ message, error }`) carries no report version at all.
+ * Whether npm answered the audit at all, which is the only thing a retry can
+ * change. Decided on the presence of `auditReportVersion`, never on an error
+ * string: #920 saw a 503, a network timeout and a hang for the same outage,
+ * and npm's failure payload (`{ message, error }`) carries no report version
+ * at all. A report of a version this script cannot read is still an answer,
+ * and asking again returns the same one.
  */
+export function isAuditAnswer(value) {
+  return isObject(value) && value.auditReportVersion !== undefined
+}
+
+/** Whether `npm audit --json` produced a report this script can read. */
 export function isAuditReport(value) {
-  return isObject(value) && value.auditReportVersion === 2 && isObject(value.vulnerabilities)
+  return isAuditAnswer(value) && value.auditReportVersion === 2 && isObject(value.vulnerabilities)
 }
 
 /** Whether `npm view electron dist-tags --json` produced the tags. */
@@ -198,11 +242,21 @@ function validateAccepted(accepted) {
 
 function describeAuditFailure(audit) {
   if (audit === undefined) return 'npm audit printed no JSON'
-  if (isObject(audit) && audit.auditReportVersion !== undefined && audit.auditReportVersion !== 2) {
-    return `npm audit returned report version ${JSON.stringify(audit.auditReportVersion)}, which this script does not understand`
-  }
   const message = isObject(audit) ? (audit.message ?? audit.error?.summary) : undefined
   return `npm audit returned no report${message ? `: ${message}` : ''}`
+}
+
+// The remedy is part of the message because in Actions the annotation is all
+// most readers see, and "re-run" is the instinct this one has to stop.
+const UPDATE_THE_SCRIPT =
+  'npm answered, so re-running will not help: update scripts/auditShippedRuntime.mjs to read it'
+
+function describeUnreadableReport(audit) {
+  const shape =
+    audit.auditReportVersion === 2
+      ? 'a version 2 report without a vulnerabilities map'
+      : `report version ${JSON.stringify(audit.auditReportVersion)}`
+  return `npm audit returned ${shape}, which this script does not understand\n  ${UPDATE_THE_SCRIPT}`
 }
 
 function describeDistTagsFailure(distTags) {
@@ -220,12 +274,16 @@ function describeDistTagsFailure(distTags) {
  * @param {unknown} input.electronVersion `packages["node_modules/electron"].version` from package-lock.json
  * @param {unknown} input.distTags parsed `npm view electron dist-tags --json`, or undefined
  * @param {unknown} input.accepted the `accepted` list from runtime-audit-accepted.json
- * @returns {{ exitCode: 0 | 1 | 2, errors: string[], unchecked: string[], warnings: string[], report: string[] }}
- *   exitCode 1 when anything in `errors`, else 2 when anything in `unchecked`, else 0.
+ * @returns {{ exitCode: 0 | 1 | 2, errors: string[], unchecked: string[], unreadable: string[], warnings: string[], report: string[] }}
+ *   `unchecked` is npm giving no answer (an outage, which a re-run may clear),
+ *   `unreadable` is an answer this script cannot read (which a re-run only
+ *   repeats). exitCode 1 when anything in `errors`, else 2 when anything in
+ *   `unchecked` or `unreadable`, else 0.
  */
 export function evaluateRuntimeAudit({ audit, electronVersion, distTags, accepted }) {
   const errors = []
   const unchecked = []
+  const unreadable = []
   const warnings = []
   const report = []
 
@@ -243,10 +301,14 @@ export function evaluateRuntimeAudit({ audit, electronVersion, distTags, accepte
   }
 
   const found = isAuditReport(audit) ? electronAdvisories(audit) : undefined
-  if (!isAuditReport(audit)) {
+  if (!isAuditAnswer(audit)) {
     unchecked.push(describeAuditFailure(audit))
+  } else if (!isAuditReport(audit)) {
+    unreadable.push(describeUnreadableReport(audit))
   } else if (found === undefined) {
-    unchecked.push('npm audit flags electron in a shape this script does not understand')
+    unreadable.push(
+      `npm audit flags electron in a shape this script does not understand\n  ${UPDATE_THE_SCRIPT}`
+    )
   } else {
     if (found.advisories.length === 0) report.push('no advisories filed against electron itself')
     for (const advisory of found.advisories) {
@@ -321,8 +383,8 @@ export function evaluateRuntimeAudit({ audit, electronVersion, distTags, accepte
     }
   }
 
-  const exitCode = errors.length > 0 ? 1 : unchecked.length > 0 ? 2 : 0
-  return { exitCode, errors, unchecked, warnings, report }
+  const exitCode = errors.length > 0 ? 1 : unchecked.length > 0 || unreadable.length > 0 ? 2 : 0
+  return { exitCode, errors, unchecked, unreadable, warnings, report }
 }
 
 /**
@@ -380,18 +442,33 @@ function print(result) {
   for (const message of result.warnings) log('warning', 'WARNING', message)
   for (const message of result.errors) log('error', 'FAIL', message)
   for (const message of result.unchecked) log('error', 'COULD NOT CHECK', message)
+  for (const message of result.unreadable) log('error', 'COULD NOT READ', message)
 
   console.log(`\nResult: ${LABELS[result.exitCode]}`)
   if (result.exitCode === 1) {
     console.log(
       'Bump electron to a release without the advisory, or record why it stays in\n' +
-        `${ACCEPTED_FILE}. See "Release runtime audit" in AGENTS.md.`
+        `${ACCEPTED_FILE}.\n` +
+        'In the release workflow, a re-run checks the same tagged commit again: merge\n' +
+        'the fix, then move the tag onto it. See "Release runtime audit" in AGENTS.md.'
     )
   } else if (result.exitCode === 2) {
-    console.log(
-      `The registry gave no usable answer after ${ATTEMPTS} attempts. This says nothing about\n` +
-        'the runtime: re-run once the registry recovers (#920).'
-    )
+    // Neutral on purpose: a missing lockfile or ERESOLVE also arrives with no
+    // report, and #920 rules out telling those apart by their error text.
+    if (result.unchecked.length > 0) {
+      console.log(
+        `npm gave no usable answer after ${ATTEMPTS} attempts (its error is above). This says\n` +
+          'nothing about the runtime. A registry or network error clears once the registry\n' +
+          'recovers, so re-run then (#920). A local error, such as a missing lockfile,\n' +
+          'needs fixing first.'
+      )
+    }
+    if (result.unreadable.length > 0) {
+      console.log(
+        'npm answered in a form this script cannot read (see above), so a re-run returns\n' +
+          'the same answer: update scripts/auditShippedRuntime.mjs.'
+      )
+    }
   }
 
   // #920: which outcome happened belongs in the job summary, so a red release
@@ -407,7 +484,8 @@ function print(result) {
       result.report.map(item).join('\n') +
       '\n' +
       bullets('Failures', result.errors) +
-      bullets('Could not check', result.unchecked) +
+      bullets('Could not check (npm gave no answer)', result.unchecked) +
+      bullets('Could not read (npm answered in an unknown form)', result.unreadable) +
       bullets('Warnings', result.warnings)
     try {
       fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary)
@@ -433,23 +511,13 @@ async function main() {
   if (lockfile.unreadable) console.log(`package-lock.json: ${lockfile.unreadable}`)
   if (acceptedFile.unreadable) console.log(`${ACCEPTED_FILE}: ${acceptedFile.unreadable}`)
 
-  const fetchFlags = [`--fetch-timeout=${FETCH_TIMEOUT_MS}`, '--fetch-retries=0']
-  const onRetry = (what) => (attempt) =>
-    console.log(`${what}: no usable answer on attempt ${attempt} of ${ATTEMPTS}, retrying`)
-
-  // --include=dev: electron is a devDependency, and NODE_ENV=production or an
-  // omit=dev in any npmrc silently drops it from the report (measured: 11
-  // findings become 0 on the 1.2.3 lockfile), which would read as a pass.
-  const audit = await retryUntilUsable(
-    () => runNpmJson(['audit', '--json', '--include=dev', ...fetchFlags]),
-    isAuditReport,
-    { onRetry: onRetry('npm audit') }
-  )
-  const distTags = await retryUntilUsable(
-    () => runNpmJson(['view', 'electron', 'dist-tags', '--json', ...fetchFlags]),
-    isDistTags,
-    { onRetry: onRetry('npm view') }
-  )
+  const ask = (what, { args, isAnswer }) =>
+    retryUntilUsable(() => runNpmJson(args), isAnswer, {
+      onRetry: (attempt) =>
+        console.log(`${what}: no usable answer on attempt ${attempt} of ${ATTEMPTS}, retrying`)
+    })
+  const audit = await ask('npm audit', AUDIT_QUERY)
+  const distTags = await ask('npm view', DIST_TAGS_QUERY)
 
   const result = evaluateRuntimeAudit({
     audit,
@@ -461,7 +529,19 @@ async function main() {
   process.exitCode = result.exitCode
 }
 
-// Importing this module for its rules must not run the check.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Importing this module for its rules must not run the check. Both sides go
+// through realpath because Node resolves junctions and symlinks before it sets
+// import.meta.url but leaves process.argv[1] as typed: compared raw, a start
+// through a junction skipped main() and exited 0, a silent pass. Not
+// `import.meta.main`: it arrived in Node 24.2, engines allows any 24, and
+// where it is undefined the check would skip just as silently.
+const realPath = (file) => {
+  try {
+    return fs.realpathSync(file)
+  } catch {
+    return path.resolve(file)
+  }
+}
+if (process.argv[1] && realPath(process.argv[1]) === realPath(fileURLToPath(import.meta.url))) {
   await main()
 }

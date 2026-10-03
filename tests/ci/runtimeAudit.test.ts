@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AUDIT_QUERY,
+  DIST_TAGS_QUERY,
   evaluateRuntimeAudit,
   readNpmJson,
   retryUntilUsable
@@ -20,6 +22,7 @@ type Result = {
   exitCode: 0 | 1 | 2
   errors: string[]
   unchecked: string[]
+  unreadable: string[]
   warnings: string[]
   report: string[]
 }
@@ -79,6 +82,7 @@ describe('evaluateRuntimeAudit: advisories against electron', () => {
     expect(result.exitCode).toBe(0)
     expect(result.errors).toEqual([])
     expect(result.unchecked).toEqual([])
+    expect(result.unreadable).toEqual([])
     expect(result.warnings).toEqual([])
   })
 
@@ -210,18 +214,29 @@ describe('evaluateRuntimeAudit: could not check', () => {
     ['the real payload of an unreachable registry', realOutagePayload],
     ['a 503 from the advisories endpoint', { message: '503 Service Unavailable', error: {} }],
     ['output that was not JSON', readNpmJson('npm error audit endpoint returned an error')],
-    ['an empty object', {}],
-    ['a report version it does not know', { auditReportVersion: 3, vulnerabilities: {} }],
-    ['a report with no vulnerabilities map', { auditReportVersion: 2 }]
-  ])('reports %s as could-not-check, never as a pass', (_name, audit) => {
+    ['an empty object', {}]
+  ])('reports %s as an outage, never as a pass', (_name, audit) => {
     const result = run({ audit })
     expect(result.exitCode).toBe(2)
     expect(result.unchecked).toHaveLength(1)
+    expect(result.unreadable).toEqual([])
   })
 
-  it('reports an electron entry it cannot read as could-not-check', () => {
-    const audit = { auditReportVersion: 2, vulnerabilities: { electron: { via: 'odd' } } }
-    expect(run({ audit }).exitCode).toBe(2)
+  // An answer npm will give again on a re-run: calling it an outage would send
+  // the maintainer to re-run a check that can never pass.
+  it.each([
+    ['a report version it does not know', { auditReportVersion: 3, vulnerabilities: {} }],
+    ['a report with no vulnerabilities map', { auditReportVersion: 2 }],
+    [
+      'an electron entry it cannot read',
+      { auditReportVersion: 2, vulnerabilities: { electron: { via: 'odd' } } }
+    ]
+  ])('reports %s as unreadable, not as an outage', (_name, audit) => {
+    const result = run({ audit })
+    expect(result.exitCode).toBe(2)
+    expect(result.unchecked).toEqual([])
+    expect(result.unreadable).toHaveLength(1)
+    expect(result.unreadable[0]).toContain('re-running will not help')
   })
 
   it.each([
@@ -271,5 +286,41 @@ describe('retryUntilUsable', () => {
     )
     expect(calls).toBe(3)
     expect(result).toEqual({ attempt: 3 })
+  })
+})
+
+// Each flag below was measured on the 1.2.3 lockfile to turn six FAIL lines
+// into a PASS when it is missing and the machine is configured the wrong way,
+// with nothing else in the output looking different.
+describe('the questions put to npm', () => {
+  it('asks the audit about devDependencies, because electron is one', () => {
+    // NODE_ENV=production or omit=dev drop electron from the report otherwise.
+    expect(AUDIT_QUERY.args).toEqual(expect.arrayContaining(['audit', '--json', '--include=dev']))
+  })
+
+  it.each([
+    ['npm audit', AUDIT_QUERY],
+    ['npm view', DIST_TAGS_QUERY]
+  ])('forces %s online, whatever npmrc says', (_name, query) => {
+    // offline=true makes npm audit print a well-formed report with nothing in it.
+    expect(query.args).toContain('--offline=false')
+  })
+
+  it('retries an audit outage', () => {
+    expect(AUDIT_QUERY.isAnswer(realOutagePayload)).toBe(false)
+    expect(AUDIT_QUERY.isAnswer(undefined)).toBe(false)
+  })
+
+  it('does not retry an audit report it cannot read, since npm would only repeat it', async () => {
+    let calls = 0
+    await retryUntilUsable(
+      () => {
+        calls++
+        return { auditReportVersion: 3, vulnerabilities: {} }
+      },
+      AUDIT_QUERY.isAnswer,
+      { attempts: 3, sleep: async (): Promise<void> => {} }
+    )
+    expect(calls).toBe(1)
   })
 })
