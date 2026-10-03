@@ -1,0 +1,7 @@
+{
+  "$comment": [
+    "Electron advisories that may ship anyway, each with the reason and the issue that decided it. Checked by scripts/auditShippedRuntime.mjs (npm run audit:runtime) in the release workflow. See #998.",
+    "Entry shape: { \"id\": \"GHSA-xxxx-xxxx-xxxx\", \"reason\": \"why it cannot reach SimLauncher\", \"issue\": 123 }. The script header says when an entry is appropriate. An entry missing its reason or issue fails the gate, and one that no longer matches a reported advisory is a warning to delete it."
+  ],
+  "accepted": []
+}

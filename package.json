@@ -29,6 +29,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "size:check": "node scripts/checkSizeBudget.mjs",
+    "audit:runtime": "node scripts/auditShippedRuntime.mjs",
     "typecheck": "npm run typecheck:tsc && npm run typecheck:node && npm run preload:types:check",
     "typecheck:tsc": "tsc -p tsconfig.json --noEmit",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
