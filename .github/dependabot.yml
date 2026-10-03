@@ -10,6 +10,14 @@ updates:
     # signed-build check — never rides a batch of lint/test tooling (#634).
     # Remaining production deps are grouped separately from dev deps so runtime
     # changes still get their own reviewable PR.
+    #
+    # The two non-electron groups take minor and patch only, so a major leaves
+    # the batch and arrives as its own PR (#908). Without this, one major made
+    # the whole monthly dev batch unmergeable three times running (#790, #900,
+    # #991), each time TypeScript 7, which typescript-eslint does not support
+    # yet (#798). The electron group keeps every level on purpose, and the
+    # other two exclude 'electron*', so an electron major still arrives in the
+    # electron group and never as a solo PR.
     groups:
       electron:
         patterns:
@@ -18,10 +26,16 @@ updates:
         dependency-type: 'production'
         exclude-patterns:
           - 'electron*'
+        update-types:
+          - 'minor'
+          - 'patch'
       development-dependencies:
         dependency-type: 'development'
         exclude-patterns:
           - 'electron*'
+        update-types:
+          - 'minor'
+          - 'patch'
 
   - package-ecosystem: 'github-actions'
     directory: '/'
