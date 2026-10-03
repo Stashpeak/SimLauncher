@@ -154,7 +154,7 @@ function renderUtilityRow(
                       if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
                     }
               }
-              className={`reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded ${orderIndex === 0 ? 'cursor-default opacity-30' : ''}`}
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded"
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
@@ -178,7 +178,7 @@ function renderUtilityRow(
                       if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
                     }
               }
-              className={`reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded ${orderIndex === props.enabledUtilityEntries.length - 1 ? 'cursor-default opacity-30' : ''}`}
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded"
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
