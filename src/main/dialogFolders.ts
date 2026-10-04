@@ -68,9 +68,10 @@ export function getSavedPathForInput(
 /**
  * The folders a Browse dialog may open in, best first: where this field's
  * last pick this session was, then the folder of the field's saved path, then
- * the last folder any Browse used. Only absolute paths survive, because
- * Electron forces a folder only for an absolute `defaultPath` and reads
- * anything else as a file name to prefill.
+ * the last folder any Browse used. Only paths with a drive or a UNC root
+ * survive, because Electron forces a folder only for an absolute
+ * `defaultPath`, by Chromium's stricter definition, and reads anything else
+ * as a file name to prefill.
  *
  * Pure, so the order is testable without a filesystem or a store.
  */
@@ -149,16 +150,22 @@ export function rememberConfigFile(filePath: string): void {
   if (folder) rememberFolder('config', folder)
 }
 
+// Chromium's FilePath::IsAbsolute on Windows, which is the test Electron
+// applies to `defaultPath`: a drive letter and a separator, or a leading pair
+// of separators. Node's path.win32.isAbsolute also accepts a drive-less rooted
+// path such as `\Windows`, which Electron would treat as relative.
+const ABSOLUTE_FOR_ELECTRON = /^(?:[A-Za-z]:[\\/]|[\\/]{2})/
+
+function isAbsoluteForElectron(candidate: unknown): candidate is string {
+  return typeof candidate === 'string' && ABSOLUTE_FOR_ELECTRON.test(candidate)
+}
+
 function uniqueAbsolute(candidates: readonly (string | undefined)[]): string[] {
-  const absolute = candidates.filter(
-    (candidate): candidate is string =>
-      typeof candidate === 'string' && path.win32.isAbsolute(candidate)
-  )
-  return [...new Set(absolute)]
+  return [...new Set(candidates.filter(isAbsoluteForElectron))]
 }
 
 function folderOf(filePath: string): string | undefined {
-  if (typeof filePath !== 'string' || !path.win32.isAbsolute(filePath)) return undefined
+  if (!isAbsoluteForElectron(filePath)) return undefined
   return path.win32.dirname(filePath)
 }
 

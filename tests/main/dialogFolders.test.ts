@@ -79,6 +79,18 @@ test('getBrowseFolderCandidates keeps only absolute folders, once each', async (
   // it prefills as a file name, so a relative candidate is never offered.
   expect(getBrowseFolderCandidates({ savedPath: 'acc.exe', lastFolder: 'Games' })).toEqual([])
   expect(getBrowseFolderCandidates({ savedPath: '   ', lastFolder: undefined })).toEqual([])
+  // Rooted but drive-less: absolute to Node, relative to Chromium, so Electron
+  // would not force it either. A saved path can look like this, because the
+  // path check that admits it resolves against the current drive.
+  expect(
+    getBrowseFolderCandidates({
+      savedPath: '\\Windows\\System32\\charmap.exe',
+      lastFolder: '/Games'
+    })
+  ).toEqual([])
+  expect(
+    getBrowseFolderCandidates({ savedPath: '\\\\nas\\games\\ACC\\acc.exe', lastFolder: 'C:/Tools' })
+  ).toEqual(['\\\\nas\\games\\ACC', 'C:/Tools'])
   expect(
     getBrowseFolderCandidates({
       lastPickForField: 'D:\\Games\\ACC',
