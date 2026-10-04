@@ -4,6 +4,7 @@ import { useSettingsMeta } from './SettingsMetaContext'
 
 export function ConfigSection(): ReactNode {
   const { exportingConfig, importingConfig, onExportConfig, onImportConfig } = useSettingsMeta()
+  const busy = exportingConfig || importingConfig
 
   return (
     <div className="p-5">
@@ -18,11 +19,15 @@ export function ConfigSection(): ReactNode {
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={exportingConfig || importingConfig ? undefined : onExportConfig}
-            aria-disabled={exportingConfig || importingConfig || undefined}
-            className={`accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98] ${
-              exportingConfig || importingConfig ? 'cursor-not-allowed opacity-50' : ''
-            }`}
+            // aria-disabled rather than `disabled`, for both buttons here
+            // (#869, the #830 pattern). They go busy while a native file
+            // dialog is up, and a button that becomes `disabled` drops focus
+            // and refuses it back, so a keyboard user returned from the
+            // picker to <body>. Dropping the handler keeps a busy click
+            // inert; the #830 rule in App.css supplies the disabled look.
+            onClick={busy ? undefined : onExportConfig}
+            aria-disabled={busy || undefined}
+            className="accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
           >
             <svg
               aria-hidden="true"
@@ -43,11 +48,9 @@ export function ConfigSection(): ReactNode {
           </button>
           <button
             type="button"
-            onClick={exportingConfig || importingConfig ? undefined : onImportConfig}
-            aria-disabled={exportingConfig || importingConfig || undefined}
-            className={`accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98] ${
-              exportingConfig || importingConfig ? 'cursor-not-allowed opacity-50' : ''
-            }`}
+            onClick={busy ? undefined : onImportConfig}
+            aria-disabled={busy || undefined}
+            className="accent-surface-action action-hover-scale flex cursor-pointer items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold transition-all active:scale-[0.98]"
           >
             <svg
               aria-hidden="true"
