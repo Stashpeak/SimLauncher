@@ -215,3 +215,16 @@ test('a broken store costs the hint, never the dialog', async () => {
   expect(() => rememberBrowsePick('acc', path.join(gameFolder, 'acc.exe'))).not.toThrow()
   expect(() => rememberConfigFile(path.join(backupFolder, 'c.json'))).not.toThrow()
 })
+
+test('a folder that never answers is skipped, not waited for', async () => {
+  // An unreachable network share keeps stat pending for the SMB timeout
+  // (about 21 s measured); on Electron 42 the dialog opened at once.
+  const { isExistingFolder } = await loadDialogFolders()
+  const hanging = () => new Promise<{ isDirectory(): boolean }>(() => {})
+  const started = Date.now()
+  await expect(isExistingFolder('\\\\nas\\games', hanging, 30)).resolves.toBe(false)
+  expect(Date.now() - started).toBeLessThan(1000)
+
+  await expect(isExistingFolder(gameFolder)).resolves.toBe(true)
+  await expect(isExistingFolder(path.join(gameFolder, 'missing'))).rejects.toThrow()
+})

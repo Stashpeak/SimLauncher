@@ -41,6 +41,13 @@ const STORE_KEY = 'dialogFolders'
 // is the better answer. Grows only on a real pick in a native dialog.
 const lastPickByField = new Map<string, string>()
 
+// A saved path on an unreachable network share keeps `stat` pending for the
+// SMB timeout, measured at about 21 s (#907). On Electron 42 the dialog opened
+// at once, so a candidate that has not answered by then is skipped rather than
+// waited for: the dialog then opens one candidate further down, or in
+// Downloads, instead of after a long freeze with no feedback.
+const FOLDER_CHECK_TIMEOUT_MS = 1000
+
 /**
  * The saved path of the setting a Browse button fills, found from the input id
  * the renderer sends with `browse-path`.
@@ -169,8 +176,25 @@ function folderOf(filePath: string): string | undefined {
   return path.win32.dirname(filePath)
 }
 
-async function isExistingFolder(candidate: string): Promise<boolean> {
-  return (await fs.promises.stat(candidate)).isDirectory()
+/**
+ * Whether `candidate` is an existing directory, answered within `timeoutMs`;
+ * a check still pending then counts as "no". Rejects when `stat` does, which
+ * {@link firstExistingFolder} treats the same way.
+ */
+export async function isExistingFolder(
+  candidate: string,
+  stat: (target: string) => Promise<{ isDirectory(): boolean }> = fs.promises.stat,
+  timeoutMs = FOLDER_CHECK_TIMEOUT_MS
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const unanswered = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs)
+  })
+  try {
+    return await Promise.race([stat(candidate).then((stats) => stats.isDirectory()), unanswered])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function getRememberedFolder(kind: DialogFolderKind): string | undefined {
