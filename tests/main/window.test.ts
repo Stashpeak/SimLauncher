@@ -237,15 +237,47 @@ test('the fallback writes one log line when it is what showed the window (#907)'
 
     win.webContents.emit('did-finish-load')
     await vi.advanceTimersByTimeAsync(3000)
-    // Late: the window is already up, so this must neither show nor log again.
-    win.emit('ready-to-show')
 
     expect(win.show).toHaveBeenCalledTimes(1)
     expect(writeAppErrorLog).toHaveBeenCalledTimes(1)
     expect(writeAppErrorLog).toHaveBeenCalledWith(
       'window',
-      expect.stringContaining('the fallback showed the window')
+      'ready-to-show had not fired 500 ms after did-finish-load, so the fallback showed the window (#382)'
     )
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// A main thread blocked at boot runs the 500 ms timer seconds late, just ahead
+// of a 'ready-to-show' that was only queued behind it. Measured in review on
+// 44.5.1: fallback at +8344 ms, the event at +8372 ms. A lone fallback line
+// would read as the #382 regression, so the log has to say both.
+test('a late ready-to-show after the fallback gets a line of its own, with the real delays (#907)', async () => {
+  vi.useFakeTimers()
+  try {
+    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate()
+    createWindow()
+    const win = await getCreatedWindow()
+
+    win.webContents.emit('did-finish-load')
+    // Main is frozen: the clock moves, but no timer gets to run.
+    vi.setSystemTime(Date.now() + 7844)
+    await vi.advanceTimersByTimeAsync(500)
+    vi.setSystemTime(Date.now() + 28)
+    win.emit('ready-to-show')
+
+    expect(win.show).toHaveBeenCalledTimes(1)
+    expect(writeAppErrorLog.mock.calls).toEqual([
+      [
+        'window',
+        'ready-to-show had not fired 8344 ms after did-finish-load, so the fallback showed the window (#382)'
+      ],
+      [
+        'window',
+        'ready-to-show fired 8372 ms after did-finish-load, after the fallback had shown the window (#382)'
+      ]
+    ])
   } finally {
     vi.useRealTimers()
   }
@@ -258,8 +290,11 @@ test('no fallback line when ready-to-show showed the window (#907)', async () =>
     createWindow()
     const win = await getCreatedWindow()
 
-    win.emit('ready-to-show')
+    // The healthy order on 44.5.1, measured in review: the event about 135 ms
+    // after did-finish-load, well inside the fallback's 500 ms.
     win.webContents.emit('did-finish-load')
+    await vi.advanceTimersByTimeAsync(135)
+    win.emit('ready-to-show')
     await vi.advanceTimersByTimeAsync(3000)
 
     expect(win.show).toHaveBeenCalledTimes(1)
@@ -281,6 +316,8 @@ test('no fallback line on a start to the tray, where nothing is shown (#907)', a
 
     win.webContents.emit('did-finish-load')
     await vi.advanceTimersByTimeAsync(3000)
+    // Late, but the fallback showed nothing, so there is nothing to explain.
+    win.emit('ready-to-show')
 
     expect(win.show).not.toHaveBeenCalled()
     expect(writeAppErrorLog).not.toHaveBeenCalled()
