@@ -295,7 +295,12 @@ describe('Export and Import config while a native file dialog is up (#869)', () 
   })
 })
 
-describe('every way out of the import flow leaves focus on Import config (#869)', () => {
+describe('every way to back out of the import flow leaves focus on Import config (#869)', () => {
+  // A successful Trust and Import is left out on purpose: it still ends on
+  // <body>. In the app, onConfigImported bumps App.tsx's refreshKey, the `key`
+  // on SettingsProvider, so the settings subtree remounts and the Import button
+  // the preview restores to is gone. This harness has no such remount, so a
+  // row for it would pass while the app still loses focus.
   test.each<[string, () => Promise<void>]>([
     [
       'cancelling the file picker',
