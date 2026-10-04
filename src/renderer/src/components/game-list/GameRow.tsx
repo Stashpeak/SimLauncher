@@ -23,6 +23,7 @@ import {
   relaunchMissingProfile
 } from '../../lib/electron'
 import { formatKillFailures } from '../../lib/killFailures'
+import { getNameScopedSecondaries, isClosableStripEntry } from '../../lib/runningGame'
 import { formatStrandedConsentPrompts } from '../../../../shared/strandedConsentPrompts'
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
@@ -241,11 +242,28 @@ export function GameRow({
       // the freshly-persisted profile now that the store is consistent (#453).
       if (!isActiveRef.current) {
         void discardPendingProfile()
+        // Nothing to announce: the profile is already on its way out, and
+        // "Save it to keep it" would offer to keep something that is gone
+        // (Codex on #972).
+        return
       }
     } else {
       pendingNewProfileRef.current = null
     }
-    notify(`Created profile ${newProfile.name}`, 'success')
+    // A "+" profile is provisional: it is kept only once saved, launched or
+    // switched away from, and closing the editor discards it on purpose (#453).
+    // "Created profile" told the user the opposite and the profile then
+    // vanished without a word, so say what keeps it instead (#949). Held for
+    // 5 s because it is an instruction, not a confirmation.
+    if (options?.trackAsPending) {
+      notify(
+        `Added ${newProfile.name}. Save it to keep it. Closing the editor discards it.`,
+        'success',
+        5000
+      )
+    } else {
+      notify(`Created profile ${newProfile.name}`, 'success')
+    }
   }
 
   // When this row's editor closes for ANY reason -- explicit close / discard, or
@@ -367,8 +385,9 @@ export function GameRow({
             // closeProfileMenu(true): that one focuses on the next animation
             // frame, which would land after the dialog took focus and steal
             // it back. The trap records the trigger as the element to return
-            // to, so dismissing the dialog puts focus on the trigger.
-            triggerRef.current?.focus()
+            // to, so dismissing the dialog puts focus on the trigger. Without
+            // scrolling, like every focus restoration (#948).
+            triggerRef.current?.focus({ preventScroll: true })
             closeProfileMenu(false)
             setProfileSwitchConfirm({
               nextProfileId: nextProfile.id,
@@ -721,7 +740,19 @@ export function GameRow({
     }
   }
 
-  const canKill = runningAppIcons.length > 0 && profileState.killControlsEnabled
+  const activeProfile = getActiveGameProfile(profileSet)
+  // Counts only what Close Apps could actually close. A name-scoped entry is
+  // surfaced by the poll but refused as a target by `getProfileCompanionTargets`
+  // (#929), so counting the icons alone offered a red Close Apps that closed
+  // nothing — and since it REPLACES the primary rather than adding to it, the
+  // row lost its Launch button with it (#947). "Name-scoped" means a bare name
+  // THIS profile lists as a secondary: a curated target that failed to close is
+  // a bare name in the strip too, and it stays closable (Codex P2 on #950).
+  // Narrowing, never widening: the ambient case below still must not reach here.
+  const nameScopedSecondaries = getNameScopedSecondaries(activeProfile.trackedProcessPaths)
+  const canKill =
+    runningAppIcons.some((app) => isClosableStripEntry(app, nameScopedSecondaries)) &&
+    profileState.killControlsEnabled
   // Deliberately NOT folded into `canKill`, which swaps the primary button
   // rather than adding to it (`GameRowActions.tsx`): folding it in would hand a
   // user with an autostarted SimHub a red Close Apps primary and NO way to
@@ -730,7 +761,6 @@ export function GameRow({
   // session state; ambient closable state gets a secondary control instead.
   const canCloseLeftovers = !canKill && hasClosableApps && profileState.killControlsEnabled
   const canRelaunch = isRunning && profileState.relaunchControlsEnabled
-  const activeProfile = getActiveGameProfile(profileSet)
 
   return (
     <div

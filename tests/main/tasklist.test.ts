@@ -4,9 +4,18 @@ let tasklistCallCount = 0
 let tasklistOutput =
   '"SimHub.exe","1234","Console","1","50,000 K"\r\n"CrewChief.exe","5678","Console","1","30,000 K"'
 let tasklistError: Error | null = null
+// The in-process snapshot (#975) answers first whenever it can. Null by default
+// so every test below exercises the `tasklist` fallback it was written for;
+// without this mock, on Windows the real binding would answer and these tests
+// would be asserting against the machine running them.
+let nativeSnapshot: { name: string; processId: number; sessionId: number }[] | null = null
 
 async function loadTasklistModule() {
   vi.resetModules()
+
+  vi.doMock('../../src/main/processes/processSnapshot', () => ({
+    readProcessSnapshot: () => nativeSnapshot
+  }))
 
   vi.doMock('child_process', () => ({
     execFile: vi.fn((_command, _args, _options, callback) => {
@@ -23,6 +32,7 @@ beforeEach(() => {
   tasklistOutput =
     '"SimHub.exe","1234","Console","1","50,000 K"\r\n"CrewChief.exe","5678","Console","1","30,000 K"'
   tasklistError = null
+  nativeSnapshot = null
 })
 
 afterEach(() => {
@@ -178,6 +188,39 @@ test('tasklist execution failure resolves with succeeded: false and an empty Set
   expect(result.processNames.size).toBe(0)
   expect(consoleErrorSpy).toHaveBeenCalled()
   consoleErrorSpy.mockRestore()
+})
+
+// #975. The whole point of the native snapshot is that a read spawns nothing:
+// each `tasklist` spawn cost ~184 ms of main-process CPU plus ~394 ms inside
+// tasklist.exe, every 2 s, for as long as a game ran.
+test('a native snapshot answers without spawning tasklist (#975)', async () => {
+  nativeSnapshot = [
+    { name: 'simhub.exe', processId: 1234, sessionId: 1 },
+    { name: 'svchost.exe', processId: 900, sessionId: 0 }
+  ]
+  const { readRunningProcessNames } = await loadTasklistModule()
+
+  const result = await readRunningProcessNames()
+
+  expect(tasklistCallCount).toBe(0)
+  expect(result.succeeded).toBe(true)
+  expect(result.processes).toEqual(nativeSnapshot)
+  expect(result.processNames).toEqual(new Set(['simhub.exe', 'svchost.exe']))
+})
+
+test('a native read is cached and invalidated exactly like a tasklist read (#975)', async () => {
+  nativeSnapshot = [{ name: 'simhub.exe', processId: 1234, sessionId: 1 }]
+  const { readRunningProcessNames, invalidateProcessNameCache } = await loadTasklistModule()
+
+  const first = await readRunningProcessNames()
+  expect(await readRunningProcessNames()).toBe(first)
+
+  nativeSnapshot = [{ name: 'newapp.exe', processId: 9999, sessionId: 1 }]
+  invalidateProcessNameCache()
+
+  const second = await readRunningProcessNames()
+  expect(second.processNames).toEqual(new Set(['newapp.exe']))
+  expect(tasklistCallCount).toBe(0)
 })
 
 test('failed reads are not cached so the next call retries the tasklist command', async () => {

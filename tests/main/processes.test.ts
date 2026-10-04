@@ -325,6 +325,13 @@ async function loadProcessModules() {
     }
   }))
 
+  // The process list below is served through a mocked `tasklist`, so the native
+  // snapshot (#975), which would answer first on Windows with the real machine,
+  // has to stay out of the way.
+  vi.doMock('../../src/main/processes/processSnapshot', () => ({
+    readProcessSnapshot: () => null
+  }))
+
   vi.doMock('child_process', () => ({
     execFile: vi.fn((command, args, options, callback) => {
       execFileCalls.push({ command, args, options })
@@ -1924,6 +1931,59 @@ test('summary: an unanswered consent prompt gets its own clause instead of count
   )
 })
 
+// #952, the branch #897 left alone: a launch that STARTS the game counted it as
+// one of the apps. The 1.2.1 smoke run read "Started 3 apps; 1 is waiting for
+// administrator permission" for a game and two companions. The game is named as
+// the game here too, and never as "and 0 apps" when it started on its own.
+test('summary: a game that started is named as the game, never counted among the apps (#952)', async () => {
+  const build = await loadSummaryBuilder()
+  const game = { startedGameName: 'RaceRoom' }
+  expect(build(4, 0, 0, { ...game, awaitingElevationCount: 1 })).toBe(
+    'Started RaceRoom and 2 apps; 1 is waiting for administrator permission.'
+  )
+  expect(build(2, 1, 0, game)).toBe('Started RaceRoom and 1 app; skipped 1 already running.')
+  expect(build(1, 1, 0, game)).toBe('Started RaceRoom; skipped 1 already running.')
+  expect(build(2, 0, 1, game)).toBe('Started RaceRoom and 1 app.')
+  expect(build(1, 0, 1, game)).toBe('Started RaceRoom.')
+  expect(build(2, 0, 0, { ...game, awaitingElevationCount: 1 })).toBe(
+    'Started RaceRoom; 1 is waiting for administrator permission.'
+  )
+  // A clean launch still makes the ALL claim, with or without the game in it.
+  expect(build(3, 0, 0, game)).toBe('All profile applications launched.')
+  expect(build(1, 0, 0, game)).toBe('All profile applications launched.')
+})
+
+// #952 end to end. The missing entry keeps the sentence from collapsing into
+// "All profile applications launched.", which is what makes the count visible:
+// before the fix this read "Started 2 apps." for a game and one companion.
+test('a launch that starts the game names it instead of counting it (#952)', async () => {
+  markExistingPath('C:/Games/AssettoCorsa.exe')
+  markExistingPath('C:/Tools/SimHub.exe')
+  const { launchProfileApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/AssettoCorsa.exe' },
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' }
+  })
+
+  const result = await launchProfileApps(sender, 'ac', [
+    { key: 'ac', path: 'C:/Games/AssettoCorsa.exe' },
+    { key: 'simhub', path: 'C:/Tools/SimHub.exe' },
+    'C:/Tools/Missing.exe'
+  ])
+
+  expect(result).toMatchObject({
+    success: true,
+    message: 'Started Assetto Corsa and 1 app.',
+    // The count the cooldown reads still includes the game (#897 kept it too).
+    launchedCount: 2,
+    skippedCount: 0
+  })
+  expect(result.skipped).toHaveLength(1)
+  expect(spawnCalls.map((call) => call.appPath)).toEqual([
+    'C:/Games/AssettoCorsa.exe',
+    'C:/Tools/SimHub.exe'
+  ])
+})
+
 // The end-to-end shape of the first #897 occurrence: Launch on a profile whose
 // game is already up, which is the ordinary way to start companions alongside a
 // sim you already have open. The game entry comes from the store like the IPC
@@ -2012,7 +2072,10 @@ test('an unanswered consent prompt is not counted as started in the summary (#89
     const result = await resultPromise
 
     expect(result.success).toBe(true)
-    expect(result.message).toBe('Started 1 app; 1 is waiting for administrator permission.')
+    // The one entry that started is the game, so it is named rather than
+    // counted. This used to read "Started 1 app", which pinned the other half
+    // of the same defect: the game counted as an app (#952).
+    expect(result.message).toBe('Started Assetto Corsa; 1 is waiting for administrator permission.')
     // The hedge beside it is unchanged, and so is the count the cooldown reads:
     // a late approval can still start the app, so the block has to cover it.
     expect(result.warning).toContain('requested administrator permission')
@@ -4882,6 +4945,417 @@ test('a bare secondary name equal to the game exe is never a Close Apps target (
   expect((await collectRunningAppsSnapshot()).closableGameKeys.size).toBe(0)
   await killLaunchedApps('ac')
   expect(execFileCalls.filter((call) => call.command === 'taskkill')).toEqual([])
+})
+
+// #978: the stub-game warning says tracking is lost and asks for a secondary
+// executable. Found in the 1.2.2 smoke with the secondary configured and
+// running: the ring kept saying "can no longer detect" while the row was
+// sorted as running and the child had its own chip.
+async function launchStubGameThatExits(
+  trackedProcessPaths: string[],
+  profileExtras: Record<string, unknown> = {},
+  appPaths: Record<string, string> = {}
+) {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+
+  markExistingPath('C:/Games/StubLauncher.exe')
+  const modules = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    appPaths,
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths, ...profileExtras }]
+      }
+    }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = modules.launchProfileApps(sender, 'ac', ['C:/Games/StubLauncher.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+  // The stub hands off and exits inside the post-launch window.
+  processNames.delete('stublauncher.exe')
+  childHandlers.get('exit')?.()
+  expect(modules.processNameMismatchWarnings.size).toBe(1)
+
+  return modules
+}
+
+const stubWarning = expect.objectContaining({
+  path: 'C:/Games/StubLauncher.exe',
+  warning: expect.any(String)
+})
+
+test('the stub-game warning goes away while a configured secondary runs, and stays gone (#978)', async () => {
+  const { getRunningApps, killLaunchedApps, processNameMismatchWarnings } =
+    await launchStubGameThatExits(['GameStandIn.exe'])
+
+  // The child has not appeared yet: nothing says tracking is restored, so the
+  // warning is still true and still shown.
+  await expect(getRunningApps()).resolves.toEqual([stubWarning])
+
+  processNames.add('gamestandin.exe')
+  const apps = await getRunningApps()
+  expect(apps).not.toEqual(expect.arrayContaining([stubWarning]))
+  // Still counted as launched, so the row keeps showing the game as running
+  // through the secondary's chip rather than dropping to idle.
+  expect(apps).toEqual([
+    expect.objectContaining({ path: 'GameStandIn.exe', gameKey: 'ac', tracked: true })
+  ])
+  // Close Apps must not repeat the advice either.
+  await expect(killLaunchedApps('ac')).resolves.toMatchObject({
+    message: 'No running companion apps to close.'
+  })
+
+  // The game closes. The ring must not come back with the same false claim.
+  processNames.delete('gamestandin.exe')
+  await expect(getRunningApps()).resolves.toEqual([])
+  expect(processNameMismatchWarnings.size).toBe(0)
+})
+
+test('a failed read does not clear a handed-off stub warning (#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+  processNames.add('gamestandin.exe')
+  await getRunningApps()
+
+  // A failed read answers "not running" for everything, which would read as
+  // the secondary stopping.
+  tasklistReadShouldFail = true
+  await getRunningApps()
+  expect(processNameMismatchWarnings.size).toBe(1)
+
+  tasklistReadShouldFail = false
+  await expect(getRunningApps()).resolves.not.toEqual(expect.arrayContaining([stubWarning]))
+})
+
+// Codex P2 on #984: a secondary that was already running before the launch is
+// no evidence of where the stub handed off. It may be a companion the user
+// also lists as a secondary, while the stub's real child is untracked.
+test('a secondary already running before the launch does not clear the stub warning (#978)', async () => {
+  processNames.add('gamestandin.exe')
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+  // Nor does its exit delete the warning.
+  processNames.delete('gamestandin.exe')
+  await getRunningApps()
+  expect(processNameMismatchWarnings.size).toBe(1)
+})
+
+// Codex P2 on #984, round 2. The baseline has to be taken when the GAME
+// starts: a utility the same sequence launched earlier (`gamePosition: 'last'`)
+// and also lists as a secondary would otherwise look like the stub's child.
+test('a secondary started earlier in the same launch does not clear the stub warning (#978)', async () => {
+  const autoSpawningChild = (onSpawn: () => void) => {
+    const handlers = new Map<string, (...args: unknown[]) => void>()
+    const child = {
+      pid: 1234,
+      exitCode: null,
+      signalCode: null,
+      handlers,
+      once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        handlers.set(event, handler)
+        if (event === 'spawn') {
+          queueMicrotask(() => {
+            onSpawn()
+            handler()
+          })
+        }
+        return child
+      }),
+      unref: vi.fn(),
+      kill: vi.fn()
+    }
+    return child
+  }
+  markExistingPath('C:/Tools/GameStandIn.exe')
+  markExistingPath('C:/Games/StubLauncher.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['GameStandIn.exe'] }]
+      }
+    }
+  })
+  const utilityChild = autoSpawningChild(() => processNames.add('gamestandin.exe'))
+  const gameChild = autoSpawningChild(() => processNames.add('stublauncher.exe'))
+  vi.mocked(await import('child_process'))
+    .spawn.mockReturnValueOnce(utilityChild as never)
+    .mockReturnValueOnce(gameChild as never)
+
+  await launchProfileApps(sender, 'ac', ['C:/Tools/GameStandIn.exe', 'C:/Games/StubLauncher.exe'])
+  processNames.delete('stublauncher.exe')
+  gameChild.handlers.get('exit')?.()
+
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+})
+
+// The secondary the handoff was observed through is taken out of the profile
+// while it runs. Nothing exited, so the entry must not be deleted as if the
+// game had closed; tracking really is lost again, so the warning returns.
+test('removing the observed secondary from the profile brings the warning back (#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+  processNames.add('gamestandin.exe')
+  await expect(getRunningApps()).resolves.not.toEqual(expect.arrayContaining([stubWarning]))
+
+  Object.assign(storeData, {
+    profiles: {
+      ac: { activeProfileId: 'default', profiles: [{ id: 'default', name: 'Default' }] }
+    }
+  })
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+  expect(processNameMismatchWarnings.size).toBe(1)
+})
+
+// Codex P2 on #984, round 3: a bootstrap can hand off again. The observed
+// secondary exiting while another new one runs is not the game closing.
+test('the handoff moves to another secondary when the observed one exits (#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'Bootstrap.exe',
+    'RealGame.exe'
+  ])
+  processNames.add('bootstrap.exe')
+  await getRunningApps()
+
+  processNames.add('realgame.exe')
+  processNames.delete('bootstrap.exe')
+  await expect(getRunningApps()).resolves.toEqual([
+    expect.objectContaining({ path: 'RealGame.exe', gameKey: 'ac', tracked: true })
+  ])
+  expect(processNameMismatchWarnings.size).toBe(1)
+
+  processNames.delete('realgame.exe')
+  await expect(getRunningApps()).resolves.toEqual([])
+  expect(processNameMismatchWarnings.size).toBe(0)
+})
+
+// Codex P2 on #984, round 4. With the default game-first order the profile's
+// utilities start after the baseline, so one also listed as a secondary would
+// look like the stub's child. SimLauncher started it; the stub did not.
+test('an enabled utility also listed as a secondary does not clear the stub warning (#978)', async () => {
+  const { getRunningApps } = await launchStubGameThatExits(
+    ['GameStandIn.exe'],
+    { customapp2: true },
+    { customapp2: 'C:/Tools/GameStandIn.exe' }
+  )
+  processNames.add('gamestandin.exe')
+
+  await expect(getRunningApps()).resolves.toEqual(expect.arrayContaining([stubWarning]))
+})
+
+// The pass is scoped to the GAME's entry. Secondaries belong to the game, so a
+// companion's own re-exec warning must survive the game's child running.
+test("a running game secondary does not clear a companion's own stub warning (#978)", async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  markExistingPath('C:/Tools/Perplexity.exe')
+  const { launchProfileApps, getRunningApps } = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['GameStandIn.exe'] }]
+      }
+    }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/Perplexity.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+  processNames.delete('perplexity.exe')
+  childHandlers.get('exit')?.()
+  processNames.add('gamestandin.exe')
+
+  await expect(getRunningApps()).resolves.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/Perplexity.exe', warning: expect.any(String) })
+    ])
+  )
+})
+
+test('the stub-game warning stays while no configured secondary is running (#978)', async () => {
+  const { getRunningApps } = await launchStubGameThatExits(['GameStandIn.exe'])
+  // A differently named child the user has not configured: tracking really is
+  // lost, which is what the warning is for.
+  processNames.add('somethingelse.exe')
+
+  await expect(getRunningApps()).resolves.toEqual([stubWarning])
+})
+
+// #976, seen in the 1.2.2 smoke: after the game had exited, Close Apps made
+// the row flash as fully stopped. The elevated companion is surfaced only as a
+// tracked app of a launched game, and the last launched companion exiting
+// mid-close left nothing counting the game as launched until the kill
+// registered the elevated one as unclosed, one tasklist read later.
+test('Close Apps keeps an unclosable companion on the row while the others exit (#976)', async () => {
+  markExistingPath('C:/Tools/Perplexity.exe')
+  markExistingPath('C:/Tools/OculusTrayTool.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('oculustraytool.exe')
+  registerProcess('C:/Tools/OculusTrayTool.exe', 'oculustraytool.exe', '7777')
+  accessDeniedPids.add('7777')
+
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/OculusTrayTool.exe' }
+    })
+  const perplexityKey = String.raw`c:\tools\perplexity.exe`
+  runningProcesses.set(perplexityKey, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  const trayTool = expect.objectContaining({ path: 'C:/Tools/OculusTrayTool.exe', gameKey: 'ac' })
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(expect.arrayContaining([trayTool]))
+
+  // Park the close before it can register anything as unclosed.
+  let releaseLookup: () => void = () => {}
+  wmiLookupBlocker = new Promise<void>((resolve) => {
+    releaseLookup = resolve
+  })
+  const killPromise = killLaunchedApps('ac')
+  await flushMicrotasks()
+
+  // Perplexity is closed, and its exit handler drops the record and publishes,
+  // which is the snapshot that used to come out without the tray tool.
+  runningProcesses.delete(perplexityKey)
+  processNames.delete('perplexity.exe')
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(expect.arrayContaining([trayTool]))
+
+  releaseLookup()
+  await killPromise
+  // The tray tool is now held by its unclosed record, and the hold is gone.
+  expect((await collectRunningAppsSnapshot()).apps).toEqual([
+    expect.objectContaining({
+      path: 'C:/Tools/OculusTrayTool.exe',
+      gameKey: 'ac',
+      warning: expect.any(String)
+    })
+  ])
+  const { getGamesHeldDuringClose } = await import('../../src/main/processes/state')
+  expect(getGamesHeldDuringClose()).toEqual([])
+})
+
+// Codex P2 on #985, round 2: the hold has to START before the kill's first
+// await. A companion exiting while the initial scan is pending publishes too.
+test('Close Apps holds its games while its initial scan is pending (#976)', async () => {
+  markExistingPath('C:/Tools/Perplexity.exe')
+  markExistingPath('C:/Tools/OculusTrayTool.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('oculustraytool.exe')
+  registerProcess('C:/Tools/OculusTrayTool.exe', 'oculustraytool.exe', '7777')
+  accessDeniedPids.add('7777')
+
+  const { collectRunningAppsSnapshot, killLaunchedApps, runningProcesses } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', customapp2: true }]
+        }
+      },
+      appPaths: { customapp2: 'C:/Tools/OculusTrayTool.exe' }
+    })
+  const perplexityKey = String.raw`c:\tools\perplexity.exe`
+  runningProcesses.set(perplexityKey, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+
+  let releaseScan: () => void = () => {}
+  tasklistReadBlocker = new Promise<void>((resolve) => {
+    releaseScan = resolve
+  })
+  const killPromise = killLaunchedApps('ac')
+  await flushMicrotasks()
+
+  runningProcesses.delete(perplexityKey)
+  processNames.delete('perplexity.exe')
+  expect((await collectRunningAppsSnapshot()).apps).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Tools/OculusTrayTool.exe', gameKey: 'ac' })
+    ])
+  )
+
+  releaseScan()
+  await killPromise
+  const { getGamesHeldDuringClose } = await import('../../src/main/processes/state')
+  expect(getGamesHeldDuringClose()).toEqual([])
+})
+
+// Codex P2 on #985: the hold has to end before the kill's own publish. A bare
+// secondary name is tracked but never a Close Apps target (#929), so a
+// snapshot taken under the hold kept it, and the row, up after the close.
+test('the Close Apps publish is not taken under the hold (#976)', async () => {
+  const webContents = createMockWebContents()
+  markExistingPath('C:/Tools/Perplexity.exe')
+  processNames.add('perplexity.exe')
+  processNames.add('acs_real.exe')
+  registerProcess('C:/Tools/Perplexity.exe', 'perplexity.exe', '1234')
+
+  const { killLaunchedApps, runningProcesses, subscribeRunningApps } =
+    await loadProcessModulesWithStore({
+      profiles: {
+        ac: {
+          activeProfileId: 'default',
+          profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['acs_real.exe'] }]
+        }
+      }
+    })
+  runningProcesses.set(String.raw`c:\tools\perplexity.exe`, {
+    process: { pid: 1234, exitCode: null, signalCode: null } as never,
+    path: 'C:/Tools/Perplexity.exe',
+    name: 'Perplexity.exe',
+    gameKey: 'ac',
+    isGame: false
+  })
+  await subscribeRunningApps(asWebContents(webContents))
+  webContents.send.mockClear()
+
+  await killLaunchedApps('ac')
+
+  expect(webContents.send).toHaveBeenCalledWith(
+    'running-apps-changed',
+    expect.objectContaining({ reason: 'kill', apps: [] })
+  )
 })
 
 // Codex P1 on PR #818, and a hazard this PR created. Scheduling is gated on the

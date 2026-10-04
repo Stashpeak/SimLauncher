@@ -89,6 +89,38 @@ export function getExePathRejectReason(value: unknown): ExePathRejectReason | nu
 }
 
 /**
+ * True when `value` names an executable image without saying where it lives:
+ * `AC2-Win64-Shipping.exe`, the form Task Manager shows and the phantom-exit
+ * warning asks the user to enter under "Secondary executables to watch" (#929).
+ *
+ * Shared rather than renderer-local because both sides have to partition a
+ * configured entry the same way. Main's `isBareExeName` (src/main/utils.ts)
+ * delegates here, so there is one spelling of the rule rather than two that
+ * agree by accident — the drift the module header warns about, and the reason
+ * the renderer could offer Close Apps for an entry the kill path refuses (#947).
+ *
+ * Judged by SHAPE, never by existence, and it must reject everything
+ * `path.win32.basename` would shorten. That includes the drive-relative form
+ * `C:app.exe`, which has no separator yet is not a bare name: win32 reads the
+ * `C:` prefix as a location. Verified against `path.win32.basename` for the
+ * separator, drive-relative, UNC, dot-relative and trailing-whitespace cases.
+ */
+export function isBareExeName(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const trimmed = value.trim()
+
+  return (
+    trimmed.length > 0 &&
+    /\.exe$/i.test(trimmed) &&
+    !/[\\/]/.test(trimmed) &&
+    !/^[A-Za-z]:/.test(trimmed)
+  )
+}
+
+/**
  * Returns the last path segment of `filePath`, splitting on both forward and
  * back slashes. Intended for human-facing display only — does NOT lowercase
  * or canonicalise. Falls back to the input string when no separator is found.

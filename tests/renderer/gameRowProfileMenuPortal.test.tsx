@@ -256,6 +256,30 @@ describe('GameRowProfileMenu positioning (#884)', () => {
     expect(escape.defaultPrevented).toBe(true)
   })
 
+  // #948. Closing the menu hands focus back to the trigger, which is right for
+  // the keyboard, but a bare focus() also scrolls the page to it, so every
+  // profile switch from a row near the bottom edge moved the list. jsdom does
+  // not scroll: this pins the call shape, not the scroll itself.
+  test('closing the menu returns focus to the trigger without scrolling (#948)', async () => {
+    await render(<Harness />)
+    const trigger = document.body.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!
+    const menu = document.body.querySelector<HTMLElement>('[role="menu"]')!
+    const focusSpy = vi.spyOn(trigger, 'focus')
+
+    await act(async () => {
+      menu.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      )
+    })
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+    })
+
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true })
+    expect(document.activeElement).toBe(trigger)
+  })
+
   test('a press inside the portalled menu keeps it open; a press elsewhere closes it', async () => {
     await render(<Harness />)
 

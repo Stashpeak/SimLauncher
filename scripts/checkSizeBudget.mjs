@@ -4,6 +4,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { countCodeLines } from './countCodeLines.mjs'
+import { isMainModule } from './isMainModule.mjs'
 
 // Fails the build when a file that is already large gets larger. See #918.
 //
@@ -177,6 +178,6 @@ function main() {
 }
 
 // Importing this module for its rules must not run the check.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   main()
 }

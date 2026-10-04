@@ -215,6 +215,19 @@ export interface ProcessNameMismatchWarningEntry {
    * until the user explicitly dismisses the icon.
    */
   expiresAt?: number
+  /**
+   * The configured secondary executable the running poll saw take over from
+   * this game's stub (#978), as written in the profile. While it runs the
+   * warning is untrue and hidden; its exit is the game closing and deletes the
+   * entry; removing it from the profile clears this and the warning returns.
+   */
+  handedOffTo?: string
+  /**
+   * Image names running just before the game exe was spawned, from a read that
+   * succeeded; absent when it failed. A secondary already in it is not
+   * evidence of the handoff, and with no baseline nothing is.
+   */
+  namesRunningAtLaunch?: ReadonlySet<string>
 }
 
 export interface UnclosedProcessEntry {
