@@ -17,6 +17,7 @@ import {
   setPendingMinimizeToTray,
   setRendererDirty
 } from './app-state'
+import { getBrowseDefaultPath, rememberBrowsePick } from './dialogFolders'
 import { writeAppErrorLog } from './errorLog'
 import { markRecentlyBrowsedPath } from './ipc/icons'
 import { setRunningAppsWindowVisible } from './processes/running'
@@ -368,8 +369,12 @@ export function registerWindowHandlers(): void {
   ipcMain.handle('browse-path', async (_event, inputId: unknown) => {
     const safeInputId = typeof inputId === 'string' ? inputId : ''
     try {
+      // Without a defaultPath, Electron 43 and later open Downloads every time
+      // (#907); dialogFolders.ts decides the folder and says why.
+      const defaultPath = await getBrowseDefaultPath(safeInputId)
       const options: OpenDialogOptions = {
         title: 'Select Executable File (.exe)',
+        ...(defaultPath ? { defaultPath } : {}),
         properties: ['openFile'],
         filters: [{ name: 'Executable Files', extensions: ['exe'] }]
       }
@@ -380,6 +385,7 @@ export function registerWindowHandlers(): void {
       if (!result.canceled && result.filePaths.length > 0) {
         const filePath = result.filePaths[0]
         markRecentlyBrowsedPath(filePath)
+        rememberBrowsePick(safeInputId, filePath)
         return { filePath, inputId: safeInputId }
       }
       return { filePath: null, inputId: safeInputId }

@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 type MockIpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
@@ -10,13 +13,22 @@ async function invokeWindowHandler(channel: string, ...args: unknown[]) {
   }
 }
 
-async function loadWindowModule() {
+async function loadWindowModule(storeData: Record<string, unknown> = {}) {
   const { clearIpcHandlers } = await import('electron')
   ;(clearIpcHandlers as () => void)()
 
+  // `browse-path` asks dialogFolders.ts where to open (#907), which reads the
+  // saved paths and the remembered folder through these two.
   vi.doMock('../../src/main/store', () => ({
     getStoredBoolean: vi.fn(),
-    getStoredZoomFactor: vi.fn()
+    getStoredZoomFactor: vi.fn(),
+    getStoredStringRecord: vi.fn((key: string) => (storeData[key] ?? {}) as Record<string, string>),
+    store: {
+      get: vi.fn((key: string) => storeData[key]),
+      set: vi.fn((key: string, value: unknown) => {
+        storeData[key] = value
+      })
+    }
   }))
   vi.doMock('electron-updater', () => ({
     autoUpdater: {
@@ -533,4 +545,50 @@ test('browse-path echoes only string input ids', async () => {
     filePath: 'C:/Tools/SimHub.exe',
     inputId: 'appPaths.simhub'
   })
+})
+
+// Electron 43 and later open a dialog with no defaultPath in Downloads, every
+// time (#907). These go through the real handler so they would catch the hint
+// being computed and then not passed.
+test('browse-path opens a configured field in the folder of its saved path (#907)', async () => {
+  const gameFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-saved-'))
+  try {
+    await loadWindowModule({ gamePaths: { acc: path.join(gameFolder, 'acc.exe') } })
+    const { dialog } = await import('electron')
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] })
+
+    await invokeWindowHandler('browse-path', {}, 'acc')
+
+    expect(vi.mocked(dialog.showOpenDialog).mock.calls[0][0]).toMatchObject({
+      defaultPath: gameFolder,
+      properties: ['openFile']
+    })
+  } finally {
+    fs.rmSync(gameFolder, { recursive: true, force: true })
+  }
+})
+
+test('browse-path on an empty field reopens the folder the last Browse ended in (#907)', async () => {
+  const pickedFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-picked-'))
+  try {
+    const storeData: Record<string, unknown> = {}
+    await loadWindowModule(storeData)
+    const { dialog } = await import('electron')
+    const showOpenDialog = vi.mocked(dialog.showOpenDialog)
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [path.join(pickedFolder, 'Le Mans Ultimate.exe')]
+    })
+
+    await invokeWindowHandler('browse-path', {}, 'lmu')
+    // Nothing known yet: no hint at all, rather than a made-up one.
+    expect(showOpenDialog.mock.calls[0][0]).not.toHaveProperty('defaultPath')
+    // Persisted, so the next app start opens there too.
+    expect(storeData.dialogFolders).toEqual({ executable: pickedFolder })
+
+    await invokeWindowHandler('browse-path', {}, 'ams2')
+    expect(showOpenDialog.mock.calls[1][0]).toMatchObject({ defaultPath: pickedFolder })
+  } finally {
+    fs.rmSync(pickedFolder, { recursive: true, force: true })
+  }
 })
