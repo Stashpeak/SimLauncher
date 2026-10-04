@@ -17,6 +17,7 @@ import {
   setPendingMinimizeToTray,
   setRendererDirty
 } from './app-state'
+import { writeAppErrorLog } from './errorLog'
 import { markRecentlyBrowsedPath } from './ipc/icons'
 import { setRunningAppsWindowVisible } from './processes/running'
 import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
@@ -285,7 +286,7 @@ export function createWindow(): void {
   // Show window once ready, or keep it hidden when starting minimized to tray.
   // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the
   // window would be stranded with no way to restore it.
-  const showWindowWhenReady = () => {
+  const showWindowWhenReady = (trigger: 'ready-to-show' | 'fallback') => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) {
       return
     }
@@ -293,19 +294,31 @@ export function createWindow(): void {
     const showTrayIcon = getStoredBoolean('showTrayIcon', true)
     if (!startMinimized || !showTrayIcon) {
       mainWindow.show()
+      // Written to disk because a window shown by the fallback looks exactly
+      // like one shown by 'ready-to-show', so without this line nothing can
+      // tell whether the event fired (#907). Only when the fallback is what
+      // showed it: a start to the tray shows nothing either way.
+      if (trigger === 'fallback') {
+        writeAppErrorLog(
+          'window',
+          `ready-to-show had not fired ${READY_TO_SHOW_FALLBACK_MS} ms after did-finish-load, so the fallback showed the window (#382)`
+        )
+      }
     }
   }
 
-  mainWindow.once('ready-to-show', showWindowWhenReady)
+  mainWindow.once('ready-to-show', () => showWindowWhenReady('ready-to-show'))
 
   // Electron 42 regression (#382): a webContents.setZoomFactor() call landing
   // between did-finish-load and the hidden window's first paint suppresses
   // 'ready-to-show' permanently — and the renderer's boot does exactly that via
   // the set-zoom IPC. The handler now skips same-value calls, but keep a
   // fallback here so the window can never be stranded invisible if the event
-  // is lost for any other reason.
+  // is lost for any other reason. Fixed upstream in 44.4.4 (electron/electron
+  // #51972, never backported to 42), so on 44 the fallback should never be
+  // what shows the window; the log line above is how a smoke run checks that.
   mainWindow.webContents.once('did-finish-load', () => {
-    setTimeout(showWindowWhenReady, READY_TO_SHOW_FALLBACK_MS)
+    setTimeout(() => showWindowWhenReady('fallback'), READY_TO_SHOW_FALLBACK_MS)
   })
 
   // Apply login-item setting on startup

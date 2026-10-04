@@ -70,10 +70,14 @@ async function loadWindowModuleForCreate(
     registerUpdaterEvents: vi.fn(),
     checkForUpdates
   }))
+  // The real one appends to <userData>/main-error.log, which the electron mock
+  // points at the working directory.
+  const writeAppErrorLog = vi.fn()
+  vi.doMock('../../src/main/errorLog', () => ({ writeAppErrorLog }))
 
   const mod = await import('../../src/main/window')
   const appState = await import('../../src/main/app-state')
-  return { ...mod, appState, checkForUpdates, storeSet }
+  return { ...mod, appState, checkForUpdates, storeSet, writeAppErrorLog }
 }
 
 async function getCreatedWindow() {
@@ -205,6 +209,69 @@ test('createWindow does not double-show when ready-to-show fired before the fall
     await vi.advanceTimersByTimeAsync(3000)
 
     expect(win.show).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// A window the fallback showed looks exactly like one 'ready-to-show' showed,
+// so the log line is the only way a smoke run can tell which one did (#907).
+test('the fallback writes one log line when it is what showed the window (#907)', async () => {
+  vi.useFakeTimers()
+  try {
+    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate()
+    createWindow()
+    const win = await getCreatedWindow()
+
+    win.webContents.emit('did-finish-load')
+    await vi.advanceTimersByTimeAsync(3000)
+    // Late: the window is already up, so this must neither show nor log again.
+    win.emit('ready-to-show')
+
+    expect(win.show).toHaveBeenCalledTimes(1)
+    expect(writeAppErrorLog).toHaveBeenCalledTimes(1)
+    expect(writeAppErrorLog).toHaveBeenCalledWith(
+      'window',
+      expect.stringContaining('the fallback showed the window')
+    )
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('no fallback line when ready-to-show showed the window (#907)', async () => {
+  vi.useFakeTimers()
+  try {
+    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate()
+    createWindow()
+    const win = await getCreatedWindow()
+
+    win.emit('ready-to-show')
+    win.webContents.emit('did-finish-load')
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(win.show).toHaveBeenCalledTimes(1)
+    expect(writeAppErrorLog).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('no fallback line on a start to the tray, where nothing is shown (#907)', async () => {
+  vi.useFakeTimers()
+  try {
+    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate({
+      startMinimized: true,
+      showTrayIcon: true
+    })
+    createWindow()
+    const win = await getCreatedWindow()
+
+    win.webContents.emit('did-finish-load')
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(win.show).not.toHaveBeenCalled()
+    expect(writeAppErrorLog).not.toHaveBeenCalled()
   } finally {
     vi.useRealTimers()
   }
