@@ -434,6 +434,27 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
         return
       }
 
+      // #961: the configured path itself, not a secondary, is observed
+      // running again. Delete outright rather than fold through
+      // `isPathRunning`/`isTrackedPathRunning`: those deliberately read
+      // `unknown` as running everywhere else, because for every OTHER caller
+      // an absence of proof must not delete or skip something the user can
+      // see (#390, #674). Here it is the opposite risk: `unknown` means a
+      // same-named process the poll could not resolve to THIS path
+      // (resolveTrackedPathStates downgrades an unaccounted match to
+      // `unknown`, mirroring resolveConfiguredPathState's undecidable branch
+      // in win32KillUtils.ts), which is exactly the ambiguous case this
+      // warning exists to describe, not evidence tracking is restored. The
+      // issue's own suggested `if (isPathRunning(entry.path)) delete` would
+      // delete on that no-evidence state, clearing "SimLauncher can no
+      // longer detect this" while it still cannot. Only the bare `running`
+      // verdict, read straight off `pathStates`, counts as the positive
+      // evidence #961 asks for.
+      if (pathStates.get(entry.path) === 'running') {
+        processNameMismatchWarnings.delete(key)
+        return
+      }
+
       const profile = getActiveStoredProfile(profiles[entry.gameKey])
       const secondaries = Array.isArray(profile?.trackedProcessPaths)
         ? profile.trackedProcessPaths.filter((candidate) => isTrackableSecondaryExe(candidate))
