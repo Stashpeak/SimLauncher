@@ -16,6 +16,13 @@ const collidingPaths = new Set<string>()
 // a CONFIRMED miss. #961 depends on telling the two apart: `unknown` must not
 // read as "the game is back". Empty by default, same reason as `collidingPaths`.
 const unknownPaths = new Set<string>()
+// Callbacks run while a poll's `resolveTrackedPathStates` mock is still
+// "resolving" (see the `await Promise.resolve()` below), modelling work that
+// lands on the real module during the window the REAL `resolveTrackedPathStates`
+// spends awaiting `findProcessesByName`'s PowerShell enumeration (#961 round 2:
+// spawn.ts's exit handler storing a warning mid-poll, racing this tick's
+// already-sampled `pathStates`).
+const duringResolve: Array<() => void> = []
 
 async function loadRunningModule(opts?: {
   profiles?: Record<string, unknown>
@@ -66,6 +73,8 @@ async function loadRunningModule(opts?: {
       configuredPaths: string[]
     ) => {
       const states = new Map<string, string>()
+      await Promise.resolve()
+      duringResolve.splice(0).forEach((fn) => fn())
       if (!snapshot.succeeded) {
         return states
       }
@@ -694,13 +703,19 @@ test('a same-named process at an unresolved path keeps the stub warning, not cle
 
 // A handed-off entry (#978) is hidden rather than deleted specifically so the
 // game stays counted as launched while only the secondary is visible proof of
-// life (running.ts's `launchedGameKeys`, the #978 pass's own comment). Once
-// the ORIGINAL path itself is observed running, that bookkeeping is beside the
-// point: the game is visibly back under its own exe, so the entry deletes
-// immediately regardless of `handedOffTo`, and the game must still read as
-// running afterwards, now through ordinary adoption rather than the mismatch
-// entry's hidden-but-present trick.
-test('a handed-off entry whose own game path comes back deletes immediately and keeps the game running (#961)', async () => {
+// life (running.ts's `launchedGameKeys`, the #978 pass's own comment). An
+// EARLIER version of this fix deleted it outright the instant the configured
+// path was merely observed running, ahead of this bookkeeping, which breaks
+// the moment that observation does not hold: the default launch order starts
+// utilities after the game, so the stub's own path can resolve as 'running'
+// for one tick on nothing more than stale pid-cache timing, and deleting on
+// that would drop the row to idle on the very next tick once the flicker
+// stopped, with nothing left to say the game was ever handed off (Codex P2 on
+// #961 round 2). The direct "the original path is back" signal still wins
+// over the secondary's own handoff bookkeeping, but only once it is NOT
+// handed off any more; while it is, this is the #978 pass's call, same as a
+// plain secondary-still-running tick.
+test('a handed-off entry survives its own path flickering back, and deletes once the secondary exits (#961/#978)', async () => {
   const { runningModule, stateModule } = await loadRunningModule({
     profiles: {
       ac: {
@@ -709,28 +724,93 @@ test('a handed-off entry whose own game path comes back deletes immediately and 
       }
     },
     gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
-    trackablePaths: ['C:/Games/StubLauncher.exe']
+    trackablePaths: ['C:/Games/StubLauncher.exe', 'GameStandIn.exe']
   })
   seedStubWarning(stateModule, { handedOffTo: 'GameStandIn.exe', namesRunningAtLaunch: new Set() })
 
-  // The handed-off secondary is STILL running too. On the pre-#961 handoff
-  // logic alone that is the "stay hidden, do nothing" branch
-  // (`isPathRunning(entry.handedOffTo)` true returns early), so the entry
-  // would be left sitting in the map indefinitely even though the original
-  // exe is right there. The direct, stronger signal must win and delete the
-  // entry immediately instead of waiting on the secondary's own handoff
-  // bookkeeping.
+  // The configured path flickers back on while the handed-off secondary is
+  // STILL running too. The entry must not be deleted here: it is still what
+  // keeps the game counted as launched, and the flicker is not guaranteed to
+  // hold on the next tick.
   readRunningProcessNamesMock.mockResolvedValue({
     processNames: new Set(['stublauncher.exe', 'gamestandin.exe']),
     succeeded: true
   })
+  const whileBothRunning = await runningModule.getRunningApps()
+  expect(stateModule.processNameMismatchWarnings.size).toBe(1)
+  expect(whileBothRunning.some((app) => 'warning' in app)).toBe(false)
 
-  const apps = await runningModule.getRunningApps()
+  // The flicker ends; only the handed-off secondary is left running, exactly
+  // the ordinary #978 case. The game must still read as running.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['gamestandin.exe']),
+    succeeded: true
+  })
+  const afterFlicker = await runningModule.getRunningApps()
+  expect(stateModule.processNameMismatchWarnings.size).toBe(1)
+  expect(afterFlicker).toEqual([
+    expect.objectContaining({ path: 'GameStandIn.exe', gameKey: 'ac', tracked: true })
+  ])
 
+  // The secondary itself exits: the game really is gone this time, and #978
+  // deletes the entry rather than leaving it to resurrect.
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  const afterExit = await runningModule.getRunningApps()
   expect(stateModule.processNameMismatchWarnings.size).toBe(0)
-  expect(apps).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ path: 'C:/Games/StubLauncher.exe', gameKey: 'ac', tracked: true })
-    ])
-  )
+  expect(afterExit).toEqual([])
+})
+
+// The real `resolveTrackedPathStates` awaits `findProcessesByName`'s
+// PowerShell enumeration whenever an unfamiliar pid turns up under a wanted
+// name, which on a real machine runs for seconds. spawn.ts's exit handler
+// stores a warning SYNCHRONOUSLY, so it can land during that await, after
+// this tick already sampled `pathStates` with the stub still alive. Without
+// the identity guard, the forEach below would see the brand-new entry and
+// read this tick's stale `pathStates.get(entry.path) === 'running'` as
+// evidence it is back, deleting the warning in the very tick that created it
+// (Codex P1 on #961 round 2).
+test('a warning stored while an in-flight poll is still resolving paths survives (#961)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' }
+  })
+  duringResolve.push(() => seedStubWarning(stateModule))
+  readRunningProcessNamesMock.mockResolvedValueOnce({
+    processNames: new Set(['stublauncher.exe']),
+    succeeded: true
+  })
+  await runningModule.getRunningApps()
+
+  // The next poll's fresh snapshot: the stub is gone, nothing came back. The
+  // genuine warning must be on screen.
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  const after = await runningModule.getRunningApps()
+  expect(stateModule.processNameMismatchWarnings.size).toBe(1)
+  expect(after.some((app) => 'warning' in app)).toBe(true)
+})
+
+// The #961 delete sits ahead of the game-only `pathsEqual` scoping (see
+// running.ts) so a companion's own re-exec warning clears on positive
+// evidence the same way a game's does, rather than only ever being hidden
+// while running and resurrecting the moment it closes again, i.e. the exact
+// bug #961 was filed about, left in place for every companion.
+test("a companion's own re-exec warning clears on positive evidence, the same as a game's (#961)", async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' }
+  })
+  stateModule.processNameMismatchWarnings.set('c:\\tools\\companion.exe', {
+    path: 'C:/Tools/Companion.exe',
+    name: 'Companion.exe',
+    gameKey: 'ac',
+    warning: 'Companion.exe exited shortly after launch.'
+  })
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['companion.exe']),
+    succeeded: true
+  })
+  await runningModule.getRunningApps()
+  expect(stateModule.processNameMismatchWarnings.size).toBe(0)
+
+  readRunningProcessNamesMock.mockResolvedValue({ processNames: new Set(), succeeded: true })
+  const after = await runningModule.getRunningApps()
+  expect(after.some((app) => 'warning' in app)).toBe(false)
 })

@@ -8870,3 +8870,95 @@ test('the game exe keeps its toast suppressed after its record is pruned (#591)'
     sender.send.mock.calls.filter(([channel]) => channel === 'process-name-mismatch-warning')
   ).toHaveLength(0)
 })
+
+// Against the REAL pathResolution/tasklist pipeline rather than the mocked
+// one in running.test.ts: `resolveTrackedPathStates` awaits
+// `findProcessesByName`'s PowerShell enumeration for any unfamiliar pid under
+// a wanted name. spawn.ts's exit handler stores a mismatch warning
+// SYNCHRONOUSLY on exit, and nothing stops it firing during that await, after
+// this tick's `pathStates` already sampled the stub alive. Without the
+// identity guard in running.ts, the forEach there reads that stale verdict as
+// "the path is back" and deletes the warning in the very tick that created
+// it (#961 round 2).
+test('a stub exiting while a poll is in flight keeps its genuine warning (#961)', async () => {
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    pid: 1234,
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn(),
+    kill: vi.fn()
+  }
+  markExistingPath('C:/Games/StubLauncher.exe')
+  const modules = await loadProcessModulesWithStore({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    appPaths: {},
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: [] }]
+      }
+    }
+  })
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+  const launchPromise = modules.launchProfileApps(sender, 'ac', ['C:/Games/StubLauncher.exe'])
+  childHandlers.get('spawn')?.()
+  await launchPromise
+
+  // The stub is alive at its configured path; a poll learns its pid's path.
+  registerProcess('C:/Games/StubLauncher.exe', 'stublauncher.exe', '4321')
+  processNames.add('stublauncher.exe')
+  await modules.getRunningApps()
+
+  // The next poll samples the machine while the stub is still alive, then is
+  // slow (in production: findProcessesByName for some other fresh pid).
+  let release!: () => void
+  tasklistReadBlocker = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const inFlight = modules.getRunningApps()
+
+  // The stub exits inside the post-launch window: spawn.ts stores the warning.
+  processNames.delete('stublauncher.exe')
+  processRegistry.delete(normalizeRegistryKey('C:/Games/StubLauncher.exe'))
+  childHandlers.get('exit')?.()
+  expect(modules.processNameMismatchWarnings.size).toBe(1)
+
+  release()
+  await inFlight
+
+  // Nothing came back. The genuine stub warning must be on screen.
+  expect(modules.processNameMismatchWarnings.size).toBe(1)
+  await expect(modules.getRunningApps()).resolves.toEqual([
+    expect.objectContaining({ path: 'C:/Games/StubLauncher.exe', warning: expect.any(String) })
+  ])
+})
+
+// Against the REAL adoption pipeline (getExternallyAdoptableGameKeys /
+// getTrackedRunningApps), complementing the mocked version of this case in
+// running.test.ts: deleting the handed-off entry on a bare flicker of the
+// stub's own path, rather than deferring to the #978 handoff pass, loses the
+// only thing keeping the game counted as launched once the flicker does not
+// hold on the next tick (#961 round 2).
+test('the stub path flickering back must not drop a handed-off game to idle (#961/#978)', async () => {
+  const { getRunningApps, processNameMismatchWarnings } = await launchStubGameThatExits([
+    'GameStandIn.exe'
+  ])
+  processNames.add('gamestandin.exe')
+  await getRunningApps()
+  expect(processNameMismatchWarnings.size).toBe(1)
+
+  // The stub path is briefly observed running again while the real game runs.
+  registerProcess('C:/Games/StubLauncher.exe', 'stublauncher.exe', '4321')
+  processNames.add('stublauncher.exe')
+  await getRunningApps()
+
+  // It goes away again; the handed-off game is still running.
+  processNames.delete('stublauncher.exe')
+  processRegistry.delete(normalizeRegistryKey('C:/Games/StubLauncher.exe'))
+  await expect(getRunningApps()).resolves.toEqual([
+    expect.objectContaining({ path: 'GameStandIn.exe', gameKey: 'ac', tracked: true })
+  ])
+})

@@ -306,6 +306,15 @@ interface RunningAppsSnapshot {
 // lives in how `isPathRunning` is assembled below, so a test that supplied its
 // own would be asserting against a copy of the logic under test.
 export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot> {
+  // Captured by IDENTITY, before the first await below, so the #961 delete
+  // further down can tell a pre-existing entry from one spawn.ts's exit
+  // handler stores WHILE this tick is still in flight (Codex P1 on #961
+  // round 2): `pathStates`, resolved later in this same tick, can only ever
+  // describe the machine as of THIS read, so a warning that did not exist yet
+  // when it started is not something this tick's `pathStates` has any
+  // business judging. A relaunch that exits again overwrites the same key
+  // with a new object, which is why this checks object identity, not keys.
+  const warningsBeforeSnapshot = new Set(processNameMismatchWarnings.values())
   const readResult = await readRunningProcessNames()
   // `processNames` survives for exactly one job (see `isPathRunning`): a record
   // whose "path" is a bare image name, which is not a path and must not be
@@ -428,30 +437,65 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   // the prunes above, since a failed one says every secondary has stopped.
   if (tasklistReadSucceeded) {
     processNameMismatchWarnings.forEach((entry, key) => {
-      const gamePath = gamePaths[entry.gameKey]
-
-      if (!pathsEqual(entry.path, gamePath)) {
-        return
-      }
-
-      // #961: the configured path itself, not a secondary, is observed
-      // running again. Delete outright rather than fold through
-      // `isPathRunning`/`isTrackedPathRunning`: those deliberately read
-      // `unknown` as running everywhere else, because for every OTHER caller
-      // an absence of proof must not delete or skip something the user can
-      // see (#390, #674). Here it is the opposite risk: `unknown` means a
-      // same-named process the poll could not resolve to THIS path
-      // (resolveTrackedPathStates downgrades an unaccounted match to
-      // `unknown`, mirroring resolveConfiguredPathState's undecidable branch
-      // in win32KillUtils.ts), which is exactly the ambiguous case this
+      // #961: the entry's OWN configured path is observed running again,
+      // which is positive evidence tracking is restored. Delete outright
+      // rather than fold through `isPathRunning`/`isTrackedPathRunning`:
+      // those deliberately read `unknown` as running everywhere else,
+      // because for every OTHER caller an absence of proof must not delete
+      // or skip something the user can see (#390, #674). Here it is the
+      // opposite risk: `unknown` means a same-named process the poll could
+      // not resolve to THIS path (resolveTrackedPathStates downgrades an
+      // unaccounted match to `unknown`, mirroring
+      // resolveConfiguredPathState's undecidable branch in
+      // win32KillUtils.ts), which is exactly the ambiguous case this
       // warning exists to describe, not evidence tracking is restored. The
       // issue's own suggested `if (isPathRunning(entry.path)) delete` would
       // delete on that no-evidence state, clearing "SimLauncher can no
       // longer detect this" while it still cannot. Only the bare `running`
       // verdict, read straight off `pathStates`, counts as the positive
       // evidence #961 asks for.
-      if (pathStates.get(entry.path) === 'running') {
+      //
+      // Ahead of the game-only `pathsEqual` scoping below, so a companion's
+      // own re-exec warning clears the exact same way a game's does (Codex
+      // P2 on #961 round 2): the pre-#961 resurrection this fix exists to
+      // stop has the identical shape for either one, and leaving the
+      // guard where it was would have fixed the warning this issue was
+      // filed about while reintroducing the same bug, unannounced, for
+      // every companion.
+      //
+      // Gated on `warningsBeforeSnapshot` (identity, not key) so an entry
+      // spawn.ts stores WHILE this tick's snapshot is still resolving is
+      // never judged by it: that snapshot was sampled before the exit it is
+      // reporting, so it still reads the exe as running and would otherwise
+      // delete the warning in the very tick that created it. This is not an
+      // edge case: `resolveTrackedPathStates` awaits a PowerShell
+      // enumeration for any unfamiliar pid, which on a real machine runs
+      // for seconds, and the default launch order starts utilities after
+      // the game, so a poll holding a pre-exit snapshot is routinely still
+      // in flight during a stub's first few seconds of life (Codex P1 on
+      // #961 round 2).
+      //
+      // Skipped while `handedOffTo` is set (Codex P2 on #961 round 2): that
+      // entry is what keeps the game counted as launched while only its
+      // secondary is visible proof of life (the #978 pass below), and
+      // deleting it the instant the configured path merely flickers back
+      // loses that bookkeeping if the flicker does not hold. The #978 pass
+      // below already deletes a handed-off entry once its secondary stops,
+      // and reaches this exact same "the original path is back" signal
+      // itself via `isPathRunning(entry.handedOffTo)` once the secondary
+      // IS that path.
+      if (
+        entry.handedOffTo === undefined &&
+        warningsBeforeSnapshot.has(entry) &&
+        pathStates.get(entry.path) === 'running'
+      ) {
         processNameMismatchWarnings.delete(key)
+        return
+      }
+
+      const gamePath = gamePaths[entry.gameKey]
+
+      if (!pathsEqual(entry.path, gamePath)) {
         return
       }
 
