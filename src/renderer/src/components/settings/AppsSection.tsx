@@ -166,8 +166,8 @@ export function AppsSection(): ReactNode {
               <Tooltip label={`Remove ${appNames[utility.key] || utility.name}`}>
                 <button
                   type="button"
-                  onClick={() => onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
-                  disabled={customSlots <= 1}
+                  onClick={() => customSlots > 1 && onRemoveCustomSlot(getCustomSlotNumber(utility.key))}
+                  aria-disabled={customSlots <= 1}
                   className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
                   aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                 >
