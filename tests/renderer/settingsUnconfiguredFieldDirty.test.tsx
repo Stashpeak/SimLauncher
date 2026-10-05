@@ -22,12 +22,16 @@ import { createRoot, type Root } from 'react-dom/client'
 import { useSettingsState } from '../../src/renderer/src/components/settings/useSettingsState'
 import { useDirtyTracking } from '../../src/renderer/src/hooks/useDirtyTracking'
 
+type RecordSetter = (updater: (current: Record<string, string>) => Record<string, string>) => void
+
 interface ProbeApi {
   isDirty: boolean
   appsSubsetDirty: boolean
   gamesSubsetDirty: boolean
-  setAppArgs: (updater: (current: Record<string, string>) => Record<string, string>) => void
-  setGamePaths: (updater: (current: Record<string, string>) => Record<string, string>) => void
+  setAppPaths: RecordSetter
+  setAppNames: RecordSetter
+  setAppArgs: RecordSetter
+  setGamePaths: RecordSetter
   setLoading: (loading: boolean) => void
 }
 
@@ -46,8 +50,13 @@ function Probe({ onRender }: { onRender: (api: ProbeApi) => void }) {
   useEffect(() => {
     onRenderRef.current({
       isDirty,
-      appsSubsetDirty: getDirtySubset(['appArgs']),
+      // appPaths/appNames feed into the Apps section dot the same as appArgs
+      // (#958's own evidence used appArgs only, which left the other two
+      // records free to lose their normalization unnoticed).
+      appsSubsetDirty: getDirtySubset(['appPaths', 'appNames', 'appArgs']),
       gamesSubsetDirty: getDirtySubset(['gamePaths']),
+      setAppPaths: setters.setAppPaths,
+      setAppNames: setters.setAppNames,
       setAppArgs: setters.setAppArgs,
       setGamePaths: setters.setGamePaths,
       setLoading: setters.setLoading
@@ -88,8 +97,50 @@ async function renderProbe(): Promise<{ unmount: () => void; getApi: () => Probe
   }
 }
 
+// Covers all four normalized records (#958's own evidence exercised only
+// appArgs and gamePaths, which left appPaths/appNames free to lose their
+// dropEmptyEntries call with every test still green) and a whitespace-only
+// value, which only trimming before the length check catches.
+const APPS_RECORDS: Array<{
+  field: 'setAppPaths' | 'setAppNames' | 'setAppArgs'
+  key: string
+  typedValue: string
+}> = [
+  { field: 'setAppPaths', key: 'customapp1', typedValue: 'C:/Tools/Custom.exe' },
+  { field: 'setAppNames', key: 'customapp1', typedValue: 'Custom Tool' },
+  { field: 'setAppArgs', key: 'customapp1', typedValue: '-novid' }
+]
+
 describe('unconfigured field dirty state (#958)', () => {
-  test('typing into and clearing an unconfigured custom-args field leaves no dirty state', async () => {
+  test.each(APPS_RECORDS)(
+    'typing into and clearing an unconfigured $field field leaves no dirty state',
+    async ({ field, key, typedValue }) => {
+      const harness = await renderProbe()
+      try {
+        await act(async () => {
+          harness.getApi().setLoading(false)
+        })
+        expect(harness.getApi().isDirty).toBe(false)
+
+        await act(async () => {
+          harness.getApi()[field]((prev) => ({ ...prev, [key]: typedValue }))
+        })
+        expect(harness.getApi().isDirty).toBe(true)
+        expect(harness.getApi().appsSubsetDirty).toBe(true)
+
+        await act(async () => {
+          harness.getApi()[field]((prev) => ({ ...prev, [key]: '' }))
+        })
+
+        expect(harness.getApi().isDirty).toBe(false)
+        expect(harness.getApi().appsSubsetDirty).toBe(false)
+      } finally {
+        harness.unmount()
+      }
+    }
+  )
+
+  test('typing whitespace only into an unconfigured custom-args field leaves no dirty state', async () => {
     const harness = await renderProbe()
     try {
       await act(async () => {
@@ -98,13 +149,9 @@ describe('unconfigured field dirty state (#958)', () => {
       expect(harness.getApi().isDirty).toBe(false)
 
       await act(async () => {
-        harness.getApi().setAppArgs((prev) => ({ ...prev, customapp1: '-novid' }))
-      })
-      expect(harness.getApi().isDirty).toBe(true)
-      expect(harness.getApi().appsSubsetDirty).toBe(true)
-
-      await act(async () => {
-        harness.getApi().setAppArgs((prev) => ({ ...prev, customapp1: '' }))
+        // Same rule trimStringRecord applies at save time: a field holding
+        // only spaces is not a configured value.
+        harness.getApi().setAppArgs((prev) => ({ ...prev, customapp1: '   ' }))
       })
 
       expect(harness.getApi().isDirty).toBe(false)
@@ -130,6 +177,25 @@ describe('unconfigured field dirty state (#958)', () => {
 
       await act(async () => {
         harness.getApi().setGamePaths((prev) => ({ ...prev, iracing: '' }))
+      })
+
+      expect(harness.getApi().isDirty).toBe(false)
+      expect(harness.getApi().gamesSubsetDirty).toBe(false)
+    } finally {
+      harness.unmount()
+    }
+  })
+
+  test('typing whitespace only into an unconfigured game path leaves no dirty state', async () => {
+    const harness = await renderProbe()
+    try {
+      await act(async () => {
+        harness.getApi().setLoading(false)
+      })
+      expect(harness.getApi().isDirty).toBe(false)
+
+      await act(async () => {
+        harness.getApi().setGamePaths((prev) => ({ ...prev, iracing: '   ' }))
       })
 
       expect(harness.getApi().isDirty).toBe(false)
