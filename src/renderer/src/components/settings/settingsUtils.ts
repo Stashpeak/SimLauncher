@@ -24,7 +24,16 @@ export function normalizeLaunchDelayMs(value: number): number {
  * again leaves a `{"key":""}` entry that an unnormalized `{}` baseline never
  * had, and the dirty-tracking JSON compare (and the per-section dot it
  * derives) never clears (#958).
+ *
+ * The type says string, but get-settings returns these records straight from
+ * the store, whose schema only requires an object, so a legacy or hand-edited
+ * config can hold a number or null here. Such an entry is dropped rather than
+ * trimmed: a throw would leave Settings stuck loading (Codex on #1012).
  */
 export function dropEmptyEntries(record: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(record).filter(([, value]) => value.trim().length > 0))
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      ([, value]) => typeof value === 'string' && value.trim().length > 0
+    )
+  )
 }

@@ -20,6 +20,7 @@ import { act, useEffect, useRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 import { useSettingsState } from '../../src/renderer/src/components/settings/useSettingsState'
+import { dropEmptyEntries } from '../../src/renderer/src/components/settings/settingsUtils'
 import { useDirtyTracking } from '../../src/renderer/src/hooks/useDirtyTracking'
 
 type RecordSetter = (updater: (current: Record<string, string>) => Record<string, string>) => void
@@ -204,4 +205,18 @@ describe('unconfigured field dirty state (#958)', () => {
       harness.unmount()
     }
   })
+})
+
+// get-settings returns these records straight from the store, whose schema
+// only requires an object, so a legacy or hand-edited config can hold a
+// non-string value. Normalising must drop it, not throw: a throw here leaves
+// Settings stuck loading (Codex on #1012).
+test('dropEmptyEntries drops non-string values instead of throwing', () => {
+  const stored = {
+    acc: 'C:/Games/ACC/acc.exe',
+    broken: 42,
+    gone: null,
+    blank: '  '
+  } as unknown as Record<string, string>
+  expect(dropEmptyEntries(stored)).toEqual({ acc: 'C:/Games/ACC/acc.exe' })
 })
