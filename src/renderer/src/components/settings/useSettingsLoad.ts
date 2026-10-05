@@ -12,7 +12,7 @@ import { getAssetData } from '../../lib/electron'
 import { getProfiles, getSettings, onStoreConfigChanged } from '../../lib/store'
 import { normalizeThemeMode, type ThemeMode } from '../../lib/theme'
 import { fetchAppIcons } from './appIcons'
-import { normalizeLaunchDelayMs } from './settingsUtils'
+import { dropEmptyEntries, normalizeLaunchDelayMs } from './settingsUtils'
 import type { SettingsObjectRecords } from './saveRace'
 import type { SettingsStateSnapshot } from './useSettingsState'
 
@@ -90,12 +90,24 @@ export function useSettingsLoad({
     // currentSettingsState memo in useSettingsState — the dirty baseline is a
     // JSON string compare, so a re-ordered snapshot would read as permanently
     // dirty (#480).
+    //
+    // appPaths/appNames/appArgs/gamePaths are normalized here the same way
+    // currentSettingsState normalizes its live copies (#958): a config saved
+    // by a build before the main-process sanitizers existed, or hand-edited,
+    // can still hold a stored `key: ''` entry, and get-settings does not
+    // sanitize on read. Normalizing only the live side and not this baseline
+    // left that legacy entry un-droppable, since every later store-changed
+    // reload (e.g. a per-game profile save) re-baselined to the raw `''`
+    // entry while the memo kept dropping it, so isDirty and the section dot
+    // never cleared. An absent key renders identically to an empty one in
+    // every input here (`appPaths[key] || ''` and friends), so dropping it
+    // from state too is safe.
     const snapshot: SettingsStateSnapshot = {
-      appPaths: settings.appPaths,
-      appNames: settings.appNames,
-      appArgs: settings.appArgs,
+      appPaths: dropEmptyEntries(settings.appPaths),
+      appNames: dropEmptyEntries(settings.appNames),
+      appArgs: dropEmptyEntries(settings.appArgs),
       profiles: typedProfiles,
-      gamePaths: settings.gamePaths,
+      gamePaths: dropEmptyEntries(settings.gamePaths),
       customSlots: resolveCustomSlots(
         settings.customSlots,
         settings.appPaths,

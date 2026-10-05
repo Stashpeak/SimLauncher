@@ -13,7 +13,12 @@
  *      dropped, and `launchDelayMs` is normalized.
  *   2. The resetDirty baseline is rebuilt from the RETURNED persisted settings
  *      — not the live pre-trim renderer state — so on-disk truth is the
- *      baseline and mid-save edits stay visibly dirty.
+ *      baseline and mid-save edits stay visibly dirty. The baseline's four
+ *      records are normalized one step further than that returned copy
+ *      (#958): the empty-string sentinel a cleared field still carries
+ *      through the write-back is dropped from the baseline too, matching
+ *      what currentSettingsState's own memo does to the live comparison
+ *      value.
  *   3. The save-race guard: a field edited while the IPC write is in flight is
  *      NOT clobbered by the stale pre-save persisted copy; untouched fields ARE
  *      pushed back.
@@ -86,13 +91,23 @@ function liveState() {
   }
 }
 
-// The persisted / re-baselined shape after save-time normalization:
-//   paths trimmed (empty-string sentinel preserved), blank args dropped,
-//   launchDelayMs clamped 40000 -> 30000.
+// The persisted shape after save-time normalization: paths trimmed with the
+// empty-string sentinel preserved (this is what gets SENT to the main
+// process, and what the write-back pushes into live state, matching it),
+// blank args dropped, launchDelayMs clamped 40000 -> 30000.
 const SAVED_APP_PATHS = { simhub: 'C:/Tools/SimHub.exe', iracing: '' }
 const SAVED_APP_ARGS = { simhub: '--foo' }
 const SAVED_GAME_PATHS = { iracing: 'C:/Games/iRacingUI.exe' }
 const NORMALIZED_DELAY = 30000
+
+// The resetDirty BASELINE normalizes the record fields one step further than
+// the write-back above (#958): dropEmptyEntries removes the empty-string
+// sentinel too, since that is what currentSettingsState's own memo does to
+// the live side of the same comparison. Without this extra drop here, a
+// save that clears a field would leave the baseline holding `iracing: ''`
+// forever while the live comparison value keeps dropping it, so isDirty
+// would never clear again after a save touched an unconfigured field.
+const SAVED_APP_PATHS_BASELINE = { simhub: 'C:/Tools/SimHub.exe' }
 
 type SaveArgs = Parameters<typeof useSettingsSave>[0]
 
@@ -266,10 +281,11 @@ describe('useSettingsSave (#645)', () => {
       const baseline = resetDirtyMock.mock.calls[0][0]
 
       // The whole re-baseline snapshot: object records come from the SAVED
-      // (trimmed) copies, launchDelayMs is normalized, and every other field is
+      // (trimmed) copies, further normalized the same way currentSettingsState
+      // is (#958), launchDelayMs is normalized, and every other field is
       // carried over from currentSettingsState unchanged.
       expect(baseline).toEqual({
-        appPaths: SAVED_APP_PATHS,
+        appPaths: SAVED_APP_PATHS_BASELINE,
         appNames: { simhub: 'SimHub' },
         appArgs: SAVED_APP_ARGS,
         profiles: PROFILES,
@@ -342,7 +358,7 @@ describe('useSettingsSave (#645)', () => {
       // The dirty baseline still records the SAVED appPaths (what is on disk),
       // so the concurrent edit stays visibly dirty and re-saveable.
       expect(resetDirtyMock).toHaveBeenCalledTimes(1)
-      expect(resetDirtyMock.mock.calls[0][0].appPaths).toEqual(SAVED_APP_PATHS)
+      expect(resetDirtyMock.mock.calls[0][0].appPaths).toEqual(SAVED_APP_PATHS_BASELINE)
     } finally {
       harness.unmount()
     }
@@ -418,9 +434,11 @@ describe('useSettingsSave (#645)', () => {
       expect(setAppPathsMock).toHaveBeenCalledWith({ iracing: '' })
 
       // The dirty baseline reflects the persisted (post-drop) settings, not
-      // the renderer's local (pre-drop) copy.
+      // the renderer's local (pre-drop) copy, further normalized the same way
+      // currentSettingsState is (#958): the leftover iracing:'' sentinel is
+      // dropped here too, since the live comparison value drops it as well.
       expect(resetDirtyMock).toHaveBeenCalledTimes(1)
-      expect(resetDirtyMock.mock.calls[0][0].appPaths).toEqual({ iracing: '' })
+      expect(resetDirtyMock.mock.calls[0][0].appPaths).toEqual({})
     } finally {
       harness.unmount()
     }
