@@ -3480,6 +3480,80 @@ test('a UAC denial after the grace window is reported as a failure (#675)', asyn
   }
 })
 
+// #877: the maintainer's comment on this issue measured a real execFile
+// failure whose `error.message` embedded the whole command line (the base64
+// -EncodedCommand blob, which decodes to the user's own appArgs) plus
+// PowerShell's CLIXML stderr serialisation — none of that may ever reach the
+// user-facing sentence, regardless of what the underlying error says. The
+// elevated path also never claims a declined UAC prompt (#953: error.code is
+// 1 for every elevated failure, so there is nothing to distinguish it by).
+test('an elevated launch failure never leaks the EncodedCommand payload, CLIXML, or appArgs (#877)', async () => {
+  vi.useFakeTimers()
+  try {
+    markExistingPath('C:/Tools/Admin Tool.exe')
+    markExistingPath('C:/Tools/App3.exe')
+    spawnErrors.set('C:/Tools/Admin Tool.exe', makeAccessDeniedError())
+    elevatedLaunchHangs = true
+    // A second, ordinary app plus a non-zero inter-app delay, same as the
+    // "#675" denial test above: with only one app and no delay the sequence
+    // finishes (summary computed with the handoff still 'unknown') the
+    // instant the grace timer fires, before the late callback below has a
+    // chance to land.
+    storeData.launchDelayMs = 5000
+
+    const { launchProfileApps } = await loadProcessModulesWithStore({
+      appPaths: { admin: 'C:/Tools/Admin Tool.exe', customapp3: 'C:/Tools/App3.exe' },
+      appArgs: { admin: '--api-key=SUPER_SECRET_TOKEN_12345' }
+    })
+    const { ELEVATED_HANDOFF_MAX_WAIT_MS } = await import('../../src/main/processes/spawn')
+
+    const launchPromise = launchProfileApps(sender, 'ac', [
+      { key: 'admin', path: 'C:/Tools/Admin Tool.exe' },
+      { key: 'customapp3', path: 'C:/Tools/App3.exe' }
+    ])
+    await vi.advanceTimersByTimeAsync(ELEVATED_HANDOFF_MAX_WAIT_MS)
+
+    const elevatedCall = execFileCalls.find((call) => call.command === 'powershell.exe')
+    const encodedCommand = elevatedCall!.args[3] as string
+    const leakyError = Object.assign(
+      new Error(
+        `Command failed: powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encodedCommand}\n` +
+          '#< CLIXML\n' +
+          '<Objs xmlns="http://schemas.microsoft.com/powershell/2004/04"><S S="Error">' +
+          'System.InvalidOperationException</S></Objs>'
+      ),
+      { code: 1 }
+    )
+    heldElevatedCallbacks[0](leakyError)
+    // Let the inter-app delay elapse so customapp3 launches and the sequence
+    // ends, same as the "#675" denial test above.
+    await vi.advanceTimersByTimeAsync(5000)
+
+    const result = await launchPromise
+
+    expect(result.success).toBe(false)
+    // Still names the app (from the aggregate "Failed to launch X:" prefix) and
+    // stays a short, generic sentence.
+    expect(result.error).toBe(
+      'Failed to launch Admin Tool.exe: Windows did not start it with administrator permission.'
+    )
+    expect(result.error).not.toContain('EncodedCommand')
+    expect(result.error).not.toContain(encodedCommand)
+    expect(result.error).not.toContain('SUPER_SECRET_TOKEN_12345')
+    expect(result.error).not.toContain('CLIXML')
+    expect(result.error).not.toContain('InvalidOperationException')
+    // No long base64-ish run either, in case a future message shape embeds the
+    // payload without the literal word "EncodedCommand" next to it.
+    expect(result.error).not.toMatch(/[A-Za-z0-9+/]{40,}={0,2}/)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// #877: the user-facing sentence must never be the raw error (no base64, no
+// CLIXML, no appArgs value, no "EncodedCommand"), whatever reason it classifies
+// to — here an uncoded Error (no `.code`) classifies to 'unknown', the generic
+// fallback sentence.
 test('launchProfileApps reports synchronous spawn failures without tracking the failed process', async () => {
   const { launchProfileApps, runningProcesses } = await loadProcessModules()
 
@@ -3490,13 +3564,16 @@ test('launchProfileApps reports synchronous spawn failures without tracking the 
 
   await expect(launchProfileApps(sender, 'ac', ['C:/Tools/Broken.exe'])).resolves.toMatchObject({
     success: false,
-    error: 'Failed to launch Broken.exe: spawn exploded',
+    error: 'Failed to launch Broken.exe: Windows could not start it.',
     launchedCount: 0,
     failedCount: 1
   })
   expect(runningProcesses.has('c:\\tools\\broken.exe')).toBe(false)
 })
 
+// #877 constraint: Notify.tsx already prefixes "<app> failed to launch:" for
+// this IPC channel, so the payload's `error` must be the bare sentence with no
+// app name and no raw detail (not the raw `lost after spawn` message).
 test('launchProfileApps emits late launch errors to the renderer after initial spawn success', async () => {
   const lateError = new Error('lost after spawn') as NodeJS.ErrnoException
   const childHandlers = new Map<string, (...args: unknown[]) => void>()
@@ -3520,8 +3597,49 @@ test('launchProfileApps emits late launch errors to the renderer after initial s
 
   expect(sender.send).toHaveBeenCalledWith('app-launch-error', {
     app: 'C:/Tools/LateError.exe',
-    error: 'lost after spawn'
+    error: 'Windows could not start it.'
   })
+})
+
+// #877: a late error is classified from `.code` alone, never `.message` — so
+// even a message shaped like the elevated path's leaky one (base64,
+// "EncodedCommand", CLIXML, a secret appArg) must not reach the renderer
+// through this channel either, however unlikely that exact shape is on a
+// plain (non-elevated) child.
+test('a late launch error never forwards base64, EncodedCommand text or CLIXML to the renderer (#877)', async () => {
+  const lateError = Object.assign(
+    new Error(
+      'spawn failed: -EncodedCommand JABwAGEAeQBsAG9hAGQA0gBmAGkAbABlAFAAYQB0AGgA --api-key=SUPER_SECRET_TOKEN_12345 #< CLIXML'
+    ),
+    { code: 'EWHATEVER' } as NodeJS.ErrnoException
+  )
+  const childHandlers = new Map<string, (...args: unknown[]) => void>()
+  const child = {
+    once: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      childHandlers.set(event, handler)
+      return child
+    }),
+    unref: vi.fn()
+  }
+
+  markExistingPath('C:/Tools/LateError.exe')
+  const { launchProfileApps } = await loadProcessModules()
+  vi.mocked(await import('child_process')).spawn.mockReturnValueOnce(child as never)
+
+  const launchPromise = launchProfileApps(sender, 'ac', ['C:/Tools/LateError.exe'])
+  childHandlers.get('spawn')?.()
+  await expect(launchPromise).resolves.toMatchObject({ success: true, launchedCount: 1 })
+
+  childHandlers.get('error')?.(lateError)
+
+  expect(sender.send).toHaveBeenCalledWith('app-launch-error', {
+    app: 'C:/Tools/LateError.exe',
+    error: 'Windows could not start it.'
+  })
+  const [, payload] = sender.send.mock.calls.find(([channel]) => channel === 'app-launch-error')!
+  expect(payload.error).not.toContain('EncodedCommand')
+  expect(payload.error).not.toContain('SUPER_SECRET_TOKEN_12345')
+  expect(payload.error).not.toContain('CLIXML')
 })
 
 test('killLaunchedApps returns a no-op kill result when no companion apps are running', async () => {
@@ -7558,7 +7676,14 @@ test('spawnDetachedApp writes a failed (non-elevated) launch error to the on-dis
     undefined
   )
 
-  expect(result).toEqual({ status: 'failed', appPath: 'C:/Apps/Broken.exe', error: 'spawn ENOENT' })
+  // The user-facing result is the classified sentence (#877), not the raw
+  // Node error; the raw detail still reaches the on-disk log below.
+  expect(result).toEqual({
+    status: 'failed',
+    appPath: 'C:/Apps/Broken.exe',
+    error: 'the file could not be found.',
+    reason: 'missing'
+  })
   expect(appErrorLogFsMock.appendFileSync).toHaveBeenCalledWith(
     expect.stringContaining('main-error.log'),
     expect.stringContaining('launch')
@@ -7589,7 +7714,63 @@ test('a failing on-disk log write does not affect the spawnDetachedApp result', 
     undefined
   )
 
-  expect(result).toEqual({ status: 'failed', appPath: 'C:/Apps/Broken.exe', error: 'spawn ENOENT' })
+  expect(result).toEqual({
+    status: 'failed',
+    appPath: 'C:/Apps/Broken.exe',
+    error: 'the file could not be found.',
+    reason: 'missing'
+  })
+})
+
+// #877: each measured OS error maps to a stable reason and a plain sentence,
+// never the raw text, whether the error arrives through the async 'error'
+// event (ENOENT above) or a SYNCHRONOUS throw out of spawn(). Measured on
+// Electron 44.5.1 (ELECTRON_RUN_AS_NODE, no window): a text file renamed to
+// .exe throws `spawn UNKNOWN` (matching the 1.2.3 smoke run's "Failed to
+// launch Broken.exe: spawn UNKNOWN"), and a deny-execute ACL throws `spawn
+// EPERM` — NOT `EACCES`, so it is a genuine failure here, not an elevation
+// request (see launchFailures.ts for the full mapping and why).
+test('spawnDetachedApp maps a synchronous "spawn UNKNOWN" throw (text file renamed to .exe) to a plain sentence', async () => {
+  markExistingPath('C:/Apps/NotAProgram.exe')
+  spawnThrows.set(
+    'C:/Apps/NotAProgram.exe',
+    Object.assign(new Error('spawn UNKNOWN'), { code: 'UNKNOWN' })
+  )
+  const { spawnDetachedApp } = await loadProcessModules()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/NotAProgram.exe' },
+    undefined
+  )
+
+  expect(result).toEqual({
+    status: 'failed',
+    appPath: 'C:/Apps/NotAProgram.exe',
+    error: 'it is not a program Windows can start.',
+    reason: 'not_a_program'
+  })
+})
+
+test('spawnDetachedApp maps a synchronous "spawn EPERM" throw (deny-execute ACL) to a plain sentence', async () => {
+  markExistingPath('C:/Apps/Denied.exe')
+  spawnThrows.set('C:/Apps/Denied.exe', Object.assign(new Error('spawn EPERM'), { code: 'EPERM' }))
+  const { spawnDetachedApp } = await loadProcessModules()
+
+  const result = await spawnDetachedApp(
+    sender,
+    'ac',
+    { key: 'customapp1', path: 'C:/Apps/Denied.exe' },
+    undefined
+  )
+
+  expect(result).toEqual({
+    status: 'failed',
+    appPath: 'C:/Apps/Denied.exe',
+    error: 'Windows denied permission to run it.',
+    reason: 'access_denied'
+  })
 })
 
 // --- Direct unit tests for finalizeKillAttempts (#344) ---
