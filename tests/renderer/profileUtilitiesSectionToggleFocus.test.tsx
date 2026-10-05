@@ -138,10 +138,10 @@ describe('ProfileUtilitiesSection companion toggle focus (#1005)', () => {
 
     // Turn it off first (unfocused), then focus it in the disabled grid and
     // toggle it back on, to cover the opposite direction (#1005 was reported
-    // for "either direction").
-    await act(async () => {
-      toggleSwitch('secondmonitor').click()
-    })
+    // for "either direction"). Settling this setup click (not just an act())
+    // matters: an un-settled refocus rAF from it would otherwise leak into
+    // the assertion below and mask a broken disabled-grid refocus.
+    await pressAndSettle(toggleSwitch('secondmonitor'))
 
     const disabledSwitch = toggleSwitch('secondmonitor')
     disabledSwitch.focus()
@@ -153,5 +153,35 @@ describe('ProfileUtilitiesSection companion toggle focus (#1005)', () => {
     expect(movedSwitch.checked).toBe(true)
     expect(document.activeElement).toBe(movedSwitch)
     expect(container.contains(document.activeElement)).toBe(true)
+  })
+
+  // Pins the current call shape so a change shows up as a deliberate diff
+  // instead of silent drift, the way the three existing focus-restore tests
+  // this file's sibling comment names do (gameRowProfileMenuConfirmClose,
+  // gameRowProfileMenuPortal, useFocusTrapEscape). Not a claim that
+  // preventScroll is correct here: #948's own rule is for focus handed back
+  // to where the user just was, and a toggle always lands on a new grid
+  // position, so whether that position can end up out of view is a real
+  // question this test does not answer, left for a CDP check instead.
+  test('refocuses the moved switch with a single focus() call, options pinned for now', async () => {
+    await render(<StatefulHarness props={buildProps({})} />)
+
+    const switchEl = toggleSwitch('secondmonitor')
+    switchEl.focus()
+
+    // Drive the toggle without settling yet, so the spy can be attached to
+    // the NEW row's switch (a different DOM node after the remount) before
+    // the deferred rAF fires and calls focus() on it.
+    await act(async () => {
+      switchEl.click()
+    })
+    const movedSwitch = toggleSwitch('secondmonitor')
+    const focusSpy = vi.spyOn(movedSwitch, 'focus')
+
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    })
+
+    expect(focusSpy.mock.calls).toEqual([[{ preventScroll: true }]])
   })
 })
