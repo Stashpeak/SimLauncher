@@ -1,12 +1,21 @@
 import type { ChildProcess } from 'child_process'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
+import type { ProcessNameMismatchWarningEntry } from '../../src/main/processes/types'
+
 const readRunningProcessNamesMock = vi.fn()
 const pruneUnclosedProcessesMock = vi.fn()
 // Configured paths whose image NAME is in the tasklist but which nothing is
 // actually running at — the #674 collision shape. Empty by default, so every
 // test written before it keeps its exact meaning.
 const collidingPaths = new Set<string>()
+// Configured paths whose image NAME is in the tasklist but whose specific
+// path the poll could not confirm or rule out — the real `unknown` shape
+// (win32KillUtils.ts's undecidable branch, mirrored by
+// `resolveTrackedPathStates`), distinct from `collidingPaths` above, which is
+// a CONFIRMED miss. #961 depends on telling the two apart: `unknown` must not
+// read as "the game is back". Empty by default, same reason as `collidingPaths`.
+const unknownPaths = new Set<string>()
 
 async function loadRunningModule(opts?: {
   profiles?: Record<string, unknown>
@@ -62,11 +71,17 @@ async function loadRunningModule(opts?: {
       }
       configuredPaths.forEach((configuredPath) => {
         const name = configuredPath.split(/[\\/]/).pop()?.toLowerCase() ?? ''
+        if (!snapshot.processNames.has(name)) {
+          states.set(configuredPath, 'not-running')
+          return
+        }
         states.set(
           configuredPath,
-          snapshot.processNames.has(name) && !collidingPaths.has(configuredPath)
-            ? 'running'
-            : 'not-running'
+          unknownPaths.has(configuredPath)
+            ? 'unknown'
+            : collidingPaths.has(configuredPath)
+              ? 'not-running'
+              : 'running'
         )
       })
       return states
@@ -154,6 +169,7 @@ beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
   collidingPaths.clear()
+  unknownPaths.clear()
 })
 
 afterEach(() => {
@@ -598,4 +614,123 @@ test('the same fixture with a resolvable game path does surface them (#794)', as
   const apps = await runningModule.getRunningApps()
 
   expect(apps.map((app) => app.path)).toContain('C:/Tools/SimHub.exe')
+})
+
+// --- #961: the stub-game warning must CLEAR on recovery, not just hide ---
+//
+// `processNameMismatchWarnings` entries were only ever filtered out of the
+// published list while `isPathRunning(entry.path)` was true, never deleted
+// (running.ts pre-#961). The moment the game closes again, the filter stops
+// applying and the same warning comes back, at the exact instant SimLauncher
+// just finished proving it tracks the game fine. Measured on RaceRoom and
+// reproduced automatically on 1.2.3-beta.0 (issue #961, repro 3).
+
+function seedStubWarning(
+  stateModule: Awaited<ReturnType<typeof loadRunningModule>>['stateModule'],
+  overrides: Partial<ProcessNameMismatchWarningEntry> = {}
+) {
+  stateModule.processNameMismatchWarnings.set('c:\\games\\stublauncher.exe', {
+    path: 'C:/Games/StubLauncher.exe',
+    name: 'StubLauncher.exe',
+    gameKey: 'ac',
+    warning:
+      'StubLauncher.exe exited shortly after launch. SimLauncher can no longer detect when you close it.',
+    ...overrides
+  })
+}
+
+test('the stub warning clears once the path is observed running, and stays clear once it closes (#961)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' }
+  })
+  seedStubWarning(stateModule)
+
+  // Steam (or the user) gets the exe running again at the SAME configured
+  // path. That is positive evidence tracking is restored, so the entry must
+  // be deleted outright, not merely hidden for this one tick.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['stublauncher.exe']),
+    succeeded: true
+  })
+  const whileRunning = await runningModule.getRunningApps()
+  expect(whileRunning.some((app) => 'warning' in app)).toBe(false)
+  expect(stateModule.processNameMismatchWarnings.size).toBe(0)
+
+  // The game closes. On origin/main this is the precise moment the amber ring
+  // came back, because the old code only ever filtered the entry out while
+  // running and nothing had ever deleted it. With it actually deleted above,
+  // there is nothing left to resurrect.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(),
+    succeeded: true
+  })
+  const afterClose = await runningModule.getRunningApps()
+  expect(afterClose.some((app) => 'warning' in app)).toBe(false)
+  expect(stateModule.processNameMismatchWarnings.size).toBe(0)
+})
+
+// The issue body's own suggested fix, `if (isPathRunning(entry.path)) delete`,
+// reads `unknown` as "running" (that fold is correct everywhere else
+// `isPathRunning` is used, see pathResolution.ts). Applied to the delete here
+// it would clear a warning that is still true: a same-named process exists
+// but the poll could not confirm it sits at the configured path, which is not
+// evidence the ORIGINAL exe came back. This entry must survive.
+test('a same-named process at an unresolved path keeps the stub warning, not clears it (#961)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' }
+  })
+  seedStubWarning(stateModule)
+
+  unknownPaths.add('C:/Games/StubLauncher.exe')
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['stublauncher.exe']),
+    succeeded: true
+  })
+
+  await runningModule.getRunningApps()
+
+  expect(stateModule.processNameMismatchWarnings.size).toBe(1)
+})
+
+// A handed-off entry (#978) is hidden rather than deleted specifically so the
+// game stays counted as launched while only the secondary is visible proof of
+// life (running.ts's `launchedGameKeys`, the #978 pass's own comment). Once
+// the ORIGINAL path itself is observed running, that bookkeeping is beside the
+// point: the game is visibly back under its own exe, so the entry deletes
+// immediately regardless of `handedOffTo`, and the game must still read as
+// running afterwards, now through ordinary adoption rather than the mismatch
+// entry's hidden-but-present trick.
+test('a handed-off entry whose own game path comes back deletes immediately and keeps the game running (#961)', async () => {
+  const { runningModule, stateModule } = await loadRunningModule({
+    profiles: {
+      ac: {
+        activeProfileId: 'default',
+        profiles: [{ id: 'default', name: 'Default', trackedProcessPaths: ['GameStandIn.exe'] }]
+      }
+    },
+    gamePaths: { ac: 'C:/Games/StubLauncher.exe' },
+    trackablePaths: ['C:/Games/StubLauncher.exe']
+  })
+  seedStubWarning(stateModule, { handedOffTo: 'GameStandIn.exe', namesRunningAtLaunch: new Set() })
+
+  // The handed-off secondary is STILL running too. On the pre-#961 handoff
+  // logic alone that is the "stay hidden, do nothing" branch
+  // (`isPathRunning(entry.handedOffTo)` true returns early), so the entry
+  // would be left sitting in the map indefinitely even though the original
+  // exe is right there. The direct, stronger signal must win and delete the
+  // entry immediately instead of waiting on the secondary's own handoff
+  // bookkeeping.
+  readRunningProcessNamesMock.mockResolvedValue({
+    processNames: new Set(['stublauncher.exe', 'gamestandin.exe']),
+    succeeded: true
+  })
+
+  const apps = await runningModule.getRunningApps()
+
+  expect(stateModule.processNameMismatchWarnings.size).toBe(0)
+  expect(apps).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: 'C:/Games/StubLauncher.exe', gameKey: 'ac', tracked: true })
+    ])
+  )
 })
