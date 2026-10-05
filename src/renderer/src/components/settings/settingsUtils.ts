@@ -11,3 +11,17 @@ export function normalizeLaunchDelayMs(value: number): number {
 
   return Math.min(Math.max(Math.round(value), 0), 30000)
 }
+
+/**
+ * Drops any record entry whose value is blank once trimmed. The main-process
+ * sanitizers never persist an empty-string entry (store.ts's
+ * sanitizeArgsRecord / sanitizeNameRecord / sanitizePathRecord all drop one),
+ * so the live renderer state must agree before it is compared against a
+ * baseline read back from the store. Without this, typing into a never-
+ * configured field and clearing it again leaves a `{"key":""}` entry that the
+ * baseline's `{}` never had, and the dirty-tracking JSON compare (and the
+ * per-section dot it derives) never clears (#958).
+ */
+export function dropEmptyEntries(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value.trim().length > 0))
+}
