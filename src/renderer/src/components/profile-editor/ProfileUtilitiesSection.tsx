@@ -38,12 +38,12 @@ export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): Re
   // on the Toggle below), so once the real toggle has run and React has
   // committed the move, re-focus the switch by that id in whichever grid it
   // landed in. rAF defers past the commit, same pattern as useProfileMenu.ts's
-  // focusTrigger. preventScroll follows #948, but #948's own rule draws a
-  // line this crosses: it covers focus handed BACK to where the user just
-  // was, while a toggle always moves the switch to a new grid position, so
-  // whether the landing spot can end up out of view (e.g. under the
-  // App-level unsaved-changes bar) is pinned by a focus-option test rather
-  // than assumed; see the CDP check this PR lists for the real answer.
+  // focusTrigger. Unlike that focus, this one is not handed back to where the
+  // user just was (#948's case for preventScroll): the switch lands in the
+  // other grid, often far away. On the packaged build 3 of 4 toggles left the
+  // focused switch out of view, so a keyboard user saw no ring at all. Focus
+  // without the browser's own scroll, then centre it explicitly, which also
+  // keeps it clear of the sticky unsaved-changes bar at the bottom.
   // Done here rather than in useProfileEditor.tsx: the fix is a pure DOM
   // lookup keyed on data this component already has (the toggled key), with
   // no dependency on anything the editor hook tracks.
@@ -51,7 +51,10 @@ export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): Re
     (key: string) => {
       onToggleUtility(key)
       window.requestAnimationFrame(() => {
-        document.getElementById(`utility-toggle-${key}`)?.focus({ preventScroll: true })
+        const moved = document.getElementById(`utility-toggle-${key}`)
+        if (!moved) return
+        moved.focus({ preventScroll: true })
+        moved.scrollIntoView?.({ block: 'center' })
       })
     },
     [onToggleUtility]

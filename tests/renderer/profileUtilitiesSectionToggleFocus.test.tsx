@@ -155,15 +155,11 @@ describe('ProfileUtilitiesSection companion toggle focus (#1005)', () => {
     expect(container.contains(document.activeElement)).toBe(true)
   })
 
-  // Pins the current call shape so a change shows up as a deliberate diff
-  // instead of silent drift, the way the three existing focus-restore tests
-  // this file's sibling comment names do (gameRowProfileMenuConfirmClose,
-  // gameRowProfileMenuPortal, useFocusTrapEscape). Not a claim that
-  // preventScroll is correct here: #948's own rule is for focus handed back
-  // to where the user just was, and a toggle always lands on a new grid
-  // position, so whether that position can end up out of view is a real
-  // question this test does not answer, left for a CDP check instead.
-  test('refocuses the moved switch with a single focus() call, options pinned for now', async () => {
+  // The switch lands in the other grid, often out of view: on the packaged
+  // build 3 of 4 toggles left it off screen with focus held, so a keyboard
+  // user saw no ring. It is focused without the browser's scroll and then
+  // centred explicitly; jsdom has no layout, so this pins the calls.
+  test('refocuses the moved switch and centres it in view', async () => {
     await render(<StatefulHarness props={buildProps({})} />)
 
     const switchEl = toggleSwitch('secondmonitor')
@@ -177,11 +173,14 @@ describe('ProfileUtilitiesSection companion toggle focus (#1005)', () => {
     })
     const movedSwitch = toggleSwitch('secondmonitor')
     const focusSpy = vi.spyOn(movedSwitch, 'focus')
+    const scrollSpy = vi.fn()
+    movedSwitch.scrollIntoView = scrollSpy
 
     await act(async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     })
 
     expect(focusSpy.mock.calls).toEqual([[{ preventScroll: true }]])
+    expect(scrollSpy.mock.calls).toEqual([[{ block: 'center' }]])
   })
 })
