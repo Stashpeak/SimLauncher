@@ -51,10 +51,15 @@ function applyUpdate<T>(
 // what AppsSection reads.
 function AppsHarness({
   initialAppPaths,
-  initialCustomSlots = 2
+  initialCustomSlots = 2,
+  notify = vi.fn()
 }: {
   initialAppPaths: Record<string, string>
   initialCustomSlots?: number
+  // Hoistable so a test can assert on it directly, instead of an inline
+  // vi.fn() the test has no handle on (#1007 review: nothing proved the
+  // dropped-handler half of the #830 shape, only the DOM attribute).
+  notify?: (message: string, type: 'success' | 'error' | 'warn', duration?: number) => void
 }): ReactNode {
   const [customSlots, setCustomSlots] = useState(initialCustomSlots)
   const [appPaths, setAppPaths] = useState<Record<string, string>>(initialAppPaths)
@@ -68,7 +73,7 @@ function AppsHarness({
     appNames,
     appPaths,
     customSlots,
-    notify: vi.fn(),
+    notify,
     updateSettingsObject: applyUpdate,
     setAppPaths,
     setAppNames,
@@ -111,7 +116,8 @@ let root: Root | null = null
 
 async function render(
   initialAppPaths: Record<string, string>,
-  initialCustomSlots = 2
+  initialCustomSlots = 2,
+  notify?: (message: string, type: 'success' | 'error' | 'warn', duration?: number) => void
 ): Promise<void> {
   // Named #root because useFocusTrap inerts that element while the confirm is up.
   container = document.createElement('div')
@@ -120,7 +126,11 @@ async function render(
   await act(async () => {
     root = createRoot(container)
     root.render(
-      <AppsHarness initialAppPaths={initialAppPaths} initialCustomSlots={initialCustomSlots} />
+      <AppsHarness
+        initialAppPaths={initialAppPaths}
+        initialCustomSlots={initialCustomSlots}
+        notify={notify}
+      />
     )
   })
 }
@@ -130,8 +140,11 @@ afterEach(() => {
   container.remove()
 })
 
+// `^=` rather than an exact match: the blocked survivor's aria-label appends
+// the unavailable reason (e.g. "Remove Custom App 1. At least one custom app
+// slot is required"), same shape as GameRowActions.tsx's blocked controls.
 function removeButton(label: string): HTMLButtonElement {
-  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="Remove ${label}"]`)
+  const button = container.querySelector<HTMLButtonElement>(`button[aria-label^="Remove ${label}"]`)
   if (!button) throw new Error(`No remove button found for "${label}"`)
   return button
 }
@@ -152,13 +165,23 @@ async function press(element: HTMLElement): Promise<void> {
   })
 }
 
+// removeSlotData's focus fallback (#1007) is deferred to the next animation
+// frame, same pattern as ProfileUtilitiesSection's refocus, so a test that
+// removes the highest-numbered slot has to wait one out too.
+async function settleFrame(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  })
+}
+
 describe('AppsSection: removing one of two custom apps from the keyboard (#1007)', () => {
   test('through the real confirm dialog, focus stays on a control in the list instead of <body>', async () => {
+    const notify = vi.fn()
     // Custom App 1 has an executable configured, so Remove opens the
     // destructive-action confirm (useCustomSlots.handleRemoveCustomSlot);
     // Custom App 2 is empty, matching the reported "one of two... pointing
     // at an exe" repro.
-    await render({ customapp1: 'C:/apps/custom1.exe' })
+    await render({ customapp1: 'C:/apps/custom1.exe' }, 2, notify)
 
     const button = removeButton('Custom App 1')
     button.focus()
@@ -188,12 +211,63 @@ describe('AppsSection: removing one of two custom apps from the keyboard (#1007)
     expect(survivor.hasAttribute('disabled')).toBe(false)
     expect(survivor.disabled).toBe(false)
 
-    // Clicking the now-unavailable button does nothing (no second confirm).
+    // Unlike a native `disabled` button, this one still receives hover and
+    // focus (that is the point of #830's shape), so its accessible name has
+    // to say why it does nothing instead of just repeating the action name.
+    expect(survivor.getAttribute('aria-label')).toBe(
+      'Remove Custom App 1. At least one custom app slot is required'
+    )
+
+    // Clicking the now-unavailable button does nothing: no second confirm,
+    // and (the other half of the #830 shape) no live-but-gated handler either
+    // -- the onClick is dropped, not just visually disabled.
     await press(survivor)
     expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(notify).not.toHaveBeenCalled()
   })
 
-  test('with more than one slot left, the surviving button has no aria-disabled attribute at all', async () => {
+  test('removing the highest-numbered slot (not the one the fix special-cases) still keeps focus off <body>, through the dialog', async () => {
+    // Two slots, exe in slot 2 this time: slot 1's row is what the #1007 fix
+    // relied on staying mounted (its data just gets overwritten by the
+    // shift), but removing slot 2 unmounts the very row whose button was
+    // clicked, since there is no higher slot left to shift into it. Nothing
+    // survives for ConfirmDialog's useFocusTrap restore to land on unless
+    // removeSlotData's own fallback focuses a survivor.
+    await render({ customapp2: 'C:/apps/custom2.exe' })
+
+    const button = removeButton('Custom App 2')
+    button.focus()
+    await press(button)
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull()
+
+    await press(dialogButton('Remove App'))
+    await settleFrame()
+
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(container.querySelectorAll('button[aria-label^="Remove "]').length).toBe(1)
+    expect(document.activeElement).not.toBe(document.body)
+    expect(container.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).toBe(removeButton('Custom App 1'))
+  })
+
+  test('removing the highest-numbered slot silently (no exe, no dialog) still keeps focus off <body>', async () => {
+    // Both slots empty: handleRemoveCustomSlot takes the no-confirm branch
+    // straight into removeSlotData, so there is no ConfirmDialog restore
+    // attempt at all here, only removeSlotData's own fallback.
+    await render({}, 2)
+
+    const button = removeButton('Custom App 2')
+    button.focus()
+    await press(button)
+    await settleFrame()
+
+    expect(container.querySelectorAll('button[aria-label^="Remove "]').length).toBe(1)
+    expect(document.activeElement).not.toBe(document.body)
+    expect(container.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement).toBe(removeButton('Custom App 1'))
+  })
+
+  test('a non-last slot renders no aria-disabled attribute at all', async () => {
     // Three slots so one remains available after a hypothetical removal:
     // proves `|| undefined` keeps the attribute out of the DOM rather than
     // always rendering aria-disabled="false".
