@@ -1,6 +1,3 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 type MockIpcHandler = (...args: unknown[]) => unknown | Promise<unknown>
@@ -13,22 +10,13 @@ async function invokeWindowHandler(channel: string, ...args: unknown[]) {
   }
 }
 
-async function loadWindowModule(storeData: Record<string, unknown> = {}) {
+async function loadWindowModule() {
   const { clearIpcHandlers } = await import('electron')
   ;(clearIpcHandlers as () => void)()
 
-  // `browse-path` asks dialogFolders.ts where to open (#907), which reads the
-  // saved paths and the remembered folder through these two.
   vi.doMock('../../src/main/store', () => ({
     getStoredBoolean: vi.fn(),
-    getStoredZoomFactor: vi.fn(),
-    getStoredStringRecord: vi.fn((key: string) => (storeData[key] ?? {}) as Record<string, string>),
-    store: {
-      get: vi.fn((key: string) => storeData[key]),
-      set: vi.fn((key: string, value: unknown) => {
-        storeData[key] = value
-      })
-    }
+    getStoredZoomFactor: vi.fn()
   }))
   vi.doMock('electron-updater', () => ({
     autoUpdater: {
@@ -82,14 +70,10 @@ async function loadWindowModuleForCreate(
     registerUpdaterEvents: vi.fn(),
     checkForUpdates
   }))
-  // The real one appends to <userData>/main-error.log, which the electron mock
-  // points at the working directory.
-  const writeAppErrorLog = vi.fn()
-  vi.doMock('../../src/main/errorLog', () => ({ writeAppErrorLog }))
 
   const mod = await import('../../src/main/window')
   const appState = await import('../../src/main/app-state')
-  return { ...mod, appState, checkForUpdates, storeSet, writeAppErrorLog }
+  return { ...mod, appState, checkForUpdates, storeSet }
 }
 
 async function getCreatedWindow() {
@@ -221,106 +205,6 @@ test('createWindow does not double-show when ready-to-show fired before the fall
     await vi.advanceTimersByTimeAsync(3000)
 
     expect(win.show).toHaveBeenCalledTimes(1)
-  } finally {
-    vi.useRealTimers()
-  }
-})
-
-// A window the fallback showed looks exactly like one 'ready-to-show' showed,
-// so the log line is the only way a smoke run can tell which one did (#907).
-test('the fallback writes one log line when it is what showed the window (#907)', async () => {
-  vi.useFakeTimers()
-  try {
-    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate()
-    createWindow()
-    const win = await getCreatedWindow()
-
-    win.webContents.emit('did-finish-load')
-    await vi.advanceTimersByTimeAsync(3000)
-
-    expect(win.show).toHaveBeenCalledTimes(1)
-    expect(writeAppErrorLog).toHaveBeenCalledTimes(1)
-    expect(writeAppErrorLog).toHaveBeenCalledWith(
-      'window',
-      'ready-to-show had not fired 500 ms after did-finish-load, so the fallback showed the window (#382)'
-    )
-  } finally {
-    vi.useRealTimers()
-  }
-})
-
-// A main thread blocked at boot runs the 500 ms timer seconds late, just ahead
-// of a 'ready-to-show' that was only queued behind it. Measured in review on
-// 44.5.1: fallback at +8344 ms, the event at +8372 ms. A lone fallback line
-// would read as the #382 regression, so the log has to say both.
-test('a late ready-to-show after the fallback gets a line of its own, with the real delays (#907)', async () => {
-  vi.useFakeTimers()
-  try {
-    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate()
-    createWindow()
-    const win = await getCreatedWindow()
-
-    win.webContents.emit('did-finish-load')
-    // Main is frozen: the clock moves, but no timer gets to run.
-    vi.setSystemTime(Date.now() + 7844)
-    await vi.advanceTimersByTimeAsync(500)
-    vi.setSystemTime(Date.now() + 28)
-    win.emit('ready-to-show')
-
-    expect(win.show).toHaveBeenCalledTimes(1)
-    expect(writeAppErrorLog.mock.calls).toEqual([
-      [
-        'window',
-        'ready-to-show had not fired 8344 ms after did-finish-load, so the fallback showed the window (#382)'
-      ],
-      [
-        'window',
-        'ready-to-show fired 8372 ms after did-finish-load, after the fallback had shown the window (#382)'
-      ]
-    ])
-  } finally {
-    vi.useRealTimers()
-  }
-})
-
-test('no fallback line when ready-to-show showed the window (#907)', async () => {
-  vi.useFakeTimers()
-  try {
-    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate()
-    createWindow()
-    const win = await getCreatedWindow()
-
-    // The healthy order on 44.5.1, measured in review: the event about 135 ms
-    // after did-finish-load, well inside the fallback's 500 ms.
-    win.webContents.emit('did-finish-load')
-    await vi.advanceTimersByTimeAsync(135)
-    win.emit('ready-to-show')
-    await vi.advanceTimersByTimeAsync(3000)
-
-    expect(win.show).toHaveBeenCalledTimes(1)
-    expect(writeAppErrorLog).not.toHaveBeenCalled()
-  } finally {
-    vi.useRealTimers()
-  }
-})
-
-test('no fallback line on a start to the tray, where nothing is shown (#907)', async () => {
-  vi.useFakeTimers()
-  try {
-    const { createWindow, writeAppErrorLog } = await loadWindowModuleForCreate({
-      startMinimized: true,
-      showTrayIcon: true
-    })
-    createWindow()
-    const win = await getCreatedWindow()
-
-    win.webContents.emit('did-finish-load')
-    await vi.advanceTimersByTimeAsync(3000)
-    // Late, but the fallback showed nothing, so there is nothing to explain.
-    win.emit('ready-to-show')
-
-    expect(win.show).not.toHaveBeenCalled()
-    expect(writeAppErrorLog).not.toHaveBeenCalled()
   } finally {
     vi.useRealTimers()
   }
@@ -582,50 +466,4 @@ test('browse-path echoes only string input ids', async () => {
     filePath: 'C:/Tools/SimHub.exe',
     inputId: 'appPaths.simhub'
   })
-})
-
-// Electron 43 and later open a dialog with no defaultPath in Downloads, every
-// time (#907). These go through the real handler so they would catch the hint
-// being computed and then not passed.
-test('browse-path opens a configured field in the folder of its saved path (#907)', async () => {
-  const gameFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-saved-'))
-  try {
-    await loadWindowModule({ gamePaths: { acc: path.join(gameFolder, 'acc.exe') } })
-    const { dialog } = await import('electron')
-    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] })
-
-    await invokeWindowHandler('browse-path', {}, 'acc')
-
-    expect(vi.mocked(dialog.showOpenDialog).mock.calls[0][0]).toMatchObject({
-      defaultPath: gameFolder,
-      properties: ['openFile']
-    })
-  } finally {
-    fs.rmSync(gameFolder, { recursive: true, force: true })
-  }
-})
-
-test('browse-path on an empty field reopens the folder the last Browse ended in (#907)', async () => {
-  const pickedFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'browse-picked-'))
-  try {
-    const storeData: Record<string, unknown> = {}
-    await loadWindowModule(storeData)
-    const { dialog } = await import('electron')
-    const showOpenDialog = vi.mocked(dialog.showOpenDialog)
-    showOpenDialog.mockResolvedValue({
-      canceled: false,
-      filePaths: [path.join(pickedFolder, 'Le Mans Ultimate.exe')]
-    })
-
-    await invokeWindowHandler('browse-path', {}, 'lmu')
-    // Nothing known yet: no hint at all, rather than a made-up one.
-    expect(showOpenDialog.mock.calls[0][0]).not.toHaveProperty('defaultPath')
-    // Persisted, so the next app start opens there too.
-    expect(storeData.dialogFolders).toEqual({ executable: pickedFolder })
-
-    await invokeWindowHandler('browse-path', {}, 'ams2')
-    expect(showOpenDialog.mock.calls[1][0]).toMatchObject({ defaultPath: pickedFolder })
-  } finally {
-    fs.rmSync(pickedFolder, { recursive: true, force: true })
-  }
 })
