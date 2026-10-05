@@ -7,13 +7,15 @@ import {
 import type { LaunchFailureReason } from '../../src/main/processes/types'
 
 // Measured on Electron 44.5.1 (ELECTRON_RUN_AS_NODE=1, child_process.spawn, no
-// window) against the three #877 fixtures: a missing path, a text file
-// renamed to .exe, and an exe with a deny-execute ACL. See launchFailures.ts
-// for why EACCES is listed too (never reached in practice — isElevatedLaunchError
-// claims it first on win32 — but mapped here for a non-win32 caller).
+// window) against the four #877 fixtures: a missing path, a text file
+// renamed to .exe, an empty/truncated .exe, and an exe with a deny-execute
+// ACL. See launchFailures.ts for why EACCES is listed too (never reached in
+// practice, isElevatedLaunchError claims it first on win32, but mapped here
+// for a non-win32 caller).
 const measuredCodes: { code: string; reason: LaunchFailureReason }[] = [
   { code: 'ENOENT', reason: 'missing' },
   { code: 'UNKNOWN', reason: 'not_a_program' },
+  { code: 'EFTYPE', reason: 'not_a_program' },
   { code: 'EPERM', reason: 'access_denied' },
   { code: 'EACCES', reason: 'access_denied' }
 ]
@@ -58,13 +60,17 @@ test.each(allReasons)(
     expect(sentence).not.toContain('CLIXML')
     expect(sentence).not.toContain('spawn ')
     expect(sentence.length).toBeGreaterThan(0)
-    expect(sentence.length).toBeLessThan(80)
+    // `unknown` and `elevation_failed` are longer than the others: they
+    // append a pointer to "Open logs folder" (#877's own Direction), since
+    // those are the two reasons that otherwise tell the user nothing
+    // specific about where the raw detail went.
+    expect(sentence.length).toBeLessThan(140)
   }
 )
 
 test('buildLaunchFailureSentence never claims a declined UAC prompt for an elevation failure (#953)', () => {
   // #953 measured error.code === 1 for every elevated failure, decline or
-  // genuine Windows error alike — nothing distinguishes them yet, so the
+  // genuine Windows error alike, nothing distinguishes them yet, so the
   // sentence must stay generic rather than asserting a decline that may not
   // have happened.
   const sentence = buildLaunchFailureSentence('elevation_failed')

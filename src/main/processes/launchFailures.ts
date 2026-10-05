@@ -1,4 +1,4 @@
-// #877: a failed launch used to show the raw OS error straight through —
+// #877: a failed launch used to show the raw OS error straight through,
 // `spawn UNKNOWN` for a non-program exe, or (on the elevated path) the whole
 // base64 `-EncodedCommand` payload plus PowerShell's CLIXML stderr, which can
 // carry the user's own launch arguments. Splitting "what went wrong" from
@@ -11,17 +11,22 @@ import type { LaunchFailureReason } from './types'
 
 /**
  * Maps a spawn/execFile failure to one of the small, stable reasons the user
- * can act on, from the OS error code alone — never from `err.message`, which
+ * can act on, from the OS error code alone, never from `err.message`, which
  * is the thing #877 was filed to stop forwarding.
  *
- * Measured on Electron 44.5.1 (ELECTRON_RUN_AS_NODE, no window) against three
+ * Measured on Electron 44.5.1 (ELECTRON_RUN_AS_NODE, no window) against four
  * fixtures: a missing path gives `ENOENT`; a text file renamed to `.exe` gives
- * `UNKNOWN` (matching the `spawn UNKNOWN` seen in the 1.2.3 smoke run); and an
- * exe with a deny-execute ACL gives `EPERM`, NOT `EACCES` — `EACCES` on win32
- * is already claimed by `isElevatedLaunchError` to mean "this needs
- * elevation" and is diverted to `launchElevated` before reaching this
- * function, so it is mapped here only for completeness (a non-win32 caller,
- * or a future Node whose error shape differs).
+ * `UNKNOWN` (matching the `spawn UNKNOWN` seen in the 1.2.3 smoke run); an
+ * empty or truncated `.exe` (an interrupted download, or a damaged install)
+ * gives `EFTYPE`, libuv's name for Win32 193 (ERROR_BAD_EXE_FORMAT), which is
+ * the same "not a valid Windows program" condition as the text file above,
+ * whose Win32 code (216) happens to be one libuv has no mapping for and so
+ * falls through to `UNKNOWN` instead; and an exe with a deny-execute ACL
+ * gives `EPERM`, NOT `EACCES` (`EACCES` on win32 is already claimed by
+ * `isElevatedLaunchError` to mean "this needs elevation" and is diverted to
+ * `launchElevated` before reaching this function, so it is mapped here only
+ * for completeness: a non-win32 caller, or a future Node whose error shape
+ * differs).
  *
  * Deliberately not called on the elevated handoff's own failure: `error.code`
  * there is `1` for every failure (#953), so there is nothing to classify and
@@ -33,6 +38,7 @@ export function classifyLaunchFailure(err: unknown): LaunchFailureReason {
     case 'ENOENT':
       return 'missing'
     case 'UNKNOWN':
+    case 'EFTYPE':
       return 'not_a_program'
     case 'EACCES':
     case 'EPERM':
@@ -45,12 +51,17 @@ export function classifyLaunchFailure(err: unknown): LaunchFailureReason {
 /**
  * The plain-language clause for a classified failure.
  *
- * Names neither the app nor "Failed to launch" / "failed to launch" —
- * every call site already supplies one of those two prefixes (the aggregate
+ * Names neither the app nor "Failed to launch" / "failed to launch", every
+ * call site already supplies one of those two prefixes (the aggregate
  * summary built in `launchProfileApps`, and Notify.tsx's `"<app> failed to
  * launch:"` for the late IPC payload), so a context-free clause is the only
  * shape that reads correctly after either prefix without naming the app
  * twice (#877).
+ *
+ * `unknown` and `elevation_failed` are the two reasons that tell the user
+ * nothing specific, so each one appends a pointer to the one place the raw
+ * detail still lives: the on-disk log, reachable from Settings, About, "Open
+ * logs folder" (the issue's own Direction asked for this pointer, #877).
  */
 export function buildLaunchFailureSentence(reason: LaunchFailureReason): string {
   switch (reason) {
@@ -61,8 +72,8 @@ export function buildLaunchFailureSentence(reason: LaunchFailureReason): string 
     case 'access_denied':
       return 'Windows denied permission to run it.'
     case 'elevation_failed':
-      return 'Windows did not start it with administrator permission.'
+      return 'it needs administrator permission, and Windows did not start it. The log has details: Settings, About, Open logs folder.'
     case 'unknown':
-      return 'Windows could not start it.'
+      return 'Windows could not start it. The log has details: Settings, About, Open logs folder.'
   }
 }

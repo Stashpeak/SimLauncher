@@ -1047,7 +1047,7 @@ function launchElevated(
           console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
           // The raw detail (including the error code) still goes to the
           // on-disk log only, which the user already has to open deliberately
-          // ("Open logs folder") — never the message, for the same reason.
+          // ("Open logs folder"), never the message, for the same reason.
           const code = getErrorCode(error)
           writeAppErrorLog(
             'launch',
@@ -1234,7 +1234,7 @@ export async function spawnDetachedApp(
           // is the LATE case, reported through the separate app-launch-error
           // channel. Notify.tsx already prefixes "<app> failed to launch:", so
           // the sentence must read on its own with no app name and no raw
-          // detail — the raw message still goes to the log, same as below.
+          // detail, the raw message still goes to the log, same as below.
           writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
           sendLaunchError(sender, appPath, buildLaunchFailureSentence(classifyLaunchFailure(err)))
           return
@@ -1347,7 +1347,7 @@ export async function spawnDetachedApp(
       // Measured on Electron 44.5.1 (ELECTRON_RUN_AS_NODE, no window): a text
       // file renamed to .exe and a deny-execute ACL both throw synchronously
       // out of spawn() rather than emitting an 'error' event, landing here
-      // (`spawn UNKNOWN` and `spawn EPERM` respectively) — this is the path
+      // (`spawn UNKNOWN` and `spawn EPERM` respectively), this is the path
       // the 1.2.3 smoke run's "Failed to launch Broken.exe: spawn UNKNOWN"
       // came through (#877).
       writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)

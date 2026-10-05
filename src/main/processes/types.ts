@@ -154,15 +154,15 @@ export interface KillProfileAppsOptions {
  * `launchFailures.ts`) instead of left as a raw OS error for every exit to
  * forward. `#877`: the raw text is a Node spawn error (`spawn UNKNOWN`) or,
  * for an elevated handoff, PowerShell's base64 `-EncodedCommand` echoed back
- * with CLIXML stderr — neither is something a user can act on, and the
+ * with CLIXML stderr, neither is something a user can act on, and the
  * latter can carry the app's own launch arguments.
  *
  * `elevation_failed` covers every elevated-handoff failure, not just a
  * generic one: `error.code` is `1` for any failure on that path (declined
  * prompt or genuine Windows error alike, #953), so there is nothing in it to
  * classify further yet. Keeping it as its own reason (rather than folding it
- * into `unknown`) is what makes a future split — once #953 lands a real
- * signal — a change to the classifier and formatter only, not to every call
+ * into `unknown`) is what makes a future split, once #953 lands a real
+ * signal, a change to the classifier and formatter only, not to every call
  * site that currently sets it.
  */
 export type LaunchFailureReason =
@@ -201,9 +201,12 @@ export type AppLaunchResult =
       handoffId: number
     }
   // `error` is the already-formatted, user-facing sentence (`error: string`
-  // is the IPC contract every caller already forwards, #877 design); `reason`
-  // is required alongside it so a producer cannot hand one of the four exits
-  // a raw `getErrorMessage(err)` without going through the classifier first.
+  // is the IPC contract every caller already forwards, #877 design). `reason`
+  // is required alongside it so a producer cannot forget to classify the
+  // failure, but the type itself does not stop `error` from holding raw
+  // text: every producer currently builds it with
+  // `buildLaunchFailureSentence(reason)`, and that discipline, not the type
+  // checker, is what keeps a raw `getErrorMessage(err)` out of `error`.
   | { status: 'failed'; appPath: string; error: string; reason: LaunchFailureReason }
   // The launch was aborted (Close Apps) during the async pre-spawn work, so
   // the process was deliberately never spawned (#670).
