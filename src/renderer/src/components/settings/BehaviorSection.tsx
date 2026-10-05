@@ -48,7 +48,7 @@ export function BehaviorSection(): ReactNode {
   const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
 
   // Local draft so the field's DOM value is exactly what was typed, the same
-  // pattern #888 shipped for the HEX field (ColorPickerPopover.tsx:51-65).
+  // pattern #888 shipped for the HEX field's draft in ColorPickerPopover.
   // Without it, the controlled `value` was derived straight from
   // launchDelayMs: clearing the input made e.target.value "", parseFloat('')
   // is NaN, the onChange guard below skipped the commit, and React's
