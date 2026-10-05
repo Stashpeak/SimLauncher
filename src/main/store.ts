@@ -75,7 +75,11 @@ const STORE_OPTIONS = {
     // NOT added to EXPECTED_CONFIG_KEYS so it is excluded from config
     // export/import - it is a local UX flag and must not travel between
     // machines. #641
-    onboardingSeen: { type: 'boolean', default: false }
+    onboardingSeen: { type: 'boolean', default: false },
+    // LOCAL-only for the same reason: the folder each kind of file dialog last
+    // used on this machine, so it can reopen there (#907, see dialogFolders.ts).
+    // Its paths mean nothing on another machine, so it is never exported.
+    dialogFolders: { type: 'object', default: {} }
   }
 } as ConstructorParameters<typeof StoreConstructor>[0] & { projectName: string }
 
@@ -300,8 +304,8 @@ const LEGACY_CONFIG_KEYS = new Set(['killOnClose'])
 const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFIG_KEYS])
 // Keys that live in the store but are deliberately NOT in EXPECTED_CONFIG_KEYS
 // (excluded from config export/import). A config import clears the store, so
-// these local-only UX flags must be preserved across it or they silently reset. #641
-export const LOCAL_ONLY_STORE_KEYS = ['onboardingSeen'] as const
+// these local-only keys must be preserved across it or they silently reset. #641
+export const LOCAL_ONLY_STORE_KEYS = ['onboardingSeen', 'dialogFolders'] as const
 const BOOLEAN_CONFIG_KEYS = new Set([
   'accentBgTint',
   'focusActiveTitle',

@@ -78,6 +78,18 @@ async function loadConfigHandlers(initialStore: Record<string, unknown>) {
   vi.doMock('../../src/main/window', () => windowMock)
   vi.doMock('../../src/main/window.ts', () => windowMock)
 
+  // The import dialog also remembers its folder in the store (#907), which
+  // would add a key to every whole-store assertion below. Its own behaviour is
+  // pinned in configImportPreview.test.ts and dialogFolders.test.ts.
+  const dialogFoldersMock = {
+    getConfigFileDefaultPath: vi.fn(async () => undefined),
+    rememberConfigFile: vi.fn()
+  }
+  vi.doMock('../dialogFolders', () => dialogFoldersMock)
+  vi.doMock('/src/main/dialogFolders.ts', () => dialogFoldersMock)
+  vi.doMock('../../src/main/dialogFolders', () => dialogFoldersMock)
+  vi.doMock('../../src/main/dialogFolders.ts', () => dialogFoldersMock)
+
   const trayMock = { applyTrayVisibility: vi.fn() }
   vi.doMock('../tray', () => trayMock)
   vi.doMock('/src/main/tray.ts', () => trayMock)

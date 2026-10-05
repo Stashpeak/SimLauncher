@@ -20,6 +20,7 @@ async function loadStoreModule() {
     getStoredBoolean: storeModule.getStoredBoolean,
     getStoredStringRecord: storeModule.getStoredStringRecord,
     EXPECTED_CONFIG_KEYS: storeModule.EXPECTED_CONFIG_KEYS,
+    LOCAL_ONLY_STORE_KEYS: storeModule.LOCAL_ONLY_STORE_KEYS,
     MAX_CUSTOM_SLOTS: storeModule.MAX_CUSTOM_SLOTS,
     sanitizeSettingsPatch: storeModule.sanitizeSettingsPatch,
     sanitizeImportedConfig: storeModule.sanitizeImportedConfig,
@@ -372,6 +373,20 @@ test('sanitizeSettingsPatch round-trips every settings key with valid values', a
   const patch = Object.fromEntries(settingsKeys.map((key) => [key, sampleValues[key]]))
 
   expect(sanitizeSettingsPatch(patch)).toEqual(patch)
+})
+
+// A config import clears the store and puts back only LOCAL_ONLY_STORE_KEYS, so
+// a key missing from that list is wiped by every import: for dialogFolders,
+// the next Browse and import would open in Downloads again (#907). The import
+// tests mock the store with their own copy of the list, so only this test sees
+// the real one.
+test('machine-local keys survive a config import and never travel in an export (#641, #907)', async () => {
+  const { EXPECTED_CONFIG_KEYS, LOCAL_ONLY_STORE_KEYS } = await loadStoreModule()
+
+  for (const key of ['onboardingSeen', 'dialogFolders']) {
+    expect(LOCAL_ONLY_STORE_KEYS).toContain(key)
+    expect(EXPECTED_CONFIG_KEYS.has(key)).toBe(false)
+  }
 })
 
 test('profile sanitization keeps a valid gamePosition and strips invalid values (#471)', async () => {
