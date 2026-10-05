@@ -166,10 +166,19 @@ export function AppsSection(): ReactNode {
               <Tooltip label={`Remove ${appNames[utility.key] || utility.name}`}>
                 <button
                   type="button"
-                  onClick={() =>
-                    customSlots > 1 && onRemoveCustomSlot(getCustomSlotNumber(utility.key))
+                  // aria-disabled rather than `disabled` (#830, #1007): closing the
+                  // confirm dialog hands focus back to this button via
+                  // ConfirmDialog's useFocusTrap restore, and a `disabled` button
+                  // refuses focus(), which is exactly what dropped focus to <body>
+                  // here. `|| undefined` keeps the attribute out of the DOM when it
+                  // does not apply (matching ProfileUtilitiesSection.tsx), instead of
+                  // always rendering aria-disabled="true"/"false".
+                  onClick={
+                    customSlots <= 1
+                      ? undefined
+                      : () => onRemoveCustomSlot(getCustomSlotNumber(utility.key))
                   }
-                  aria-disabled={customSlots <= 1}
+                  aria-disabled={customSlots <= 1 || undefined}
                   className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
                   aria-label={`Remove ${appNames[utility.key] || utility.name}`}
                 >
