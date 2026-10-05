@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 
 import { Toggle } from '../Toggle'
 import { useBehaviorSettings } from './BehaviorContext'
@@ -9,6 +9,20 @@ const DELAY_PRESETS = [
   { label: '1.5s', value: 1500 },
   { label: '2s', value: 2000 }
 ]
+
+// What the custom-delay field shows: launchDelayMs expressed in seconds, with
+// no trailing zeros (so a preset-derived 1500 reads "1.5", not "1.5000...").
+function formatLaunchDelaySeconds(launchDelayMs: number): string {
+  return Number.isFinite(launchDelayMs) ? String(launchDelayMs / 1000) : ''
+}
+
+// What committing this draft right now would produce, i.e. the same
+// transform the onChange handler below applies. Used only to tell a change
+// the draft itself just caused apart from one that came from outside it.
+function commitFromDraft(draft: string): number {
+  const parsed = parseFloat(draft)
+  return isNaN(parsed) ? NaN : normalizeLaunchDelayMs(parsed * 1000)
+}
 
 export function BehaviorSection(): ReactNode {
   const startWithWindowsId = useId()
@@ -32,6 +46,32 @@ export function BehaviorSection(): ReactNode {
     onLaunchDelayMsChange
   } = useBehaviorSettings()
   const isPreset = DELAY_PRESETS.some((p) => p.value === launchDelayMs)
+
+  // Local draft so the field's DOM value is exactly what was typed, the same
+  // pattern #888 shipped for the HEX field (ColorPickerPopover.tsx:51-65).
+  // Without it, the controlled `value` was derived straight from
+  // launchDelayMs: clearing the input made e.target.value "", parseFloat('')
+  // is NaN, the onChange guard below skipped the commit, and React's
+  // controlled-input restore wrote the unchanged prop value right back into
+  // the DOM node before the next keystroke - the field could never be
+  // emptied, and typing e.g. "4" then "5" toward "4.5" produced 45000ms,
+  // which the clamp below snapped to 30000, visibly jumping the field to 30
+  // mid-edit (#959).
+  const [draft, setDraft] = useState(() => formatLaunchDelaySeconds(launchDelayMs))
+
+  // A launchDelayMs change this field's own onChange just committed matches
+  // what committing the current draft produces, so the draft is left alone
+  // (it is already showing the keystroke that caused this). Anything else -
+  // a preset click, the post-save write-back, a store-changed reload - takes
+  // over the draft, same as ColorPickerPopover's effect for `color`. Depends
+  // on launchDelayMs only (not on draft): a draft that does not parse all
+  // the way (an empty field, a trailing ".") never changes launchDelayMs, so
+  // this must not re-run and overwrite it on every keystroke either.
+  useEffect(() => {
+    setDraft((current) =>
+      commitFromDraft(current) === launchDelayMs ? current : formatLaunchDelaySeconds(launchDelayMs)
+    )
+  }, [launchDelayMs])
 
   return (
     <>
@@ -152,14 +192,24 @@ export function BehaviorSection(): ReactNode {
               max="30"
               step="0.1"
               aria-label="Custom launch delay in seconds"
-              value={Number.isFinite(launchDelayMs) ? launchDelayMs / 1000 : ''}
+              value={draft}
               onChange={(e) => {
-                const val = parseFloat(e.target.value)
+                const next = e.target.value
+                // Always reflect the keystroke, whether or not it parses -
+                // this is what makes the field editable at all (#959).
+                setDraft(next)
+                const val = parseFloat(next)
                 if (!isNaN(val)) {
                   onLaunchDelayMsChange(normalizeLaunchDelayMs(val * 1000))
                 }
               }}
-              className="w-full bg-transparent pl-1 text-right text-[11px] font-semibold text-(--text-primary) outline-none focus-visible:ring-2 focus-visible:ring-(--accent) [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              onBlur={() => {
+                // Whatever was typed and not taken (an empty field, a
+                // trailing ".") gives way to the value actually in effect -
+                // same restore-on-blur contract as the HEX field.
+                setDraft(formatLaunchDelaySeconds(launchDelayMs))
+              }}
+              className="w-full bg-transparent pl-1 text-right text-[11px] font-semibold text-(--text-primary) outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               placeholder="0.0"
             />
             <div className="mx-1 h-4 w-px bg-(--glass-border) opacity-35" />

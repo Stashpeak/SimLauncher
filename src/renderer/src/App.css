@@ -803,6 +803,19 @@ textarea {
   overflow: hidden;
 }
 
+/* Focus ring on the pill wrapper, not the inner number input (#959): the
+   preset buttons next to this field ARE the pill, so their focus-visible
+   outline (the button rule below) already rings the whole 9999px shape.
+   The custom field's pill is a plain div around the real focusable element,
+   so :focus-within is what reaches it. Matches the app's standard outline
+   treatment (--focus-ring, not a raw accent) and is unaffected by this same
+   element's own overflow: hidden above - outline is never clipped by the
+   box it is drawn on. */
+.settings-control-pill-input:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .settings-control-preset {
   width: 4.75rem;
 }
