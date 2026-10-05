@@ -1,4 +1,4 @@
-import type { DragEvent, ReactNode } from 'react'
+import { useCallback, type DragEvent, type ReactNode } from 'react'
 import { getBundledIconErrorKey, type ProfileUtility, type Utility } from '../../lib/config'
 import { Toggle } from '../Toggle'
 
@@ -27,7 +27,31 @@ interface ProfileUtilitiesSectionProps {
 }
 
 export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): ReactNode {
-  const { availableUtilities, enabledUtilityEntries, disabledUtilityEntries } = props
+  const { availableUtilities, enabledUtilityEntries, disabledUtilityEntries, onToggleUtility } =
+    props
+
+  // Toggling moves a row between the two grids above (one column enabled,
+  // two columns + a border disabled), so React treats it as unmounting the
+  // row in its old parent and mounting a new one in the other, rather than
+  // moving the same node — the focused switch is destroyed with the old row
+  // (#1005). `utility-toggle-${key}` is a stable id across that remount (set
+  // on the Toggle below), so once the real toggle has run and React has
+  // committed the move, re-focus the switch by that id in whichever grid it
+  // landed in. rAF defers past the commit, same pattern as useProfileMenu.ts's
+  // focusTrigger; preventScroll like every focus restoration here (#948).
+  // Done here rather than in useProfileEditor.tsx: the fix is a pure DOM
+  // lookup keyed on data this component already has (the toggled key), with
+  // no dependency on anything the editor hook tracks.
+  const handleToggleUtility = useCallback(
+    (key: string) => {
+      onToggleUtility(key)
+      window.requestAnimationFrame(() => {
+        document.getElementById(`utility-toggle-${key}`)?.focus({ preventScroll: true })
+      })
+    },
+    [onToggleUtility]
+  )
+  const rowProps = { ...props, onToggleUtility: handleToggleUtility }
 
   return (
     <div className="space-y-2">
@@ -40,13 +64,13 @@ export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): Re
           {enabledUtilityEntries.length > 0 && (
             <div className="grid grid-cols-1 gap-2.5">
               {enabledUtilityEntries.map((entry, index) =>
-                renderUtilityRow(props, entry, true, index)
+                renderUtilityRow(rowProps, entry, true, index)
               )}
             </div>
           )}
           {disabledUtilityEntries.length > 0 && (
             <div className="grid grid-cols-1 gap-2.5 border-t border-(--glass-border) pt-3 sm:grid-cols-2">
-              {disabledUtilityEntries.map((entry) => renderUtilityRow(props, entry, false))}
+              {disabledUtilityEntries.map((entry) => renderUtilityRow(rowProps, entry, false))}
             </div>
           )}
         </div>
