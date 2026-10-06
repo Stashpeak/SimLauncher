@@ -57,16 +57,16 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
       // The sticky bar's Discard means "drop the edits", not "leave": closing
       // there made the user reopen the editor to carry on (#951). A discard
       // on the way out (tab switch, close dialog) still closes.
-      if (intent === 'revert') {
-        onReverted?.()
-      } else {
-        onClose()
-      }
+      if (intent !== 'revert') onClose()
       // Chain the owner's async discard work (removing a pending "+" profile
       // from the store, #478) so requestDiscardAll resolves only after the
       // store has settled — the App-level discard may bump refreshKey right
       // after, and the remounted GameList must not reload the orphan.
       await onDiscarded?.()
+      // The in-place reload waits for that same cleanup: remounting first
+      // reloaded a pending "+" profile that was about to be deleted, and
+      // edits made in that window vanished with it (Codex on PR #1016).
+      if (intent === 'revert') onReverted?.()
     })
     return () => {
       registerDiscardHandler('profile-editor', null)

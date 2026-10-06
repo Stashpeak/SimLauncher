@@ -99,7 +99,11 @@ async function renderDirtyEditor(): Promise<void> {
 }
 
 // Runs the discard, and proves it resolves only once onDiscarded has.
-async function discard(intent?: 'revert' | 'leave'): Promise<void> {
+// `whileCleaningUp` runs while onDiscarded is still pending.
+async function discard(
+  intent?: 'revert' | 'leave',
+  whileCleaningUp: () => void = () => {}
+): Promise<void> {
   let resolved = false
   let pipeline: Promise<void> = Promise.resolve()
   await act(async () => {
@@ -109,6 +113,7 @@ async function discard(intent?: 'revert' | 'leave'): Promise<void> {
   })
   expect(onDiscarded).toHaveBeenCalledTimes(1)
   expect(resolved).toBe(false)
+  whileCleaningUp()
   await act(async () => {
     finishDiscarded()
     await pipeline
@@ -134,7 +139,10 @@ afterEach(() => {
 describe('ProfileEditor discard intent (#951)', () => {
   test('a revert (the sticky bar) asks the owner to reload in place and does not close', async () => {
     await renderDirtyEditor()
-    await discard('revert')
+    // Codex P2 on PR #1016: the reload must wait for the cleanup. For a
+    // pending "+" profile, remounting first reloads the profile that is about
+    // to be deleted, and edits made in that window vanish with it.
+    await discard('revert', () => expect(onReverted).not.toHaveBeenCalled())
     expect(onReverted).toHaveBeenCalledTimes(1)
     expect(onClose).not.toHaveBeenCalled()
   })
