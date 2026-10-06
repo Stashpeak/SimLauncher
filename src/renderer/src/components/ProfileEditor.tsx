@@ -23,7 +23,7 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
     registerProfileEditorCloseRequestHandler
   } = useAppDirty()
   const scopeId = `${props.gameKey}:${props.activeProfileId}`
-  const { onClose, onDiscarded } = props
+  const { onClose, onDiscarded, onReverted } = props
   const { isDirty, handleSave, handleCloseAttempt } = editor
 
   useEffect(() => {
@@ -53,18 +53,25 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
       registerDiscardHandler('profile-editor', null)
       return
     }
-    registerDiscardHandler('profile-editor', async () => {
-      onClose()
+    registerDiscardHandler('profile-editor', async (intent) => {
+      // The sticky bar's Discard means "drop the edits", not "leave": closing
+      // there made the user reopen the editor to carry on (#951). A discard
+      // on the way out (tab switch, close dialog) still closes.
+      if (intent === 'revert') {
+        onReverted?.()
+      } else {
+        onClose()
+      }
       // Chain the owner's async discard work (removing a pending "+" profile
       // from the store, #478) so requestDiscardAll resolves only after the
-      // store has settled — the App-level discard bumps refreshKey right
+      // store has settled — the App-level discard may bump refreshKey right
       // after, and the remounted GameList must not reload the orphan.
       await onDiscarded?.()
     })
     return () => {
       registerDiscardHandler('profile-editor', null)
     }
-  }, [isDirty, onClose, onDiscarded, registerDiscardHandler])
+  }, [isDirty, onClose, onDiscarded, onReverted, registerDiscardHandler])
 
   useEffect(() => {
     // Always route external close requests (GameRow toggle X, etc.) through

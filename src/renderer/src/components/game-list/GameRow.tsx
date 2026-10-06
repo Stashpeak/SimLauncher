@@ -28,7 +28,7 @@ import { formatStrandedConsentPrompts } from '../../../../shared/strandedConsent
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
-import { useEditorCloseFocus } from '../../hooks/useEditorCloseFocus'
+import { useEditorHandOff } from '../../hooks/useEditorHandOff'
 import { GameIcon } from './GameIcon'
 import { GamePathMissingBadge } from './GamePathMissingBadge'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
@@ -741,8 +741,8 @@ export function GameRow({
     }
   }
 
-  // A close from inside the editor leaves focus on the gear, not <body> (#957).
-  const handleEditorClose = useEditorCloseFocus({ game, isActive, editorId, rowRef, onCloseEditor })
+  // Closing (#957) or reverting (#951) the editor from inside leaves focus on the gear.
+  const editorHandOff = useEditorHandOff({ game, isActive, editorId, rowRef, onCloseEditor })
 
   const activeProfile = getActiveGameProfile(profileSet)
   // Counts only what Close Apps could actually close. A name-scoped entry is
@@ -862,15 +862,17 @@ export function GameRow({
                   reports changes nobody made (#880). The baseline is only ever
                   compared against, never written: handleSave builds the
                   profile from local state, so the harm was the spurious dirty
-                  flag, not the saved profile (checked on #924). The key is the
-                  same identity the editor already reports itself under in
-                  reportProfileEditorDirty, so the two cannot disagree. */}
+                  flag, not the saved profile (checked on #924). The key starts
+                  with the identity the editor reports itself under in
+                  reportProfileEditorDirty; the revision on the end is how a
+                  discard that keeps the editor open reloads it (#951). */}
               <ProfileEditor
-                key={`${game.key}:${profileSet.activeProfileId}`}
+                key={`${game.key}:${profileSet.activeProfileId}:${editorHandOff.revision}`}
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
-                onClose={handleEditorClose}
+                onClose={editorHandOff.close}
+                onReverted={editorHandOff.revert}
                 onCreateProfile={() =>
                   void handleCreateProfile('New Profile', { trackAsPending: true })
                 }

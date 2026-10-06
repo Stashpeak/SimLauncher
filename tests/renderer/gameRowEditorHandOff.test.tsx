@@ -1,15 +1,24 @@
 /**
- * Regression test for #957, second mechanism: every route that closes the
- * profile editor from inside it (Save on the sticky bar or in the card,
- * Cancel, Escape, a confirm dialog, Delete) unmounts the control that had
- * focus, and nothing put focus anywhere, so the next Tab restarted at the
- * titlebar. All of them end in the editor's `onClose`, so the editor is
- * stubbed here: a button that calls it, plus the dirty report and save
- * handler the real editor registers with AppDirtyContext, because the sticky
- * bar's own lifetime hangs off that report.
+ * How GameRow's profile editor goes away from inside, and where focus lands
+ * (useEditorHandOff).
+ *
+ * #957: every route that closes the editor from inside it (Save on the sticky
+ * bar or in the card, Cancel, Escape, a confirm dialog, Delete) unmounts the
+ * control that had focus, and nothing put focus anywhere, so the next Tab
+ * restarted at the titlebar. All of them end in the editor's `onClose`.
+ *
+ * #951: the sticky bar's Discard keeps the editor open. Its discard handler
+ * calls `onReverted` instead, the row remounts the editor so it reloads the
+ * stored profile, and the bar, which had focus, unmounts once the edits are
+ * gone.
+ *
+ * So the editor is stubbed here: a button that calls `onClose`, plus the dirty
+ * report, save handler and discard handler the real editor registers with
+ * AppDirtyContext, because the sticky bar's own lifetime hangs off that
+ * report. It counts its mounts, which is how a revert's remount shows.
  *
  * The target is the row's editor toggle (the gear), the one control that
- * outlives the close and where the gear-X route already leaves focus.
+ * outlives both and where the gear-X route already leaves focus.
  */
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { act, useEffect, useState, type ReactNode } from 'react'
@@ -58,7 +67,7 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
   })
 }))
 
-const stub = vi.hoisted(() => ({ dirty: false }))
+const stub = vi.hoisted(() => ({ dirty: false, mounts: 0 }))
 
 vi.mock('../../src/renderer/src/components/ProfileEditor', async () => {
   const { useEffect: useStubEffect } = await import('react')
@@ -68,20 +77,37 @@ vi.mock('../../src/renderer/src/components/ProfileEditor', async () => {
     ProfileEditor: ({
       gameKey,
       activeProfileId,
-      onClose
+      onClose,
+      onReverted
     }: {
       gameKey: string
       activeProfileId: string
       onClose: () => void
+      onReverted?: () => void
     }) => {
-      const { reportProfileEditorDirty, registerSaveHandler } = useStubAppDirty()
+      const { reportProfileEditorDirty, registerSaveHandler, registerDiscardHandler } =
+        useStubAppDirty()
       const scopeId = `${gameKey}:${activeProfileId}`
+      useStubEffect(() => {
+        stub.mounts += 1
+      }, [])
       // Same shape as ProfileEditor.tsx: the report is retracted in the
       // unmount cleanup, one commit after the close itself.
       useStubEffect(() => {
         reportProfileEditorDirty(scopeId, stub.dirty)
         return () => reportProfileEditorDirty(scopeId, false)
       }, [scopeId, reportProfileEditorDirty])
+      // Same branching as ProfileEditor.tsx's discard handler. The stored
+      // profile a remount reloads is clean.
+      useStubEffect(() => {
+        if (!stub.dirty) return
+        registerDiscardHandler('profile-editor', (intent) => {
+          stub.dirty = false
+          if (intent === 'revert') onReverted?.()
+          else onClose()
+        })
+        return () => registerDiscardHandler('profile-editor', null)
+      }, [registerDiscardHandler, onClose, onReverted])
       // Like handleSave: the store write is awaited, then the editor closes.
       useStubEffect(() => {
         if (!stub.dirty) return
@@ -162,7 +188,8 @@ function Harness({ settings }: { settings: SettingsScope }): ReactNode {
         onCloseEditor={() => setIsActive(false)}
         cacheInitialized={true}
       />
-      <StickySaveBar onRequestDiscard={vi.fn()} />
+      {/* Stands in for App's discard confirm: Discard Changes is a revert. */}
+      <StickySaveBar onRequestDiscard={() => void dirtyContext!.requestDiscardAll('revert')} />
     </AppDirtyProvider>
   )
 }
@@ -175,6 +202,7 @@ async function render({
   settings = 'clean'
 }: { dirty?: boolean; settings?: SettingsScope } = {}): Promise<void> {
   stub.dirty = dirty
+  stub.mounts = 0
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
@@ -298,6 +326,45 @@ describe('GameRow hands focus to the editor toggle when the editor closes (#957)
 
     await act(async () => {
       button!.click()
+    })
+
+    expect(document.activeElement).toBe(document.body)
+  })
+})
+
+describe('GameRow keeps the editor open through a sticky-bar Discard (#951)', () => {
+  test('Discard reverts the editor in place: still open, reloaded, focus on the gear', async () => {
+    await render({ dirty: true })
+    expect(stub.mounts).toBe(1)
+
+    await pressFocused(buttonNamed('Discard'))
+
+    // Still open, and remounted so it reloads the stored profile.
+    expect(buttonNamed('Save Profile')).toBeDefined()
+    expect(stub.mounts).toBe(2)
+    expect(gear()?.getAttribute('aria-expanded')).toBe('true')
+    // The bar that had focus is gone with the edits; focus is on the gear,
+    // directly above the editor, not on <body>.
+    expect(buttonNamed('Discard')).toBeUndefined()
+    expect(document.activeElement).toBe(gear())
+  })
+
+  test('a revert hand-off left waiting is dropped if the editor then closes another way', async () => {
+    await render({ dirty: true, settings: 'stays-dirty' })
+
+    await pressFocused(buttonNamed('Discard'))
+    // Settings keeps the bar up, so focus stays on its Discard and the
+    // hand-off waits for the bar.
+    expect(document.activeElement).toBe(buttonNamed('Discard'))
+
+    // The editor is collapsed by the gear (not through onClose), then the bar
+    // leaves: the revert's hand-off belongs to an editor that is gone.
+    await act(async () => {
+      gear()!.click()
+    })
+    expect(buttonNamed('Save Profile')).toBeUndefined()
+    await act(async () => {
+      dirtyContext!.reportSettingsDirty(false)
     })
 
     expect(document.activeElement).toBe(document.body)
