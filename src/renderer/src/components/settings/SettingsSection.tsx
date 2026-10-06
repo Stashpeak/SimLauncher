@@ -29,12 +29,16 @@ export function SettingsSection({
           from the accessibility tree — wrapping keeps the section title in the
           heading outline while the button stays the disclosure control. The h2
           is bare: Tailwind preflight zeroes heading margin/font, so this is
-          visually neutral; the visual styling lives on the inner <span>. */}
+          visually neutral; the visual styling lives on the inner <span>.
+          rounded-md is only there for the focus ring: it comes from the shared
+          button:focus-visible fallback in App.css, an outline follows the
+          button's own radius, and without one it was the only square ring in
+          the app (#955). */}
       <h2>
         <button
           type="button"
           onClick={() => onOpenChange(!open)}
-          className="flex w-full cursor-pointer items-center gap-2 px-1"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1"
           aria-expanded={open}
           aria-controls={regionId}
         >
