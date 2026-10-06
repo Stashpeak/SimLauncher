@@ -15,8 +15,8 @@ interface GameRowTitleProps {
  *
  * The badge used to sit inline with the name. It is `shrink-0`, so the name
  * was what yielded, down to `RaceRo...` at 175% zoom (#886). The line below
- * already exists, the row is a fixed height so nothing grows, and on a broken
- * row that line is usually empty, because the game cannot be launched from it.
+ * already exists, and on a broken row it is usually empty, because the game
+ * cannot be launched from it.
  */
 export function GameRowTitle({
   name,
@@ -39,8 +39,8 @@ export function GameRowTitle({
           with nothing in it would still take the column's gap and nudge the
           name up. On a broken row the icons wrap below the badge rather than
           run into the action buttons, which they did at 175% zoom with six
-          companions running (51px). The row is a fixed 72px and the third line
-          still fits inside it. */}
+          companions running (51px). The row grows for that third line rather
+          than clip it (GameRow's min-h). */}
       {pathMissing ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <GamePathMissingBadge />

@@ -9,7 +9,8 @@ import { Tooltip } from '../Tooltip'
  * the tooltip. A tooltip opens on hover and on focus, but a badge is not a
  * control and must not take tab focus, so keyboard and screen-reader users
  * would never reach the one sentence that says how to fix it. The visible badge
- * stays short because it sits inline with the game title.
+ * stays short because it shares the line under the game name with the running
+ * companion icons (#886).
  *
  * Whether the path is malformed or simply gone is deliberately not
  * distinguished, matching the launch-time warning: both point at the same fix

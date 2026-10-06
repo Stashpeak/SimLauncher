@@ -779,10 +779,14 @@ export function GameRow({
       className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 z-0 ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
-      <div className="accent-subtle-hover glass-surface flex h-[72px] w-full items-center justify-between rounded-[20px] px-6 z-0">
+      {/* min-h, not h: every ordinary row is exactly 72px (its tallest content
+          is the 48px icon, 66px with the padding), but a broken row with
+          companions running can need a third line at high zoom, and a fixed
+          height ran it into the border (#886). */}
+      <div className="accent-subtle-hover glass-surface flex min-h-[72px] w-full items-center justify-between rounded-[20px] px-6 py-2 z-0">
         {/* The `min-w-0` chain down to the title is what lets a long name give
             way instead of pushing the row wider than it is. A flex item refuses
-            to shrink below its content by default, and this row is fixed height
+            to shrink below its content by default, and this row is one line
             with the action group on the other side of a `justify-between`, so
             without it an overflowing title walks into Launch and Close Apps.
             That is worst at the 175% zoom preset, where an 800px window is only
