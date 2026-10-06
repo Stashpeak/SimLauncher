@@ -27,8 +27,12 @@ export function GameRowTitle({
   const strip = (
     <RunningAppsStrip runningAppIcons={runningAppIcons} cacheInitialized={cacheInitialized} />
   )
+  // `@container` lets the badge switch to its compact form from this column's
+  // width. Size containment drops the column's content width to zero, so it
+  // takes its width from `flex-1` instead, here and on the group around it in
+  // GameRow; the result is the same width the `min-w-0` chain gave it before.
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="@container flex min-w-0 flex-1 flex-col gap-0.5">
       {/* Dimmed on a broken row, as a second signal beside the badge. */}
       <h2
         className={`game-title truncate font-normal ${pathMissing ? 'text-(--text-secondary)' : 'text-(--text-primary)'}`}

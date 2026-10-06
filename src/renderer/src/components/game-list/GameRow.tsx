@@ -794,8 +794,8 @@ export function GameRow({
             used to share the title's line and squeeze it to `RaceRo...`, so it
             now sits on the line below (#886). Truncated text stays whole in the
             accessibility tree, and the row's own `aria-label` carries the full
-            name anyway. */}
-        <div className="flex min-w-0 items-center gap-5">
+            name anyway. `flex-1` is for the size container in GameRowTitle. */}
+        <div className="flex min-w-0 flex-1 items-center gap-5">
           <GameIcon
             game={game}
             isRunning={isGameRunning}

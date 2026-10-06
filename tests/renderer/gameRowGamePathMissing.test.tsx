@@ -216,6 +216,29 @@ describe('GameRow broken-game-path badge (#794)', () => {
     expect(line?.contains(companion)).toBe(true)
   })
 
+  // Where the words do not fit (an 800px window at 175% zoom), the badge shows
+  // a triangle instead. jsdom does not evaluate container queries, so what is
+  // pinned is the contract the CSS relies on: the words go to `sr-only`, never
+  // `hidden`, so a screen reader still hears them; the triangle is decorative;
+  // and the title column is the container the query reads, without which the
+  // badge would silently never switch.
+  test('the compact badge keeps its words for screen readers', async () => {
+    await renderRow(true)
+
+    const words = Array.from(container.querySelectorAll('span')).find(
+      (element) => element.textContent === 'Game not found'
+    )
+    expect(words?.className).toContain('@max-[7.5rem]:sr-only')
+    expect(words?.className).not.toContain('@max-[7.5rem]:hidden')
+
+    const triangle = words?.parentElement?.querySelector('svg')
+    expect(triangle?.getAttribute('aria-hidden')).toBe('true')
+
+    expect(container.querySelector('h2')?.parentElement?.classList.contains('@container')).toBe(
+      true
+    )
+  })
+
   // A second, quieter signal: the name of a game that cannot be found reads as
   // unavailable at a glance. A healthy row keeps the full-strength name.
   test('the name is dimmed on a broken row and only there', async () => {
