@@ -142,6 +142,7 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
         />
 
         <ProcessTrackingSection
+          trackingEnabled={editor.trackingEnabled}
           killControlsEnabled={editor.killControlsEnabled}
           relaunchControlsEnabled={editor.relaunchControlsEnabled}
           trackedProcessPaths={editor.trackedProcessPaths}

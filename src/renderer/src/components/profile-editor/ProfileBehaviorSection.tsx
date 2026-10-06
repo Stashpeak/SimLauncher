@@ -1,6 +1,19 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import type { GamePosition } from '../../lib/config'
+import { AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } from '../../../../shared/domain/autoCloseTiming'
 import { ProfileToggleRow } from './ProfileToggleRow'
+import {
+  TRACKING_OFF_SUBLABEL,
+  TRACKING_ON_SUBLABEL,
+  TRACKING_REQUIRED_SUBLABEL
+} from './trackingCopy'
+
+// The numbers come from the values main runs on, so the copy cannot drift.
+// "A few seconds" read as "it did not fire" during a 15 s wait, and the
+// two-minute session floor was not mentioned at all, so a quick test of the
+// toggle looked broken (#945). The refusal when two games watch the same exe
+// name stays unmentioned: rare, and it would turn the line into a paragraph.
+const AUTO_CLOSE_SUBLABEL = `After ${MIN_SESSION_MS / 60000}+ minutes of play, waits ${AUTO_CLOSE_GRACE_MS / 1000} s so tools can save`
 
 interface ProfileBehaviorSectionProps {
   launchAutomatically: boolean
@@ -39,6 +52,7 @@ export function ProfileBehaviorSection({
         />
         <ProfileToggleRow
           label="Track running indicator for this game"
+          sublabel={trackingEnabled ? TRACKING_ON_SUBLABEL : TRACKING_OFF_SUBLABEL}
           checked={trackingEnabled}
           onToggle={() => onTrackingEnabledChange((value) => !value)}
           onChange={onTrackingEnabledChange}
@@ -48,11 +62,7 @@ export function ProfileBehaviorSection({
             and silently inert. */}
         <ProfileToggleRow
           label="Close apps when the game exits"
-          sublabel={
-            trackingEnabled
-              ? 'Waits a few seconds so tools can finish saving'
-              : 'Needs the running indicator above'
-          }
+          sublabel={trackingEnabled ? AUTO_CLOSE_SUBLABEL : TRACKING_REQUIRED_SUBLABEL}
           checked={closeAppsOnGameExit}
           disabled={!trackingEnabled}
           onToggle={() => onCloseAppsOnGameExitChange((value) => !value)}
