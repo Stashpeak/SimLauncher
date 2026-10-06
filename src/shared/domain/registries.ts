@@ -8,24 +8,54 @@ export interface Game {
   key: string
   name: string
   icon: string
+  /**
+   * Which executable to point at, for a game where the obvious one is not the
+   * best choice (#989). Shown as an "i" tooltip beside the game in Settings →
+   * Games. Verified facts only: a tip goes in once someone has run the game
+   * that way, never from inference. Kept in the registry rather than the
+   * component so path auto-detection (#206) can reuse the same knowledge.
+   */
+  pathTip?: string
+  /**
+   * The obvious-but-worse executable, by bare file name (compared without
+   * case), and the line shown under the path field while the path points at
+   * it. Someone who picked it does not know there is anything to look for, so
+   * they would never hover an "i".
+   */
+  pathHint?: { fileName: string; text: string }
 }
 
 export interface Utility {
   key: string
   name: string
   isCustom?: boolean
-  // Bundled curated icon path (mirrors Game.icon). For a built-in slot the
-  // app identity is known, so when this is set the bundled asset is shown
-  // FIRST — ahead of the Windows shell-extracted exe icon — with shell
-  // extraction only as fallback (#727; originally introduced shell-first by
-  // #652). Shell extraction is unreliable across app versions/icon formats
-  // and can "succeed" with a broken image (e.g. Crew Chief's black-square
-  // alpha artifact), which shell-first would keep forever once cached.
+  /**
+   * Bundled curated icon path (mirrors Game.icon). For a built-in slot the
+   * app identity is known, so when this is set the bundled asset is shown
+   * FIRST — ahead of the Windows shell-extracted exe icon — with shell
+   * extraction only as fallback (#727; originally introduced shell-first by
+   * #652). Shell extraction is unreliable across app versions/icon formats
+   * and can "succeed" with a broken image (e.g. Crew Chief's black-square
+   * alpha artifact), which shell-first would keep forever once cached.
+   */
   icon?: string
 }
 
 export const GAMES: Game[] = [
-  { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' },
+  {
+    key: 'ac',
+    name: 'Assetto Corsa',
+    icon: 'assets/ac.png',
+    // Content Manager is a third-party launcher, so the copy is an offer, not
+    // an instruction: acs.exe works, and some players run AC without CM.
+    // Verified: David runs AC through CM, and auto-close on CM was observed in
+    // the 1.2.2 smoke (#987).
+    pathTip: 'If you launch AC through Content Manager, set the path to Content Manager.exe.',
+    pathHint: {
+      fileName: 'acs.exe',
+      text: 'Using Content Manager? Set the path to its exe instead.'
+    }
+  },
   { key: 'acc', name: 'Assetto Corsa Competizione', icon: 'assets/acc.png' },
   { key: 'acevo', name: 'Assetto Corsa Evo', icon: 'assets/acevo.png' },
   { key: 'acrally', name: 'Assetto Corsa Rally', icon: 'assets/acrally.png' },
@@ -40,7 +70,14 @@ export const GAMES: Game[] = [
   { key: 'f124', name: 'F1 24', icon: 'assets/f124.png' },
   { key: 'f125', name: 'F1 25', icon: 'assets/f125.png' },
   { key: 'il2gb', name: 'IL-2 Sturmovik: Great Battles', icon: 'assets/il2gb.png' },
-  { key: 'iracing', name: 'iRacing', icon: 'assets/iracing.png' },
+  {
+    key: 'iracing',
+    name: 'iRacing',
+    icon: 'assets/iracing.png',
+    // Verified: how David runs iRacing. No hint under the field, because no
+    // obvious-but-worse exe has been measured for it.
+    pathTip: 'Set the path to iRacingUI.exe, the iRacing app you start sessions from.'
+  },
   { key: 'lmu', name: 'Le Mans Ultimate', icon: 'assets/lmu.png' },
   { key: 'msfs2020', name: 'Microsoft Flight Simulator 2020', icon: 'assets/msfs2020.png' },
   { key: 'msfs2024', name: 'Microsoft Flight Simulator 2024', icon: 'assets/msfs2024.png' },

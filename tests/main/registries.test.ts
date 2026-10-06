@@ -80,4 +80,15 @@ describe('shared domain registries', () => {
       expect(game.icon).toMatch(/^assets\/.+\.png$/)
     }
   })
+
+  // Path tips are user-facing copy (#989): no em dashes, and a hint names a
+  // bare file name, which is all the Settings field compares it against.
+  it('path tips and hints are plain copy with a bare file name', () => {
+    for (const game of GAMES) {
+      for (const text of [game.pathTip, game.pathHint?.text]) {
+        if (text !== undefined) expect(text).not.toContain('—')
+      }
+      if (game.pathHint) expect(game.pathHint.fileName).toMatch(/^[^\\/]+\.exe$/i)
+    }
+  })
 })
