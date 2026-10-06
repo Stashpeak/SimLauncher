@@ -286,6 +286,27 @@ export function ErrorIcon(props: IconProps): ReactNode {
   )
 }
 
+// ErrorIcon's circle with the mark the other way up: a tip, not a problem.
+export function InfoIcon(props: IconProps): ReactNode {
+  return (
+    <Icon
+      width={props.width ?? 24}
+      height={props.height ?? 24}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </Icon>
+  )
+}
+
 export function KillIcon(props: IconProps): ReactNode {
   return (
     <Icon
