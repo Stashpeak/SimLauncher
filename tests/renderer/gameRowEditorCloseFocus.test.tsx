@@ -4,14 +4,15 @@
  * Cancel, Escape, a confirm dialog, Delete) unmounts the control that had
  * focus, and nothing put focus anywhere, so the next Tab restarted at the
  * titlebar. All of them end in the editor's `onClose`, so the editor is
- * stubbed here to a single button that calls it: the thing under test is what
- * GameRow does once the editor has gone.
+ * stubbed here: a button that calls it, plus the dirty report and save
+ * handler the real editor registers with AppDirtyContext, because the sticky
+ * bar's own lifetime hangs off that report.
  *
  * The target is the row's editor toggle (the gear), the one control that
  * outlives the close and where the gear-X route already leaves focus.
  */
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
-import { act, useState, type ReactNode } from 'react'
+import { act, useEffect, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 
 vi.mock('../../src/renderer/src/lib/electron', () => ({
@@ -57,29 +58,77 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
   })
 }))
 
-vi.mock('../../src/renderer/src/components/ProfileEditor', () => ({
-  ProfileEditor: ({ onClose }: { onClose: () => void }) => (
-    <button type="button" onClick={onClose}>
-      Save Profile
-    </button>
-  )
-}))
+const stub = vi.hoisted(() => ({ dirty: false }))
+
+vi.mock('../../src/renderer/src/components/ProfileEditor', async () => {
+  const { useEffect: useStubEffect } = await import('react')
+  const { useAppDirty: useStubAppDirty } =
+    await import('../../src/renderer/src/contexts/AppDirtyContext')
+  return {
+    ProfileEditor: ({
+      gameKey,
+      activeProfileId,
+      onClose
+    }: {
+      gameKey: string
+      activeProfileId: string
+      onClose: () => void
+    }) => {
+      const { reportProfileEditorDirty, registerSaveHandler } = useStubAppDirty()
+      const scopeId = `${gameKey}:${activeProfileId}`
+      // Same shape as ProfileEditor.tsx: the report is retracted in the
+      // unmount cleanup, one commit after the close itself.
+      useStubEffect(() => {
+        reportProfileEditorDirty(scopeId, stub.dirty)
+        return () => reportProfileEditorDirty(scopeId, false)
+      }, [scopeId, reportProfileEditorDirty])
+      // Like handleSave: the store write is awaited, then the editor closes.
+      useStubEffect(() => {
+        if (!stub.dirty) return
+        registerSaveHandler('profile-editor', async () => {
+          await Promise.resolve()
+          onClose()
+          return true
+        })
+        return () => registerSaveHandler('profile-editor', null)
+      }, [registerSaveHandler, onClose])
+      return (
+        <button type="button" onClick={onClose}>
+          Save Profile
+        </button>
+      )
+    }
+  }
+})
 
 beforeAll(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 import { GameRow } from '../../src/renderer/src/components/game-list/GameRow'
-import { AppDirtyProvider } from '../../src/renderer/src/contexts/AppDirtyContext'
+import { StickySaveBar } from '../../src/renderer/src/components/StickySaveBar'
+import { AppDirtyProvider, useAppDirty } from '../../src/renderer/src/contexts/AppDirtyContext'
 import type { Game } from '../../src/renderer/src/lib/config'
 
 const GAME: Game = { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' }
 
+// A Settings scope that stays dirty through a save, so the bar outlives the
+// editor: the case where focus must stay on the bar.
+function StillDirtySettings(): ReactNode {
+  const { reportSettingsDirty, registerSaveHandler } = useAppDirty()
+  useEffect(() => {
+    reportSettingsDirty(true)
+    registerSaveHandler('settings', () => true)
+  }, [reportSettingsDirty, registerSaveHandler])
+  return null
+}
+
 // Owns isActive the way GameList does, so closing really unmounts the editor.
-function Harness(): ReactNode {
+function Harness({ settingsDirty }: { settingsDirty: boolean }): ReactNode {
   const [isActive, setIsActive] = useState(true)
   return (
     <AppDirtyProvider>
+      {settingsDirty && <StillDirtySettings />}
       <GameRow
         game={GAME}
         isActive={isActive}
@@ -96,6 +145,7 @@ function Harness(): ReactNode {
         onCloseEditor={() => setIsActive(false)}
         cacheInitialized={true}
       />
+      <StickySaveBar onRequestDiscard={vi.fn()} />
     </AppDirtyProvider>
   )
 }
@@ -103,94 +153,84 @@ function Harness(): ReactNode {
 let container: HTMLDivElement
 let root: Root | null = null
 
-async function render(): Promise<void> {
+async function render({ dirty = false, settingsDirty = false } = {}): Promise<void> {
+  stub.dirty = dirty
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
     root = createRoot(container)
-    root.render(<Harness />)
+    root.render(<Harness settingsDirty={settingsDirty} />)
   })
 }
 
 afterEach(() => {
   act(() => root?.unmount())
   container.remove()
-  vi.restoreAllMocks()
 })
 
 const gear = () =>
   container.querySelector<HTMLButtonElement>('button[aria-controls="profile-editor-ac"]')
 
-const editorButton = () =>
+const buttonNamed = (name: string) =>
   Array.from(container.querySelectorAll('button')).find(
-    (button) => button.textContent === 'Save Profile'
+    (button) => button.textContent?.trim() === name
   )
 
-// Holds the deferred hand-off until the test has decided where focus is, so a
-// real frame cannot fire inside the click's act and race the assertions.
-function captureFrames(): { flush: () => void } {
-  const frames: FrameRequestCallback[] = []
-  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-    frames.push(callback)
-    return frames.length
-  })
-  return {
-    flush: () =>
-      act(() => {
-        for (const frame of frames.splice(0)) frame(0)
-      })
-  }
-}
-
-async function closeFromInsideEditor(): Promise<void> {
-  const button = editorButton()
+async function pressFocused(button: HTMLButtonElement | undefined): Promise<void> {
   expect(button).toBeDefined()
   button!.focus()
   expect(document.activeElement).toBe(button)
   await act(async () => {
     button!.click()
   })
-  // The editor and the focused control in it are gone.
-  expect(editorButton()).toBeUndefined()
 }
 
 describe('GameRow hands focus to the editor toggle when the editor closes (#957)', () => {
   test('closing from inside the editor lands focus on the gear, not <body>', async () => {
     await render()
-    const frames = captureFrames()
 
-    await closeFromInsideEditor()
-    expect(document.activeElement).toBe(document.body)
+    await pressFocused(buttonNamed('Save Profile'))
 
-    frames.flush()
+    expect(buttonNamed('Save Profile')).toBeUndefined()
     expect(document.activeElement).toBe(gear())
     expect(gear()?.getAttribute('aria-expanded')).toBe('false')
   })
 
-  test('focus that already landed somewhere real is left there', async () => {
-    await render()
-    const frames = captureFrames()
-    const elsewhere = document.createElement('button')
-    document.body.appendChild(elsewhere)
+  // The ordering a frame-based hand-off lost on a packaged build: the save
+  // resolves after an await, the editor closes, and the bar holding focus
+  // only unmounts one commit later, when the editor's dirty report is
+  // retracted.
+  test('Save on the sticky bar lands focus on the gear once the bar is gone', async () => {
+    await render({ dirty: true })
 
-    try {
-      await closeFromInsideEditor()
-      // e.g. the sticky bar still up for a dirty Settings scope.
-      elsewhere.focus()
-      frames.flush()
-      expect(document.activeElement).toBe(elsewhere)
-    } finally {
-      elsewhere.remove()
-    }
+    await pressFocused(buttonNamed('Save Changes'))
+
+    expect(buttonNamed('Save Profile')).toBeUndefined()
+    expect(buttonNamed('Save Changes')).toBeUndefined()
+    expect(document.activeElement).toBe(gear())
+  })
+
+  test('when the bar stays up for a dirty Settings scope, focus stays on its Save', async () => {
+    await render({ dirty: true, settingsDirty: true })
+
+    await pressFocused(buttonNamed('Save Changes'))
+
+    expect(buttonNamed('Save Profile')).toBeUndefined()
+    const barSave = buttonNamed('Save Changes')
+    expect(barSave).toBeDefined()
+    expect(document.activeElement).toBe(barSave)
   })
 
   test('an inert row (the other view after a tab-switch save) is not focused', async () => {
     await render()
-    const frames = captureFrames()
-
-    await closeFromInsideEditor()
+    const button = buttonNamed('Save Profile')
+    button!.focus()
     container.setAttribute('inert', '')
-    frames.flush()
+
+    await act(async () => {
+      button!.click()
+    })
+
     expect(document.activeElement).toBe(document.body)
   })
 })

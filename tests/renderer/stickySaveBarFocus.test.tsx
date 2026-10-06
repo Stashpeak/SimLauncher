@@ -1,11 +1,13 @@
 /**
  * Regression test for #957, first mechanism: the sticky bar's Save button
  * became `disabled` in the same commit as the click that pressed it, and
- * Chromium blurs a focused element that turns disabled, so focus fell to
- * <body> before the save had even started. jsdom does NOT reproduce that blur
- * (it only refuses focus() on a disabled control), so the old markup goes red
- * here on the attribute assertions, and the blur itself is checked on a
- * packaged build.
+ * Chromium moves focus off a focused control still `disabled` at its next
+ * rendering update. A real save awaits a store write past that point, so
+ * focus fell to <body> mid-save (measured on a packaged build; a disable
+ * undone within the same task keeps focus). jsdom does NOT reproduce that
+ * blur (it only refuses focus() on a disabled control), so the old markup
+ * goes red here on the attribute assertions, and the blur itself is checked
+ * on a packaged build.
  *
  * The bar now uses the #830 shape while a save runs: `aria-disabled` with the
  * click handlers dropped, so the button keeps focus and cannot be pressed

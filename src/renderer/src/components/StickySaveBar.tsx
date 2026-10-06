@@ -74,9 +74,12 @@ export function StickySaveBar({ onRequestDiscard }: { onRequestDiscard: () => vo
         </span>
         {/* aria-disabled, not `disabled`, while a save runs (#957, the #830
             shape): Save is the focused control at the moment it becomes
-            unavailable, and Chromium blurs a focused element that turns
-            `disabled`, dropping focus to <body> before the save even starts.
-            The click handlers are dropped instead, so nothing can run twice. */}
+            unavailable, and Chromium moves focus off a focused control that
+            is still `disabled` at its next rendering update. Every real save
+            awaits a store write past that point, so focus fell to <body>
+            (measured on a packaged build; a refused save re-enables within
+            the same task and kept focus, which is why it never showed). The
+            click handlers are dropped instead, so nothing can run twice. */}
         <button
           type="button"
           onClick={isSaving ? undefined : onRequestDiscard}
