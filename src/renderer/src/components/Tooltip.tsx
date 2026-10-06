@@ -61,6 +61,8 @@ export function Tooltip({
     open: isOpen,
     onOpenChange: setIsOpen,
     placement,
+    // No height cap, unlike the profile menu (#954): a tooltip is a few lines
+    // at most and never taller than the room. `size` here only matches width.
     middleware: [
       offset(8),
       flip({ padding: 8 }),

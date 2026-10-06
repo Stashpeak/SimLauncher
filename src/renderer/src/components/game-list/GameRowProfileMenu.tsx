@@ -1,6 +1,15 @@
-import { useId } from 'react'
+import { useEffect, useId } from 'react'
 import type { Dispatch, KeyboardEvent, MutableRefObject, ReactNode, SetStateAction } from 'react'
-import { autoUpdate, flip, FloatingPortal, offset, shift, useFloating } from '@floating-ui/react'
+import {
+  autoUpdate,
+  flip,
+  FloatingPortal,
+  offset,
+  shift,
+  size,
+  useFloating
+} from '@floating-ui/react'
+import { revealInMenuList } from '../../lib/menuScroll'
 import type { GameProfileSet, NamedGameProfile } from '../../lib/config'
 import { ChevronDownIcon, CheckIcon, PlusIcon } from '../icons'
 import { Tooltip } from '../Tooltip'
@@ -60,16 +69,47 @@ export function GameRowProfileMenu({
   // three. Same stack as Tooltip and useDismissMenu; `flip` is what opens it
   // upward on the bottom row. Open/close, keyboard and outside-press stay in
   // useProfileMenu, so no floating-ui interactions are wired here.
+  //
+  // `size` caps it (#954). `flip` and `shift` can only move a box, so a menu
+  // taller than the space ran over the header and off the screen with many
+  // profiles or a large zoom. `size` hands the room left on the chosen side
+  // to the menu as --menu-max-height; the profile list scrolls inside that,
+  // and New profile stays pinned below it. flip, shift, size is floating-ui's
+  // documented order: the side is chosen first, then the box is fitted to it.
   const {
     refs,
     floatingStyles,
+    isPositioned,
     placement: resolvedPlacement
   } = useFloating({
     open: profileMenuOpen,
     placement: 'bottom-end',
-    middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
+    middleware: [
+      offset(6),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ availableHeight, elements }) {
+          elements.floating.style.setProperty(
+            '--menu-max-height',
+            `${Math.max(0, availableHeight)}px`
+          )
+        }
+      })
+    ],
     whileElementsMounted: autoUpdate
   })
+
+  // Once the cap is in place the active profile may sit below the fold of a
+  // long list; bring it in, so the menu opens on the user's own choice.
+  useEffect(() => {
+    if (!profileMenuOpen || !isPositioned) return
+    const selected = menuRef.current?.querySelector<HTMLElement>(
+      '[data-menu-list] [aria-checked="true"]'
+    )
+    if (selected) revealInMenuList(selected)
+  }, [profileMenuOpen, isPositioned, menuRef])
   // The portal goes into #root, not document.body (Codex P1 x2 on #940). A
   // menu is app content: every dialog (ConfirmDialog, ImportPreviewDialog,
   // OnboardingModal, ColorPickerPopover) portals to body at z-100 or above and
@@ -166,35 +206,46 @@ export function GameRowProfileMenu({
               // The entrance slides toward the pill: down from above when the
               // menu opens below it, up from below when `flip` put it above
               // (the bottom row), where the default keyframe would slide away.
-              className={`dropdown-surface overlay-glass min-w-44 overflow-hidden rounded-xl px-1 pt-1 pb-1.5 ${
+              // Capped by `size` (#954). The surface keeps overflow-hidden for
+              // its rounded corners; the profile list below is what scrolls.
+              className={`dropdown-surface overlay-glass flex max-h-(--menu-max-height) min-w-44 flex-col overflow-hidden rounded-xl px-1 pt-1 pb-1.5 ${
                 resolvedPlacement.startsWith('top') ? 'animate-fade-slide-up' : 'animate-fade-slide'
               }`}
             >
-              {sortedProfiles.map((profile) => {
-                const selected = profile.id === profileSet.activeProfileId
+              {/* Only the profiles scroll. New profile and its inline form stay
+                  pinned below (David, #954), so creating one never needs a
+                  scroll. `relative` makes this the items' offsetParent for
+                  revealInMenuList. */}
+              <div
+                data-menu-list
+                className="custom-scrollbar relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+              >
+                {sortedProfiles.map((profile) => {
+                  const selected = profile.id === profileSet.activeProfileId
 
-                return (
-                  <button
-                    key={profile.id}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected ? 'true' : 'false'}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onProfileSelect(profile.id)
-                    }}
-                    className={`dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold ${
-                      selected ? 'selected-surface' : ''
-                    }`}
-                  >
-                    <span
-                      className={`status-dot h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{profile.name}</span>
-                  </button>
-                )
-              })}
-              <div className="my-1 h-px bg-(--glass-border)" />
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected ? 'true' : 'false'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onProfileSelect(profile.id)
+                      }}
+                      className={`dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold ${
+                        selected ? 'selected-surface' : ''
+                      }`}
+                    >
+                      <span
+                        className={`status-dot h-1.5 w-1.5 shrink-0 rounded-full ${selected ? 'bg-(--accent)' : 'bg-(--text-subtle)'}`}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{profile.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="my-1 h-px shrink-0 bg-(--glass-border)" />
               {newProfileFormOpen ? (
                 <form
                   onSubmit={(event) => {
@@ -202,7 +253,7 @@ export function GameRowProfileMenu({
                     event.stopPropagation()
                     onNewProfileSubmit()
                   }}
-                  className="flex items-center gap-1.5 rounded-lg px-1.5 py-1"
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1"
                 >
                   <input
                     ref={newProfileInputRef}
@@ -236,7 +287,7 @@ export function GameRowProfileMenu({
                     event.stopPropagation()
                     onProfileSelect('__new__')
                   }}
-                  className="dropdown-item flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
+                  className="dropdown-item flex w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-bold"
                 >
                   <PlusIcon width={12} height={12} />
                   New profile

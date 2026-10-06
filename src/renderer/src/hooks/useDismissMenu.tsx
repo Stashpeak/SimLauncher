@@ -51,6 +51,8 @@ export function useDismissMenu(target: DismissMenuTarget): {
     open: isMenuOpen,
     onOpenChange: setIsMenuOpen,
     placement: 'bottom-start',
+    // No height cap, unlike the profile menu (#954): one item can never be
+    // taller than the room, so `size` would only add work.
     middleware: [offset(4), flip({ padding: 8 }), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate
   })
