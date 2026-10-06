@@ -101,15 +101,20 @@ export function useDismissMenu(target: DismissMenuTarget): {
     name: target.name
   })
 
+  // Into #root at z-50, the profile menu's layer (#940), not body at z-9999
+  // (#941). Every dialog portals to body at z-100 or above and useFocusTrap
+  // marks #root inert while it is open, so a menu in #root is covered and inert
+  // whatever opened the dialog. In body it floated above a dialog that opened
+  // without a pointer or key on the page (the OS close request with unsaved
+  // changes), still clickable, so a dismiss could fire while the close decision
+  // was pending. Tests without a #root get `undefined`, FloatingPortal's "use
+  // body"; `null` would mean "wait for a root" and render nothing.
+  const appRoot = document.getElementById('root') ?? undefined
+
   const menu = isMenuOpen ? (
-    <FloatingPortal>
+    <FloatingPortal root={appRoot}>
       <FloatingFocusManager context={context} modal={false}>
-        <div
-          ref={refs.setFloating}
-          style={floatingStyles}
-          {...getFloatingProps()}
-          className="z-9999"
-        >
+        <div ref={refs.setFloating} style={floatingStyles} {...getFloatingProps()} className="z-50">
           <div className="dropdown-surface overlay-glass rounded-xl p-1 border border-(--glass-border) shadow-(--surface-floating-shadow) animate-fade-slide min-w-[180px]">
             <button
               type="button"
