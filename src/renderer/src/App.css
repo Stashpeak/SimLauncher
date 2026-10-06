@@ -344,6 +344,13 @@ textarea {
   box-shadow: revert-layer;
 }
 
+/* The same for the cursor: a profile toggle row nests a Toggle whose own
+   cursor-pointer would still make the knob, the most obvious click target,
+   look clickable on an unavailable row (Codex on PR #1018). */
+.accent-subtle-hover[aria-disabled='true'] * {
+  cursor: not-allowed;
+}
+
 .accent-subtle-hover:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
