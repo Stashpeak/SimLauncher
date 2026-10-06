@@ -134,8 +134,10 @@ export function useFocusTrap(
       trapDepth = Math.max(0, trapDepth - 1)
       if (trapDepth === 0) setBackgroundInert(false)
       // Restore focus only AFTER un-inerting; focusing an element inside an inert
-      // subtree is a no-op.
-      previouslyFocused?.focus?.()
+      // subtree is a no-op. Without scrolling: this puts focus back where it
+      // was when the dialog opened, and the background could not move while it
+      // was inert, so a scroll here only jumps the page (#948).
+      previouslyFocused?.focus?.({ preventScroll: true })
     }
   }, [active, containerRef, initialFocusRef])
 }

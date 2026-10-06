@@ -6,8 +6,10 @@ import {
   consumeProcessNameMismatchWarningSuppression,
   dismissAppIcon,
   gamesSeenRunning,
+  getGamesHeldDuringClose,
   getLaunchGeneration,
   getUnclosedProcessKey,
+  holdGamesDuringClose,
   isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
@@ -202,4 +204,20 @@ test('registering a launch bumps that game launch generation (#204)', () => {
   expect(getLaunchGeneration('ac')).toBe(0)
 
   unregisterActiveLaunch('iracing', second)
+})
+
+// A per-game Close Apps and the tray's global one can overlap on the same game
+// (#976). The first to finish must not end the other's hold, and the kill
+// releases twice (early on success, again from its finally).
+test('a close hold is counted per game and its release is idempotent (#976)', () => {
+  const releaseGame = holdGamesDuringClose(['iracing'])
+  const releaseAll = holdGamesDuringClose(['iracing', 'ac', 'ac'])
+  expect(getGamesHeldDuringClose().sort()).toEqual(['ac', 'iracing'])
+
+  releaseGame()
+  releaseGame()
+  expect(getGamesHeldDuringClose().sort()).toEqual(['ac', 'iracing'])
+
+  releaseAll()
+  expect(getGamesHeldDuringClose()).toEqual([])
 })

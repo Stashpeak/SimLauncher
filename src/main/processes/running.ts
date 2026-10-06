@@ -7,13 +7,21 @@ import {
   getActiveStoredProfile,
   getProfileTrackablePaths,
   getStoredProfiles,
-  isProcessTrackingEnabled
+  isProcessTrackingEnabled,
+  isUtilityEnabled
 } from '../profiles'
 import { getStoredStringRecord } from '../store'
-import { getExeName, isValidExePath, normalizePathForComparison } from '../utils'
+import {
+  getExeName,
+  isTrackableSecondaryExe,
+  isValidExePath,
+  normalizePathForComparison,
+  pathsEqual
+} from '../utils'
 
 import { getClosableLaunchedAppGameKeys, pruneUnclosedProcesses } from './kill'
 import {
+  getGamesHeldDuringClose,
   isLaunchActiveForGame,
   processNameMismatchWarnings,
   pruneExpiredProcessNameMismatchWarnings,
@@ -63,10 +71,12 @@ export interface RunningAppsChangedPayload {
 }
 
 const RUNNING_APPS_CHANGED_CHANNEL = 'running-apps-changed'
-// The process scan spawns `tasklist.exe` (plus a `conhost.exe`) every tick, so
-// the cadence is adaptive (#672): keep the responsive FAST poll only while it
-// earns that cost and back off to SLOW when idle in the tray, where a stale-by-
-// a-few-seconds list costs the user nothing.
+// The process scan used to spawn `tasklist.exe` (plus a `conhost.exe`) every
+// tick, which is why the cadence is adaptive (#672): keep the responsive FAST
+// poll only while it earns that cost and back off to SLOW when idle in the tray,
+// where a stale-by-a-few-seconds list costs the user nothing. Since #975 a tick
+// reads the process list in-process and spawns only as a fallback, so FAST is
+// cheap on a working install; the cadence stays for the fallback's sake.
 const FAST_RUNNING_APPS_SCAN_INTERVAL_MS = 2000
 const SLOW_RUNNING_APPS_SCAN_INTERVAL_MS = 12000
 // After any launch/exit/kill, stay on FAST for this long so a settling launch
@@ -296,6 +306,15 @@ interface RunningAppsSnapshot {
 // lives in how `isPathRunning` is assembled below, so a test that supplied its
 // own would be asserting against a copy of the logic under test.
 export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot> {
+  // Captured by IDENTITY, before the first await below, so the #961 delete
+  // further down can tell a pre-existing entry from one spawn.ts's exit
+  // handler stores WHILE this tick is still in flight (Codex P1 on #961
+  // round 2): `pathStates`, resolved later in this same tick, can only ever
+  // describe the machine as of THIS read, so a warning that did not exist yet
+  // when it started is not something this tick's `pathStates` has any
+  // business judging. A relaunch that exits again overwrites the same key
+  // with a new object, which is why this checks object identity, not keys.
+  const warningsBeforeSnapshot = new Set(processNameMismatchWarnings.values())
   const readResult = await readRunningProcessNames()
   // `processNames` survives for exactly one job (see `isPathRunning`): a record
   // whose "path" is a bare image name, which is not a path and must not be
@@ -402,6 +421,132 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   pruneExpiredProcessNameMismatchWarnings()
   reconcileUntrackedGames()
 
+  // The stub-game warning says tracking is lost and asks for a secondary
+  // executable. Once one of the game's configured secondaries is running, the
+  // user has done exactly that and SimLauncher does see the game again, so the
+  // warning is false and must go (#978). Game entries only: the secondaries
+  // belong to the game, and a companion's own re-exec warning would otherwise
+  // be silenced by an unrelated process.
+  //
+  // Hidden rather than deleted while the secondary runs, because this entry is
+  // what keeps the game counted as launched (`launchedGameKeys` below), and
+  // that is what surfaces the secondary's chip at all: dropping it would take
+  // the row from "running" to idle while the game is still up. Deleted once
+  // the secondary stops, which is the game closing, observed; leaving it would
+  // bring the ring back with the same false claim. Gated on a good read like
+  // the prunes above, since a failed one says every secondary has stopped.
+  if (tasklistReadSucceeded) {
+    processNameMismatchWarnings.forEach((entry, key) => {
+      // #961: the entry's OWN configured path is observed running again,
+      // which is positive evidence tracking is restored. Delete outright
+      // rather than fold through `isPathRunning`/`isTrackedPathRunning`:
+      // those deliberately read `unknown` as running everywhere else,
+      // because for every OTHER caller an absence of proof must not delete
+      // or skip something the user can see (#390, #674). Here it is the
+      // opposite risk: `unknown` means a same-named process the poll could
+      // not resolve to THIS path (resolveTrackedPathStates downgrades an
+      // unaccounted match to `unknown`, mirroring
+      // resolveConfiguredPathState's undecidable branch in
+      // win32KillUtils.ts), which is exactly the ambiguous case this
+      // warning exists to describe, not evidence tracking is restored. The
+      // issue's own suggested `if (isPathRunning(entry.path)) delete` would
+      // delete on that no-evidence state, clearing "SimLauncher can no
+      // longer detect this" while it still cannot. Only the bare `running`
+      // verdict, read straight off `pathStates`, counts as the positive
+      // evidence #961 asks for.
+      //
+      // Ahead of the game-only `pathsEqual` scoping below, so a companion's
+      // own re-exec warning clears the exact same way a game's does (Codex
+      // P2 on #961 round 2): the pre-#961 resurrection this fix exists to
+      // stop has the identical shape for either one, and leaving the
+      // guard where it was would have fixed the warning this issue was
+      // filed about while reintroducing the same bug, unannounced, for
+      // every companion.
+      //
+      // Gated on `warningsBeforeSnapshot` (identity, not key) so an entry
+      // spawn.ts stores WHILE this tick's snapshot is still resolving is
+      // never judged by it: that snapshot was sampled before the exit it is
+      // reporting, so it still reads the exe as running and would otherwise
+      // delete the warning in the very tick that created it. This is not an
+      // edge case: `resolveTrackedPathStates` awaits a PowerShell
+      // enumeration for any unfamiliar pid, which on a real machine runs
+      // for seconds, and the default launch order starts utilities after
+      // the game, so a poll holding a pre-exit snapshot is routinely still
+      // in flight during a stub's first few seconds of life (Codex P1 on
+      // #961 round 2).
+      //
+      // Skipped while `handedOffTo` is set (Codex P2 on #961 round 2): that
+      // entry is what keeps the game counted as launched while only its
+      // secondary is visible proof of life (the #978 pass below), and
+      // deleting it the instant the configured path merely flickers back
+      // loses that bookkeeping if the flicker does not hold. The #978 pass
+      // below already deletes a handed-off entry once its secondary stops,
+      // and reaches this exact same "the original path is back" signal
+      // itself via `isPathRunning(entry.handedOffTo)` once the secondary
+      // IS that path.
+      if (
+        entry.handedOffTo === undefined &&
+        warningsBeforeSnapshot.has(entry) &&
+        pathStates.get(entry.path) === 'running'
+      ) {
+        processNameMismatchWarnings.delete(key)
+        return
+      }
+
+      const gamePath = gamePaths[entry.gameKey]
+
+      if (!pathsEqual(entry.path, gamePath)) {
+        return
+      }
+
+      const profile = getActiveStoredProfile(profiles[entry.gameKey])
+      const secondaries = Array.isArray(profile?.trackedProcessPaths)
+        ? profile.trackedProcessPaths.filter((candidate) => isTrackableSecondaryExe(candidate))
+        : []
+
+      let observedExited = false
+      if (entry.handedOffTo !== undefined) {
+        // Taken out of the profile, the observed secondary proves nothing any
+        // more and SimLauncher really has lost the game again, so the warning
+        // comes back instead of the row going idle for good (Codex P2 on #984).
+        if (!secondaries.includes(entry.handedOffTo)) {
+          entry.handedOffTo = undefined
+        } else if (isPathRunning(entry.handedOffTo)) {
+          return
+        } else {
+          // Its exit ends the game only if no other new secondary took over:
+          // a bootstrap can hand off again (Codex P2 on #984, round 3).
+          observedExited = true
+        }
+      }
+
+      // Only a secondary that was not running when the game was spawned counts
+      // (Codex P2 on #984): one already up, such as a companion also listed as
+      // a secondary, says nothing about where the stub handed off. No baseline
+      // (its read failed) means nothing counts, and the warning stays true.
+      // Nor does one that is also an enabled utility of this profile: the
+      // launch starts those itself, after the game by default, so they come up
+      // after the baseline without being the stub's child (round 4).
+      const baseline = entry.namesRunningAtLaunch
+      const utilityNames = new Set(
+        Object.entries(appPaths)
+          .filter(([utilityKey]) => isUtilityEnabled(profile, utilityKey))
+          .map(([, utilityPath]) => getExeName(utilityPath))
+      )
+      entry.handedOffTo = baseline
+        ? secondaries.find(
+            (secondary) =>
+              !baseline.has(getExeName(secondary)) &&
+              !utilityNames.has(getExeName(secondary)) &&
+              isPathRunning(secondary)
+          )
+        : undefined
+      if (observedExited && entry.handedOffTo === undefined) {
+        processNameMismatchWarnings.delete(key)
+      }
+    })
+  }
+
   const launchedApps = Array.from(runningProcesses.values()).map((appProcess) => ({
     path: appProcess.path,
     name: appProcess.name,
@@ -428,8 +573,9 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
   // real warning rather than inventing one: a stranger holding the name made
   // the original look alive, so the user was told nothing about a companion
   // that had re-execed under a name SimLauncher cannot track.
-  const mismatchWarnings = Array.from(processNameMismatchWarnings.values())
-    .filter((entry) => !isPathRunning(entry.path))
+  const mismatchEntries = Array.from(processNameMismatchWarnings.values())
+  const mismatchWarnings = mismatchEntries
+    .filter((entry) => entry.handedOffTo === undefined && !isPathRunning(entry.path))
     .map((entry) => ({
       path: entry.path,
       name: entry.name,
@@ -448,16 +594,27 @@ export async function collectRunningAppsSnapshot(): Promise<RunningAppsSnapshot>
     )
   )
   const launchedExeNames = new Set(surfacedApps.map((appProcess) => getExeName(appProcess.path)))
-  const launchedGameKeys = new Set(
-    [...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey)
-  )
+  const launchedGameKeys = new Set([
+    ...[...surfacedApps, ...mismatchWarnings].map((appProcess) => appProcess.gameKey),
+    // A handed-off entry is hidden from the strip but still means "launched",
+    // see the #978 pass above.
+    ...mismatchEntries
+      .filter((entry) => entry.handedOffTo !== undefined)
+      .map((entry) => entry.gameKey)
+  ])
   const adoptedGameKeys = getExternallyAdoptableGameKeys(
     isPathRunning,
     profiles,
     gamePaths,
     launchedGameKeys
   )
-  const adoptedOrLaunchedGameKeys = new Set([...launchedGameKeys, ...adoptedGameKeys])
+  const adoptedOrLaunchedGameKeys = new Set([
+    ...launchedGameKeys,
+    ...adoptedGameKeys,
+    // A Close Apps in flight keeps its games launched while their companions
+    // exit one by one (#976).
+    ...getGamesHeldDuringClose()
+  ])
   const trackedApps = (
     await getTrackedRunningApps(
       isPathRunning,
@@ -621,7 +778,7 @@ export function publishRunningApps(
 
 /**
  * Pick the delay until the next process scan. FAST while the poll is earning its
- * `tasklist.exe` spawn — recent launch activity, a visible window, or any app
+ * cost — recent launch activity, a visible window, or any app
  * currently running (launcher-owned OR externally adopted, via the last
  * published count) — and SLOW only when the window is hidden AND nothing is
  * running (the idle-in-tray case #672 targets). The poll never stops, so a

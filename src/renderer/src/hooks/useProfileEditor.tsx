@@ -41,6 +41,9 @@ export interface ProfileEditorProps {
   // owner can finish async cleanup (delete a pending "+" profile) before the
   // caller remounts views that reload from the store (#478).
   onDiscarded?: () => Promise<void> | void
+  // A discard that keeps the editor open (the sticky bar's Discard, #951):
+  // the owner remounts the editor so it reloads the stored profile.
+  onReverted?: () => void
   onLaunchRequest?: (handleLaunch: () => void) => void
   onLaunchStart?: () => void
   onLaunchEnd?: (cooldownMs: number) => void

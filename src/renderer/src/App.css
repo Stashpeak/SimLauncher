@@ -335,6 +335,22 @@ textarea {
     0 0 20px -16px var(--accent-glow);
 }
 
+/* An unavailable control stays hoverable so its tooltip can say why (#830,
+   #836), but must not light up as if a click would do something.
+   revert-layer drops back to the element's own (layered) background, e.g. a
+   profile toggle row's bg-(--glass-bg). */
+.accent-subtle-hover[aria-disabled='true']:hover {
+  background: revert-layer;
+  box-shadow: revert-layer;
+}
+
+/* The same for the cursor: a profile toggle row nests a Toggle whose own
+   cursor-pointer would still make the knob, the most obvious click target,
+   look clickable on an unavailable row (Codex on PR #1018). */
+.accent-subtle-hover[aria-disabled='true'] * {
+  cursor: not-allowed;
+}
+
 .accent-subtle-hover:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -803,6 +819,19 @@ textarea {
   overflow: hidden;
 }
 
+/* Focus ring on the pill wrapper, not the inner number input (#959): the
+   preset buttons next to this field ARE the pill, so their focus-visible
+   outline (the button rule below) already rings the whole 9999px shape.
+   The custom field's pill is a plain div around the real focusable element,
+   so :focus-within is what reaches it. Matches the app's standard outline
+   treatment (--focus-ring, not a raw accent) and is unaffected by this same
+   element's own overflow: hidden above - outline is never clipped by the
+   box it is drawn on. */
+.settings-control-pill-input:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .settings-control-preset {
   width: 4.75rem;
 }
@@ -922,6 +951,21 @@ button:focus-visible,
      lives on the sibling track. */
   .peer:focus-visible ~ .toggle-track {
     outline: 2px solid CanvasText !important;
+  }
+
+  /* The custom launch-delay pill's real focus target is its inner input, so
+     the universal *:focus-visible rule above still rings that narrow
+     rectangle, clipped by the pill's own overflow: hidden (#959). Move the
+     visible ring to the whole pill, same system-colour treatment as every
+     other ring in this block, and suppress the input's own: 0,2,1 beats the
+     universal rule's 0,1,0 among unlayered !important rules, so this wins
+     regardless of source order. */
+  .settings-control-pill-input:focus-within {
+    outline: 2px solid CanvasText !important;
+  }
+
+  .settings-control-pill-input input:focus-visible {
+    outline: none !important;
   }
 
   /* Interactive surfaces lose their tinted/glass fill — give them a real edge. */

@@ -8,7 +8,7 @@ import {
   type SettingsObjectRecords,
   type SettingsObjectVersions
 } from './saveRace'
-import { normalizeLaunchDelayMs } from './settingsUtils'
+import { dropEmptyEntries, normalizeLaunchDelayMs } from './settingsUtils'
 
 // A dropped custom app name can itself be the too-long value being reported —
 // cap the label so the toast stays readable instead of echoing 100+ chars.
@@ -266,9 +266,23 @@ export function useSettingsSave({
       // edits made while the save was awaiting stay visibly dirty (re-saveable)
       // instead of silently looking already-saved, and rejected entries never
       // silently re-baseline as if they had been saved.
+      //
+      // The four record fields are normalized the same way
+      // currentSettingsState normalizes its live copies (#958):
+      // preserveRejectedSettingsEntries (store.ts) can carry a previously
+      // stored legacy `key: ''` entry back into persistedSettings for a
+      // rejected built-in-slot edit, and get-settings does not sanitize on
+      // read either. Spreading persistedSettings in unnormalized would put
+      // that `''` entry into the baseline while currentSettingsState's memo
+      // keeps dropping it from the live comparison, so isDirty would never
+      // clear again.
       resetDirty({
         ...currentSettingsState,
-        ...persistedSettings
+        ...persistedSettings,
+        appPaths: dropEmptyEntries(persistedSettings.appPaths),
+        appNames: dropEmptyEntries(persistedSettings.appNames),
+        appArgs: dropEmptyEntries(persistedSettings.appArgs),
+        gamePaths: dropEmptyEntries(persistedSettings.gamePaths)
       })
 
       // After the baseline and the toast: the icons are a picture of what was

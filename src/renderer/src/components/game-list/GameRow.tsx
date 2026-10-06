@@ -28,6 +28,7 @@ import { formatStrandedConsentPrompts } from '../../../../shared/strandedConsent
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
+import { useEditorHandOff } from '../../hooks/useEditorHandOff'
 import { GameIcon } from './GameIcon'
 import { GamePathMissingBadge } from './GamePathMissingBadge'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
@@ -242,11 +243,28 @@ export function GameRow({
       // the freshly-persisted profile now that the store is consistent (#453).
       if (!isActiveRef.current) {
         void discardPendingProfile()
+        // Nothing to announce: the profile is already on its way out, and
+        // "Save it to keep it" would offer to keep something that is gone
+        // (Codex on #972).
+        return
       }
     } else {
       pendingNewProfileRef.current = null
     }
-    notify(`Created profile ${newProfile.name}`, 'success')
+    // A "+" profile is provisional: it is kept only once saved, launched or
+    // switched away from, and closing the editor discards it on purpose (#453).
+    // "Created profile" told the user the opposite and the profile then
+    // vanished without a word, so say what keeps it instead (#949). Held for
+    // 5 s because it is an instruction, not a confirmation.
+    if (options?.trackAsPending) {
+      notify(
+        `Added ${newProfile.name}. Save it to keep it. Closing the editor discards it.`,
+        'success',
+        5000
+      )
+    } else {
+      notify(`Created profile ${newProfile.name}`, 'success')
+    }
   }
 
   // When this row's editor closes for ANY reason -- explicit close / discard, or
@@ -368,8 +386,9 @@ export function GameRow({
             // closeProfileMenu(true): that one focuses on the next animation
             // frame, which would land after the dialog took focus and steal
             // it back. The trap records the trigger as the element to return
-            // to, so dismissing the dialog puts focus on the trigger.
-            triggerRef.current?.focus()
+            // to, so dismissing the dialog puts focus on the trigger. Without
+            // scrolling, like every focus restoration (#948).
+            triggerRef.current?.focus({ preventScroll: true })
             closeProfileMenu(false)
             setProfileSwitchConfirm({
               nextProfileId: nextProfile.id,
@@ -722,6 +741,9 @@ export function GameRow({
     }
   }
 
+  // Closing (#957) or reverting (#951) the editor from inside leaves focus on the gear.
+  const editorHandOff = useEditorHandOff({ game, isActive, editorId, rowRef, onCloseEditor })
+
   const activeProfile = getActiveGameProfile(profileSet)
   // Counts only what Close Apps could actually close. A name-scoped entry is
   // surfaced by the poll but refused as a target by `getProfileCompanionTargets`
@@ -840,15 +862,17 @@ export function GameRow({
                   reports changes nobody made (#880). The baseline is only ever
                   compared against, never written: handleSave builds the
                   profile from local state, so the harm was the spurious dirty
-                  flag, not the saved profile (checked on #924). The key is the
-                  same identity the editor already reports itself under in
-                  reportProfileEditorDirty, so the two cannot disagree. */}
+                  flag, not the saved profile (checked on #924). The key starts
+                  with the identity the editor reports itself under in
+                  reportProfileEditorDirty; the revision on the end is how a
+                  discard that keeps the editor open reloads it (#951). */}
               <ProfileEditor
-                key={`${game.key}:${profileSet.activeProfileId}`}
+                key={`${game.key}:${profileSet.activeProfileId}:${editorHandOff.revision}`}
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
-                onClose={onCloseEditor}
+                onClose={editorHandOff.close}
+                onReverted={editorHandOff.revert}
                 onCreateProfile={() =>
                   void handleCreateProfile('New Profile', { trackAsPending: true })
                 }

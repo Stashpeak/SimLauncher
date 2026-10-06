@@ -12,7 +12,15 @@ export type DirtyScopeId = 'settings' | string
 
 export type SaveHandler = () => Promise<boolean> | boolean
 
-export type DiscardHandler = () => Promise<void> | void
+/**
+ * Why the edits are being thrown away. `revert` is the sticky bar's Discard:
+ * the user wants the edits gone and to carry on where they are, so an open
+ * profile editor stays open on its stored values (#951). `leave` is a discard
+ * on the way out (tab switch, close dialog), where closing is the point.
+ */
+export type DiscardIntent = 'revert' | 'leave'
+
+export type DiscardHandler = (intent: DiscardIntent) => Promise<void> | void
 
 export interface AppDirtyContextValue {
   isAnyDirty: boolean
@@ -38,8 +46,10 @@ export interface AppDirtyContextValue {
    * (e.g. removing a pending "+" profile from the store, #478) has completed.
    * Callers that remount state afterwards (refreshKey bump) must await this so
    * the remounted views reload a store the discards have already settled.
+   * `intent` reaches every handler; it defaults to `leave`, the behaviour
+   * every discard had before #951.
    */
-  requestDiscardAll: () => Promise<void>
+  requestDiscardAll: (intent?: DiscardIntent) => Promise<void>
   /**
    * Routes external "close the profile editor" requests (e.g. the toggle X
    * button in GameRowActions) through the editor's own dirty-confirm flow,
@@ -120,16 +130,16 @@ export function AppDirtyProvider({ children }: { children: ReactNode }): ReactNo
     return profileOk && settingsOk
   }, [runHandler])
 
-  const requestDiscardAll = useCallback(async (): Promise<void> => {
+  const requestDiscardAll = useCallback(async (intent: DiscardIntent = 'leave'): Promise<void> => {
     // A throwing discard handler must not block the other scope's discard —
     // mirror runHandler's containment, but there is no success to report.
     try {
-      await profileDiscardHandlerRef.current?.()
+      await profileDiscardHandlerRef.current?.(intent)
     } catch (err) {
       console.error('Profile discard handler threw', err)
     }
     try {
-      await settingsDiscardHandlerRef.current?.()
+      await settingsDiscardHandlerRef.current?.(intent)
     } catch (err) {
       console.error('Settings discard handler threw', err)
     }

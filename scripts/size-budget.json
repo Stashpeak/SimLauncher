@@ -7,16 +7,17 @@
   ],
   "thresholdCodeLines": 300,
   "budgets": {
-    "src/main/ipc/config.ts": 464,
-    "src/main/processes/kill.ts": 576,
-    "src/main/processes/running.ts": 424,
-    "src/main/processes/spawn.ts": 727,
+    "src/main/ipc/config.ts": 469,
+    "src/main/processes/kill.ts": 600,
+    "src/main/processes/running.ts": 488,
+    "src/main/processes/spawn.ts": 760,
     "src/main/processes/win32KillUtils.ts": 384,
-    "src/main/store.ts": 682,
-    "src/renderer/src/App.tsx": 399,
-    "src/renderer/src/components/game-list/GameRow.tsx": 578,
+    "src/main/store.ts": 683,
+    "src/main/window.ts": 308,
+    "src/renderer/src/App.tsx": 405,
+    "src/renderer/src/components/game-list/GameRow.tsx": 590,
     "src/renderer/src/components/settings/SettingsContext.tsx": 486,
-    "src/renderer/src/hooks/useProfileEditor.tsx": 665
+    "src/renderer/src/hooks/useProfileEditor.tsx": 666
   },
   "exclusions": {
     "src/renderer/src/components/icons/index.tsx": "Declarative SVG barrel: 372 code lines carrying 5 comment lines, almost all of it path data. Length here is volume, not complexity, and splitting it would buy nothing."

@@ -25,6 +25,7 @@ import {
   buildNothingToLaunchMessage,
   getGameDisplayName
 } from './launchSummary'
+import { buildLaunchFailureSentence, classifyLaunchFailure } from './launchFailures'
 import {
   adoptedCompanionOwners,
   consumeProcessNameMismatchWarningSuppression,
@@ -44,6 +45,7 @@ import { resolveRunningConfiguredPaths } from './win32KillUtils'
 import type {
   AppLaunchResult,
   LateElevatedOutcome,
+  LaunchFailureReason,
   LaunchProfileAppsOptions,
   LaunchResult,
   ProfileLaunchEntry,
@@ -502,7 +504,14 @@ export async function launchProfileApps(
     const lateFailedResults = elevatedResults.flatMap((result) => {
       const late = lateElevatedOutcomes.get(result.handoffId)
       return !result.confirmed && late?.outcome === 'failed'
-        ? [{ status: 'failed' as const, appPath: result.appPath, error: late.error }]
+        ? [
+            {
+              status: 'failed' as const,
+              appPath: result.appPath,
+              error: late.error,
+              reason: late.reason
+            }
+          ]
         : []
     })
     const failedResults = [...spawnFailedResults, ...lateFailedResults]
@@ -598,10 +607,25 @@ export async function launchProfileApps(
       (result) => elevatedFate(result) === 'unknown'
     ).length
 
+    // The mirror of skippedGameName: a game this sequence STARTED was folded
+    // into "Started N apps" (#952). launchResults[i] is appsToLaunch[i], because
+    // every iteration that is not cancelled pushes exactly one result. Only a
+    // start we know happened is named: a game behind an unanswered prompt is
+    // already in awaitingElevationCount, and a failed or cancelled one started
+    // nothing.
+    const gameIndex = appsToLaunch.findIndex((entry) => entry.key === gameKey)
+    const gameResult = gameIndex >= 0 ? launchResults[gameIndex] : undefined
+    const startedGameName =
+      gameResult?.status === 'launched' ||
+      (gameResult?.status === 'elevated' && elevatedFate(gameResult) === 'survived')
+        ? getGameDisplayName(gameKey)
+        : undefined
+
     return {
       success: true,
       message: buildLaunchSummaryMessage(launchedCount, skippedCount, skipped.length, {
         skippedGameName,
+        startedGameName,
         awaitingElevationCount
       }),
       warning: elevatedWarning,
@@ -1010,11 +1034,20 @@ function launchElevated(
             resolve({ status: 'cancelled', appPath })
             return
           }
-          const message = `Administrator permission was requested for ${path.basename(appPath)}, but Windows did not start it. ${getErrorMessage(error)}`
+          // Never claim a declined UAC prompt (#953 measured error.code === 1
+          // for every elevated failure, decline or genuine Windows error
+          // alike) and never forward getErrorMessage(error): its message
+          // embeds the whole command line, including the base64
+          // -EncodedCommand payload (which carries the user's own appArgs)
+          // and PowerShell's CLIXML stderr (#877). One generic, redacted
+          // sentence covers every elevated failure until #953 gives this a
+          // real signal to branch on.
+          const reason: LaunchFailureReason = 'elevation_failed'
+          const sentence = buildLaunchFailureSentence(reason)
           console.error(`Error launching ${appPath} as administrator: ${getErrorMessage(error)}`)
-          // execFile's error.message embeds the full command line — including
-          // the encoded launch args, which may carry tokens — so the on-disk
-          // entry gets only the exe path + error code, never the message.
+          // The raw detail (including the error code) still goes to the
+          // on-disk log only, which the user already has to open deliberately
+          // ("Open logs folder"), never the message, for the same reason.
           const code = getErrorCode(error)
           writeAppErrorLog(
             'launch',
@@ -1025,13 +1058,14 @@ function launchElevated(
               recordLateElevatedOutcome(handoffRunId, handoffId, {
                 appPath,
                 outcome: 'failed',
-                error: message
+                error: sentence,
+                reason
               })
             ) {
               withdrawUnobservedClaim(appPath, gameKey)
             }
           }
-          resolve({ status: 'failed', appPath, error: message })
+          resolve({ status: 'failed', appPath, error: sentence, reason })
           return
         }
 
@@ -1105,6 +1139,18 @@ export async function spawnDetachedApp(
   // The caller passes it whenever the profile being launched is not the
   // persisted active one; the fallback covers direct use of this function.
   const isTracked = trackingEnabled ?? isProcessTrackingEnabled(getActiveProfileForGame(gameKey))
+  // What was running just before the game starts, so the running poll can tell
+  // the stub's child from a secondary that was already up (#978). Read here and
+  // fresh, not reused from the sequence's opening read: utilities launched
+  // before the game (`gamePosition: 'last'`) would otherwise look new. A failed
+  // read gives no baseline rather than an empty one, which would make every
+  // running secondary look new (Codex P2 on #984). Game entries only.
+  let namesRunningAtLaunch: ReadonlySet<string> | undefined
+  if (isTracked && !!gamePath && pathsEqual(appPath, gamePath)) {
+    invalidateProcessNameCache()
+    const baseline = await readRunningProcessNames()
+    namesRunningAtLaunch = baseline.succeeded ? baseline.processNames : undefined
+  }
 
   return new Promise<AppLaunchResult>((resolve) => {
     let settled = false
@@ -1184,8 +1230,13 @@ export async function spawnDetachedApp(
         console.error(`Error launching ${appPath}: ${message}`)
 
         if (settled) {
+          // The sequence already answered with success (#877 constraint): this
+          // is the LATE case, reported through the separate app-launch-error
+          // channel. Notify.tsx already prefixes "<app> failed to launch:", so
+          // the sentence must read on its own with no app name and no raw
+          // detail, the raw message still goes to the log, same as below.
           writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
-          sendLaunchError(sender, appPath, message)
+          sendLaunchError(sender, appPath, buildLaunchFailureSentence(classifyLaunchFailure(err)))
           return
         }
 
@@ -1203,7 +1254,13 @@ export async function spawnDetachedApp(
         }
 
         writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
-        resolveOnce({ status: 'failed', appPath, error: message })
+        const reason = classifyLaunchFailure(err)
+        resolveOnce({
+          status: 'failed',
+          appPath,
+          error: buildLaunchFailureSentence(reason),
+          reason
+        })
       })
 
       child.once('exit', () => {
@@ -1252,7 +1309,8 @@ export async function spawnDetachedApp(
             path: appPath,
             name: path.basename(appPath),
             gameKey,
-            warning
+            warning,
+            namesRunningAtLaunch: wasGame ? namesRunningAtLaunch : undefined
           })
           // Suppress the toast notification for the game exe itself: fast-exit
           // is the normal pattern for launcher stubs (Steam, EA App, etc.) and
@@ -1286,8 +1344,15 @@ export async function spawnDetachedApp(
         return
       }
 
+      // Measured on Electron 44.5.1 (ELECTRON_RUN_AS_NODE, no window): a text
+      // file renamed to .exe and a deny-execute ACL both throw synchronously
+      // out of spawn() rather than emitting an 'error' event, landing here
+      // (`spawn UNKNOWN` and `spawn EPERM` respectively), this is the path
+      // the 1.2.3 smoke run's "Failed to launch Broken.exe: spawn UNKNOWN"
+      // came through (#877).
       writeAppErrorLog('launch', `[${gameKey}] Error launching ${appPath}: ${message}`)
-      resolveOnce({ status: 'failed', appPath, error: message })
+      const reason = classifyLaunchFailure(err)
+      resolveOnce({ status: 'failed', appPath, error: buildLaunchFailureSentence(reason), reason })
     }
   })
 }

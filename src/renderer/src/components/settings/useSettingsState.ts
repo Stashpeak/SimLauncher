@@ -15,6 +15,7 @@ import {
   type SettingsObjectRecords,
   type SettingsObjectVersions
 } from './saveRace'
+import { dropEmptyEntries } from './settingsUtils'
 
 export interface SettingsStateBundle {
   state: {
@@ -173,11 +174,20 @@ export function useSettingsState(): SettingsStateBundle {
 
   const currentSettingsState = useMemo(
     () => ({
-      appPaths,
-      appNames,
-      appArgs,
+      // Normalized (empty entries dropped) so an unconfigured slot that got
+      // typed into and cleared again serializes identically to one that was
+      // never touched (#958). useSettingsLoad and useSettingsSave's resetDirty
+      // call normalize their own baseline snapshots the same way, so this
+      // side always has something consistent to compare against, legacy
+      // stored '' entries included. Do NOT normalize the raw
+      // appPaths/appNames/appArgs/gamePaths state above: the inputs render an
+      // absent key the same as an empty one, so the live value there must
+      // stay whatever the user actually typed.
+      appPaths: dropEmptyEntries(appPaths),
+      appNames: dropEmptyEntries(appNames),
+      appArgs: dropEmptyEntries(appArgs),
       profiles,
-      gamePaths,
+      gamePaths: dropEmptyEntries(gamePaths),
       customSlots,
       accentPreset,
       accentCustom,

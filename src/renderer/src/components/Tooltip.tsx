@@ -5,6 +5,7 @@ import {
   FloatingPortal,
   offset,
   shift,
+  size,
   useDismiss,
   useFloating,
   useFocus,
@@ -30,6 +31,12 @@ interface TooltipProps {
    * disabling tooltips without changing the call site.
    */
   disabled?: boolean
+  /**
+   * Makes the tooltip exactly as wide as the element it describes, instead of
+   * sizing to its text up to max-w-xs. For a full-width row (a profile toggle
+   * row), where a narrower or wider box centred over it reads as misaligned.
+   */
+  matchWidth?: boolean
 }
 
 /**
@@ -41,14 +48,33 @@ interface TooltipProps {
  * - Merges refs so children that already carry a ref (e.g. customSwatchRef,
  *   triggerRef) keep their original reference.
  */
-export function Tooltip({ label, children, placement = 'top', disabled }: TooltipProps): ReactNode {
+export function Tooltip({
+  label,
+  children,
+  placement = 'top',
+  disabled,
+  matchWidth = false
+}: TooltipProps): ReactNode {
   const [isOpen, setIsOpen] = useState(false)
 
   const { refs, floatingStyles, context } = useFloating({
     open: isOpen,
     onOpenChange: setIsOpen,
     placement,
-    middleware: [offset(8), flip({ padding: 8 }), shift({ padding: 8 })],
+    middleware: [
+      offset(8),
+      flip({ padding: 8 }),
+      ...(matchWidth
+        ? [
+            size({
+              apply({ rects, elements }) {
+                elements.floating.style.width = `${rects.reference.width}px`
+              }
+            })
+          ]
+        : []),
+      shift({ padding: 8 })
+    ],
     whileElementsMounted: autoUpdate
   })
 
@@ -102,7 +128,9 @@ export function Tooltip({ label, children, placement = 'top', disabled }: Toolti
               - Since this element has no persistent position transforms, the backdrop-filter
                 (blur) renders at 100% fidelity.
             */}
-            <div className="max-w-xs rounded-lg border border-(--glass-border) overlay-glass shadow-(--surface-floating-shadow) px-2.5 py-1.5 text-xs font-medium text-(--text-primary) animate-tooltip-in">
+            <div
+              className={`${matchWidth ? 'w-full' : 'max-w-xs'} rounded-lg border border-(--glass-border) overlay-glass shadow-(--surface-floating-shadow) px-2.5 py-1.5 text-xs font-medium text-(--text-primary) animate-tooltip-in`}
+            >
               {label}
             </div>
           </div>

@@ -16,6 +16,14 @@ export interface LaunchSummaryDetails {
    */
   skippedGameName?: string
   /**
+   * Display name of the game when this sequence started it. The mirror of
+   * `skippedGameName`: without it a launch that started the game said "Started 3
+   * apps" for a game and two companions (#952). Only a start known to have
+   * happened: a game still behind an unanswered consent prompt is counted in
+   * `awaitingElevationCount` instead.
+   */
+  startedGameName?: string
+  /**
    * Elevated handoffs whose consent prompt was still unanswered when the
    * sequence ended. `launchedCount` keeps counting them, because the cooldown
    * it drives has to cover a late approval; the sentence gives them their own
@@ -41,7 +49,7 @@ function countOf(count: number, noun: string): string {
 function describeAlreadyRunning(
   skippedCount: number,
   skippedGameName: string | undefined,
-  startedCount: number
+  anythingStarted: boolean
 ): string | undefined {
   if (skippedGameName) {
     const companions = Math.max(skippedCount - 1, 0)
@@ -52,9 +60,23 @@ function describeAlreadyRunning(
   if (skippedCount === 0) {
     return undefined
   }
-  return startedCount === 0
-    ? `${skippedCount} ${skippedCount === 1 ? 'was' : 'were'} already running`
-    : `skipped ${skippedCount} already running`
+  return anythingStarted
+    ? `skipped ${skippedCount} already running`
+    : `${skippedCount} ${skippedCount === 1 ? 'was' : 'were'} already running`
+}
+
+/**
+ * The opening clause. A game this sequence started is named the way an
+ * already-running one is (#897), and the number that remains is the companions.
+ * A game that started on its own is never "and 0 apps" (#952).
+ */
+function describeStarted(startedCount: number, startedGameName: string | undefined): string {
+  if (startedGameName) {
+    return startedCount === 0
+      ? `Started ${startedGameName}`
+      : `Started ${startedGameName} and ${countOf(startedCount, 'app')}`
+  }
+  return startedCount === 0 ? 'No apps were started' : `Started ${countOf(startedCount, 'app')}`
 }
 
 /**
@@ -78,30 +100,35 @@ export function buildLaunchSummaryMessage(
   details: LaunchSummaryDetails = {}
 ): string {
   const awaiting = details.awaitingElevationCount ?? 0
-  // What actually started, as opposed to what this sequence handed to a prompt
-  // it never saw answered.
-  const startedCount = Math.max(launchedCount - awaiting, 0)
+  const startedGame = details.startedGameName
+  // The companions that actually started, as opposed to what this sequence
+  // handed to a prompt it never saw answered, and to the game, which is named
+  // rather than counted (#952).
+  const startedCount = Math.max(launchedCount - awaiting - (startedGame ? 1 : 0), 0)
+  const anythingStarted = startedCount > 0 || startedGame !== undefined
 
   // Nothing started is reachable without failing or being cancelled:
   // launchedCount subtracts elevated handoffs cancelled by a kill that did not
   // abort this sequence's controller (the `except: launchController` path used
   // by switch-profile-apps). "Started 0 apps" is never emitted.
-  const clauses = [
-    startedCount === 0 ? 'No apps were started' : `Started ${countOf(startedCount, 'app')}`
-  ]
+  const clauses = [describeStarted(startedCount, startedGame)]
   if (awaiting > 0) {
     clauses.push(
       `${awaiting} ${awaiting === 1 ? 'is' : 'are'} waiting for administrator permission`
     )
   }
-  const alreadyRunning = describeAlreadyRunning(skippedCount, details.skippedGameName, startedCount)
+  const alreadyRunning = describeAlreadyRunning(
+    skippedCount,
+    details.skippedGameName,
+    anythingStarted
+  )
   if (alreadyRunning) {
     clauses.push(alreadyRunning)
   }
 
   // "All" is only true when nothing was skipped in either sense, nothing is
   // still waiting on a prompt, and something started at all.
-  if (clauses.length === 1 && startedCount > 0 && missingCount === 0) {
+  if (clauses.length === 1 && anythingStarted && missingCount === 0) {
     return 'All profile applications launched.'
   }
   return `${clauses.join('; ')}.`

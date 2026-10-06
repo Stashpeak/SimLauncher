@@ -72,19 +72,27 @@ export function StickySaveBar({ onRequestDiscard }: { onRequestDiscard: () => vo
         <span className="min-w-0 flex-1 text-xs font-medium text-(--text-secondary)">
           You have unsaved changes.
         </span>
+        {/* aria-disabled, not `disabled`, while a save runs (#957, the #830
+            shape): Save is the focused control at the moment it becomes
+            unavailable, and Chromium moves focus off a focused control that
+            is still `disabled` at its next rendering update. Every real save
+            awaits a store write past that point, so focus fell to <body>
+            (measured on a packaged build; a refused save re-enables within
+            the same task and kept focus, which is why it never showed). The
+            click handlers are dropped instead, so nothing can run twice. */}
         <button
           type="button"
-          onClick={onRequestDiscard}
-          disabled={isSaving}
-          className="neutral-action action-hover-scale cursor-pointer rounded-xl px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={isSaving ? undefined : onRequestDiscard}
+          aria-disabled={isSaving || undefined}
+          className="neutral-action action-hover-scale cursor-pointer rounded-xl px-4 py-2 text-xs font-semibold"
         >
           Discard
         </button>
         <button
           type="button"
-          onClick={() => void handleSave()}
-          disabled={isSaving}
-          className="accent-surface-action action-hover-scale cursor-pointer rounded-xl px-4 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={isSaving ? undefined : () => void handleSave()}
+          aria-disabled={isSaving || undefined}
+          className="accent-surface-action action-hover-scale cursor-pointer rounded-xl px-4 py-2 text-xs font-bold"
         >
           {isSaving ? 'Saving…' : 'Save Changes'}
         </button>

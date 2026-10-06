@@ -29,7 +29,7 @@ import {
 } from './lib/store'
 import { useTheme } from './contexts/ThemeContext'
 import { SettingsProvider } from './components/settings/SettingsContext'
-import { AppDirtyProvider, useAppDirty } from './contexts/AppDirtyContext'
+import { AppDirtyProvider, useAppDirty, type DiscardIntent } from './contexts/AppDirtyContext'
 
 // AppDirtyProvider must wrap AppContent so the dirty-state aggregator is
 // available before any child mounts and registers save/discard handlers.
@@ -67,7 +67,8 @@ function AppContent() {
   // handler can avoid stacking it with the close dialog — two open ConfirmDialogs
   // would both bind global Enter/Escape and a single keypress could fire both.
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
-  const { isAnyDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } = useAppDirty()
+  const { isAnyDirty, isSettingsDirty, reportSettingsDirty, requestSaveAll, requestDiscardAll } =
+    useAppDirty()
 
   // First-run onboarding gate. Both start null (loading) so the modal never
   // flashes before the real values are known. Shown only for a brand-new user:
@@ -263,25 +264,36 @@ function AppContent() {
     setSettingsTarget(target)
   }
 
-  const handleDiscardAll = useCallback(async () => {
-    // Await the discard pipeline BEFORE remounting: GameRow's pending "+"
-    // profile cleanup writes to the store, and bumping refreshKey first would
-    // tear the row down mid-cleanup and reload the orphan from the store (#478).
-    await requestDiscardAll()
-    reportSettingsDirty(false)
-    // Reset main-process state the renderer forwarded ahead of save (the pending
-    // Minimize-to-tray toggle), remount the SettingsProvider so discarded toggles
-    // reload from the store, and re-sync theme so a discarded theme/accent preview
-    // reverts.
-    void setPendingMinimizeToTray(null)
-    setRefreshKey((k) => k + 1)
-    syncThemeFromStore().catch((err) => {
-      console.error('Failed to re-sync theme after discard', err)
-    })
-  }, [reportSettingsDirty, requestDiscardAll, syncThemeFromStore])
+  const handleDiscardAll = useCallback(
+    async (intent: DiscardIntent) => {
+      // Read before the discard runs: it is what decides the remount below.
+      const settingsWasDirty = isSettingsDirty
+      // Await the discard pipeline BEFORE remounting: GameRow's pending "+"
+      // profile cleanup writes to the store, and bumping refreshKey first would
+      // tear the row down mid-cleanup and reload the orphan from the store (#478).
+      await requestDiscardAll(intent)
+      // The sticky bar's Discard with only a profile editor dirty: the editor
+      // reloaded itself in place (#951), and the remount below would close it
+      // all over again, since it resets GameList's open-editor state. Settings
+      // has nothing to revert. With Settings dirty too the remount is still
+      // how Settings reverts, and the editor closes with it.
+      if (intent === 'revert' && !settingsWasDirty) return
+      reportSettingsDirty(false)
+      // Reset main-process state the renderer forwarded ahead of save (the pending
+      // Minimize-to-tray toggle), remount the SettingsProvider so discarded toggles
+      // reload from the store, and re-sync theme so a discarded theme/accent preview
+      // reverts.
+      void setPendingMinimizeToTray(null)
+      setRefreshKey((k) => k + 1)
+      syncThemeFromStore().catch((err) => {
+        console.error('Failed to re-sync theme after discard', err)
+      })
+    },
+    [isSettingsDirty, reportSettingsDirty, requestDiscardAll, syncThemeFromStore]
+  )
 
   const handleConfirmDiscard = useCallback(async () => {
-    await handleDiscardAll()
+    await handleDiscardAll('leave')
     if (pendingView) {
       setView(pendingView)
       setSettingsTarget(pendingTarget)
@@ -344,7 +356,7 @@ function AppContent() {
   const handleCloseConfirmDiscard = useCallback(async () => {
     // Await async discard work (pending "+" profile removal, #478) before the
     // remount and the close/minimize IPC tear the renderer state down.
-    await requestDiscardAll()
+    await requestDiscardAll('leave')
     reportSettingsDirty(false)
     // Mirror the tab-switch discard: clear any pending Minimize-to-tray
     // override, remount the SettingsProvider, and re-sync theme so a
@@ -535,7 +547,7 @@ function AppContent() {
         discardClassName="neutral-action"
         onSave={() => {
           setDiscardConfirmOpen(false)
-          void handleDiscardAll()
+          void handleDiscardAll('revert')
         }}
         onDiscard={() => setDiscardConfirmOpen(false)}
         onCancel={() => setDiscardConfirmOpen(false)}

@@ -1,4 +1,4 @@
-import type { DragEvent, ReactNode } from 'react'
+import { useCallback, type DragEvent, type ReactNode } from 'react'
 import { getBundledIconErrorKey, type ProfileUtility, type Utility } from '../../lib/config'
 import { Toggle } from '../Toggle'
 
@@ -27,7 +27,39 @@ interface ProfileUtilitiesSectionProps {
 }
 
 export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): ReactNode {
-  const { availableUtilities, enabledUtilityEntries, disabledUtilityEntries } = props
+  const { availableUtilities, enabledUtilityEntries, disabledUtilityEntries, onToggleUtility } =
+    props
+
+  // Toggling moves a row between the two grids below (one column enabled,
+  // two columns + a border disabled), so React treats it as unmounting the
+  // row in its old parent and mounting a new one in the other, rather than
+  // moving the same node: the focused switch is destroyed with the old row
+  // (#1005). `utility-toggle-${key}` is a stable id across that remount (set
+  // on the Toggle below), so once the real toggle has run and React has
+  // committed the move, re-focus the switch by that id in whichever grid it
+  // landed in. rAF defers past the commit, same pattern as useProfileMenu.ts's
+  // focusTrigger. Unlike that focus, this one is not handed back to where the
+  // user just was (#948's case for preventScroll): the switch lands in the
+  // other grid, often far away. On the packaged build 3 of 4 toggles left the
+  // focused switch out of view, so a keyboard user saw no ring at all. Focus
+  // without the browser's own scroll, then centre it explicitly, which also
+  // keeps it clear of the sticky unsaved-changes bar at the bottom.
+  // Done here rather than in useProfileEditor.tsx: the fix is a pure DOM
+  // lookup keyed on data this component already has (the toggled key), with
+  // no dependency on anything the editor hook tracks.
+  const handleToggleUtility = useCallback(
+    (key: string) => {
+      onToggleUtility(key)
+      window.requestAnimationFrame(() => {
+        const moved = document.getElementById(`utility-toggle-${key}`)
+        if (!moved) return
+        moved.focus({ preventScroll: true })
+        moved.scrollIntoView?.({ block: 'center' })
+      })
+    },
+    [onToggleUtility]
+  )
+  const rowProps = { ...props, onToggleUtility: handleToggleUtility }
 
   return (
     <div className="space-y-2">
@@ -40,13 +72,13 @@ export function ProfileUtilitiesSection(props: ProfileUtilitiesSectionProps): Re
           {enabledUtilityEntries.length > 0 && (
             <div className="grid grid-cols-1 gap-2.5">
               {enabledUtilityEntries.map((entry, index) =>
-                renderUtilityRow(props, entry, true, index)
+                renderUtilityRow(rowProps, entry, true, index)
               )}
             </div>
           )}
           {disabledUtilityEntries.length > 0 && (
             <div className="grid grid-cols-1 gap-2.5 border-t border-(--glass-border) pt-3 sm:grid-cols-2">
-              {disabledUtilityEntries.map((entry) => renderUtilityRow(props, entry, false))}
+              {disabledUtilityEntries.map((entry) => renderUtilityRow(rowProps, entry, false))}
             </div>
           )}
         </div>
@@ -145,12 +177,26 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} up in launch order`}
-              disabled={orderIndex === 0}
-              onClick={() => {
-                const previous = props.enabledUtilityEntries[orderIndex - 1]
-                if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
-              }}
-              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+              // aria-disabled rather than `disabled`, for both buttons here
+              // (#979, the #830 pattern). Moving a companion to either end
+              // of the order makes the button just pressed unavailable, and
+              // Chromium blurs a focused element that becomes `disabled`, so
+              // a keyboard or Narrator user lands on <body> and starts over
+              // from the title bar. The handler is dropped at the ends as on
+              // the #830 buttons, though the neighbour lookup inside it would
+              // no-op there anyway. The attribute is what announces the button
+              // as unavailable, and the #830 rule in App.css gives it the
+              // disabled look.
+              aria-disabled={orderIndex === 0 || undefined}
+              onClick={
+                orderIndex === 0
+                  ? undefined
+                  : () => {
+                      const previous = props.enabledUtilityEntries[orderIndex - 1]
+                      if (previous) props.onMoveEnabledUtility(entry.id, previous.id, 'before')
+                    }
+              }
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded"
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path
@@ -165,12 +211,16 @@ function renderUtilityRow(
             <button
               type="button"
               aria-label={`Move ${label} down in launch order`}
-              disabled={orderIndex === props.enabledUtilityEntries.length - 1}
-              onClick={() => {
-                const next = props.enabledUtilityEntries[orderIndex + 1]
-                if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
-              }}
-              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded disabled:cursor-default disabled:opacity-30"
+              aria-disabled={orderIndex === props.enabledUtilityEntries.length - 1 || undefined}
+              onClick={
+                orderIndex === props.enabledUtilityEntries.length - 1
+                  ? undefined
+                  : () => {
+                      const next = props.enabledUtilityEntries[orderIndex + 1]
+                      if (next) props.onMoveEnabledUtility(entry.id, next.id, 'after')
+                    }
+              }
+              className="reorder-btn icon-action flex h-3.5 w-5 cursor-pointer items-center justify-center rounded"
             >
               <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true">
                 <path

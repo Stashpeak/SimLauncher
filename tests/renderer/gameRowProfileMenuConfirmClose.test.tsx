@@ -194,6 +194,27 @@ describe('profile menu closes before the switch confirmation (#884, Codex P1)', 
     expect(document.activeElement).toBe(trigger())
   })
 
+  // #948. Both hand-offs to the trigger are restorations: one before the
+  // dialog (so its trap records the trigger) and one after it (the trap handing
+  // focus back). A bare focus() scrolls a clipped row into view on each. jsdom
+  // does not scroll: this pins the call shape, not the scroll itself.
+  test('the trigger is refocused without scrolling, before and after the dialog (#948)', async () => {
+    await renderRunningRow()
+    const focusSpy = vi.spyOn(trigger(), 'focus')
+    await openMenuAndPick('Race')
+    expect(dialog()).not.toBeNull()
+
+    await act(async () => {
+      dialogButton('Cancel').click()
+    })
+
+    expect(document.activeElement).toBe(trigger())
+    expect(focusSpy.mock.calls.length).toBeGreaterThanOrEqual(2)
+    for (const call of focusSpy.mock.calls) {
+      expect(call).toEqual([{ preventScroll: true }])
+    }
+  })
+
   test('the trigger still reopens the menu afterwards', async () => {
     await renderRunningRow()
     await openMenuAndPick('Race')
