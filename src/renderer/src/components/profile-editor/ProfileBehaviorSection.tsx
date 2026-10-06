@@ -11,9 +11,12 @@ import {
 // The numbers come from the values main runs on, so the copy cannot drift.
 // "A few seconds" read as "it did not fire" during a 15 s wait, and the
 // two-minute session floor was not mentioned at all, so a quick test of the
-// toggle looked broken (#945). The refusal when two games watch the same exe
-// name stays unmentioned: rare, and it would turn the line into a paragraph.
-const AUTO_CLOSE_SUBLABEL = `After ${MIN_SESSION_MS / 60000}+ minutes of play, waits ${AUTO_CLOSE_GRACE_MS / 1000} s so tools can save`
+// toggle looked broken (#945). "Watching", not "play": the clock starts at the
+// first scan that sees the game with auto-close armed, so play before the
+// toggle was saved or before SimLauncher started does not count (Codex on PR
+// #1018). The refusal when two games watch the same exe name stays
+// unmentioned: rare, and it would turn the line into a paragraph.
+const AUTO_CLOSE_SUBLABEL = `After watching ${MIN_SESSION_MS / 60000}+ minutes of play, waits ${AUTO_CLOSE_GRACE_MS / 1000} s so tools can save`
 
 interface ProfileBehaviorSectionProps {
   launchAutomatically: boolean

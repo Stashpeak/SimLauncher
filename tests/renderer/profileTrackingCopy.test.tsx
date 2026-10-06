@@ -88,10 +88,10 @@ describe('auto-close states its real timing (#945)', () => {
     await render(behaviorSection(true))
     const autoClose = row('Close apps when the game exits')
     expect(autoClose.getAttribute('aria-description')).toBe(
-      'After 2+ minutes of play, waits 15 s so tools can save'
+      'After watching 2+ minutes of play, waits 15 s so tools can save'
     )
     expect(autoClose.textContent).toContain(
-      'After 2+ minutes of play, waits 15 s so tools can save'
+      'After watching 2+ minutes of play, waits 15 s so tools can save'
     )
   })
 })
