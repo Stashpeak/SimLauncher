@@ -52,7 +52,7 @@ export function AccentSwatchRow({
             onClick={() => onAccentChange(preset.hex)}
             aria-label={`Accent color ${preset.name}`}
             aria-pressed={accentPreset === preset.hex}
-            className={`h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
+            className={`accent-swatch h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 active:scale-[0.98] bg-(--preset-color) ${accentPreset === preset.hex ? 'border-(--accent) scale-110' : 'border-transparent'}`}
             style={{ '--preset-color': preset.hex } as CSSProperties}
           />
         </Tooltip>
@@ -70,10 +70,17 @@ export function AccentSwatchRow({
             aria-haspopup="dialog"
             aria-expanded={showPicker}
             aria-controls={showPicker ? 'accent-color-picker' : undefined}
+            // The selected state for the High Contrast ring (#960). Not
+            // aria-pressed: this button already has a popup and an expanded
+            // state, and its name already says "(selected)".
+            data-selected={isCustomColor || undefined}
             // rounded-full on the button itself, as on the presets: the focus
             // ring follows the button's box, not the round layers inside it,
             // so without it a keyboard user got a square ring on a circle. #887
-            className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110 active:scale-[0.98] ${
+            // No border of its own: the colour layers are inset-0, so a border
+            // here would shrink the swatch in every theme. Its ring is the
+            // inner layer below.
+            className={`accent-swatch relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-transform hover:scale-110 active:scale-[0.98] ${
               isCustomColor ? 'scale-110' : ''
             }`}
           >
@@ -99,7 +106,7 @@ export function AccentSwatchRow({
             {/* Border to match presets */}
             <div
               aria-hidden="true"
-              className={`absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
+              className={`accent-swatch-ring absolute inset-0 rounded-full border-2 pointer-events-none ${isCustomColor ? 'border-(--accent)' : 'border-transparent'}`}
             />
           </button>
         </Tooltip>
