@@ -8,6 +8,7 @@ import {
   useRef,
   useState
 } from 'react'
+import { revealInMenuList } from '../lib/menuScroll'
 
 export interface UseProfileMenuResult {
   profileMenuOpen: boolean
@@ -63,7 +64,13 @@ export function useProfileMenu(): UseProfileMenuResult {
       }
 
       const nextIndex = (index + items.length) % items.length
-      items[nextIndex]?.focus()
+      const item = items[nextIndex]
+      if (!item) return
+      // The list scrolls once the menu is capped (#954). A bare focus() would
+      // also scroll every scrollable ancestor to bring the item in, the page
+      // included (#948); only the menu's own list should move.
+      item.focus({ preventScroll: true })
+      revealInMenuList(item)
     },
     [getMenuItems]
   )

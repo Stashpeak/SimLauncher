@@ -190,7 +190,9 @@ describe('GameRowProfileMenu positioning (#884)', () => {
     const options = calls[0].options
     expect(options.placement).toBe('bottom-end')
     const middleware = (options.middleware as Array<{ name: string }>).map((entry) => entry.name)
-    expect(middleware).toEqual(['offset', 'flip', 'shift'])
+    // `size` last caps the height to the room on the chosen side (#954); the
+    // side has to be chosen first, so the order is part of the contract.
+    expect(middleware).toEqual(['offset', 'flip', 'shift', 'size'])
     expect(options.whileElementsMounted).toBe(autoUpdate)
   })
 
