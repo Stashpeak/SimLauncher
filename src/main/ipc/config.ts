@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 
 import { getHighestReferencedCustomSlot } from '../../shared/domain/slots'
+import { getConfigFileDefaultPath, rememberConfigFile } from '../dialogFolders'
 import { migrateProfilesToNamedSets } from '../migrator'
 import { getProfileSwitchLeavingKeys, isStoredProfileSet } from '../profiles'
 import {
@@ -400,6 +401,9 @@ export function registerConfigHandlers(): void {
       if (result.canceled || !result.filePath) {
         return { success: false, canceled: true }
       }
+      // The bare file name above leaves the folder to Windows, as on Electron
+      // 42; this only lets the next import open where the export went (#907).
+      rememberConfigFile(result.filePath)
 
       await fs.promises.writeFile(
         result.filePath,
@@ -423,8 +427,11 @@ export function registerConfigHandlers(): void {
   ipcMain.handle('preview-import-config', async () => {
     try {
       clearPendingImport()
+      // Without a defaultPath, Electron 43 and later open Downloads (#907).
+      const defaultPath = await getConfigFileDefaultPath()
       const options: OpenDialogOptions = {
         title: 'Import SimLauncher Config',
+        ...(defaultPath ? { defaultPath } : {}),
         properties: ['openFile'],
         filters: [{ name: 'JSON Files', extensions: ['json'] }]
       }
@@ -438,6 +445,7 @@ export function registerConfigHandlers(): void {
       }
 
       const filePath = result.filePaths[0]
+      rememberConfigFile(filePath)
       const { supportedConfig, summary } = await readAndSanitizeConfig(filePath)
       const token = crypto.randomBytes(IMPORT_PREVIEW_TOKEN_BYTES).toString('base64url')
       pendingImport = {

@@ -22,6 +22,11 @@ function getCustomSlotNumber(key: string) {
   return Number(key.replace('customapp', ''))
 }
 
+// Matches useCustomSlots.handleRemoveCustomSlot's own early-return notify
+// message, so the Remove button's Tooltip/aria-label give the same reason
+// while blocked instead of a toast the dropped onClick (#830) never fires.
+const CUSTOM_SLOT_REMOVE_BLOCKED_REASON = 'At least one custom app slot is required'
+
 export function AppsSection(): ReactNode {
   const {
     utilities,
@@ -163,15 +168,38 @@ export function AppsSection(): ReactNode {
             />
 
             {utility.isCustom && (
-              <Tooltip label={`Remove ${appNames[utility.key] || utility.name}`}>
+              <Tooltip
+                label={
+                  customSlots <= 1
+                    ? CUSTOM_SLOT_REMOVE_BLOCKED_REASON
+                    : `Remove ${appNames[utility.key] || utility.name}`
+                }
+              >
                 <button
                   type="button"
-                  onClick={() =>
-                    customSlots > 1 && onRemoveCustomSlot(getCustomSlotNumber(utility.key))
+                  // aria-disabled rather than `disabled` (#830, #1007): closing the
+                  // confirm dialog hands focus back to this button via
+                  // ConfirmDialog's useFocusTrap restore, and a `disabled` button
+                  // refuses focus(), which is exactly what dropped focus to <body>
+                  // here. `|| undefined` keeps the attribute out of the DOM when it
+                  // does not apply (matching ProfileUtilitiesSection.tsx), instead of
+                  // always rendering aria-disabled="true"/"false". Unlike a native
+                  // `disabled` button, this one still receives hover and focus, so
+                  // the Tooltip/aria-label above and below give the reason while
+                  // blocked instead of repeating the action name, matching
+                  // GameRowActions.tsx's blocked-reason pattern.
+                  onClick={
+                    customSlots <= 1
+                      ? undefined
+                      : () => onRemoveCustomSlot(getCustomSlotNumber(utility.key))
                   }
-                  aria-disabled={customSlots <= 1}
+                  aria-disabled={customSlots <= 1 || undefined}
                   className="danger-action action-hover-scale flex h-9 w-9 cursor-pointer shrink-0 items-center justify-center rounded-xl transition-all"
-                  aria-label={`Remove ${appNames[utility.key] || utility.name}`}
+                  aria-label={
+                    customSlots <= 1
+                      ? `Remove ${appNames[utility.key] || utility.name}. ${CUSTOM_SLOT_REMOVE_BLOCKED_REASON}`
+                      : `Remove ${appNames[utility.key] || utility.name}`
+                  }
                 >
                   <svg
                     aria-hidden="true"

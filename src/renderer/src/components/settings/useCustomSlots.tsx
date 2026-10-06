@@ -50,6 +50,17 @@ export function useCustomSlots({
 
   const removeSlotData = useCallback(
     (slotNumber: number) => {
+      // Every slot below the one removed shifts the NEXT slot's data into its
+      // own React-keyed row, so that row stays mounted (just repainted) and
+      // ConfirmDialog's useFocusTrap restore (or, on the silent no-dialog
+      // path, the browser's own focus retention) lands on it correctly. The
+      // highest-numbered slot is the exception: shiftCustomSlotRecord has
+      // nothing left to shift into it, so removing IT is the one case where
+      // the row carrying the just-clicked Remove button unmounts with no
+      // surviving node for focus to land on (#1007). Capture that case before
+      // the shift so the fallback below only fires when it is actually needed.
+      const removingHighestSlot = slotNumber === customSlots
+
       updateSettingsObject('appPaths', setAppPaths, (current) =>
         shiftCustomSlotRecord(current, slotNumber, customSlots)
       )
@@ -71,6 +82,21 @@ export function useCustomSlots({
         return nextProfiles
       })
       setCustomSlots((current) => Math.max(1, current - 1))
+
+      if (removingHighestSlot) {
+        // handleRemoveCustomSlot already refused to get here with only one
+        // slot left (it notifies and returns instead), so a slot survives and
+        // has a Remove button; focus the last one (the new highest slot) once
+        // React has committed the removal. No preventScroll: this is a new
+        // target, not a hand-back to where the user just was, so the default
+        // scroll is what reveals it if the list has scrolled (#948).
+        window.requestAnimationFrame(() => {
+          const survivors = document.querySelectorAll<HTMLButtonElement>(
+            'button[aria-label^="Remove "]'
+          )
+          survivors[survivors.length - 1]?.focus()
+        })
+      }
     },
     [
       customSlots,

@@ -17,6 +17,8 @@ import {
   setPendingMinimizeToTray,
   setRendererDirty
 } from './app-state'
+import { getBrowseDefaultPath, rememberBrowsePick } from './dialogFolders'
+import { writeAppErrorLog } from './errorLog'
 import { markRecentlyBrowsedPath } from './ipc/icons'
 import { setRunningAppsWindowVisible } from './processes/running'
 import { getStoredBoolean, getStoredZoomFactor, isWindowBounds, store } from './store'
@@ -285,7 +287,15 @@ export function createWindow(): void {
   // Show window once ready, or keep it hidden when starting minimized to tray.
   // Only stay hidden if BOTH startMinimized AND the tray exists — otherwise the
   // window would be stranded with no way to restore it.
-  const showWindowWhenReady = () => {
+  //
+  // The fallback timer is no proof that the event was lost: a main thread
+  // blocked at boot runs it late too, just ahead of a 'ready-to-show' that was
+  // only queued behind it (a synchronous check of a saved path on a dead
+  // network share froze main for 8 s in review). So both lines below carry the
+  // real time since did-finish-load, and a late event gets a line of its own.
+  let didFinishLoadAt = 0
+  let shownByFallback = false
+  const showWindowWhenReady = (trigger: 'ready-to-show' | 'fallback') => {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) {
       return
     }
@@ -293,19 +303,42 @@ export function createWindow(): void {
     const showTrayIcon = getStoredBoolean('showTrayIcon', true)
     if (!startMinimized || !showTrayIcon) {
       mainWindow.show()
+      // Written to disk because a window shown by the fallback looks exactly
+      // like one shown by 'ready-to-show', so without this line nothing can
+      // tell whether the event fired (#907). Only when the fallback is what
+      // showed it: a start to the tray shows nothing either way.
+      if (trigger === 'fallback') {
+        shownByFallback = true
+        writeAppErrorLog(
+          'window',
+          `ready-to-show had not fired ${Date.now() - didFinishLoadAt} ms after did-finish-load, so the fallback showed the window (#382)`
+        )
+      }
     }
   }
 
-  mainWindow.once('ready-to-show', showWindowWhenReady)
+  mainWindow.once('ready-to-show', () => {
+    if (shownByFallback) {
+      writeAppErrorLog(
+        'window',
+        `ready-to-show fired ${Date.now() - didFinishLoadAt} ms after did-finish-load, after the fallback had shown the window (#382)`
+      )
+    }
+    showWindowWhenReady('ready-to-show')
+  })
 
   // Electron 42 regression (#382): a webContents.setZoomFactor() call landing
   // between did-finish-load and the hidden window's first paint suppresses
   // 'ready-to-show' permanently — and the renderer's boot does exactly that via
   // the set-zoom IPC. The handler now skips same-value calls, but keep a
   // fallback here so the window can never be stranded invisible if the event
-  // is lost for any other reason.
+  // is lost for any other reason. Fixed upstream in 44.4.4 (electron/electron
+  // #51972, never backported to 42), so on 44 a fallback line in
+  // main-error.log with no late 'ready-to-show' line after it means the event
+  // was lost again. Followed by one, it only means the start was slow.
   mainWindow.webContents.once('did-finish-load', () => {
-    setTimeout(showWindowWhenReady, READY_TO_SHOW_FALLBACK_MS)
+    didFinishLoadAt = Date.now()
+    setTimeout(() => showWindowWhenReady('fallback'), READY_TO_SHOW_FALLBACK_MS)
   })
 
   // Apply login-item setting on startup
@@ -355,8 +388,12 @@ export function registerWindowHandlers(): void {
   ipcMain.handle('browse-path', async (_event, inputId: unknown) => {
     const safeInputId = typeof inputId === 'string' ? inputId : ''
     try {
+      // Without a defaultPath, Electron 43 and later open Downloads every time
+      // (#907); dialogFolders.ts decides the folder and says why.
+      const defaultPath = await getBrowseDefaultPath(safeInputId)
       const options: OpenDialogOptions = {
         title: 'Select Executable File (.exe)',
+        ...(defaultPath ? { defaultPath } : {}),
         properties: ['openFile'],
         filters: [{ name: 'Executable Files', extensions: ['exe'] }]
       }
@@ -367,6 +404,7 @@ export function registerWindowHandlers(): void {
       if (!result.canceled && result.filePaths.length > 0) {
         const filePath = result.filePaths[0]
         markRecentlyBrowsedPath(filePath)
+        rememberBrowsePick(safeInputId, filePath)
         return { filePath, inputId: safeInputId }
       }
       return { filePath: null, inputId: safeInputId }
