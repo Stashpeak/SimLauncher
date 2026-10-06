@@ -165,22 +165,32 @@ describe('ProfileUtilitiesSection companion toggle focus (#1005)', () => {
     const switchEl = toggleSwitch('secondmonitor')
     switchEl.focus()
 
-    // Drive the toggle without settling yet, so the spy can be attached to
-    // the NEW row's switch (a different DOM node after the remount) before
-    // the deferred rAF fires and calls focus() on it.
-    await act(async () => {
-      switchEl.click()
+    // Hold the deferred refocus until the spies sit on the NEW row's switch
+    // (a different DOM node after the remount). Waiting on a real frame
+    // raced: under a loaded full-suite run the frame could fire inside the
+    // click's act, before the spies were attached.
+    const frames: FrameRequestCallback[] = []
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback)
+      return frames.length
     })
-    const movedSwitch = toggleSwitch('secondmonitor')
-    const focusSpy = vi.spyOn(movedSwitch, 'focus')
-    const scrollSpy = vi.fn()
-    movedSwitch.scrollIntoView = scrollSpy
+    try {
+      await act(async () => {
+        switchEl.click()
+      })
+      const movedSwitch = toggleSwitch('secondmonitor')
+      const focusSpy = vi.spyOn(movedSwitch, 'focus')
+      const scrollSpy = vi.fn()
+      movedSwitch.scrollIntoView = scrollSpy
 
-    await act(async () => {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    })
+      act(() => {
+        for (const frame of frames.splice(0)) frame(0)
+      })
 
-    expect(focusSpy.mock.calls).toEqual([[{ preventScroll: true }]])
-    expect(scrollSpy.mock.calls).toEqual([[{ block: 'center' }]])
+      expect(focusSpy.mock.calls).toEqual([[{ preventScroll: true }]])
+      expect(scrollSpy.mock.calls).toEqual([[{ block: 'center' }]])
+    } finally {
+      rafSpy.mockRestore()
+    }
   })
 })
