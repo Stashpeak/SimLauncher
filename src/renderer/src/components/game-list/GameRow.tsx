@@ -740,6 +740,29 @@ export function GameRow({
     }
   }
 
+  // Every route that closes the editor from inside it (Save on the sticky bar
+  // or in the card, Cancel, Escape, a confirm dialog, Delete) removes the
+  // control that had focus, so focus fell to <body> and the next Tab restarted
+  // at the titlebar (#957). The row's editor toggle outlives the close, and it
+  // is where the gear-X close already leaves focus. Deferred a frame so React
+  // has committed the close, and taken only when focus actually fell: a close
+  // that leaves focus somewhere real (the sticky bar still up for Settings,
+  // the Settings region after a tab-switch save) keeps it there. No
+  // preventScroll: the user was at the editor's foot, not at the toggle, so
+  // this is a new target and the default scroll is what reveals it (#948).
+  const handleEditorClose = useCallback(() => {
+    onCloseEditor()
+    window.requestAnimationFrame(() => {
+      const active = document.activeElement
+      if (active && active !== document.body) return
+      const toggle = Array.from(
+        rowRef.current?.querySelectorAll<HTMLElement>('[aria-controls]') ?? []
+      ).find((element) => element.getAttribute('aria-controls') === editorId)
+      if (!toggle || toggle.closest('[inert]')) return
+      toggle.focus()
+    })
+  }, [onCloseEditor, editorId])
+
   const activeProfile = getActiveGameProfile(profileSet)
   // Counts only what Close Apps could actually close. A name-scoped entry is
   // surfaced by the poll but refused as a target by `getProfileCompanionTargets`
@@ -866,7 +889,7 @@ export function GameRow({
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
-                onClose={onCloseEditor}
+                onClose={handleEditorClose}
                 onCreateProfile={() =>
                   void handleCreateProfile('New Profile', { trackAsPending: true })
                 }
