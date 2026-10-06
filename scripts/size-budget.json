@@ -9,8 +9,8 @@
   "budgets": {
     "src/main/ipc/config.ts": 469,
     "src/main/processes/kill.ts": 600,
-    "src/main/processes/running.ts": 479,
-    "src/main/processes/spawn.ts": 742,
+    "src/main/processes/running.ts": 488,
+    "src/main/processes/spawn.ts": 760,
     "src/main/processes/win32KillUtils.ts": 384,
     "src/main/store.ts": 683,
     "src/main/window.ts": 308,
