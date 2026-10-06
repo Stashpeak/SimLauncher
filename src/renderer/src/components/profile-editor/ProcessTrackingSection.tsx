@@ -1,7 +1,9 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { ProfileToggleRow } from './ProfileToggleRow'
+import { TRACKING_REQUIRED } from './trackingCopy'
 
 interface ProcessTrackingSectionProps {
+  trackingEnabled: boolean
   killControlsEnabled: boolean
   relaunchControlsEnabled: boolean
   trackedProcessPaths: string[]
@@ -14,6 +16,7 @@ interface ProcessTrackingSectionProps {
 }
 
 export function ProcessTrackingSection({
+  trackingEnabled,
   killControlsEnabled,
   relaunchControlsEnabled,
   trackedProcessPaths,
@@ -30,15 +33,22 @@ export function ProcessTrackingSection({
         Process tracking
       </p>
 
+      {/* Both controls act on tracked apps, so without tracking they are
+          disabled the way auto-close is, rather than left settable and
+          silently inert (#836). The stored value is kept for when it returns. */}
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <ProfileToggleRow
           label="Allow close apps controls"
+          {...(trackingEnabled ? {} : TRACKING_REQUIRED)}
           checked={killControlsEnabled}
+          disabled={!trackingEnabled}
           onToggle={() => onKillControlsEnabledChange((value) => !value)}
           onChange={onKillControlsEnabledChange}
         />
         <ProfileToggleRow
           label="Allow relaunch controls"
+          {...(trackingEnabled ? {} : TRACKING_REQUIRED)}
+          disabled={!trackingEnabled}
           checked={relaunchControlsEnabled}
           onToggle={() => onRelaunchControlsEnabledChange((value) => !value)}
           onChange={onRelaunchControlsEnabledChange}

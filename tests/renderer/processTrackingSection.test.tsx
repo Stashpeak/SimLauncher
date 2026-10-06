@@ -37,6 +37,7 @@ function Harness({
 
   return (
     <ProcessTrackingSection
+      trackingEnabled
       killControlsEnabled
       relaunchControlsEnabled
       trackedProcessPaths={paths}

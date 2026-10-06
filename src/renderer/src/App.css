@@ -335,6 +335,22 @@ textarea {
     0 0 20px -16px var(--accent-glow);
 }
 
+/* An unavailable control stays hoverable so its tooltip can say why (#830,
+   #836), but must not light up as if a click would do something.
+   revert-layer drops back to the element's own (layered) background, e.g. a
+   profile toggle row's bg-(--glass-bg). */
+.accent-subtle-hover[aria-disabled='true']:hover {
+  background: revert-layer;
+  box-shadow: revert-layer;
+}
+
+/* The same for the cursor: a profile toggle row nests a Toggle whose own
+   cursor-pointer would still make the knob, the most obvious click target,
+   look clickable on an unavailable row (Codex on PR #1018). */
+.accent-subtle-hover[aria-disabled='true'] * {
+  cursor: not-allowed;
+}
+
 .accent-subtle-hover:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
