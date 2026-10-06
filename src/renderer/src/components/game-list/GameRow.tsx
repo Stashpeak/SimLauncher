@@ -742,7 +742,7 @@ export function GameRow({
   }
 
   // A close from inside the editor leaves focus on the gear, not <body> (#957).
-  const handleEditorClose = useEditorCloseFocus({ isActive, editorId, rowRef, onCloseEditor })
+  const handleEditorClose = useEditorCloseFocus({ game, isActive, editorId, rowRef, onCloseEditor })
 
   const activeProfile = getActiveGameProfile(profileSet)
   // Counts only what Close Apps could actually close. A name-scoped entry is

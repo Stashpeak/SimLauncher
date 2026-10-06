@@ -112,23 +112,40 @@ import type { Game } from '../../src/renderer/src/lib/config'
 
 const GAME: Game = { key: 'ac', name: 'Assetto Corsa', icon: 'assets/ac.png' }
 
-// A Settings scope that stays dirty through a save, so the bar outlives the
-// editor: the case where focus must stay on the bar.
-function StillDirtySettings(): ReactNode {
+type SettingsScope = 'clean' | 'stays-dirty' | 'saves-clean'
+
+// A dirty Settings scope next to the editor. requestSaveAll saves the profile
+// first and Settings second, so the bar outlives the editor either way:
+// 'stays-dirty' keeps it up (focus must stay on it), 'saves-clean' retracts
+// its report after an await and so removes the bar one save later.
+function DirtySettings({ scope }: { scope: SettingsScope }): ReactNode {
   const { reportSettingsDirty, registerSaveHandler } = useAppDirty()
   useEffect(() => {
     reportSettingsDirty(true)
-    registerSaveHandler('settings', () => true)
-  }, [reportSettingsDirty, registerSaveHandler])
+    registerSaveHandler('settings', async () => {
+      await Promise.resolve()
+      if (scope === 'saves-clean') reportSettingsDirty(false)
+      return true
+    })
+  }, [reportSettingsDirty, registerSaveHandler, scope])
+  return null
+}
+
+// Lets a test report another game's editor as dirty, the way a second row's
+// ProfileEditor would.
+let dirtyContext: ReturnType<typeof useAppDirty> | null = null
+function CaptureDirty(): ReactNode {
+  dirtyContext = useAppDirty()
   return null
 }
 
 // Owns isActive the way GameList does, so closing really unmounts the editor.
-function Harness({ settingsDirty }: { settingsDirty: boolean }): ReactNode {
+function Harness({ settings }: { settings: SettingsScope }): ReactNode {
   const [isActive, setIsActive] = useState(true)
   return (
     <AppDirtyProvider>
-      {settingsDirty && <StillDirtySettings />}
+      <CaptureDirty />
+      {settings !== 'clean' && <DirtySettings scope={settings} />}
       <GameRow
         game={GAME}
         isActive={isActive}
@@ -153,13 +170,16 @@ function Harness({ settingsDirty }: { settingsDirty: boolean }): ReactNode {
 let container: HTMLDivElement
 let root: Root | null = null
 
-async function render({ dirty = false, settingsDirty = false } = {}): Promise<void> {
+async function render({
+  dirty = false,
+  settings = 'clean'
+}: { dirty?: boolean; settings?: SettingsScope } = {}): Promise<void> {
   stub.dirty = dirty
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
     root = createRoot(container)
-    root.render(<Harness settingsDirty={settingsDirty} />)
+    root.render(<Harness settings={settings} />)
   })
 }
 
@@ -210,8 +230,21 @@ describe('GameRow hands focus to the editor toggle when the editor closes (#957)
     expect(document.activeElement).toBe(gear())
   })
 
+  // CodeRabbit on PR #1015: the editor's report is retracted while the bar is
+  // still up for Settings, with focus on its Save; the bar then leaves when
+  // the Settings save lands, and nothing re-ran the hand-off.
+  test('with Settings dirty too, focus reaches the gear once the Settings save removes the bar', async () => {
+    await render({ dirty: true, settings: 'saves-clean' })
+
+    await pressFocused(buttonNamed('Save Changes'))
+
+    expect(buttonNamed('Save Profile')).toBeUndefined()
+    expect(buttonNamed('Save Changes')).toBeUndefined()
+    expect(document.activeElement).toBe(gear())
+  })
+
   test('when the bar stays up for a dirty Settings scope, focus stays on its Save', async () => {
-    await render({ dirty: true, settingsDirty: true })
+    await render({ dirty: true, settings: 'stays-dirty' })
 
     await pressFocused(buttonNamed('Save Changes'))
 
@@ -219,6 +252,42 @@ describe('GameRow hands focus to the editor toggle when the editor closes (#957)
     const barSave = buttonNamed('Save Changes')
     expect(barSave).toBeDefined()
     expect(document.activeElement).toBe(barSave)
+  })
+
+  // The flip side of waiting on the bar: a hand-off left waiting (here the
+  // Settings scope stays dirty) must not fire much later, at another row's
+  // close, once the user has moved on to a different game's editor.
+  test('a waiting hand-off is dropped once another game starts editing', async () => {
+    await render({ dirty: true, settings: 'stays-dirty' })
+    await pressFocused(buttonNamed('Save Changes'))
+    expect(document.activeElement).toBe(buttonNamed('Save Changes'))
+
+    await act(async () => {
+      dirtyContext!.reportProfileEditorDirty('acc:default', true)
+    })
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => {
+      dirtyContext!.reportProfileEditorDirty('acc:default', false)
+    })
+
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  test('focus that is somewhere real when the editor closes is left there', async () => {
+    await render()
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    try {
+      elsewhere.focus()
+      // click() does not move focus, so the close happens with focus outside.
+      await act(async () => {
+        buttonNamed('Save Profile')!.click()
+      })
+      expect(buttonNamed('Save Profile')).toBeUndefined()
+      expect(document.activeElement).toBe(elsewhere)
+    } finally {
+      elsewhere.remove()
+    }
   })
 
   test('an inert row (the other view after a tab-switch save) is not focused', async () => {

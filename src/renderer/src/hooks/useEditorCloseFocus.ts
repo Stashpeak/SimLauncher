@@ -21,17 +21,20 @@ import { useAppDirty } from '../contexts/AppDirtyContext'
  * inert row (the other view, after a tab-switch save) is never focused.
  */
 export function useEditorCloseFocus({
+  game,
   isActive,
   editorId,
   rowRef,
   onCloseEditor
 }: {
+  game: { key: string }
   isActive: boolean
   editorId: string
   rowRef: RefObject<HTMLElement | null>
   onCloseEditor: () => void
 }): () => void {
-  const { isProfileEditorDirty } = useAppDirty()
+  const { isAnyDirty, activeProfileEditorScope } = useAppDirty()
+  const gameKey = game.key
   const handOffPendingRef = useRef(false)
 
   const handleEditorClose = useCallback(() => {
@@ -40,10 +43,25 @@ export function useEditorCloseFocus({
   }, [onCloseEditor])
 
   useEffect(() => {
-    if (isActive || isProfileEditorDirty || !handOffPendingRef.current) return
-    handOffPendingRef.current = false
+    if (isActive || !handOffPendingRef.current) return
+    if (activeProfileEditorScope !== null) {
+      // This editor's own report (scope `${gameKey}:<profile>`, as
+      // ProfileEditor reports it) is retracted one commit after the close:
+      // wait for it. Another game's editor reporting changes means the user
+      // has moved on, so a hand-off still waiting on the bar is dropped
+      // rather than firing at that row's close later.
+      if (!activeProfileEditorScope.startsWith(`${gameKey}:`)) handOffPendingRef.current = false
+      return
+    }
     const active = document.activeElement
-    if (active && active !== document.body) return
+    const fell = !active || active === document.body
+    // Another scope (Settings) still dirty keeps the sticky bar up, possibly
+    // with focus on its Save, and requestSaveAll saves that scope after the
+    // profile: the bar can leave one save later. Keep waiting for it rather
+    // than giving up while focus still looks fine (CodeRabbit on PR #1015).
+    if (!fell && isAnyDirty) return
+    handOffPendingRef.current = false
+    if (!fell) return
     const toggle = Array.from(
       rowRef.current?.querySelectorAll<HTMLElement>('[aria-controls]') ?? []
     ).find((element) => element.getAttribute('aria-controls') === editorId)
@@ -51,7 +69,7 @@ export function useEditorCloseFocus({
     // No preventScroll: the user was at the editor's foot, not at the toggle,
     // so this is a new target and the default scroll reveals it (#948).
     toggle.focus()
-  }, [isActive, isProfileEditorDirty, editorId, rowRef])
+  }, [isActive, isAnyDirty, activeProfileEditorScope, gameKey, editorId, rowRef])
 
   return handleEditorClose
 }
