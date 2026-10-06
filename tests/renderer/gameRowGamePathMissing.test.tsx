@@ -87,6 +87,7 @@ beforeAll(() => {
 import { GameRow } from '../../src/renderer/src/components/game-list/GameRow'
 import { AppDirtyProvider } from '../../src/renderer/src/contexts/AppDirtyContext'
 import type { Game } from '../../src/renderer/src/lib/config'
+import type { RunningAppIcon } from '../../src/renderer/src/components/game-list/RunningAppsStrip'
 
 const GAME: Game = { key: 'beamng', name: 'BeamNG.drive', icon: 'assets/beamng.png' }
 const LAUNCH_LABEL = 'Launch BeamNG.drive: Default profile'
@@ -94,7 +95,18 @@ const LAUNCH_LABEL = 'Launch BeamNG.drive: Default profile'
 let container: HTMLDivElement
 let root: Root | null = null
 
-async function renderRow(gamePathMissing: boolean): Promise<void> {
+// A companion still running on the row, e.g. a SimHub shared with another game.
+const SIMHUB: RunningAppIcon = {
+  icon: null,
+  name: 'SimHub',
+  path: 'C:\\Program Files\\SimHub\\SimHubWPF.exe',
+  gameKey: 'beamng'
+}
+
+async function renderRow(
+  gamePathMissing: boolean,
+  runningAppIcons: RunningAppIcon[] = []
+): Promise<void> {
   container = document.createElement('div')
   document.body.appendChild(container)
   await act(async () => {
@@ -106,7 +118,7 @@ async function renderRow(gamePathMissing: boolean): Promise<void> {
           isActive={false}
           isRunning={false}
           isGameRunning={false}
-          runningAppIcons={[]}
+          runningAppIcons={runningAppIcons}
           hasClosableApps={false}
           gamePathMissing={gamePathMissing}
           isDimmed={false}
@@ -181,5 +193,63 @@ describe('GameRow broken-game-path badge (#794)', () => {
     )
     expect(badge).toBeDefined()
     expect(badge?.hasAttribute('tabindex')).toBe(false)
+  })
+
+  // Beside the name, the badge (which cannot shrink) took the name's room:
+  // `RaceRoom Racing Experience` truncated at 100% zoom and read `RaceRo...` at
+  // 175% (#886). It goes on the line below, ahead of the running-app icons that
+  // line already holds, so the name has the full width of its own line.
+  test('the badge sits under the name, on the running-apps line', async () => {
+    await renderRow(true, [SIMHUB])
+
+    const title = container.querySelector('h2')
+    const badge = Array.from(container.querySelectorAll('span')).find((element) =>
+      element.textContent?.startsWith('Game not found')
+    )
+    const companion = container.querySelector('[role="img"][aria-label="SimHub"]')
+    expect(title).not.toBeNull()
+    expect(badge).toBeDefined()
+    expect(companion).not.toBeNull()
+
+    const line = badge?.parentElement
+    expect(line?.contains(title)).toBe(false)
+    expect(line?.contains(companion)).toBe(true)
+  })
+
+  // Where the words do not fit (an 800px window at 175% zoom), the badge shows
+  // a triangle instead. jsdom does not evaluate container queries, so what is
+  // pinned is the contract the CSS relies on: the words go to `sr-only`, never
+  // `hidden`, so a screen reader still hears them; the triangle is decorative;
+  // and the title column is the container the query reads, without which the
+  // badge would silently never switch.
+  test('the compact badge keeps its words for screen readers', async () => {
+    await renderRow(true)
+
+    const words = Array.from(container.querySelectorAll('span')).find(
+      (element) => element.textContent === 'Game not found'
+    )
+    expect(words?.className).toContain('@max-[7.5rem]:sr-only')
+    expect(words?.className).not.toContain('@max-[7.5rem]:hidden')
+
+    const triangle = words?.parentElement?.querySelector('svg')
+    expect(triangle?.getAttribute('aria-hidden')).toBe('true')
+
+    expect(container.querySelector('h2')?.parentElement?.classList.contains('@container')).toBe(
+      true
+    )
+  })
+
+  // A second, quieter signal: the name of a game that cannot be found reads as
+  // unavailable at a glance. A healthy row keeps the full-strength name.
+  test('the name is dimmed on a broken row and only there', async () => {
+    await renderRow(true)
+    expect(container.querySelector('h2')?.classList.contains('text-(--text-secondary)')).toBe(true)
+    await act(async () => {
+      root?.unmount()
+    })
+    container.remove()
+
+    await renderRow(false)
+    expect(container.querySelector('h2')?.classList.contains('text-(--text-primary)')).toBe(true)
   })
 })
