@@ -2,21 +2,23 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import type { GamePosition } from '../../lib/config'
 import { AUTO_CLOSE_GRACE_MS, MIN_SESSION_MS } from '../../../../shared/domain/autoCloseTiming'
 import { ProfileToggleRow } from './ProfileToggleRow'
-import {
-  TRACKING_OFF_SUBLABEL,
-  TRACKING_ON_SUBLABEL,
-  TRACKING_REQUIRED_SUBLABEL
-} from './trackingCopy'
+import { TRACKING_OFF, TRACKING_ON, TRACKING_REQUIRED, type RowCopy } from './trackingCopy'
+
+const SESSION_MINUTES = MIN_SESSION_MS / 60000
+const GRACE_SECONDS = AUTO_CLOSE_GRACE_MS / 1000
 
 // The numbers come from the values main runs on, so the copy cannot drift.
 // "A few seconds" read as "it did not fire" during a 15 s wait, and the
 // two-minute session floor was not mentioned at all, so a quick test of the
-// toggle looked broken (#945). "Watching", not "play": the clock starts at the
-// first scan that sees the game with auto-close armed, so play before the
-// toggle was saved or before SimLauncher started does not count (Codex on PR
-// #1018). The refusal when two games watch the same exe name stays
-// unmentioned: rare, and it would turn the line into a paragraph.
-const AUTO_CLOSE_SUBLABEL = `After watching ${MIN_SESSION_MS / 60000}+ minutes of play, waits ${AUTO_CLOSE_GRACE_MS / 1000} s so tools can save`
+// toggle looked broken (#945). "Watched": the clock starts at the first scan
+// that sees the game with auto-close armed, so play before the toggle was
+// saved or before SimLauncher started does not count (Codex on PR #1018). The
+// refusal when two games watch the same exe name stays unmentioned: rare, and
+// it would turn the explanation into a paragraph.
+const AUTO_CLOSE: RowCopy = {
+  sublabel: `After ${SESSION_MINUTES} min, waits ${GRACE_SECONDS} s`,
+  tooltip: `Closes this profile's apps after SimLauncher has watched the game run for at least ${SESSION_MINUTES} minutes and then seen it exit. It waits ${GRACE_SECONDS} seconds first so tools like Garage61 can finish uploading.`
+}
 
 interface ProfileBehaviorSectionProps {
   launchAutomatically: boolean
@@ -55,7 +57,7 @@ export function ProfileBehaviorSection({
         />
         <ProfileToggleRow
           label="Track running indicator for this game"
-          sublabel={trackingEnabled ? TRACKING_ON_SUBLABEL : TRACKING_OFF_SUBLABEL}
+          {...(trackingEnabled ? TRACKING_ON : TRACKING_OFF)}
           checked={trackingEnabled}
           onToggle={() => onTrackingEnabledChange((value) => !value)}
           onChange={onTrackingEnabledChange}
@@ -65,7 +67,7 @@ export function ProfileBehaviorSection({
             and silently inert. */}
         <ProfileToggleRow
           label="Close apps when the game exits"
-          sublabel={trackingEnabled ? AUTO_CLOSE_SUBLABEL : TRACKING_REQUIRED_SUBLABEL}
+          {...(trackingEnabled ? AUTO_CLOSE : TRACKING_REQUIRED)}
           checked={closeAppsOnGameExit}
           disabled={!trackingEnabled}
           onToggle={() => onCloseAppsOnGameExitChange((value) => !value)}

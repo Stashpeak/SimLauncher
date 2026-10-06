@@ -1,6 +1,6 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { ProfileToggleRow } from './ProfileToggleRow'
-import { TRACKING_REQUIRED_SUBLABEL } from './trackingCopy'
+import { TRACKING_REQUIRED } from './trackingCopy'
 
 interface ProcessTrackingSectionProps {
   trackingEnabled: boolean
@@ -39,7 +39,7 @@ export function ProcessTrackingSection({
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <ProfileToggleRow
           label="Allow close apps controls"
-          sublabel={trackingEnabled ? undefined : TRACKING_REQUIRED_SUBLABEL}
+          {...(trackingEnabled ? {} : TRACKING_REQUIRED)}
           checked={killControlsEnabled}
           disabled={!trackingEnabled}
           onToggle={() => onKillControlsEnabledChange((value) => !value)}
@@ -47,7 +47,7 @@ export function ProcessTrackingSection({
         />
         <ProfileToggleRow
           label="Allow relaunch controls"
-          sublabel={trackingEnabled ? undefined : TRACKING_REQUIRED_SUBLABEL}
+          {...(trackingEnabled ? {} : TRACKING_REQUIRED)}
           disabled={!trackingEnabled}
           checked={relaunchControlsEnabled}
           onToggle={() => onRelaunchControlsEnabledChange((value) => !value)}

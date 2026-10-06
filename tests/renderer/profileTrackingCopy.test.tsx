@@ -9,8 +9,11 @@
  * - #836: turning tracking off made a profile switch silently leave every app
  *   as it was, and left "Allow close apps controls" and "Allow relaunch
  *   controls" settable but meaningless. The tracking toggle now says what off
- *   means, and the two toggles are disabled the way auto-close already was,
- *   keeping their accessible name and stored value (#762, #801).
+ *   means, and the two toggles are unavailable the way auto-close already was.
+ *
+ * Each row shows a short line and carries the full reason as a tooltip and as
+ * its accessible description. An unavailable row is in the #830 shape:
+ * focusable and hoverable so that tooltip can open, but it never toggles.
  */
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { act, type ReactNode } from 'react'
@@ -35,11 +38,16 @@ async function render(node: ReactNode): Promise<void> {
   })
 }
 
+const onKillChange = vi.fn()
+const onRelaunchChange = vi.fn()
+const onCloseOnExitChange = vi.fn()
+
 afterEach(() => {
   act(() => root?.unmount())
   container.remove()
   onKillChange.mockClear()
   onRelaunchChange.mockClear()
+  onCloseOnExitChange.mockClear()
 })
 
 function row(label: string): HTMLElement {
@@ -58,13 +66,10 @@ function behaviorSection(trackingEnabled: boolean): ReactNode {
       onLaunchAutomaticallyChange={vi.fn()}
       onGamePositionChange={vi.fn()}
       onTrackingEnabledChange={vi.fn()}
-      onCloseAppsOnGameExitChange={vi.fn()}
+      onCloseAppsOnGameExitChange={onCloseOnExitChange}
     />
   )
 }
-
-const onKillChange = vi.fn()
-const onRelaunchChange = vi.fn()
 
 function trackingSection(trackingEnabled: boolean): ReactNode {
   return (
@@ -83,54 +88,96 @@ function trackingSection(trackingEnabled: boolean): ReactNode {
   )
 }
 
+// The short line is what the row shows; the full reason is its description.
+function expectCopy(element: HTMLElement, sublabel: string, tooltip: string): void {
+  expect(element.textContent).toContain(sublabel)
+  expect(element.getAttribute('aria-description')).toBe(tooltip)
+}
+
+async function focusAndReadTooltip(element: HTMLElement): Promise<string | null> {
+  await act(async () => {
+    element.focus()
+  })
+  return document.body.querySelector('[role="tooltip"]')?.textContent ?? null
+}
+
+async function press(element: HTMLElement, key: string): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  })
+}
+
+const AUTO_CLOSE_TOOLTIP =
+  "Closes this profile's apps after SimLauncher has watched the game run for at least 2 minutes and then seen it exit. It waits 15 seconds first so tools like Garage61 can finish uploading."
+const TRACKING_REQUIRED_TOOLTIP =
+  'Turn on "Track running indicator for this game" above. Without it SimLauncher cannot see what is running.'
+
 describe('auto-close states its real timing (#945)', () => {
-  test('the sublabel names the two-minute floor and the 15 second wait', async () => {
+  test('short line and full reason both carry the two-minute floor and the 15 second wait', async () => {
     await render(behaviorSection(true))
     const autoClose = row('Close apps when the game exits')
-    expect(autoClose.getAttribute('aria-description')).toBe(
-      'After watching 2+ minutes of play, waits 15 s so tools can save'
-    )
-    expect(autoClose.textContent).toContain(
-      'After watching 2+ minutes of play, waits 15 s so tools can save'
-    )
+    expectCopy(autoClose, 'After 2 min, waits 15 s', AUTO_CLOSE_TOOLTIP)
+    expect(await focusAndReadTooltip(autoClose)).toBe(AUTO_CLOSE_TOOLTIP)
   })
 })
 
 describe('process tracking says what it gates (#836)', () => {
   test('on: the tracking toggle says what it is needed for', async () => {
     await render(behaviorSection(true))
-    expect(row('Track running indicator for this game').getAttribute('aria-description')).toBe(
-      'Needed to close, relaunch and switch apps'
+    expectCopy(
+      row('Track running indicator for this game'),
+      'Needed to close and switch apps',
+      'Close Apps, relaunch, auto-close and the app swap on a profile switch all need SimLauncher to see what is running.'
     )
   })
 
-  test('off: the tracking toggle says a profile switch leaves apps alone', async () => {
+  test("off: the tracking toggle says the apps are the user's to manage", async () => {
     await render(behaviorSection(false))
     const tracking = row('Track running indicator for this game')
-    expect(tracking.getAttribute('aria-description')).toBe(
-      'Off: switching profiles leaves apps running'
+    expectCopy(
+      tracking,
+      'Off: you manage the apps',
+      "SimLauncher is not watching this game. Switching profiles leaves running apps alone, and Close Apps and relaunch are not offered. Launch still starts the profile's apps."
     )
-    // The tracking toggle itself is never the one disabled.
+    // The tracking toggle itself is never the one made unavailable.
     expect(tracking.getAttribute('aria-disabled')).toBeNull()
   })
 
-  test('off: close and relaunch controls are unavailable, keep their name and value, and say why', async () => {
-    await render(trackingSection(false))
+  test('off: every dependent toggle is unavailable, keeps its name and value, and says why', async () => {
+    await render(
+      <>
+        {behaviorSection(false)}
+        {trackingSection(false)}
+      </>
+    )
     for (const [label, checked] of [
+      ['Close apps when the game exits', 'true'],
       ['Allow close apps controls', 'true'],
       ['Allow relaunch controls', 'false']
     ] as const) {
       const toggle = row(label)
       expect(toggle.getAttribute('aria-disabled')).toBe('true')
       expect(toggle.getAttribute('aria-label')).toBe(label)
-      expect(toggle.getAttribute('aria-description')).toBe('Needs the running indicator above')
       expect(toggle.getAttribute('aria-checked')).toBe(checked)
-      await act(async () => {
-        toggle.click()
-      })
+      expectCopy(toggle, 'Needs tracking', TRACKING_REQUIRED_TOOLTIP)
     }
+  })
+
+  // The reason a dimmed row used to be unreachable: pointer-events-none and
+  // tabIndex -1 meant neither hover nor Tab could open anything on it.
+  test('off: a dimmed toggle can be reached by Tab and shows why, but never toggles', async () => {
+    await render(trackingSection(false))
+    const kill = row('Allow close apps controls')
+    expect(kill.tabIndex).toBe(0)
+    expect(await focusAndReadTooltip(kill)).toBe(TRACKING_REQUIRED_TOOLTIP)
+    expect(document.activeElement).toBe(kill)
+
+    await act(async () => {
+      kill.click()
+    })
+    await press(kill, ' ')
+    await press(kill, 'Enter')
     expect(onKillChange).not.toHaveBeenCalled()
-    expect(onRelaunchChange).not.toHaveBeenCalled()
   })
 
   test('on: close and relaunch controls work and carry no tracking note', async () => {
@@ -138,9 +185,11 @@ describe('process tracking says what it gates (#836)', () => {
     const kill = row('Allow close apps controls')
     expect(kill.getAttribute('aria-disabled')).toBeNull()
     expect(kill.getAttribute('aria-description')).toBeNull()
+    expect(kill.textContent).not.toContain('Needs tracking')
     await act(async () => {
       kill.click()
     })
-    expect(onKillChange).toHaveBeenCalledTimes(1)
+    await press(kill, ' ')
+    expect(onKillChange).toHaveBeenCalledTimes(2)
   })
 })
