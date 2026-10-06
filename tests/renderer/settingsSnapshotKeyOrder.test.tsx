@@ -109,3 +109,53 @@ test('useSettingsLoad snapshot and currentSettingsState agree on keys AND order 
     container.remove()
   }
 })
+
+test('the same contract holds when the store still holds a legacy empty entry (#958)', async () => {
+  // Up to v0.9.6 the store persisted an empty-string entry verbatim, and
+  // get-settings does not sanitize on read, so this is a real on-disk shape,
+  // not a hypothetical one.
+  getSettingsMock.mockResolvedValue({
+    appPaths: { simhub: 'C:/Tools/SimHub.exe' },
+    appNames: { simhub: 'SimHub' },
+    appArgs: { simhub: '' },
+    gamePaths: { iracing: 'C:/Games/iRacingUI.exe', acc: '' },
+    customSlots: 1,
+    accentPreset: 'teal',
+    accentCustom: '',
+    accentBgTint: false,
+    themeMode: 'dark',
+    focusActiveTitle: true,
+    launchDelayMs: 1000,
+    startWithWindows: false,
+    startMinimized: false,
+    minimizeToTray: false,
+    showTrayIcon: true,
+    autoCheckUpdates: true,
+    zoomFactor: 1
+  })
+
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  let captured: ProbeApi | null = null
+  let root: Root | null = null
+
+  await act(async () => {
+    root = createRoot(container)
+    root.render(<Probe onCapture={(api) => (captured = api)} />)
+  })
+
+  try {
+    if (!captured) throw new Error('Probe did not capture state')
+    let snapshot: SettingsStateSnapshot | null = null
+    await act(async () => {
+      snapshot = await captured!.loadSettingsFromStore()
+    })
+
+    expect(JSON.stringify(captured!.currentSettingsState)).toBe(JSON.stringify(snapshot))
+  } finally {
+    act(() => {
+      root?.unmount()
+    })
+    container.remove()
+  }
+})
