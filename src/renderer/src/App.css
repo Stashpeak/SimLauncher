@@ -985,6 +985,35 @@ button:focus-visible,
     border: 1px solid Highlight !important;
   }
 
+  /* Floating menu panels. The profile menu's only edge was a box-shadow
+     hairline, which this mode strips, so it was an edgeless Canvas block on a
+     Canvas page (#960). CanvasText rather than ButtonText: a container, not a
+     control. The Dismiss menu already had an author border; it gets the same. */
+  .dropdown-surface {
+    border: 1px solid CanvasText !important;
+  }
+
+  /* The accent swatches are the one control whose colour IS the content: forced
+     colours turned them into empty circles (#960). forced-color-adjust: none
+     keeps their fills. System colours still resolve inside, so the rings are
+     authored here: CanvasText around every swatch, so a fill close to Canvas
+     still has an edge, and Highlight on the selected one, never the accent,
+     which would vanish against an accent fill. The custom swatch's ring is its
+     inner layer; its button has no border width, so the rule is inert there. */
+  .accent-swatch {
+    forced-color-adjust: none;
+  }
+
+  .accent-swatch,
+  .accent-swatch-ring {
+    border-color: CanvasText !important;
+  }
+
+  .accent-swatch[aria-pressed='true'],
+  .accent-swatch[data-selected='true'] .accent-swatch-ring {
+    border-color: Highlight !important;
+  }
+
   /* Toggle switch: outline the track, fill the checked track with Highlight, and
      keep a solid system-colour thumb so on vs off is unmistakable (position is a
      second cue). */
