@@ -28,6 +28,7 @@ import { formatStrandedConsentPrompts } from '../../../../shared/strandedConsent
 import { formatSkippedLaunchEntries } from '../../lib/skippedLaunchEntries'
 import { useGameProfile } from '../../hooks/useGameProfile'
 import { useProfileMenu } from '../../hooks/useProfileMenu'
+import { useEditorCloseFocus } from '../../hooks/useEditorCloseFocus'
 import { GameIcon } from './GameIcon'
 import { GamePathMissingBadge } from './GamePathMissingBadge'
 import { RunningAppsStrip, type RunningAppIcon } from './RunningAppsStrip'
@@ -740,6 +741,9 @@ export function GameRow({
     }
   }
 
+  // A close from inside the editor leaves focus on the gear, not <body> (#957).
+  const handleEditorClose = useEditorCloseFocus({ game, isActive, editorId, rowRef, onCloseEditor })
+
   const activeProfile = getActiveGameProfile(profileSet)
   // Counts only what Close Apps could actually close. A name-scoped entry is
   // surfaced by the poll but refused as a target by `getProfileCompanionTargets`
@@ -866,7 +870,7 @@ export function GameRow({
                 gameKey={game.key}
                 activeProfileId={profileSet.activeProfileId}
                 onProfilesChanged={loadProfileSet}
-                onClose={onCloseEditor}
+                onClose={handleEditorClose}
                 onCreateProfile={() =>
                   void handleCreateProfile('New Profile', { trackAsPending: true })
                 }
