@@ -39,7 +39,7 @@ export function ProfileToggleRow({
   }
 
   return (
-    <Tooltip label={tooltip}>
+    <Tooltip label={tooltip} matchWidth>
       <div
         role="switch"
         aria-checked={checked ? 'true' : 'false'}
