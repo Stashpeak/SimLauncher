@@ -27,5 +27,5 @@ export const TRACKING_OFF: RowCopy = {
 export const TRACKING_REQUIRED: RowCopy = {
   sublabel: 'Needs tracking',
   tooltip:
-    'Turn on "Track running indicator for this game" above. Without it SimLauncher cannot see what is running.'
+    'Turn on "Watch what\'s running" above. Without it SimLauncher cannot see what is running.'
 }
