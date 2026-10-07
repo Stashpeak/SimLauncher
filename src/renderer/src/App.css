@@ -241,6 +241,19 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
+/* Floating surfaces that hold controls can be drawn over the header's drag
+   region: the profile menu capped to the window reaches 8px from the top
+   (#954), and a dialog in a small window can too. An element over a drag
+   region does not get the mouse unless it opts out itself, so the press would
+   drag the window instead of choosing the item (#1029). One rule for every
+   such surface, rather than a class each component has to remember:
+   .dropdown-surface is shared by the profile menu and the Dismiss menu. */
+.dropdown-surface,
+[role='dialog'],
+[role='alertdialog'] {
+  -webkit-app-region: no-drag;
+}
+
 /* 2026 Design Overhaul Utils */
 .bg-tinted {
   background:
