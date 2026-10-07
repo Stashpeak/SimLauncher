@@ -23,8 +23,12 @@ export function ProfileEditor(props: ProfileEditorProps): ReactNode {
     registerProfileEditorCloseRequestHandler
   } = useAppDirty()
   const scopeId = `${props.gameKey}:${props.activeProfileId}`
-  const { onClose, onDiscarded, onReverted } = props
+  const { onClose, onDiscarded, onReverted, onLoaded } = props
   const { isDirty, handleSave, handleCloseAttempt } = editor
+
+  useEffect(() => {
+    if (!editor.loading) onLoaded?.()
+  }, [editor.loading, onLoaded])
 
   useEffect(() => {
     reportProfileEditorDirty(scopeId, isDirty)

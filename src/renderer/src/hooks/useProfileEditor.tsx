@@ -44,6 +44,9 @@ export interface ProfileEditorProps {
   // A discard that keeps the editor open (the sticky bar's Discard, #951):
   // the owner remounts the editor so it reloads the stored profile.
   onReverted?: () => void
+  // Fires once the stored profile has loaded and the editor renders. It is
+  // empty until then, so a scroll that needs the editor's height waits for it.
+  onLoaded?: () => void
   onLaunchRequest?: (handleLaunch: () => void) => void
   onLaunchStart?: () => void
   onLaunchEnd?: (cooldownMs: number) => void

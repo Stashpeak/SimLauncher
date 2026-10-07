@@ -67,7 +67,15 @@ vi.mock('../../src/renderer/src/hooks/useGameProfile', () => ({
   })
 }))
 
-const stub = vi.hoisted(() => ({ dirty: false, mounts: 0 }))
+// deferLoad holds a mount's onLoaded in pendingLoad instead of calling it, so a
+// test can act between the remount and the load landing, as the real editor's
+// async profile load allows.
+const stub = vi.hoisted(() => ({
+  dirty: false,
+  mounts: 0,
+  deferLoad: false,
+  pendingLoad: undefined as (() => void) | undefined
+}))
 
 vi.mock('../../src/renderer/src/components/ProfileEditor', async () => {
   const { useEffect: useStubEffect } = await import('react')
@@ -78,18 +86,23 @@ vi.mock('../../src/renderer/src/components/ProfileEditor', async () => {
       gameKey,
       activeProfileId,
       onClose,
-      onReverted
+      onReverted,
+      onLoaded
     }: {
       gameKey: string
       activeProfileId: string
       onClose: () => void
       onReverted?: () => void
+      onLoaded?: () => void
     }) => {
       const { reportProfileEditorDirty, registerSaveHandler, registerDiscardHandler } =
         useStubAppDirty()
       const scopeId = `${gameKey}:${activeProfileId}`
+      // Loaded on mount, unless a test defers it.
       useStubEffect(() => {
         stub.mounts += 1
+        if (stub.deferLoad) stub.pendingLoad = onLoaded
+        else onLoaded?.()
       }, [])
       // Same shape as ProfileEditor.tsx: the report is retracted in the
       // unmount cleanup, one commit after the close itself.
@@ -347,6 +360,81 @@ describe('GameRow keeps the editor open through a sticky-bar Discard (#951)', ()
     // directly above the editor, not on <body>.
     expect(buttonNamed('Discard')).toBeUndefined()
     expect(document.activeElement).toBe(gear())
+  })
+
+  // #1043: the remounted editor is empty until its profile loads, the view's
+  // scroll is clamped meanwhile, and the row was left low with the open editor
+  // below the fold. jsdom does no layout, so what is pinned is the pair: once
+  // the editor has loaded, the row is scrolled to the top, where opening the
+  // editor put it, and the gear's focus does not scroll on its own. The
+  // positions are measured on the build.
+  test('Discard puts the row back at the top and focuses the gear without scrolling', async () => {
+    const scrolled: { element: Element; options?: boolean | ScrollIntoViewOptions }[] = []
+    const gearFocus: (FocusOptions | undefined)[] = []
+    const originalScroll = Element.prototype.scrollIntoView
+    const originalFocus = HTMLElement.prototype.focus
+    Element.prototype.scrollIntoView = function (
+      this: Element,
+      options?: boolean | ScrollIntoViewOptions
+    ) {
+      scrolled.push({ element: this, options })
+    }
+    HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+      if (this === gear()) gearFocus.push(options)
+      originalFocus.call(this, options)
+    }
+    try {
+      await render({ dirty: true })
+      stub.deferLoad = true
+      const scrolledBefore = scrolled.length
+
+      await pressFocused(buttonNamed('Discard'))
+
+      expect(document.activeElement).toBe(gear())
+      expect(gearFocus).toEqual([{ preventScroll: true }])
+      // Nothing scrolls while the remounted editor is still loading
+      // (CodeRabbit on PR #1044): that scroll would be clamped on the build.
+      expect(scrolled).toHaveLength(scrolledBefore)
+      const load = stub.pendingLoad
+      expect(load).toBeDefined()
+      await act(async () => load?.())
+      const row = container.querySelector('[role="listitem"]')
+      expect(
+        scrolled.slice(scrolledBefore).find(({ element }) => element === row)?.options
+      ).toMatchObject({ block: 'start' })
+    } finally {
+      stub.deferLoad = false
+      stub.pendingLoad = undefined
+      Element.prototype.scrollIntoView = originalScroll
+      HTMLElement.prototype.focus = originalFocus
+    }
+  })
+
+  // Review bot on PR #1044: an editor closed before its reload lands must take
+  // the pending scroll with it, or a later load of this row jumps to the top.
+  test('closing the editor before its reload lands drops the pending scroll', async () => {
+    const scrolled: Element[] = []
+    const originalScroll = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this)
+    }
+    try {
+      await render({ dirty: true })
+      stub.deferLoad = true
+
+      await pressFocused(buttonNamed('Discard'))
+      const load = stub.pendingLoad
+      expect(load).toBeDefined()
+      await act(async () => gear()!.click())
+      expect(gear()?.getAttribute('aria-expanded')).toBe('false')
+
+      await act(async () => load?.())
+      expect(scrolled).not.toContain(container.querySelector('[role="listitem"]'))
+    } finally {
+      stub.deferLoad = false
+      stub.pendingLoad = undefined
+      Element.prototype.scrollIntoView = originalScroll
+    }
   })
 
   test('a revert hand-off left waiting is dropped if the editor then closes another way', async () => {
