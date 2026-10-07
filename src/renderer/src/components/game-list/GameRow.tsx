@@ -775,8 +775,9 @@ export function GameRow({
       aria-label={game.name}
       // No z-index lift while the menu is open any more: the menu is portalled
       // out of the row (#884), so the row has nothing to raise above its
-      // siblings.
-      className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 z-0 ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      // siblings. scroll-mt-16 stops handleToggle's scrollIntoView below the
+      // window header, which is drawn over the view (#1039, as SettingsSection).
+      className={`game-row-container group/row relative scroll-mt-16 flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 z-0 ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
       {/* min-h, not h: every ordinary row is exactly 72px (its tallest content

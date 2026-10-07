@@ -370,3 +370,34 @@ describe('GameRow keeps the editor open through a sticky-bar Discard (#951)', ()
     expect(document.activeElement).toBe(document.body)
   })
 })
+
+describe('GameRow scrolls an opened editor below the window header (#1039)', () => {
+  // Opening an editor scrolls its row to the top of the view, and the window
+  // header is drawn over that edge, so without a top scroll margin the row
+  // ended up hidden under it. scroll-mt-16 stops the scroll below the header,
+  // as SettingsSection does for its sections. jsdom does no layout, so what is
+  // pinned is the pair: the row is what gets scrolled, and it carries the margin.
+  test('the row that is scrolled to on opening keeps a top scroll margin', async () => {
+    const scrolled: Element[] = []
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this)
+    }
+    try {
+      await render()
+      await act(async () => gear()!.click())
+      expect(gear()?.getAttribute('aria-expanded')).toBe('false')
+      await act(async () => gear()!.click())
+      // handleToggle defers the scroll one tick past the expand transition start.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80))
+      })
+
+      const row = container.querySelector('[role="listitem"]')
+      expect(scrolled).toContain(row)
+      expect(row?.classList.contains('scroll-mt-16')).toBe(true)
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+})
