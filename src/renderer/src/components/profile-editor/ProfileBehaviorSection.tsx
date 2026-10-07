@@ -17,7 +17,7 @@ const GRACE_SECONDS = AUTO_CLOSE_GRACE_MS / 1000
 // it would turn the explanation into a paragraph.
 const AUTO_CLOSE: RowCopy = {
   sublabel: `After ${SESSION_MINUTES} min, waits ${GRACE_SECONDS} s`,
-  tooltip: `Closes this profile's apps after SimLauncher has watched the game run for at least ${SESSION_MINUTES} minutes and then seen it exit. It waits ${GRACE_SECONDS} seconds first so tools like Garage61 can finish uploading.`
+  tooltip: `Closes this profile's apps after SimLauncher has watched the game run for at least ${SESSION_MINUTES} minutes and then seen it exit. It waits ${GRACE_SECONDS} seconds first so apps can finish uploading laps or telemetry.`
 }
 
 interface ProfileBehaviorSectionProps {
@@ -56,7 +56,7 @@ export function ProfileBehaviorSection({
           onChange={onLaunchAutomaticallyChange}
         />
         <ProfileToggleRow
-          label="Track running indicator for this game"
+          label="Watch what's running"
           {...(trackingEnabled ? TRACKING_ON : TRACKING_OFF)}
           checked={trackingEnabled}
           onToggle={() => onTrackingEnabledChange((value) => !value)}
@@ -66,7 +66,7 @@ export function ProfileBehaviorSection({
             exit to detect, so the toggle is disabled rather than left settable
             and silently inert. */}
         <ProfileToggleRow
-          label="Close apps when the game exits"
+          label="Close apps when game exits"
           {...(trackingEnabled ? AUTO_CLOSE : TRACKING_REQUIRED)}
           checked={closeAppsOnGameExit}
           disabled={!trackingEnabled}

@@ -108,14 +108,14 @@ async function press(element: HTMLElement, key: string): Promise<void> {
 }
 
 const AUTO_CLOSE_TOOLTIP =
-  "Closes this profile's apps after SimLauncher has watched the game run for at least 2 minutes and then seen it exit. It waits 15 seconds first so tools like Garage61 can finish uploading."
+  "Closes this profile's apps after SimLauncher has watched the game run for at least 2 minutes and then seen it exit. It waits 15 seconds first so apps can finish uploading laps or telemetry."
 const TRACKING_REQUIRED_TOOLTIP =
-  'Turn on "Track running indicator for this game" above. Without it SimLauncher cannot see what is running.'
+  'Turn on "Watch what\'s running" above. Without it SimLauncher cannot see what is running.'
 
 describe('auto-close states its real timing (#945)', () => {
   test('short line and full reason both carry the two-minute floor and the 15 second wait', async () => {
     await render(behaviorSection(true))
-    const autoClose = row('Close apps when the game exits')
+    const autoClose = row('Close apps when game exits')
     expectCopy(autoClose, 'After 2 min, waits 15 s', AUTO_CLOSE_TOOLTIP)
     expect(await focusAndReadTooltip(autoClose)).toBe(AUTO_CLOSE_TOOLTIP)
   })
@@ -125,7 +125,7 @@ describe('process tracking says what it gates (#836)', () => {
   test('on: the tracking toggle says what it is needed for', async () => {
     await render(behaviorSection(true))
     expectCopy(
-      row('Track running indicator for this game'),
+      row("Watch what's running"),
       'Needed to close and switch apps',
       'Close Apps, relaunch, auto-close and the app swap on a profile switch all need SimLauncher to see what is running.'
     )
@@ -133,7 +133,7 @@ describe('process tracking says what it gates (#836)', () => {
 
   test("off: the tracking toggle says the apps are the user's to manage", async () => {
     await render(behaviorSection(false))
-    const tracking = row('Track running indicator for this game')
+    const tracking = row("Watch what's running")
     expectCopy(
       tracking,
       'Off: you manage the apps',
@@ -151,7 +151,7 @@ describe('process tracking says what it gates (#836)', () => {
       </>
     )
     for (const [label, checked] of [
-      ['Close apps when the game exits', 'true'],
+      ['Close apps when game exits', 'true'],
       ['Allow close apps controls', 'true'],
       ['Allow relaunch controls', 'false']
     ] as const) {
