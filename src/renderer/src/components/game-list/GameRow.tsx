@@ -876,6 +876,7 @@ export function GameRow({
                 onProfilesChanged={loadProfileSet}
                 onClose={editorHandOff.close}
                 onReverted={editorHandOff.revert}
+                onLoaded={editorHandOff.loaded}
                 onCreateProfile={() =>
                   void handleCreateProfile('New Profile', { trackAsPending: true })
                 }

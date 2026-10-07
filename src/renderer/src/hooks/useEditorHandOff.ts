@@ -8,6 +8,8 @@ export interface EditorHandOff {
   close: () => void
   /** The editor's `onReverted`: reloads it in place, focus likewise (#951). */
   revert: () => void
+  /** The editor's `onLoaded`: after a revert, puts the row back at the top (#1043). */
+  loaded: () => void
 }
 
 /**
@@ -23,6 +25,10 @@ export interface EditorHandOff {
  * A revert remounts the editor rather than resetting it: the dirty baseline
  * is captured once per mount, so a reused instance would carry the discarded
  * edits' baseline (#880), and a remount reloads the stored profile.
+ * The remounted editor renders nothing until that load lands, so the view
+ * briefly loses the editor's height and its scroll is clamped, leaving the row
+ * low in the window with the editor below the fold. Once it has loaded, the
+ * row is scrolled back to where opening it put it (#1043).
  *
  * The check waits for the commit that retracts the editor's dirty report,
  * not for a frame. After an async save the close commits in a later task, so
@@ -50,16 +56,27 @@ export function useEditorHandOff({
   const gameKey = game.key
   const [revision, setRevision] = useState(0)
   const handOffPendingRef = useRef<'close' | 'revert' | null>(null)
+  const scrollOnLoadRef = useRef(false)
 
   const close = useCallback(() => {
     handOffPendingRef.current = 'close'
+    scrollOnLoadRef.current = false
     onCloseEditor()
   }, [onCloseEditor])
 
   const revert = useCallback(() => {
     handOffPendingRef.current = 'revert'
+    scrollOnLoadRef.current = true
     setRevision((current) => current + 1)
   }, [])
+
+  const loaded = useCallback(() => {
+    if (!scrollOnLoadRef.current) return
+    scrollOnLoadRef.current = false
+    // Same scroll as opening the editor (GameRow's handleToggle): the row's
+    // scroll-mt-18 stops it below the header (#1039).
+    rowRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [rowRef])
 
   useEffect(() => {
     const pending = handOffPendingRef.current
@@ -94,11 +111,17 @@ export function useEditorHandOff({
       rowRef.current?.querySelectorAll<HTMLElement>('[aria-controls]') ?? []
     ).find((element) => element.getAttribute('aria-controls') === editorId)
     if (!toggle || toggle.closest('[inert]')) return
+    if (pending === 'revert') {
+      // The editor stays open and `loaded` scrolls its row back to the top,
+      // so the focus does not scroll on its own and fight that (#1043).
+      toggle.focus({ preventScroll: true })
+      return
+    }
     // No preventScroll: the user was at the editor's foot or the sticky bar,
     // not at the toggle, so this is a new target and the default scroll
     // reveals it (#948).
     toggle.focus()
   }, [isActive, isAnyDirty, activeProfileEditorScope, gameKey, editorId, rowRef])
 
-  return { revision, close, revert }
+  return { revision, close, revert, loaded }
 }

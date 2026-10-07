@@ -78,18 +78,22 @@ vi.mock('../../src/renderer/src/components/ProfileEditor', async () => {
       gameKey,
       activeProfileId,
       onClose,
-      onReverted
+      onReverted,
+      onLoaded
     }: {
       gameKey: string
       activeProfileId: string
       onClose: () => void
       onReverted?: () => void
+      onLoaded?: () => void
     }) => {
       const { reportProfileEditorDirty, registerSaveHandler, registerDiscardHandler } =
         useStubAppDirty()
       const scopeId = `${gameKey}:${activeProfileId}`
+      // The stub has nothing to load, so it is loaded as soon as it mounts.
       useStubEffect(() => {
         stub.mounts += 1
+        onLoaded?.()
       }, [])
       // Same shape as ProfileEditor.tsx: the report is retracted in the
       // unmount cleanup, one commit after the close itself.
@@ -347,6 +351,44 @@ describe('GameRow keeps the editor open through a sticky-bar Discard (#951)', ()
     // directly above the editor, not on <body>.
     expect(buttonNamed('Discard')).toBeUndefined()
     expect(document.activeElement).toBe(gear())
+  })
+
+  // #1043: the remounted editor is empty until its profile loads, the view's
+  // scroll is clamped meanwhile, and the row was left low with the open editor
+  // below the fold. jsdom does no layout, so what is pinned is the pair: once
+  // the editor has loaded, the row is scrolled to the top, where opening the
+  // editor put it, and the gear's focus does not scroll on its own. The
+  // positions are measured on the build.
+  test('Discard puts the row back at the top and focuses the gear without scrolling', async () => {
+    const scrolled: { element: Element; options?: boolean | ScrollIntoViewOptions }[] = []
+    const gearFocus: (FocusOptions | undefined)[] = []
+    const originalScroll = Element.prototype.scrollIntoView
+    const originalFocus = HTMLElement.prototype.focus
+    Element.prototype.scrollIntoView = function (
+      this: Element,
+      options?: boolean | ScrollIntoViewOptions
+    ) {
+      scrolled.push({ element: this, options })
+    }
+    HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+      if (this === gear()) gearFocus.push(options)
+      originalFocus.call(this, options)
+    }
+    try {
+      await render({ dirty: true })
+
+      await pressFocused(buttonNamed('Discard'))
+
+      expect(document.activeElement).toBe(gear())
+      expect(gearFocus).toEqual([{ preventScroll: true }])
+      const row = container.querySelector('[role="listitem"]')
+      expect(scrolled.find(({ element }) => element === row)?.options).toMatchObject({
+        block: 'start'
+      })
+    } finally {
+      Element.prototype.scrollIntoView = originalScroll
+      HTMLElement.prototype.focus = originalFocus
+    }
   })
 
   test('a revert hand-off left waiting is dropped if the editor then closes another way', async () => {

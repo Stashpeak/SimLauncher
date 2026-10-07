@@ -15,9 +15,9 @@
     "src/main/store.ts": 684,
     "src/main/window.ts": 311,
     "src/renderer/src/App.tsx": 405,
-    "src/renderer/src/components/game-list/GameRow.tsx": 586,
+    "src/renderer/src/components/game-list/GameRow.tsx": 587,
     "src/renderer/src/components/settings/SettingsContext.tsx": 486,
-    "src/renderer/src/hooks/useProfileEditor.tsx": 666
+    "src/renderer/src/hooks/useProfileEditor.tsx": 667
   },
   "exclusions": {
     "src/renderer/src/components/icons/index.tsx": "Declarative SVG barrel: 372 code lines carrying 5 comment lines, almost all of it path data. Length here is volume, not complexity, and splitting it would buy nothing."
