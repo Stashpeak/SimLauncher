@@ -136,10 +136,13 @@
   /* Light had neither cue: the off track is the surface colour and the knob
      white on near-white (1.0 to 1.1:1), and a bright accent fill sits close to
      the pale accent-tinted surface (1.24:1). A dark edge on the track and the
-     knob gives the control's outline and the knob's position 3:1 or better
-     whatever the accent (WCAG 1.4.11, #1034). */
-  --toggle-edge: rgba(20, 20, 24, 0.6);
-  --toggle-knob-edge: rgba(20, 20, 24, 0.6);
+     knob gives the control's outline and the knob's position 3:1 (WCAG
+     1.4.11, #1034). Each edge is as light as it can be and still pass, measured
+     on a packaged build: 60% everywhere read too heavy. The knob of an ON
+     toggle keeps 60% because it sits on the accent, and on a bright green
+     accent anything lighter drops below 3:1 (50% measured 2.57:1). */
+  --toggle-edge: rgba(20, 20, 24, 0.45);
+  --toggle-knob-edge: rgba(20, 20, 24, 0.5);
   --toggle-knob-edge-on: rgba(20, 20, 24, 0.6);
   --glass-stroke-gradient: linear-gradient(
     166deg,
