@@ -78,6 +78,13 @@ export function useEditorHandOff({
     rowRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
   }, [rowRef])
 
+  // An editor closed before its reload landed (the gear, another row opening)
+  // takes the pending scroll with it, or a later load of this row would jump
+  // to the top for nothing (review bot on PR #1044).
+  useEffect(() => {
+    if (!isActive) scrollOnLoadRef.current = false
+  }, [isActive])
+
   useEffect(() => {
     const pending = handOffPendingRef.current
     if (!pending) return
