@@ -109,6 +109,11 @@ function getEffectiveMinimizeToTray(): boolean {
   return store.get('showTrayIcon') !== false && store.get('minimizeToTray') === true
 }
 
+// The smallest window the layout is built for. Both the restore clamp below and
+// the live window's minimum size read it: before #1030 only the restore was
+// clamped, and the window could be dragged smaller until the layout collapsed.
+const MIN_WINDOW_SIZE = { width: 640, height: 480 }
+
 function getInitialWindowBounds() {
   const defaultBounds = { width: 800, height: 600 }
   const savedBounds = store.get('windowBounds')
@@ -119,8 +124,8 @@ function getInitialWindowBounds() {
 
   const display = screen.getDisplayMatching(savedBounds)
   const { workArea } = display
-  const width = clamp(savedBounds.width, 640, workArea.width)
-  const height = clamp(savedBounds.height, 480, workArea.height)
+  const width = clamp(savedBounds.width, MIN_WINDOW_SIZE.width, workArea.width)
+  const height = clamp(savedBounds.height, MIN_WINDOW_SIZE.height, workArea.height)
 
   return {
     x: clamp(savedBounds.x, workArea.x, workArea.x + workArea.width - width),
@@ -192,6 +197,8 @@ export function createWindow(): void {
 
   mainWindow = new BrowserWindow({
     ...windowBounds,
+    minWidth: MIN_WINDOW_SIZE.width,
+    minHeight: MIN_WINDOW_SIZE.height,
     frame: false,
     show: false,
     autoHideMenuBar: true,

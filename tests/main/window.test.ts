@@ -52,6 +52,7 @@ async function loadWindowModuleForCreate(
     minimizeToTray?: boolean
     autoCheckUpdates?: boolean
     themeMode?: string
+    windowBounds?: { x: number; y: number; width: number; height: number }
   } = {}
 ) {
   const { clearIpcHandlers } = await import('electron')
@@ -62,7 +63,8 @@ async function loadWindowModuleForCreate(
     showTrayIcon: opts.showTrayIcon ?? true,
     minimizeToTray: opts.minimizeToTray ?? false,
     autoCheckUpdates: opts.autoCheckUpdates ?? true,
-    themeMode: opts.themeMode
+    themeMode: opts.themeMode,
+    windowBounds: opts.windowBounds
   }
   const storeSet = vi.fn((key: string, value: unknown) => {
     storeValues[key] = value
@@ -75,7 +77,8 @@ async function loadWindowModuleForCreate(
       return typeof value === 'boolean' ? value : defaultValue
     }),
     getStoredZoomFactor: vi.fn(() => 1),
-    isWindowBounds: vi.fn(() => false),
+    // Only a test that passes windowBounds restores a saved size.
+    isWindowBounds: vi.fn((value: unknown) => value !== undefined && value === opts.windowBounds),
     store: { get: vi.fn((key: string) => storeValues[key]), set: storeSet }
   }))
   vi.doMock('../../src/main/updater', () => ({
@@ -139,6 +142,22 @@ test('resolveBootTheme: an unknown/absent mode falls back to system', async () =
   const { resolveBootTheme } = await loadWindowModuleForCreate()
   expect(resolveBootTheme(undefined, false)).toBe('light')
   expect(resolveBootTheme('bogus', true)).toBe('dark')
+})
+
+// #1030: a saved size was clamped to 640×480 on restore, but the live window
+// had no minimum, so it could be dragged smaller until the layout collapsed.
+test('createWindow keeps the restore minimum as the live window minimum (#1030)', async () => {
+  const { createWindow } = await loadWindowModuleForCreate({
+    windowBounds: { x: 10, y: 10, width: 400, height: 300 }
+  })
+  createWindow()
+  const win = await getCreatedWindow()
+  const options = win.options as Record<string, unknown>
+
+  // A saved 400×300 comes back at the minimum...
+  expect(options).toMatchObject({ width: 640, height: 480 })
+  // ...and the window cannot be dragged below it either.
+  expect(options).toMatchObject({ minWidth: 640, minHeight: 480 })
 })
 
 test('createWindow injects the resolved boot theme for the preload (#735)', async () => {

@@ -68,11 +68,16 @@ export function SettingsSection({
           </svg>
         </button>
       </h2>
+      {/* grid-cols-1 is minmax(0, 1fr). With the implicit column, an open
+          section was as wide as its content needed, and Utility Apps needs 446
+          CSS px, so at 175% in the default window all of Settings scrolled
+          sideways (#1028). A collapsed section escaped it only because
+          overflow-hidden zeroes its minimum width. */}
       <div
         id={regionId}
         role="region"
         aria-label={title}
-        className={`grid transition-all duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+        className={`grid grid-cols-1 transition-all duration-300 ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
       >
         {/* inert removes the collapsed content from tab order and assistive tech without unmounting it,
             preserving React state (e.g. unsaved text inputs) across open/close. overflow-hidden is
