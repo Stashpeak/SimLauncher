@@ -195,6 +195,26 @@ test('sanitizeImportedConfig rejects non-SimLauncher config payloads', async () 
   expect(() => sanitizeImportedConfig({ killOnClose: true })).toThrow('SimLauncher settings')
 })
 
+// #1037: a raw config.json, copied rather than exported, carries the
+// local-only keys. They are accepted and dropped, so the import keeps this
+// computer's values; refusing them made a plain file copy unimportable.
+test('sanitizeImportedConfig accepts a raw config.json and drops its local-only keys (#1037)', async () => {
+  const { sanitizeImportedConfig } = await loadStoreModule()
+  const result = sanitizeImportedConfig({
+    themeMode: 'dark',
+    onboardingSeen: false,
+    dialogFolders: { gameExecutable: 'D:\\Elsewhere' }
+  })
+
+  expect(result).toMatchObject({ themeMode: 'dark' })
+  expect(result).not.toHaveProperty('onboardingSeen')
+  expect(result).not.toHaveProperty('dialogFolders')
+  // A key the app does not know is still refused, and named.
+  expect(() => sanitizeImportedConfig({ themeMode: 'dark', notAKey: 1 })).toThrow(
+    'unsupported keys: notAKey'
+  )
+})
+
 test('sanitizeImportedConfig sanitizes scalar settings and clamps numeric values', async () => {
   const { MAX_CUSTOM_SLOTS, sanitizeImportedConfig } = await loadStoreModule()
   expect(

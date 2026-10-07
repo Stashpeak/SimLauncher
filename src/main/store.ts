@@ -306,6 +306,12 @@ const IMPORTABLE_CONFIG_KEYS = new Set([...EXPECTED_CONFIG_KEYS, ...LEGACY_CONFI
 // (excluded from config export/import). A config import clears the store, so
 // these local-only keys must be preserved across it or they silently reset. #641
 export const LOCAL_ONLY_STORE_KEYS = ['onboardingSeen', 'dialogFolders'] as const
+// What an import file may contain: a raw config.json (a file copy, not an
+// Export) also carries the local-only keys. They describe this computer, so
+// they are accepted and ignored: getSupportedConfigValues drops them and the
+// import keeps this computer's own (applySanitizedConfig). Refusing them made a
+// plain copy unimportable since #641 (#1037).
+const ACCEPTED_IMPORT_KEYS = new Set<string>([...IMPORTABLE_CONFIG_KEYS, ...LOCAL_ONLY_STORE_KEYS])
 const BOOLEAN_CONFIG_KEYS = new Set([
   'accentBgTint',
   'focusActiveTitle',
@@ -683,7 +689,7 @@ export function sanitizeImportedConfig(value: unknown): Record<string, unknown> 
     throw new Error('Config file is empty.')
   }
 
-  const unexpectedKeys = keys.filter((key) => !IMPORTABLE_CONFIG_KEYS.has(key))
+  const unexpectedKeys = keys.filter((key) => !ACCEPTED_IMPORT_KEYS.has(key))
 
   if (unexpectedKeys.length > 0) {
     throw new Error(`Config file contains unsupported keys: ${unexpectedKeys.join(', ')}`)
