@@ -59,6 +59,12 @@
     drop-shadow(0 2px 2px rgb(0 0 0 / 0.06));
   --game-title-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --toggle-track-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  /* Dark needs no toggle edges: the white knob reads at 11.9:1 on the off
+     track, the accent fill at 10.1:1 on the surface (#1034). These keep the
+     values Toggle.tsx used before the tokens existed. */
+  --toggle-edge: transparent;
+  --toggle-knob-edge: var(--glass-border);
+  --toggle-knob-edge-on: #fff;
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(255, 255, 255, 0.4) 0%,
@@ -127,6 +133,14 @@
     drop-shadow(0 7px 12px rgba(20, 20, 24, 0.22));
   --game-title-text-shadow: none;
   --toggle-track-shadow: inset 0 1px 3px rgba(20, 20, 24, 0.12);
+  /* Light had neither cue: the off track is the surface colour and the knob
+     white on near-white (1.0 to 1.1:1), and a bright accent fill sits close to
+     the pale accent-tinted surface (1.24:1). A dark edge on the track and the
+     knob gives the control's outline and the knob's position 3:1 or better
+     whatever the accent (WCAG 1.4.11, #1034). */
+  --toggle-edge: rgba(20, 20, 24, 0.6);
+  --toggle-knob-edge: rgba(20, 20, 24, 0.6);
+  --toggle-knob-edge-on: rgba(20, 20, 24, 0.6);
   --glass-stroke-gradient: linear-gradient(
     166deg,
     rgba(20, 20, 24, 0.12) 0%,
@@ -537,7 +551,9 @@ textarea {
 }
 
 .toggle-track {
-  box-shadow: var(--toggle-track-shadow);
+  box-shadow:
+    inset 0 0 0 1px var(--toggle-edge),
+    var(--toggle-track-shadow);
 }
 
 .group:hover .fallback-initial-icon {
