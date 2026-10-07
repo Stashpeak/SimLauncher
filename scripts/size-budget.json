@@ -12,7 +12,7 @@
     "src/main/processes/running.ts": 488,
     "src/main/processes/spawn.ts": 760,
     "src/main/processes/win32KillUtils.ts": 384,
-    "src/main/store.ts": 683,
+    "src/main/store.ts": 684,
     "src/main/window.ts": 311,
     "src/renderer/src/App.tsx": 405,
     "src/renderer/src/components/game-list/GameRow.tsx": 586,
