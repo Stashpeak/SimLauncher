@@ -775,8 +775,11 @@ export function GameRow({
       aria-label={game.name}
       // No z-index lift while the menu is open any more: the menu is portalled
       // out of the row (#884), so the row has nothing to raise above its
-      // siblings.
-      className={`game-row-container group/row relative flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 z-0 ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
+      // siblings. scroll-mt-18 stops handleToggle's scrollIntoView below the
+      // window header, which is drawn over the view (#1039): 72px is the view's
+      // pt-16 plus the list's py-2, exactly where the first row sits at rest, so
+      // an opened row lands there and the first row does not move at all.
+      className={`game-row-container group/row relative scroll-mt-18 flex flex-col ${isActive ? '' : 'gap-2'} transition-opacity duration-300 z-0 ${isDimmed ? 'opacity-45' : 'opacity-100'}`}
       ref={rowRef}
     >
       {/* min-h, not h: every ordinary row is exactly 72px (its tallest content
