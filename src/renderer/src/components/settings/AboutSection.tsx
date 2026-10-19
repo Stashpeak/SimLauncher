@@ -127,8 +127,8 @@ export function AboutSection({
       >
         {updateInfo ? (
           <button
-            onClick={onInstallUpdate}
-            disabled={installingUpdate}
+            onClick={installingUpdate ? undefined : onInstallUpdate}
+            aria-disabled={installingUpdate || undefined}
             aria-live="off"
             className="accent-surface-action action-hover-scale w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
           >
@@ -140,8 +140,8 @@ export function AboutSection({
           </button>
         ) : (
           <button
-            onClick={onManualCheck}
-            disabled={checkingUpdate}
+            onClick={checkingUpdate ? undefined : onManualCheck}
+            aria-disabled={checkingUpdate || undefined}
             aria-live="off"
             className="accent-surface-action action-hover-scale w-full cursor-pointer rounded-xl py-2.5 text-xs font-semibold"
           >
