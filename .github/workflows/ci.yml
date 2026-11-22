@@ -43,8 +43,45 @@ jobs:
       - name: Build app
         run: npm run build
 
+  # Deliberately NOT a required check (#1065). It answers "does the tree have a
+  # known advisory today", which changes when upstream publishes one, not when a
+  # PR changes anything. As a step inside the required `build` job it turned
+  # every PR red from 2026-10-30 to 2026-11-22 over fast-uri advisories that no
+  # user input can reach (#1064). The same reasoning kept `audit:runtime` out of
+  # CI (#993). The hard gates for shipping live in release.yml, and the
+  # PR-scoped question is answered by `dependency-review` below.
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # npm audit reads the lockfile, so no install is needed.
       - name: Audit dependencies
         run: npm audit --omit=dev
+
+  # Fails only when the PR itself adds a dependency, or moves one to a version,
+  # that carries an advisory. That is the question a merge gate can answer, so
+  # this is the check to make required, not `audit`. Runtime scope only, the
+  # same line `npm audit --omit=dev` drew.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-scopes: runtime
 
   # SimLauncher only ships on Windows, and the suite exercises Windows-specific
   # behavior (PowerShell-encoded elevated launches, taskkill/PID resolution) by
