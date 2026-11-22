@@ -4,8 +4,20 @@ updates:
     directory: '/'
     schedule:
       interval: 'monthly'
+    # A release that gets yanked or hotfixed within days never reaches a PR,
+    # and a PR opened during the owner's absence is not already stale (#1065).
+    # Security updates are not delayed by this.
+    cooldown:
+      default-days: 5
+    # TypeScript majors cannot pass until typescript-eslint supports them (#798):
+    # TS 7 arrived as a red solo PR every month (#1061). Remove this when #798
+    # is done.
+    ignore:
+      - dependency-name: 'typescript'
+        update-types:
+          - 'version-update:semver-major'
     # Bundle updates into a few grouped PRs instead of one per dependency.
-    # The electron stack (runtime, packaging, build, updater, store) is isolated
+    # The electron stack (runtime, packaging, build, updater) is isolated
     # into its own PR so a major bump — which needs a real-launch smoke and a
     # signed-build check — never rides a batch of lint/test tooling (#634).
     # Remaining production deps are grouped separately from dev deps so runtime
@@ -18,10 +30,17 @@ updates:
     # yet (#798). The electron group keeps every level on purpose, and the
     # other two exclude 'electron*', so an electron major still arrives in the
     # electron group and never as a solo PR.
+    #
+    # electron-store is the exception: it only matched 'electron*' by name. It
+    # is the config store, not part of the runtime stack, and its 12.0.0 major
+    # (migration semantics) rode along with an Electron major in #1058. Excluded
+    # here and by the other groups' 'electron*', it arrives as its own PR.
     groups:
       electron:
         patterns:
           - 'electron*'
+        exclude-patterns:
+          - 'electron-store'
       production-dependencies:
         dependency-type: 'production'
         exclude-patterns:
@@ -41,6 +60,8 @@ updates:
     directory: '/'
     schedule:
       interval: 'monthly'
+    cooldown:
+      default-days: 5
     groups:
       github-actions:
         patterns:
