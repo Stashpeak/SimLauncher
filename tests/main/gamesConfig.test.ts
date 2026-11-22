@@ -26,3 +26,12 @@ test('flight sims are first-class supported games (#392)', () => {
     expect(keys.has(key), `${key} missing in GAMES`).toBe(true)
   }
 })
+
+// Asked for on the Overtake listing (#902). SCS titles on the same engine and the
+// same companion stack (TruckersMP, Trucky, dashboards), so one decision for both.
+test('the SCS truck sims are supported games (#902)', () => {
+  const keys = new Set(GAMES.map((game) => game.key))
+  for (const key of ['ets2', 'ats']) {
+    expect(keys.has(key), `${key} missing in GAMES`).toBe(true)
+  }
+})
